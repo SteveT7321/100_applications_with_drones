@@ -26,10 +26,10 @@ $$\mathbf{v}_{P} = v_{P,max} \cdot \frac{\mathbf{p}_E - \mathbf{p}_P}{\|\mathbf{
 
 | Strategy | Formula |
 |----------|---------|
-| Straight | $\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{r}}$, where $\hat{\mathbf{r}} = \frac{\mathbf{p}_E - \mathbf{p}_P}{\|\mathbf{p}_E - \mathbf{p}_P\|}$ |
-| Perpendicular | $\mathbf{v}_E = v_{E,max} \cdot \mathbf{R}_{90°} \hat{\mathbf{r}}_{xy}$ |
-| Random | $\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{d}}$, $\mathbf{d} \sim \mathcal{N}(0,I)$ (seed=42) |
-| Spiral | $\mathbf{v}_E = v_{E,max} \cdot (0.7\,\mathbf{perp} + 0.3\,\mathbf{outward})$ |
+| Straight | $\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{r}}$，$\hat{\mathbf{r}} = (\mathbf{p}_E - \mathbf{p}_P) / \lVert \mathbf{p}_E - \mathbf{p}_P \rVert$ |
+| Perpendicular | $\mathbf{v}_E = v_{E,max} \cdot \mathbf{R}_{90^\circ} \hat{\mathbf{r}}_{xy}$ |
+| Random | $\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{d}}$，$\mathbf{d} \sim \mathcal{N}(0,I)$（seed=42）|
+| Spiral | $\mathbf{v}_E = v_{E,max} \cdot (0.7\,\hat{\mathbf{r}}_\perp + 0.3\,\hat{\mathbf{r}})$ |
 
 ### Capture Condition
 
