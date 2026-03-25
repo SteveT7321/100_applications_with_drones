@@ -24,12 +24,21 @@ $$\mathbf{v}_{P} = v_{P,max} \cdot \frac{\mathbf{p}_E - \mathbf{p}_P}{\|\mathbf{
 
 ### Evader Strategies
 
-| Strategy | Formula |
-|----------|---------|
-| Straight | $\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{r}}$，$\hat{\mathbf{r}} = (\mathbf{p}_E - \mathbf{p}_P) / \lVert \mathbf{p}_E - \mathbf{p}_P \rVert$ |
-| Perpendicular | $\mathbf{v}_E = v_{E,max} \cdot \mathbf{R}_{90^\circ} \hat{\mathbf{r}}_{xy}$ |
-| Random | $\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{d}}$，$\mathbf{d} \sim \mathcal{N}(0,I)$（seed=42）|
-| Spiral | $\mathbf{v}_E = v_{E,max} \cdot (0.7\,\hat{\mathbf{r}}_\perp + 0.3\,\hat{\mathbf{r}})$ |
+**Straight** — fly directly away from pursuer:
+
+$$\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{r}}, \quad \hat{\mathbf{r}} = \frac{\mathbf{p}_E - \mathbf{p}_P}{\lVert \mathbf{p}_E - \mathbf{p}_P \rVert}$$
+
+**Perpendicular** — fly perpendicular to line-of-sight in the $xy$ plane:
+
+$$\mathbf{v}_E = v_{E,max} \cdot \mathbf{R}_{90^\circ}\, \hat{\mathbf{r}}_{xy}$$
+
+**Random** — random horizontal direction (seed = 42):
+
+$$\mathbf{v}_E = v_{E,max} \cdot \hat{\mathbf{d}}, \quad \mathbf{d} \sim \mathcal{N}(0, I)$$
+
+**Spiral** — 70% perpendicular + 30% outward:
+
+$$\mathbf{v}_E = v_{E,max} \cdot (0.7\,\hat{\mathbf{r}}_\perp + 0.3\,\hat{\mathbf{r}})$$
 
 ### Capture Condition
 
