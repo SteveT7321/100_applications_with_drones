@@ -209,52 +209,69 @@ def plot_distance_time(results, out_dir):
 
 
 def save_animation(results, out_dir):
-    """Animate the Spiral strategy (pursuer red, evader blue), ~12 fps."""
-    # Pick the Spiral case as it has the most interesting trajectory
-    name, p_traj, e_traj, captured, cap_time = next(
-        r for r in results if r[0] == 'Spiral'
+    """2×2 subplot animation — all 4 strategies simultaneously, ~12 fps."""
+    step = 4
+    n_frames = min(
+        min(len(p[::step]), len(e[::step]))
+        for _, p, e, _, _ in results
     )
 
-    step = 4
-    p_frames = p_traj[::step]
-    e_frames = e_traj[::step]
-    n_frames = min(len(p_frames), len(e_frames))
-
-    all_pts = np.vstack([p_traj, e_traj])
+    # Shared axis limits across all trajectories
+    all_pts = np.vstack([
+        np.vstack([p, e]) for _, p, e, _, _ in results
+    ])
     margin = 0.5
     lo = all_pts.min(axis=0) - margin
     hi = all_pts.max(axis=0) + margin
 
-    fig = plt.figure(figsize=(7, 6))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlim(lo[0], hi[0])
-    ax.set_ylim(lo[1], hi[1])
-    ax.set_zlim(lo[2], hi[2])
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
+    fig = plt.figure(figsize=(12, 10))
+    axes, trails_p, trails_e, dots_p, dots_e = [], [], [], [], []
+    frame_data = []
 
-    ax.scatter(*p_traj[0], color='red',  s=50, marker='o', alpha=0.4, label='P start')
-    ax.scatter(*e_traj[0], color='blue', s=50, marker='o', alpha=0.4, label='E start')
-    ax.legend(loc='upper left')
+    positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
+    for idx, (name, p_traj, e_traj, captured, cap_time) in enumerate(results):
+        row, col = positions[idx]
+        ax = fig.add_subplot(2, 2, idx + 1, projection='3d')
+        ax.set_xlim(lo[0], hi[0])
+        ax.set_ylim(lo[1], hi[1])
+        ax.set_zlim(lo[2], hi[2])
+        ax.set_xlabel('X (m)', fontsize=7)
+        ax.set_ylabel('Y (m)', fontsize=7)
+        ax.set_zlabel('Z (m)', fontsize=7)
+        cap_str = f'cap {cap_time:.2f}s' if captured else 'escaped'
+        ax.set_title(f'{name} ({cap_str})', fontsize=9)
+        ax.scatter(*p_traj[0], color='red',  s=30, marker='o', alpha=0.4)
+        ax.scatter(*e_traj[0], color='blue', s=30, marker='o', alpha=0.4)
 
-    p_trail, = ax.plot([], [], [], color='red',  linewidth=1.2, alpha=0.6)
-    e_trail, = ax.plot([], [], [], color='blue', linewidth=1.2, alpha=0.6)
-    p_dot = ax.scatter([], [], [], color='red',  s=80, marker='^', zorder=6)
-    e_dot = ax.scatter([], [], [], color='blue', s=80, marker='s', zorder=6)
+        tp, = ax.plot([], [], [], color='red',  linewidth=1.0, alpha=0.6)
+        te, = ax.plot([], [], [], color='blue', linewidth=1.0, alpha=0.6)
+        dp = ax.scatter([], [], [], color='red',  s=60, marker='^', zorder=6)
+        de = ax.scatter([], [], [], color='blue', s=60, marker='s', zorder=6)
+
+        axes.append(ax)
+        trails_p.append(tp); trails_e.append(te)
+        dots_p.append(dp);   dots_e.append(de)
+        frame_data.append((p_traj[::step], e_traj[::step]))
+
+    fig.suptitle('S002 Evasive Maneuver — All Strategies', fontsize=12)
 
     def update(i):
-        px, py, pz = p_frames[:i+1, 0], p_frames[:i+1, 1], p_frames[:i+1, 2]
-        ex, ey, ez = e_frames[:i+1, 0], e_frames[:i+1, 1], e_frames[:i+1, 2]
-        p_trail.set_data(px, py); p_trail.set_3d_properties(pz)
-        e_trail.set_data(ex, ey); e_trail.set_3d_properties(ez)
-        p_dot._offsets3d = ([float(px[-1])], [float(py[-1])], [float(pz[-1])])
-        e_dot._offsets3d = ([float(ex[-1])], [float(ey[-1])], [float(ez[-1])])
+        artists = []
+        for k, (pf, ef) in enumerate(frame_data):
+            ni = min(i + 1, len(pf), len(ef))
+            px, py, pz = pf[:ni, 0], pf[:ni, 1], pf[:ni, 2]
+            ex, ey, ez = ef[:ni, 0], ef[:ni, 1], ef[:ni, 2]
+            trails_p[k].set_data(px, py); trails_p[k].set_3d_properties(pz)
+            trails_e[k].set_data(ex, ey); trails_e[k].set_3d_properties(ez)
+            dots_p[k]._offsets3d = ([float(px[-1])], [float(py[-1])], [float(pz[-1])])
+            dots_e[k]._offsets3d = ([float(ex[-1])], [float(ey[-1])], [float(ez[-1])])
+            artists += [trails_p[k], trails_e[k], dots_p[k], dots_e[k]]
         t = i * step * DT
-        ax.set_title(f'S002 Evasive Maneuver (Spiral)  t={t:.2f}s')
-        return p_trail, e_trail, p_dot, e_dot
+        fig.suptitle(f'S002 Evasive Maneuver — All Strategies  t={t:.2f}s', fontsize=12)
+        return artists
 
     ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=83, blit=False)
+    plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')

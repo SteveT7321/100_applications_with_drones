@@ -163,8 +163,19 @@ def _draw_spheres(ax, obstacles, color='steelblue', alpha=0.25):
 
 # ── Plots ──────────────────────────────────────────────────
 
+def _axis_limits(results, margin=1.0):
+    """Compute shared axis limits from all trajectories."""
+    all_pts = np.vstack([
+        np.vstack([res[0], res[1]]) for res in results
+    ])
+    lo = all_pts.min(axis=0) - margin
+    hi = all_pts.max(axis=0) + margin
+    return lo, hi
+
+
 def plot_trajectories_3d(results, out_dir):
     labels = ['With APF obstacle avoidance', 'Without obstacle avoidance']
+    lo, hi = _axis_limits(results)
     fig = plt.figure(figsize=(14, 6))
 
     for i, (label, res) in enumerate(zip(labels, results)):
@@ -192,7 +203,7 @@ def plot_trajectories_3d(results, out_dir):
                        label=f'E-CRASH {e_crash_t:.2f} s')
 
         ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.set_zlabel('Z (m)')
-        ax.set_xlim(-5, 5); ax.set_ylim(-3, 3); ax.set_zlim(0, 4)
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(max(0, lo[2]), hi[2])
         status = (f'Captured {cap_t:.2f} s' if captured
                   else f'P-CRASH {p_crash_t:.2f} s' if p_crashed
                   else f'E-CRASH {e_crash_t:.2f} s' if e_crashed
@@ -277,18 +288,20 @@ def save_animation(results, out_dir):
     (p_traj, e_traj, captured, cap_t,
      p_crashed, p_crash_t, e_crashed, e_crash_t, _) = results[0]  # APF case
 
+    lo, hi = _axis_limits(results)
+
     step = 4
     p_frames = p_traj[::step]
     e_frames = e_traj[::step]
     n_frames = min(len(p_frames), len(e_frames))
 
-    fig = plt.figure(figsize=(7, 6))
+    fig = plt.figure(figsize=(8, 7))
     ax = fig.add_subplot(111, projection='3d')
     _draw_spheres(ax, OBSTACLES)
 
-    ax.set_xlim(-5, 5)
-    ax.set_ylim(-3, 3)
-    ax.set_zlim(0, 4)
+    ax.set_xlim(lo[0], hi[0])
+    ax.set_ylim(lo[1], hi[1])
+    ax.set_zlim(max(0, lo[2]), hi[2])
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
