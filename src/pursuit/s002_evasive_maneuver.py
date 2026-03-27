@@ -208,9 +208,66 @@ def plot_distance_time(results, out_dir):
     print(f'Saved: {path}')
 
 
+def save_animation(results, out_dir):
+    """Animate the Spiral strategy (pursuer red, evader blue), ~12 fps."""
+    # Pick the Spiral case as it has the most interesting trajectory
+    name, p_traj, e_traj, captured, cap_time = next(
+        r for r in results if r[0] == 'Spiral'
+    )
+
+    step = 4
+    p_frames = p_traj[::step]
+    e_frames = e_traj[::step]
+    n_frames = min(len(p_frames), len(e_frames))
+
+    all_pts = np.vstack([p_traj, e_traj])
+    margin = 0.5
+    lo = all_pts.min(axis=0) - margin
+    hi = all_pts.max(axis=0) + margin
+
+    fig = plt.figure(figsize=(7, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_xlim(lo[0], hi[0])
+    ax.set_ylim(lo[1], hi[1])
+    ax.set_zlim(lo[2], hi[2])
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+
+    ax.scatter(*p_traj[0], color='red',  s=50, marker='o', alpha=0.4, label='P start')
+    ax.scatter(*e_traj[0], color='blue', s=50, marker='o', alpha=0.4, label='E start')
+    ax.legend(loc='upper left')
+
+    p_trail, = ax.plot([], [], [], color='red',  linewidth=1.2, alpha=0.6)
+    e_trail, = ax.plot([], [], [], color='blue', linewidth=1.2, alpha=0.6)
+    p_dot = ax.scatter([], [], [], color='red',  s=80, marker='^', zorder=6)
+    e_dot = ax.scatter([], [], [], color='blue', s=80, marker='s', zorder=6)
+
+    def update(i):
+        px, py, pz = p_frames[:i+1, 0], p_frames[:i+1, 1], p_frames[:i+1, 2]
+        ex, ey, ez = e_frames[:i+1, 0], e_frames[:i+1, 1], e_frames[:i+1, 2]
+        p_trail.set_data(px, py); p_trail.set_3d_properties(pz)
+        e_trail.set_data(ex, ey); e_trail.set_3d_properties(ez)
+        p_dot._offsets3d = ([float(px[-1])], [float(py[-1])], [float(pz[-1])])
+        e_dot._offsets3d = ([float(ex[-1])], [float(ey[-1])], [float(ez[-1])])
+        t = i * step * DT
+        ax.set_title(f'S002 Evasive Maneuver (Spiral)  t={t:.2f}s')
+        return p_trail, e_trail, p_dot, e_dot
+
+    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=83, blit=False)
+
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, 'animation.gif')
+    ani.save(path, writer='pillow', fps=12)
+    plt.close()
+    print(f'Saved: {path}')
+
+
 # ── Main ───────────────────────────────────────────────────
 
 if __name__ == '__main__':
+    import matplotlib.animation as animation
+
     strategies = [
         ('Straight',      straight_escape),
         ('Perpendicular', perpendicular_escape),
@@ -229,3 +286,4 @@ if __name__ == '__main__':
     plot_trajectories(results, out_dir)
     plot_capture_times(results, out_dir)
     plot_distance_time(results, out_dir)
+    save_animation(results, out_dir)

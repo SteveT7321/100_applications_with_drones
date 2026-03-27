@@ -254,6 +254,52 @@ def plot_ground_effect(results, out_dir):
     print(f'Saved: {path}')
 
 
+def save_animation(results, out_dir):
+    """Animate the terrain-avoidance case with terrain surface, ~12 fps."""
+    import matplotlib.animation as animation
+
+    traj, captured, cap_t, crashed, crash_t, k_ge, h_log = results[0]  # avoidance case
+
+    step = 4
+    frames = traj[::step]
+    n_frames = len(frames)
+
+    fig = plt.figure(figsize=(7, 6))
+    ax = fig.add_subplot(111, projection='3d')
+    _add_terrain_surface(ax)
+
+    ax.set_xlim(-5, 5)
+    ax.set_ylim(-3, 3)
+    ax.set_zlim(0, 2)
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.set_zlabel('Z (m)')
+
+    ax.scatter(*TARGET_POS, color='green', s=120, marker='*', zorder=5, label='Target')
+    ax.scatter(*traj[0], color='red', s=50, marker='o', alpha=0.4, label='Start')
+    ax.legend(loc='upper left')
+
+    trail, = ax.plot([], [], [], color='red', linewidth=1.2, alpha=0.6)
+    dot = ax.scatter([], [], [], color='red', s=80, marker='^', zorder=6)
+
+    def update(i):
+        x, y, z = frames[:i+1, 0], frames[:i+1, 1], frames[:i+1, 2]
+        trail.set_data(x, y)
+        trail.set_3d_properties(z)
+        dot._offsets3d = ([float(x[-1])], [float(y[-1])], [float(z[-1])])
+        t = i * step * DT
+        ax.set_title(f'S003 Low-Altitude Tracking (avoidance ON)  t={t:.2f}s')
+        return trail, dot
+
+    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=83, blit=False)
+
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, 'animation.gif')
+    ani.save(path, writer='pillow', fps=12)
+    plt.close()
+    print(f'Saved: {path}')
+
+
 # ── Main ───────────────────────────────────────────────────
 
 if __name__ == '__main__':
@@ -281,3 +327,4 @@ if __name__ == '__main__':
     plot_trajectories_3d(results, out_dir)
     plot_altitude_time(results, out_dir)
     plot_ground_effect(results, out_dir)
+    save_animation(results, out_dir)
