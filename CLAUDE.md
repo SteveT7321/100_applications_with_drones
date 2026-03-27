@@ -47,6 +47,7 @@ scenarios/
 
 1. **更新場景卡片狀態**
    - 把 `scenarios/<domain>/S0xx_xxx.md` 的 Status 從 `[ ]` 改為 `[x]`
+   - 更新 `progress.md`，將對應場景的進度標記為完成
 
 2. **寫 outputs README**
    - 在 `outputs/<domain>/s0xx_<name>/README.md` 建立說明文件，格式參考 `outputs/01_pursuit_evasion/s001_basic_intercept/README.md`
