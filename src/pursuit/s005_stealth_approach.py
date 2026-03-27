@@ -44,7 +44,7 @@ CONE_HALF_ANGLE_DEG    = 60.0
 DETECT_RANGE           = 5.0   # m
 CAPTURE_R              = 0.15  # m
 BEHIND_OFFSET          = 3.0   # m behind evader for stealth waypoint
-DETECTION_THRESHOLD    = 10    # consecutive steps in cone before permanent alarm
+DETECTION_THRESHOLD    = 30    # consecutive steps in cone before permanent alarm (~0.625s)
 DT                     = 1 / 48
 MAX_TIME               = 25.0
 
@@ -145,8 +145,8 @@ def run_simulation(stealth_mode):
         # ── Pursuer velocity ──
         if stealth_mode:
             if detected_now:
-                # sidestep laterally to exit the cone as fast as possible
-                speed   = PURSUER_SPEED_DETECTED
+                # sidestep laterally to exit the cone — use full clear speed to escape fast
+                speed   = PURSUER_SPEED_CLEAR
                 cmd_dir = lateral_escape_dir(pursuer.pos, evader.pos, vel_e)
             else:
                 speed = PURSUER_SPEED_CLEAR
@@ -227,51 +227,114 @@ def _cone_mesh(apex, axis, half_angle_deg, length, n=30):
 
 # ── Plots ───────────────────────────────────────────────────
 
-def _axis_limits(results, margin=1.5):
-    all_pts = np.vstack([np.vstack([r[0], r[1]]) for r in results])
-    lo = all_pts.min(axis=0) - margin
-    hi = all_pts.max(axis=0) + margin
+# 每個子圖各自算軸範圍，避免 timeout 那條軌跡把軸撐爆
+def _traj_limits(p_traj, e_traj, margin=2.0):
+    pts = np.vstack([p_traj, e_traj])
+    lo  = pts.min(axis=0) - margin
+    hi  = pts.max(axis=0) + margin
     return lo, hi
 
 
+def _clip_traj(traj, max_steps):
+    """只保留前 max_steps 步，讓 timeout 那張不要畫到太遠。"""
+    return traj[:max_steps]
+
+
+def _draw_cone_2d(ax, apex, heading, half_angle_deg, length, color='gold', alpha=0.3):
+    """在 XY 俯瞰圖上畫偵測錐（扇形）。"""
+    h = heading / (np.linalg.norm(heading) + 1e-8)
+    angle0 = np.arctan2(h[1], h[0])
+    half   = np.radians(half_angle_deg)
+    angles = np.linspace(angle0 - half, angle0 + half, 40)
+    xs = [apex[0]] + [apex[0] + length * np.cos(a) for a in angles] + [apex[0]]
+    ys = [apex[1]] + [apex[1] + length * np.sin(a) for a in angles] + [apex[1]]
+    ax.fill(xs, ys, color=color, alpha=alpha, zorder=2)
+    ax.plot(xs, ys, color='goldenrod', linewidth=1.0, zorder=3)
+
+
 def plot_trajectories_3d(results, out_dir):
+    """俯瞰 XY 圖（z=2 平面）+ 右側小 3D 圖，清楚展示側翼路徑。"""
     labels = ['Stealth Flanking', 'Direct Frontal']
-    lo, hi = _axis_limits(results)
+    clip_steps = [None, int(5.0 / DT)]   # direct 只顯示前 5 秒
 
-    fig = plt.figure(figsize=(15, 7))
-    for i, (label, res) in enumerate(zip(labels, results)):
-        p_traj, e_traj, captured, cap_t, alerted, alarm_t, _, _ = res
+    fig = plt.figure(figsize=(16, 7))
 
-        ax = fig.add_subplot(1, 2, i + 1, projection='3d')
+    for i, (label, res, clip) in enumerate(zip(labels, results, clip_steps)):
+        p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, _ = res
 
-        # detection cone at evader start
-        cx, cy, cz = _cone_mesh(INIT_EVADER, EVADER_HEADING,
-                                 CONE_HALF_ANGLE_DEG, length=DETECT_RANGE * 0.85)
-        ax.plot_surface(cx, cy, cz, color='yellow', alpha=0.15, linewidth=0)
+        pt = p_traj if clip is None else _clip_traj(p_traj, clip)
+        et = e_traj if clip is None else _clip_traj(e_traj, clip)
 
-        ax.plot(p_traj[:, 0], p_traj[:, 1], p_traj[:, 2],
-                color='red',  linewidth=1.8, label='Pursuer', zorder=5)
-        ax.plot(e_traj[:, 0], e_traj[:, 1], e_traj[:, 2],
-                color='blue', linewidth=1.8, label='Evader',  zorder=5)
-        ax.scatter(*p_traj[0], color='red',  s=60, marker='o', zorder=6)
-        ax.scatter(*e_traj[0], color='blue', s=60, marker='o', zorder=6)
+        # ── 俯瞰 XY ──────────────────────────────────────
+        ax = fig.add_subplot(2, 2, i * 2 + 1)
+
+        # 偵測錐投影（從 evader 起點畫）
+        _draw_cone_2d(ax, INIT_EVADER, EVADER_HEADING,
+                      CONE_HALF_ANGLE_DEG, DETECT_RANGE)
+
+        # 偵測圈
+        circle = plt.Circle(INIT_EVADER[:2], DETECT_RANGE,
+                             fill=False, color='goldenrod', linestyle='--',
+                             linewidth=1.0, alpha=0.5)
+        ax.add_patch(circle)
+
+        # 軌跡（顏色標記是否被偵測到）
+        dl = det_log[:len(pt)]
+        for k in range(len(pt) - 1):
+            col = 'tomato' if (k < len(dl) and dl[k]) else 'red'
+            ax.plot(pt[k:k+2, 0], pt[k:k+2, 1], color=col,
+                    linewidth=2.2, zorder=5, solid_capstyle='round')
+        ax.plot(et[:, 0], et[:, 1], color='royalblue',
+                linewidth=2.0, zorder=4, label='Evader')
+
+        ax.scatter(*pt[0, :2],  color='red',   s=80, zorder=7, label='P start')
+        ax.scatter(*et[0, :2],  color='blue',  s=80, zorder=7, label='E start')
+
+        # 方向箭頭
+        ax.annotate('', xy=et[0, :2] + np.array([1.5, 0]),
+                    xytext=et[0, :2],
+                    arrowprops=dict(arrowstyle='->', color='royalblue', lw=1.5))
 
         if captured:
-            ax.scatter(*p_traj[-1], color='black', s=120, marker='X', zorder=7,
-                       label=f'Captured {cap_t:.2f} s')
+            ax.scatter(*pt[-1, :2], color='black', s=150, marker='X', zorder=8,
+                       label=f'Captured {cap_t:.2f}s')
             status = f'Captured {cap_t:.2f} s'
         else:
-            status = f'TIMEOUT (alarm @ {alarm_t:.2f}s)' if alarm_t else 'Timeout'
-            ax.scatter(*p_traj[-1], color='grey', s=60, marker='X', zorder=7)
+            status = f'ALARM @ {alarm_t:.2f}s → Timeout'
+            ax.scatter(*pt[-1, :2], color='grey', s=100, marker='X', zorder=8)
+            if clip:
+                ax.text(0.02, 0.02, f'(showing first {clip*DT:.0f}s)',
+                        transform=ax.transAxes, fontsize=7, color='grey')
 
-        ax.set_title(f'{label}\n{status}', fontsize=9)
-        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.set_zlabel('Z (m)')
+        lo, hi = _traj_limits(pt, et, margin=1.5)
         ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1])
-        ax.set_zlim(max(0, lo[2]), hi[2])
-        ax.legend(loc='upper left', fontsize=7)
+        ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
+        ax.set_title(f'{label}\n{status}', fontsize=10)
+        ax.legend(fontsize=7, loc='upper left')
 
-    fig.suptitle('S005 Stealth Approach — 3D Trajectories\n'
-                 '(yellow cone = evader forward detection zone)', fontsize=11, y=1.01)
+        # ── 小 3D 圖 ─────────────────────────────────────
+        ax3 = fig.add_subplot(2, 2, i * 2 + 2, projection='3d')
+        ax3.view_init(elev=30, azim=-50)
+
+        ax3.plot(pt[:, 0], pt[:, 1], pt[:, 2],
+                 color='red',  linewidth=1.8, label='Pursuer')
+        ax3.plot(et[:, 0], et[:, 1], et[:, 2],
+                 color='blue', linewidth=1.8, label='Evader')
+        ax3.scatter(*pt[0],  color='red',  s=50, marker='o')
+        ax3.scatter(*et[0],  color='blue', s=50, marker='o')
+        if captured:
+            ax3.scatter(*pt[-1], color='black', s=100, marker='X')
+
+        lo3, hi3 = _traj_limits(pt, et, margin=1.0)
+        ax3.set_xlim(lo3[0], hi3[0]); ax3.set_ylim(lo3[1], hi3[1])
+        ax3.set_zlim(max(0, lo3[2]), hi3[2])
+        ax3.set_xlabel('X'); ax3.set_ylabel('Y'); ax3.set_zlabel('Z')
+        ax3.set_title('3D View', fontsize=8)
+
+    fig.suptitle('S005 Stealth Approach — Trajectories\n'
+                 '(gold = detection cone  |  bright red = pursuer detected)',
+                 fontsize=11)
     plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectories_3d.png')
@@ -390,57 +453,63 @@ def plot_comparison_bar(results, out_dir):
 
 
 def save_animation(results, out_dir):
-    """Animate stealth case showing pursuer (red) flanking around evader (blue)."""
+    """俯瞰 XY 動畫：stealth pursuer（紅）繞過偵測錐（金色）從後方捕獲 evader（藍）。"""
     import matplotlib.animation as animation
 
     p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, alert_log = results[0]
-    lo, hi = _axis_limits(results)
+    lo, hi = _traj_limits(p_traj, e_traj, margin=2.0)
 
-    step     = 4
+    step     = 3
     p_frames = p_traj[::step]
     e_frames = e_traj[::step]
     d_frames = det_log[::step]
     n_frames = min(len(p_frames), len(e_frames))
 
-    fig = plt.figure(figsize=(8, 7))
-    ax  = fig.add_subplot(111, projection='3d')
-    ax.set_xlim(lo[0], hi[0])
-    ax.set_ylim(lo[1], hi[1])
-    ax.set_zlim(max(0, lo[2]), hi[2])
-    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.set_zlabel('Z (m)')
+    fig, ax = plt.subplots(figsize=(9, 7))
+    ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1])
+    ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
 
-    # static detection cone at evader start
-    cx, cy, cz = _cone_mesh(INIT_EVADER, EVADER_HEADING,
-                             CONE_HALF_ANGLE_DEG, length=DETECT_RANGE * 0.85)
-    ax.plot_surface(cx, cy, cz, color='yellow', alpha=0.12, linewidth=0)
+    # 靜態：偵測錐 + 偵測圈
+    _draw_cone_2d(ax, INIT_EVADER, EVADER_HEADING,
+                  CONE_HALF_ANGLE_DEG, DETECT_RANGE, alpha=0.20)
+    circle = plt.Circle(INIT_EVADER[:2], DETECT_RANGE,
+                        fill=False, color='goldenrod', linestyle='--',
+                        linewidth=1.2, alpha=0.6, label=f'Detection range {DETECT_RANGE}m')
+    ax.add_patch(circle)
 
-    ax.scatter(*p_traj[0], color='red',  s=50, marker='o', alpha=0.4, label='P start')
-    ax.scatter(*e_traj[0], color='blue', s=50, marker='o', alpha=0.4, label='E start')
-    ax.legend(loc='upper left', fontsize=8)
+    # 起點標記
+    ax.scatter(*p_traj[0, :2], color='red',  s=80, zorder=7,
+               marker='o', label='P start')
+    ax.scatter(*e_traj[0, :2], color='blue', s=80, zorder=7,
+               marker='o', label='E start')
+    ax.legend(fontsize=8, loc='upper left')
 
-    p_trail, = ax.plot([], [], [], color='red',  linewidth=1.2, alpha=0.6)
-    e_trail, = ax.plot([], [], [], color='blue', linewidth=1.2, alpha=0.6)
-    p_dot = ax.scatter([], [], [], color='red',  s=80, marker='^', zorder=6)
-    e_dot = ax.scatter([], [], [], color='blue', s=80, marker='s', zorder=6)
+    p_trail, = ax.plot([], [], color='red',  linewidth=1.8, alpha=0.7)
+    e_trail, = ax.plot([], [], color='blue', linewidth=1.8, alpha=0.7)
+    p_dot,   = ax.plot([], [], 'r^', markersize=10, zorder=8)
+    e_dot,   = ax.plot([], [], 'bs', markersize=10, zorder=8)
+    title_txt = ax.set_title('')
 
     def update(i):
-        px = p_frames[:i+1, 0]; py = p_frames[:i+1, 1]; pz = p_frames[:i+1, 2]
-        ex = e_frames[:i+1, 0]; ey = e_frames[:i+1, 1]; ez = e_frames[:i+1, 2]
-        p_trail.set_data(px, py); p_trail.set_3d_properties(pz)
-        e_trail.set_data(ex, ey); e_trail.set_3d_properties(ez)
-        p_dot._offsets3d = ([float(px[-1])], [float(py[-1])], [float(pz[-1])])
-        e_dot._offsets3d = ([float(ex[-1])], [float(ey[-1])], [float(ez[-1])])
+        px = p_frames[:i+1, 0]; py = p_frames[:i+1, 1]
+        ex = e_frames[:i+1, 0]; ey = e_frames[:i+1, 1]
+        p_trail.set_data(px, py)
+        e_trail.set_data(ex, ey)
+        p_dot.set_data([float(px[-1])], [float(py[-1])])
+        e_dot.set_data([float(ex[-1])], [float(ey[-1])])
         detected = bool(d_frames[i]) if i < len(d_frames) else False
         t = i * step * DT
-        status = 'IN CONE' if detected else 'Clear'
-        ax.set_title(f'S005 Stealth Approach (Stealth)  t={t:.2f}s  [{status}]', fontsize=9)
-        return p_trail, e_trail, p_dot, e_dot
+        status = '[IN CONE]' if detected else '[Clear]'
+        p_trail.set_color('tomato' if detected else 'red')
+        title_txt.set_text(f'S005 Stealth Approach  t={t:.2f}s  {status}')
+        return p_trail, e_trail, p_dot, e_dot, title_txt
 
-    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=83, blit=False)
+    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=70, blit=True)
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=12, dpi=100)
+    ani.save(path, writer='pillow', fps=14, dpi=100)
     plt.close()
     print(f'Saved: {path}')
 
