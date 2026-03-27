@@ -41,21 +41,42 @@ scenarios/
 
 `src/` 子資料夾使用簡短名稱（`pursuit/`, `logistics/` 等），與上面無關。
 
-## 完成一個場景後的固定流程
+## 每個場景的完整流程（每次必須完整執行，不得跳過任何步驟）
 
-每次完成一個場景（simulation 跑通、圖片產出後），**必須依序執行**：
+### Step 1 — 讀 scenario 卡片
+- 閱讀 `scenarios/<domain>/S0xx_xxx.md`
+- 確認：問題定義、數學模型、關鍵參數
 
-1. **更新場景卡片狀態**
-   - 把 `scenarios/<domain>/S0xx_xxx.md` 的 Status 從 `[ ]` 改為 `[x]`
-   - 更新 `progress.md`，將對應場景的進度標記為完成
+### Step 2 — 寫模擬程式
+- 建立 `src/<domain>/s0xx_xxx.py`
+- 必須包含：`run_simulation()`、靜態圖函式（`plot_*`）、`save_animation()`
 
-2. **寫 outputs README**
-   - 在 `outputs/<domain>/s0xx_<name>/README.md` 建立說明文件，格式參考 `outputs/01_pursuit_evasion/s001_basic_intercept/README.md`
-   - 必須包含：問題定義、數學模型摘要、關鍵參數表、模擬結果（含數值與圖片連結）、延伸方向、相關場景連結
+### Step 3 — 執行模擬
+```bash
+conda activate drones
+python src/<domain>/s0xx_xxx.py
+```
+- 確認圖片與 GIF 正確產出至 `outputs/<domain>/s0xx_xxx/`
 
-3. **Commit & Push**
-   - `git add` 所有新增／修改的檔案（`.py`、場景卡片、outputs 資料夾）
-   - Commit message 格式：`Add S0xx <scenario name> simulation`
+### Step 4 — 更新場景卡片狀態
+- 把 `scenarios/<domain>/S0xx_xxx.md` 的 Status 從 `[ ]` 改為 `[x]`
+
+### Step 5 — 更新 PROGRESS.md
+- 對應場景標為 `[x]`
+- 更新該 Domain 與 Total 的完成數字
+
+### Step 6 — 更新根目錄 README.md
+- 更新 Progress 表格的完成數字
+
+### Step 7 — 寫 outputs README
+- 在 `outputs/<domain>/s0xx_xxx/README.md` 建立說明文件
+- 格式參考 `outputs/01_pursuit_evasion/s001_basic_intercept/README.md`
+- 必須包含：問題定義、數學模型摘要、關鍵參數表、模擬結果（含數值、圖片連結、GIF 連結）、延伸方向、相關場景連結
+
+### Step 8 — Commit & Push
+- `git add` 所有新增／修改的檔案（`.py`、場景卡片、PROGRESS.md、README.md、outputs 資料夾）
+- Commit message 格式：`Add S0xx <scenario name> simulation`
+- `git push`
 
 ## 套件版本注意事項
 
