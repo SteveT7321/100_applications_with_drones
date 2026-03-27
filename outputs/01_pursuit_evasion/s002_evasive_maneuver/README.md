@@ -101,6 +101,10 @@ python src/pursuit/s002_evasive_maneuver.py
 
 ![Distance vs Time](distance_time.png)
 
+**Animation** (Spiral strategy — pursuer red, evader blue):
+
+![Animation](animation.gif)
+
 ---
 
 ## Extensions

@@ -93,6 +93,10 @@ python src/pursuit/s004_obstacle_chase.py
 
 ![Repulsion Magnitude](repulsion_magnitude.png)
 
+**Animation** (APF case — pursuer weaves around obstacles to capture evader):
+
+![Animation](animation.gif)
+
 ---
 
 ## Extensions

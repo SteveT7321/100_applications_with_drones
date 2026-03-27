@@ -108,6 +108,10 @@ python src/pursuit/s003_low_altitude_tracking.py
 
 ![Ground Effect](ground_effect.png)
 
+**Animation** (terrain avoidance ON — pursuer climbs over the hill):
+
+![Animation](animation.gif)
+
 ---
 
 ## Extensions
