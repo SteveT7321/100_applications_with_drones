@@ -103,7 +103,7 @@ python src/pursuit/s002_evasive_maneuver.py
 
 **Animation** (Spiral strategy — pursuer red, evader blue):
 
-![Animation](animation.gif)
+![Animation](animation_v2.gif)
 
 ---
 
