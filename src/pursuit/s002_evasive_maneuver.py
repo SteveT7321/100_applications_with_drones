@@ -211,7 +211,7 @@ def plot_distance_time(results, out_dir):
 def save_animation(results, out_dir):
     """2×2 subplot animation — all 4 strategies simultaneously, ~12 fps."""
     step = 4
-    n_frames = min(
+    n_frames = max(
         min(len(p[::step]), len(e[::step]))
         for _, p, e, _, _ in results
     )
