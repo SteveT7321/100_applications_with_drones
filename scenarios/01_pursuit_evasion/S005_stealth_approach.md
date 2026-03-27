@@ -1,6 +1,6 @@
 # S005 Stealth Approach
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Done
 
 ---
 
