@@ -224,14 +224,12 @@ def save_animation(results, out_dir):
     lo = all_pts.min(axis=0) - margin
     hi = all_pts.max(axis=0) + margin
 
-    fig = plt.figure(figsize=(12, 10))
+    fig = plt.figure(figsize=(20, 5))
     axes, trails_p, trails_e, dots_p, dots_e = [], [], [], [], []
     frame_data = []
 
-    positions = [(0, 0), (0, 1), (1, 0), (1, 1)]
     for idx, (name, p_traj, e_traj, captured, cap_time) in enumerate(results):
-        row, col = positions[idx]
-        ax = fig.add_subplot(2, 2, idx + 1, projection='3d')
+        ax = fig.add_subplot(1, 4, idx + 1, projection='3d')
         ax.set_xlim(lo[0], hi[0])
         ax.set_ylim(lo[1], hi[1])
         ax.set_zlim(lo[2], hi[2])

@@ -330,7 +330,7 @@ def save_animation(results, out_dir):
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=12)
+    ani.save(path, writer='pillow', fps=12, dpi=100)
     plt.close()
     print(f'Saved: {path}')
 
