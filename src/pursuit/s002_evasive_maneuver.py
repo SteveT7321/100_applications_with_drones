@@ -269,11 +269,10 @@ def save_animation(results, out_dir):
         return artists
 
     ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=83, blit=False)
-    plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=12)
+    ani.save(path, writer='pillow', fps=12, dpi=80)
     plt.close()
     print(f'Saved: {path}')
 
