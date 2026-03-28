@@ -1,6 +1,6 @@
 # S006 Energy Race
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 
 ---
 

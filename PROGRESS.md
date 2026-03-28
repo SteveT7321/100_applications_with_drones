@@ -2,7 +2,7 @@
 
 > Format: `- [ ]` Not started　`- [~]` In progress　`- [x]` Completed
 
-## Domain 1: Pursuit & Evasion — 5/20
+## Domain 1: Pursuit & Evasion — 6/20
 
 ### 1v1 Scenarios
 - [x] **S001** Basic Intercept — Pursuer tracks a stationary target using Proportional Navigation Guidance
@@ -10,7 +10,7 @@
 - [x] **S003** Low-Altitude Tracking — Terrain-hugging pursuit under terrain occlusion
 - [x] **S004** Obstacle-Course Chase — Pursuit in an environment with static obstacles
 - [x] **S005** Stealth Approach — Pursuer attempts to enter from radar blind spots
-- [ ] **S006** Energy Race — Both sides have battery limits, optimal energy consumption strategy
+- [x] **S006** Energy Race — Both sides have battery limits, optimal energy consumption strategy
 - [ ] **S007** Blind Pursuit under Jamming — Sensor noise maximized
 - [ ] **S008** Stochastic Pursuit — Target moves randomly, pursuer's optimal estimation
 - [ ] **S009** Differential Game 1v1 — Lion & Man problem numerical solution
@@ -141,9 +141,9 @@
 
 | Domain | Completed | Total |
 |--------|-----------|-------|
-| Pursuit & Evasion | 5 | 20 |
+| Pursuit & Evasion | 6 | 20 |
 | Logistics & Delivery | 0 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **5** | **100** |
+| **Total** | **6** | **100** |
