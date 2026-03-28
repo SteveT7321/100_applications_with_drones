@@ -2,7 +2,7 @@
 
 > Format: `- [ ]` Not started　`- [~]` In progress　`- [x]` Completed
 
-## Domain 1: Pursuit & Evasion — 10/20
+## Domain 1: Pursuit & Evasion — 15/20
 
 ### 1v1 Scenarios
 - [x] **S001** Basic Intercept — Pursuer tracks a stationary target using Proportional Navigation Guidance
@@ -17,11 +17,11 @@
 - [x] **S010** Asymmetric Speed — Time-optimal pursuit: slow pursuer vs fast evader
 
 ### Nv1 Scenarios
-- [ ] **S011** Swarm Encirclement — Multiple drones converging simultaneously from different angles
-- [ ] **S012** Relay Pursuit — When battery runs low, another drone takes over
-- [ ] **S013** Pincer Movement — Three drones form a triangle formation to cut off escape routes
-- [ ] **S014** Decoy Lure — One drone acts as decoy, others flank
-- [ ] **S015** Communication Relay Tracking — Target exceeds single drone sensor range
+- [x] **S011** Swarm Encirclement — Multiple drones converging simultaneously from different angles
+- [x] **S012** Relay Pursuit — When battery runs low, another drone takes over
+- [x] **S013** Pincer Movement — Three drones form a triangle formation to cut off escape routes
+- [x] **S014** Decoy Lure — One drone acts as decoy, others flank
+- [x] **S015** Communication Relay Tracking — Target exceeds single drone sensor range
 
 ### NvM Scenarios
 - [ ] **S016** Airspace Defense — Defending multi-drone formation vs attacking multi-drone breakthrough
@@ -141,9 +141,9 @@
 
 | Domain | Completed | Total |
 |--------|-----------|-------|
-| Pursuit & Evasion | 10 | 20 |
+| Pursuit & Evasion | 15 | 20 |
 | Logistics & Delivery | 0 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **10** | **100** |
+| **Total** | **15** | **100** |

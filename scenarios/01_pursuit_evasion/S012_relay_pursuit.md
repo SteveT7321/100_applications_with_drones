@@ -1,6 +1,6 @@
 # S012 Relay Pursuit
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

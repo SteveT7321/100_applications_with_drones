@@ -1,6 +1,6 @@
 # S011 Swarm Encirclement
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
