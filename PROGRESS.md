@@ -2,7 +2,24 @@
 
 > Format: `- [ ]` Not started　`- [~]` In progress　`- [x]` Completed
 
-## Domain 1: Pursuit & Evasion — 15/20
+---
+
+## Notes: 2D vs 3D Classification (S001–S015)
+
+雖然所有場景都用 Matplotlib 3D 呈現，實際上大多數是固定 z 軸的 2D 模擬：
+
+| 分類 | Scenarios | 說明 |
+|------|-----------|------|
+| **真正 3D**（z 動態變化） | S001, S003 | S001 出發/目標 z 不同；S003 地形追蹤 |
+| **固定 z=2m**（本質 2D） | S002, S004–S014 | 所有位置 z 硬編碼為 2.0；部分有明確歸零 acc[2]=0 |
+| **純 2D**（無 z 座標） | S015 | 完全用 np.array([x,y])，感測器陣列為 2D |
+
+> **待優化**：S016+ 可考慮對純 2D 場景直接使用 2D 視覺化（Matplotlib 2D），
+> 或保留 3D 框架但明確標注 z 固定，避免誤導。
+
+---
+
+## Domain 1: Pursuit & Evasion — 16/20
 
 ### 1v1 Scenarios
 - [x] **S001** Basic Intercept — Pursuer tracks a stationary target using Proportional Navigation Guidance
@@ -24,7 +41,7 @@
 - [x] **S015** Communication Relay Tracking — Target exceeds single drone sensor range
 
 ### NvM Scenarios
-- [ ] **S016** Airspace Defense — Defending multi-drone formation vs attacking multi-drone breakthrough
+- [x] **S016** Airspace Defense — Defending multi-drone formation vs attacking multi-drone breakthrough
 - [ ] **S017** Swarm vs Swarm — Self-organizing confrontation with 3~5 drones on each side
 - [ ] **S018** Multi-Target Interception — Optimal assignment problem (Hungarian algorithm)
 - [ ] **S019** Dynamic Reassignment — Real-time adjustment when targets disappear or new ones appear
@@ -141,9 +158,9 @@
 
 | Domain | Completed | Total |
 |--------|-----------|-------|
-| Pursuit & Evasion | 15 | 20 |
+| Pursuit & Evasion | 16 | 20 |
 | Logistics & Delivery | 0 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **15** | **100** |
+| **Total** | **16** | **100** |
