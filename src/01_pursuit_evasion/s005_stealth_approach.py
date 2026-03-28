@@ -23,7 +23,7 @@ Comparison:
 
 Usage:
     conda activate drones
-    python src/pursuit/s005_stealth_approach.py
+    python src/01_pursuit_evasion/s005_stealth_approach.py
 """
 
 import sys

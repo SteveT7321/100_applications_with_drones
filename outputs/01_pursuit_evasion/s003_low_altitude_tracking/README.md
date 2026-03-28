@@ -72,12 +72,12 @@ $$\mathbf{p}_{next} = \mathbf{p} + \hat{\mathbf{r}} \cdot v_{max} \cdot \Delta t
 
 ```
 src/base/drone_base.py                     # Point-mass drone base class
-src/pursuit/s003_low_altitude_tracking.py  # Main simulation script
+src/01_pursuit_evasion/s003_low_altitude_tracking.py  # Main simulation script
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s003_low_altitude_tracking.py
+python src/01_pursuit_evasion/s003_low_altitude_tracking.py
 ```
 
 ---

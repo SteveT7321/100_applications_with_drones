@@ -65,12 +65,12 @@ $$v_{P,min} = \frac{E_0 + \sqrt{E_0^2 - 4 k r_0 E_0 v_E}}{2 k r_0}$$
 
 ```
 src/base/drone_base.py               # Point-mass drone base class
-src/pursuit/s006_energy_race.py      # Main simulation script
+src/01_pursuit_evasion/s006_energy_race.py      # Main simulation script
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s006_energy_race.py
+python src/01_pursuit_evasion/s006_energy_race.py
 ```
 
 ---

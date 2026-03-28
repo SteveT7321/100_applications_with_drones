@@ -11,7 +11,7 @@
 
 ```bash
 conda activate drones
-python src/pursuit/s001_basic_intercept.py
+python src/01_pursuit_evasion/s001_basic_intercept.py
 ```
 
 ## 場景卡片格式
@@ -39,7 +39,17 @@ scenarios/
 └── 05_special_entertainment/  S081–S100
 ```
 
-`src/` 子資料夾使用簡短名稱（`pursuit/`, `logistics/` 等），與上面無關。
+`src/` 子資料夾使用與 `scenarios/` 和 `outputs/` 相同的命名：
+
+```
+src/
+├── base/                      共用工具（DroneBase 等）
+├── 01_pursuit_evasion/        S001–S020
+├── 02_logistics_delivery/     S021–S040
+├── 03_environmental_sar/      S041–S060
+├── 04_industrial_agriculture/ S061–S080
+└── 05_special_entertainment/  S081–S100
+```
 
 ## 每個場景的完整流程（每次必須完整執行，不得跳過任何步驟）
 

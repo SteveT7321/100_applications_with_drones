@@ -17,7 +17,7 @@ Outputs:
 
 Usage:
     conda activate drones
-    python src/pursuit/s009_differential_game.py
+    python src/01_pursuit_evasion/s009_differential_game.py
 """
 
 import sys

@@ -17,7 +17,7 @@ Also runs 20-seed Monte-Carlo to measure confusion rate.
 
 Usage:
     conda activate drones
-    python src/pursuit/s014_decoy_lure.py
+    python src/01_pursuit_evasion/s014_decoy_lure.py
 """
 
 import sys, os

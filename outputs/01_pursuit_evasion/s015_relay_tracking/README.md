@@ -57,12 +57,12 @@ $$x(t) = r\cos(\omega t),\quad y(t) = r\sin(\omega t),\quad \omega = V_T / r \ap
 ## Implementation
 
 ```
-src/pursuit/s015_relay_tracking.py     # Main simulation (no DroneBase needed)
+src/01_pursuit_evasion/s015_relay_tracking.py     # Main simulation (no DroneBase needed)
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s015_relay_tracking.py
+python src/01_pursuit_evasion/s015_relay_tracking.py
 ```
 
 ---

@@ -66,12 +66,12 @@ $$\|\mathbf{p}_P - \mathbf{p}_E\| < r_{capture} = 0.15 \text{ m}$$
 
 ```
 src/base/drone_base.py                  # Point-mass drone base class
-src/pursuit/s002_evasive_maneuver.py    # Main simulation script
+src/01_pursuit_evasion/s002_evasive_maneuver.py    # Main simulation script
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s002_evasive_maneuver.py
+python src/01_pursuit_evasion/s002_evasive_maneuver.py
 ```
 
 ---

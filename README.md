@@ -52,7 +52,7 @@ conda activate drones
 pip install numpy==1.26.4 scipy==1.14.1 matplotlib==3.10
 
 # 3. Run the first scenario
-python src/pursuit/s001_basic_intercept.py
+python src/01_pursuit_evasion/s001_basic_intercept.py
 ```
 
 See [SETUP.md](SETUP.md) for full installation instructions.

@@ -15,7 +15,7 @@ Also produces:
 
 Usage:
     conda activate drones
-    python src/pursuit/s010_asymmetric_speed.py
+    python src/01_pursuit_evasion/s010_asymmetric_speed.py
 """
 
 import sys

@@ -58,12 +58,12 @@ $$\mathbf{p}_{target} = \arg\min_{\mathbf{c}\in\text{corners}}\|\mathbf{c} - \ma
 
 ```
 src/base/drone_base.py                 # Point-mass drone base
-src/pursuit/s010_asymmetric_speed.py   # Main simulation
+src/01_pursuit_evasion/s010_asymmetric_speed.py   # Main simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s010_asymmetric_speed.py
+python src/01_pursuit_evasion/s010_asymmetric_speed.py
 ```
 
 ---

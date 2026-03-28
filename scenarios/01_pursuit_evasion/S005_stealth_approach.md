@@ -53,7 +53,7 @@ where $\hat{\mathbf{v}}_{escape}$ is the direction away from the pursuer.
 ## Implementation
 
 ```python
-# src/pursuit/s005_stealth_approach.py
+# src/01_pursuit_evasion/s005_stealth_approach.py
 
 PURSUER_SPEED_STEALTH  = 4.5 + 1.0   # bonus speed when undetected
 PURSUER_SPEED_DETECTED = 4.5          # normal speed once alert triggered

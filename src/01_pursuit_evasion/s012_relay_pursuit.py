@@ -10,7 +10,7 @@ Comparison: 3-pursuer relay vs single pursuer (battery dies before capture).
 
 Usage:
     conda activate drones
-    python src/pursuit/s012_relay_pursuit.py
+    python src/01_pursuit_evasion/s012_relay_pursuit.py
 """
 
 import sys, os

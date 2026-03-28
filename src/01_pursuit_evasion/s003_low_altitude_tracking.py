@@ -12,7 +12,7 @@ Key features:
 
 Usage:
     conda activate drones
-    python src/pursuit/s003_low_altitude_tracking.py
+    python src/01_pursuit_evasion/s003_low_altitude_tracking.py
 """
 
 import sys

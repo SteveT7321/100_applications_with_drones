@@ -9,7 +9,7 @@ pure-pursuit drones (both head straight for evader).
 
 Usage:
     conda activate drones
-    python src/pursuit/s013_pincer_movement.py
+    python src/01_pursuit_evasion/s013_pincer_movement.py
 """
 
 import sys, os

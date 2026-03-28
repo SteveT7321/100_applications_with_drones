@@ -72,12 +72,12 @@ with $N_{thr} = 10$ steps ($\approx 0.2$ s at 48 Hz).
 
 ```
 src/base/drone_base.py                  # Point-mass drone base class
-src/pursuit/s005_stealth_approach.py    # Main simulation script
+src/01_pursuit_evasion/s005_stealth_approach.py    # Main simulation script
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s005_stealth_approach.py
+python src/01_pursuit_evasion/s005_stealth_approach.py
 ```
 
 ---

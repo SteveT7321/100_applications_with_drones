@@ -63,12 +63,12 @@ Terminal condition: $V = 0$ when $|\mathbf{s}| < r_{capture}$.
 
 ```
 src/base/drone_base.py                # Point-mass drone base
-src/pursuit/s009_differential_game.py # HJI solver + trajectory simulation
+src/01_pursuit_evasion/s009_differential_game.py # HJI solver + trajectory simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s009_differential_game.py
+python src/01_pursuit_evasion/s009_differential_game.py
 ```
 
 ---

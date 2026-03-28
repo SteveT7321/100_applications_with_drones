@@ -49,12 +49,12 @@ Ideal pincer: φ = 180° (pursuers diametrically opposite relative to evader).
 
 ```
 src/base/drone_base.py                  # Point-mass drone base
-src/pursuit/s013_pincer_movement.py     # Main simulation
+src/01_pursuit_evasion/s013_pincer_movement.py     # Main simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s013_pincer_movement.py
+python src/01_pursuit_evasion/s013_pincer_movement.py
 ```
 
 ---

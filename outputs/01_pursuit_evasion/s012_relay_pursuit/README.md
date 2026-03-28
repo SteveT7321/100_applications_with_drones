@@ -51,12 +51,12 @@ where $t_{handoff} = E_{active} / (k V_P^2)$.
 
 ```
 src/base/drone_base.py                 # Point-mass drone base
-src/pursuit/s012_relay_pursuit.py      # Main simulation
+src/01_pursuit_evasion/s012_relay_pursuit.py      # Main simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s012_relay_pursuit.py
+python src/01_pursuit_evasion/s012_relay_pursuit.py
 ```
 
 ---

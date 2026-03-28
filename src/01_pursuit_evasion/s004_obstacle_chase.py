@@ -13,7 +13,7 @@ case is stripped of it.
 
 Usage:
     conda activate drones
-    python src/pursuit/s004_obstacle_chase.py
+    python src/01_pursuit_evasion/s004_obstacle_chase.py
 """
 
 import sys

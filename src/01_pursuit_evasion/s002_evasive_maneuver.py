@@ -6,7 +6,7 @@ Compares capture time across: straight, perpendicular, random, spiral escape.
 
 Usage:
     conda activate drones
-    python src/pursuit/s002_evasive_maneuver.py
+    python src/01_pursuit_evasion/s002_evasive_maneuver.py
 """
 
 import sys

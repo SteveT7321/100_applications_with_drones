@@ -19,7 +19,7 @@ Results:
 
 Usage:
     conda activate drones
-    python src/pursuit/s006_energy_race.py
+    python src/01_pursuit_evasion/s006_energy_race.py
 """
 
 import sys

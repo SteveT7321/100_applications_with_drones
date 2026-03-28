@@ -75,12 +75,12 @@ $$\|\mathbf{p}_P - \mathbf{c}_i\| < r_i + 0.05 \text{ m} \Rightarrow \text{crash
 
 ```
 src/base/drone_base.py               # Point-mass drone base class
-src/pursuit/s004_obstacle_chase.py   # Main simulation script
+src/01_pursuit_evasion/s004_obstacle_chase.py   # Main simulation script
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s004_obstacle_chase.py
+python src/01_pursuit_evasion/s004_obstacle_chase.py
 ```
 
 ---

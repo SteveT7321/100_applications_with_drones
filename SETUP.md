@@ -105,5 +105,5 @@ Solution: `/path/to/anaconda3/bin/pip install --upgrade pyOpenSSL cryptography`
 ```bash
 conda activate drones
 # Run any simulation script
-python src/pursuit/s001_basic_intercept.py
+python src/01_pursuit_evasion/s001_basic_intercept.py
 ```

@@ -66,12 +66,12 @@ This creates high lateral acceleration (jerk ≈ 4Aπ²f² ≈ 42 m/s²) vs evad
 
 ```
 src/base/drone_base.py               # Point-mass drone base
-src/pursuit/s014_decoy_lure.py       # Main simulation
+src/01_pursuit_evasion/s014_decoy_lure.py       # Main simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s014_decoy_lure.py
+python src/01_pursuit_evasion/s014_decoy_lure.py
 ```
 
 ---

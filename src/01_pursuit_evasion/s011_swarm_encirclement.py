@@ -11,7 +11,7 @@ Strategy:
 
 Usage:
     conda activate drones
-    python src/pursuit/s011_swarm_encirclement.py
+    python src/01_pursuit_evasion/s011_swarm_encirclement.py
 """
 
 import sys, os

@@ -6,7 +6,7 @@ using a PD controller (simplified Proportional Navigation Guidance).
 
 Usage:
     conda activate drones
-    python src/pursuit/s001_basic_intercept.py
+    python src/01_pursuit_evasion/s001_basic_intercept.py
 """
 
 import sys

@@ -52,12 +52,12 @@ $$\theta^* = \arg\max_i (\theta_{i+1} - \theta_i), \quad \mathbf{v}_E = V_E \lef
 
 ```
 src/base/drone_base.py                   # Point-mass drone base
-src/pursuit/s011_swarm_encirclement.py   # Main simulation
+src/01_pursuit_evasion/s011_swarm_encirclement.py   # Main simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s011_swarm_encirclement.py
+python src/01_pursuit_evasion/s011_swarm_encirclement.py
 ```
 
 ---

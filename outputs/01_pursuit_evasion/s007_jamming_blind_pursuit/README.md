@@ -55,12 +55,12 @@ $$e(t) = \mathcal{O}\!\left(\sigma_{drift}\sqrt{t - t_j}\right)$$
 
 ```
 src/base/drone_base.py                       # Point-mass drone base
-src/pursuit/s007_jamming_blind_pursuit.py    # Main simulation
+src/01_pursuit_evasion/s007_jamming_blind_pursuit.py    # Main simulation
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s007_jamming_blind_pursuit.py
+python src/01_pursuit_evasion/s007_jamming_blind_pursuit.py
 ```
 
 ---

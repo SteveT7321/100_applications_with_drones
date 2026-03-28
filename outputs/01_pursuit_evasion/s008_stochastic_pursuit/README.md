@@ -56,12 +56,12 @@ $$\mathbf{z}_k = \mathbf{H}\mathbf{x}_E(k) + \mathbf{n}_k, \quad \mathbf{n}_k \s
 
 ```
 src/base/drone_base.py                  # Point-mass drone base
-src/pursuit/s008_stochastic_pursuit.py  # Main simulation + KF
+src/01_pursuit_evasion/s008_stochastic_pursuit.py  # Main simulation + KF
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s008_stochastic_pursuit.py
+python src/01_pursuit_evasion/s008_stochastic_pursuit.py
 ```
 
 ---

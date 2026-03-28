@@ -62,12 +62,12 @@ $$\|\mathbf{p}_{pursuer} - \mathbf{p}_{target}\| < r_{capture} = 0.15 \text{ m}$
 
 ```
 src/base/drone_base.py               # Point-mass drone base class
-src/pursuit/s001_basic_intercept.py  # Main simulation script
+src/01_pursuit_evasion/s001_basic_intercept.py  # Main simulation script
 ```
 
 ```bash
 conda activate drones
-python src/pursuit/s001_basic_intercept.py
+python src/01_pursuit_evasion/s001_basic_intercept.py
 ```
 
 ---

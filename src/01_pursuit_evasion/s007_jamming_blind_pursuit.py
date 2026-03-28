@@ -13,7 +13,7 @@ Jam schedule: jammed during [n·T_period, n·T_period + T_jam] for integer n≥0
 
 Usage:
     conda activate drones
-    python src/pursuit/s007_jamming_blind_pursuit.py
+    python src/01_pursuit_evasion/s007_jamming_blind_pursuit.py
 """
 
 import sys
