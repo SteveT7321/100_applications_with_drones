@@ -89,12 +89,12 @@ drones/
 
 | Domain | Done | Total |
 |--------|------|-------|
-| Pursuit & Evasion | 18 | 20 |
+| Pursuit & Evasion | 19 | 20 |
 | Logistics & Delivery | 0 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **18** | **100** |
+| **Total** | **19** | **100** |
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
