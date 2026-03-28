@@ -19,7 +19,7 @@
 
 ---
 
-## Domain 1: Pursuit & Evasion — 16/20
+## Domain 1: Pursuit & Evasion — 17/20
 
 ### 1v1 Scenarios
 - [x] **S001** Basic Intercept — Pursuer tracks a stationary target using Proportional Navigation Guidance
@@ -42,7 +42,7 @@
 
 ### NvM Scenarios
 - [x] **S016** Airspace Defense — Defending multi-drone formation vs attacking multi-drone breakthrough
-- [ ] **S017** Swarm vs Swarm — Self-organizing confrontation with 3~5 drones on each side
+- [x] **S017** Swarm vs Swarm — Self-organizing confrontation with 3~5 drones on each side
 - [ ] **S018** Multi-Target Interception — Optimal assignment problem (Hungarian algorithm)
 - [ ] **S019** Dynamic Reassignment — Real-time adjustment when targets disappear or new ones appear
 - [ ] **S020** Pursuit-Evasion Game — Full differential game solution
@@ -158,9 +158,9 @@
 
 | Domain | Completed | Total |
 |--------|-----------|-------|
-| Pursuit & Evasion | 16 | 20 |
+| Pursuit & Evasion | 17 | 20 |
 | Logistics & Delivery | 0 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **16** | **100** |
+| **Total** | **17** | **100** |
