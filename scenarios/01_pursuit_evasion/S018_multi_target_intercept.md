@@ -1,6 +1,6 @@
 # S018 Multi-Target Intercept
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
