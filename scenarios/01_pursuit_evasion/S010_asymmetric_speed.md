@@ -1,6 +1,6 @@
 # S010 Asymmetric Speed — Bounded Arena Trapping
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 

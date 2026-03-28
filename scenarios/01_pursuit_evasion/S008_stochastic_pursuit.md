@@ -1,6 +1,6 @@
 # S008 Stochastic Pursuit — Kalman Filter Tracking
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 

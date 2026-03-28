@@ -1,6 +1,6 @@
 # S009 Differential Game 1v1 (Differential Game — Lion & Man)
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
