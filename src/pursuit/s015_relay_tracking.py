@@ -19,13 +19,13 @@ from matplotlib.patches import Circle
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ───────────────────────────────────────────────
-SENSOR_POS    = np.array([[-4.0, 0.0, 3.0],
-                           [ 0.0, 4.0, 3.0],
-                           [ 4.0, 0.0, 3.0]])
-R_ZONE        = 6.0    # m — coverage radius
+SENSOR_POS    = np.array([[ 0.0,  4.0, 3.0],   # S1 — top
+                           [-3.46, -2.0, 3.0],  # S2 — bottom-left
+                           [ 3.46, -2.0, 3.0]]) # S3 — bottom-right
+R_ZONE        = 8.0    # m — coverage radius (wider for orbital path)
 SIGMA_THETA   = 0.05   # rad — bearing noise (~3°)
 TARGET_SPEED  = 2.0    # m/s
-HANDOFF_THRESH = 0.5   # SNR threshold
+HANDOFF_THRESH = 0.4   # SNR threshold
 DT            = 0.05   # s
 T_MAX         = 20.0   # s
 
@@ -42,9 +42,11 @@ RNG = np.random.default_rng(0)
 # ── Helpers ───────────────────────────────────────────────────
 
 def target_path(t):
-    """Sinusoidal trajectory: x from -5 to +5 m, y = 3·sin(0.5x)."""
-    x = -5.0 + TARGET_SPEED * t
-    y = 3.0 * np.sin(0.5 * x)
+    """Circular orbit at radius 3 m through equilateral sensor triangle."""
+    r     = 3.0
+    omega = TARGET_SPEED / r      # ≈ 0.667 rad/s, period ≈ 9.4 s
+    x = r * np.cos(omega * t)
+    y = r * np.sin(omega * t)
     return np.array([x, y])
 
 
@@ -148,7 +150,7 @@ def plot_tracking_overview(times, true_pos, est_pos, active_sensors, handoff_tim
         ax.axvline(x=true_pos[idx, 0], color='black', linestyle=':', linewidth=0.8, alpha=0.5)
         ax.scatter(*true_pos[idx], color='black', s=60, marker='|', zorder=7)
 
-    ax.set_xlim(-7, 7); ax.set_ylim(-6, 7)
+    ax.set_xlim(-7, 7); ax.set_ylim(-7, 7)
     ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
     ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
     ax.set_title('S015 Relay Tracking — Top-Down View\n'
@@ -229,7 +231,7 @@ def save_animation(times, true_pos, est_pos, active_sensors, handoff_times, out_
         ax.scatter(*sp[:2], color=color, s=150, marker='*', zorder=6)
         ax.text(sp[0]+0.2, sp[1]+0.2, f'S{i+1}', fontsize=9, color=color)
 
-    ax.set_xlim(-7, 7); ax.set_ylim(-6, 7)
+    ax.set_xlim(-7, 7); ax.set_ylim(-7, 7)
     ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
     ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
 

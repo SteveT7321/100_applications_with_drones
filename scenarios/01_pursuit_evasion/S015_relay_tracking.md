@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: A target moves across a large arena (10×10 m) along a sinusoidal path. Three stationary sensor drones are placed at fixed positions, each covering an overlapping circular zone. As the target travels, tracking responsibility is handed off between sensor drones.
+**Setup**: A target orbits at radius 3 m through an equilateral triangle of three stationary sensor drones. Each sensor covers a circular zone of radius 8 m. As the target orbits, tracking responsibility is handed off between sensor drones approximately every 3.1 s.
 
 **Roles**:
 - **Sensor drones** (3): stationary; each measures only bearing (angle) to the target — no range information
@@ -64,19 +64,20 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import Circle
 
 # --- Parameters ---
-SENSOR_POSITIONS = np.array([[-4, 0, 3], [0, 4, 3], [4, 0, 3]], dtype=float)
-R_ZONE = 6.0          # m, coverage radius
+SENSOR_POSITIONS = np.array([[ 0.0,  4.0, 3.0],   # S1 top
+                              [-3.46, -2.0, 3.0],  # S2 bottom-left
+                              [ 3.46, -2.0, 3.0]], dtype=float)  # S3 bottom-right
+R_ZONE = 8.0          # m, coverage radius (wider for orbital path)
 SIGMA_THETA = 0.05    # rad, bearing noise (~3 deg)
 TARGET_SPEED = 2.0    # m/s
-HANDOFF_THRESH = 0.5  # SNR threshold
+HANDOFF_THRESH = 0.4  # SNR threshold
 DT = 0.05             # s
 T_MAX = 20.0          # s
 
 def target_path(t):
-    """Sinusoidal trajectory across arena."""
-    x = -5.0 + TARGET_SPEED * t
-    y = 3.0 * np.sin(0.5 * x)
-    return np.array([x, y])
+    """Circular orbit at radius 3 m through equilateral sensor triangle."""
+    r, omega = 3.0, TARGET_SPEED / 3.0   # omega ≈ 0.667 rad/s
+    return np.array([r * np.cos(omega * t), r * np.sin(omega * t)])
 
 def measure_bearing(sensor_pos, target_pos, sigma):
     """Noisy bearing measurement."""
@@ -136,12 +137,12 @@ for step in range(int(T_MAX / DT)):
 
 | Parameter | Value |
 |-----------|-------|
-| Sensor drone positions | (-4, 0, 3), (0, 4, 3), (4, 0, 3) m |
-| Zone coverage radius | 6 m |
+| Sensor drone positions | (0,4,3), (−3.46,−2,3), (3.46,−2,3) m — equilateral triangle |
+| Zone coverage radius | 8 m |
 | Bearing noise sigma | 0.05 rad (~3 deg) |
 | Target speed | 2.0 m/s |
-| Target trajectory | sinusoidal, x from -5 to +5 m |
-| Handoff SNR threshold | 0.5 |
+| Target trajectory | circular orbit, radius 3 m, period ≈ 9.4 s |
+| Handoff SNR threshold | 0.4 |
 | Simulation timestep | 0.05 s |
 
 ---

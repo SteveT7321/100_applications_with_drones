@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: Three stationary sensor drones measure bearing-only (angle) observations of a moving target. A zone-based handoff selects the two highest-SNR sensors; two-line triangulation estimates the target position. Estimation error spikes at handoff transitions when the two bearing lines become nearly parallel.
+**Setup**: Three stationary sensor drones arranged in an equilateral triangle measure bearing-only (angle) observations of a moving target that orbits through the sensor zone. A zone-based handoff selects the two highest-SNR sensors; two-line triangulation estimates the target position. Estimation error spikes at handoff transitions when the two bearing lines become nearly parallel.
 
 **Key question**: How does relay tracking manage continuous coverage across sensor zones, and where does accuracy degrade?
 
@@ -30,17 +30,25 @@ $$\begin{bmatrix} \tan\theta_i & -1 \\ \tan\theta_j & -1 \end{bmatrix} \begin{bm
 
 System is near-singular (det ≈ 0) when bearing lines are nearly parallel → error spikes.
 
+### Target Path
+
+Circular orbit of radius 3 m centred at origin:
+
+$$x(t) = r\cos(\omega t),\quad y(t) = r\sin(\omega t),\quad \omega = V_T / r \approx 0.667\;\text{rad/s}$$
+
 ---
 
 ## Key Parameters
 
 | Parameter | Value |
 |-----------|-------|
-| Sensor positions | (−4,0,3), (0,4,3), (4,0,3) m |
-| Coverage radius R_zone | 6.0 m |
+| Sensor positions | (0,4,3), (−3.46,−2,3), (3.46,−2,3) m — equilateral triangle |
+| Coverage radius R_zone | 8.0 m |
 | Bearing noise σ_θ | 0.05 rad (~3°) |
 | Target speed | 2.0 m/s |
-| Handoff SNR threshold | 0.5 |
+| Orbit radius | 3.0 m |
+| Orbit period | ≈ 9.4 s |
+| Handoff SNR threshold | 0.4 |
 | Simulation time | 20 s |
 | dt | 0.05 s |
 
@@ -63,14 +71,15 @@ python src/pursuit/s015_relay_tracking.py
 
 | Metric | Value |
 |--------|-------|
-| Handoff events | **3** (at t=2.55, 4.00, 7.15 s) |
-| Mean triangulation error | **11.22 m** |
-| Max triangulation error | **391.13 m** |
+| Handoff events | **7** (at t = 0.80, 3.95, 7.10, 10.25, 13.40, 16.50, 19.65 s) |
+| Mean triangulation error | **1.74 m** |
+| Max triangulation error | **65.38 m** |
 
 **Key Findings**:
-- Error spikes occur at handoff transitions when the two active sensors' bearing lines approach parallelism — the triangulation matrix becomes nearly singular and small bearing noise causes large position error.
-- Outside transitions, error stays low (<0.5 m) when two sensors observe from well-separated angles.
-- The scenario demonstrates the inherent instability of bearing-only triangulation near the singularity boundary: adding range measurements or a Kalman filter (as in S008) would dramatically reduce peak errors.
+- The target completes ~2.1 circular orbits, triggering a handoff every ~3.15 s as it passes between adjacent sensor zones — matching the theoretical 120° spacing of the equilateral sensor triangle.
+- Outside handoff transitions, error remains below 0.5 m when two sensors observe the target from well-separated angles.
+- Error spikes up to 65 m occur precisely at handoff moments when the newly active sensor pair's bearing lines are nearly parallel, making the triangulation matrix nearly singular.
+- The equilateral triangle sensor layout ensures uniform coverage throughout the orbit: SNR never drops below 0.55 at any mid-zone point, eliminating blind spots.
 
 **Top-Down Tracking Overview** (dots = triangulation estimates, coloured by active sensor):
 
