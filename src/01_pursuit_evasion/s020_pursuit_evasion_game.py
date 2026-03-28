@@ -609,8 +609,11 @@ def save_animation(rl_pursuer_fn, rl_evader_fn, out_dir):
 
     def _collect(pu_fn, ev_fn_type, seed=42):
         rng = np.random.default_rng(seed)
-        p_pos = rng.uniform(-ARENA * 0.6, ARENA * 0.6, 3); p_pos[2] = 0.0
-        e_pos = rng.uniform(-ARENA * 0.6, ARENA * 0.6, 3); e_pos[2] = 0.0
+        # Start pursuer and evader on opposite sides of the arena
+        angle = rng.uniform(0, 2 * np.pi)
+        r = ARENA * 0.75
+        p_pos = np.array([ r * np.cos(angle),  r * np.sin(angle),  0.0])
+        e_pos = np.array([-r * np.cos(angle), -r * np.sin(angle),  0.0])
         p_vel = np.zeros(3); e_vel = np.zeros(3)
         d_str = _normalise(rng.standard_normal(3)); d_str[2] = 0.0
         p_traj = [p_pos.copy()]; e_traj = [e_pos.copy()]
