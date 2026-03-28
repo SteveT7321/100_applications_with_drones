@@ -640,7 +640,7 @@ def save_animation(rl_pursuer_fn, rl_evader_fn, out_dir):
         all_p.append(p_t); all_e.append(e_t)
 
     max_frames = max(len(t) for t in all_p)
-    step_dec   = max(1, max_frames // 100)
+    step_dec   = max(1, max_frames // 300)
 
     fig, axes = plt.subplots(2, 2, figsize=(10, 8))
     axes_flat  = axes.flatten()
