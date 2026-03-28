@@ -382,15 +382,18 @@ def plot_feasibility_boundary(out_dir):
 
 
 def save_animation(results, out_dir):
-    """XY-plane animation of all three speed cases side by side."""
+    """XY-plane animation of all three speed cases side by side.
+
+    Duration follows the longest simulation (v=3 battery-out case).
+    Shorter simulations freeze at their last frame once they end.
+    """
     import matplotlib.animation as animation
 
     colors = ['steelblue', 'darkorange', 'mediumseagreen']
     labels = [f'v={v} m/s' for v in PURSUER_SPEEDS]
 
-    # Use shortest trajectory length for sync
-    trajs = [(res[0], res[1], res[4]) for res in results]
-    min_len = min(len(t[0]) for t in trajs)
+    # Drive animation by the longest trajectory
+    max_len = max(len(res[0]) for res in results)
     step = 3
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
@@ -418,13 +421,15 @@ def save_animation(results, out_dir):
         dots_p.append(dp);  dots_e.append(de)
         titles.append(ti)
 
-    n_frames = min_len // step
+    n_frames = max_len // step
 
     def update(i):
         artists = []
         for idx, res in enumerate(results):
             p_traj, e_traj, p_en, e_en, times, captured, cap_t, p_out, _ = res
+            # Clamp to last step when this simulation has already ended
             si = min(i * step, len(p_traj) - 1)
+            done = (i * step >= len(p_traj) - 1)
 
             px = p_traj[:si+1, 0]; py = p_traj[:si+1, 1]
             ex = e_traj[:si+1, 0]; ey = e_traj[:si+1, 1]
@@ -438,10 +443,20 @@ def save_animation(results, out_dir):
             v_p = PURSUER_SPEEDS[idx]
             t_max = max_flight_time(v_p)
             pct = 100.0 * en / E0
-            titles[idx].set_text(
-                f'v={v_p} m/s  t={t:.1f}s\n'
-                f'Energy: {en:.1f}J ({pct:.0f}%)  T_max={t_max:.1f}s'
-            )
+
+            if done:
+                if captured:
+                    status = f'✓ Captured {cap_t:.2f}s  [DONE]'
+                else:
+                    status = f'✗ Battery out {t:.2f}s  [DONE]'
+                titles[idx].set_text(
+                    f'v={v_p} m/s  t={t:.1f}s\n{status}'
+                )
+            else:
+                titles[idx].set_text(
+                    f'v={v_p} m/s  t={t:.1f}s\n'
+                    f'Energy: {en:.1f}J ({pct:.0f}%)  T_max={t_max:.1f}s'
+                )
             artists += [lines_p[idx], lines_e[idx], dots_p[idx], dots_e[idx], titles[idx]]
         return artists
 
