@@ -1,6 +1,6 @@
 # S020 Pursuit-Evasion Game (RL Capstone)
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
