@@ -35,10 +35,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 # ── Parameters ──────────────────────────────────────────────────────────────
 V_PURSUER    = 5.0          # m/s  pursuer max speed
 V_EVADER     = 3.5          # m/s  evader max speed
-ARENA        = 5.0          # m    arena half-extent ([-5,5]^3)
-CAPTURE_R    = 0.15         # m    capture radius
+# Arena sized so pursuer traverses ~3-4× in T_MAX:
+#   V_P * T_MAX / (2*ARENA) = 5*30/40 ≈ 3.75  (was 15× with ARENA=5)
+ARENA        = 20.0         # m    arena half-extent ([-20,20]^2)
+CAPTURE_R    = 0.3          # m    capture radius (scaled with arena)
 DT           = 0.05         # s    timestep
 T_MAX        = 30.0         # s    episode length
+# Physics-based initial separation:
+#   INIT_SEP = 2 * ARENA * 0.7 = 28 m
+#   Nominal capture at closing speed (V_P - V_E) = 1.5 m/s: ~18 s ≈ 60% of T_MAX
+INIT_R       = ARENA * 0.7  # m    spawn radius (opposite sides → sep = 2*INIT_R)
 NOISE_SIGMA  = 0.1          # m    observation noise
 EPS_VEL      = 1e-8         # safety epsilon
 
@@ -135,8 +141,9 @@ def run_episode(pursuer_fn, evader_fn, seed):
     Returns capture_time or None (escaped).
     """
     rng = np.random.default_rng(seed)
-    p_pos = rng.uniform(-ARENA * 0.8, ARENA * 0.8, 3); p_pos[2] = 0.0
-    e_pos = rng.uniform(-ARENA * 0.8, ARENA * 0.8, 3); e_pos[2] = 0.0
+    angle = rng.uniform(0, 2 * np.pi)
+    p_pos = np.array([INIT_R * np.cos(angle),  INIT_R * np.sin(angle),  0.0])
+    e_pos = np.array([-INIT_R * np.cos(angle), -INIT_R * np.sin(angle), 0.0])
     p_vel = np.zeros(3)
     e_vel = np.zeros(3)
     for step in range(MAX_STEPS):
@@ -180,8 +187,9 @@ class PursuitEvasionEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         rng = self._rng
-        self.pursuer_pos = rng.uniform(-ARENA * 0.8, ARENA * 0.8, 3); self.pursuer_pos[2] = 0.0
-        self.evader_pos  = rng.uniform(-ARENA * 0.8, ARENA * 0.8, 3); self.evader_pos[2]  = 0.0
+        angle = rng.uniform(0, 2 * np.pi)
+        self.pursuer_pos = np.array([INIT_R * np.cos(angle),  INIT_R * np.sin(angle),  0.0])
+        self.evader_pos  = np.array([-INIT_R * np.cos(angle), -INIT_R * np.sin(angle), 0.0])
         self.pursuer_vel = np.zeros(3)
         self.evader_vel  = np.zeros(3)
         self.t_step = 0
