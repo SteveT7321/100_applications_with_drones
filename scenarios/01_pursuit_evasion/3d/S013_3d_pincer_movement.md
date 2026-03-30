@@ -1,6 +1,6 @@
 # S013 3D Upgrade — Pincer Movement
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S013 original](../S013_pincer_movement.md)
 
 ---

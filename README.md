@@ -96,6 +96,8 @@ drones/
 | Special Ops & Entertainment | 0 | 20 |
 | **Total** | **20** | **100** |
 
+> **3D Upgrades**: 18 true-3D variants of S002–S020 are available under `src/01_pursuit_evasion/3d/` and `outputs/01_pursuit_evasion/3d/`.
+
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
 ---

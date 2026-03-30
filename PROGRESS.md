@@ -15,8 +15,8 @@
 | **固定 z=0m**（本質 2D） | S020 | 位置 z=0.0，動作在 xy 平面，主圖用 2D plt.subplots |
 | **純 2D**（無 z 座標） | S015, S017 | S015 用 np.array([x,y])；S017 位置陣列為 [x,y]，視覺化用 2D |
 
-> **待優化**：S021+ 可考慮對純 2D 場景直接使用 2D 視覺化（Matplotlib 2D），
-> 或保留 3D 框架但明確標注 z 固定，避免誤導。
+> **已完成**：S002, S004–S020 各自建立了真正 3D 升級版本，存放於
+> `scenarios/01_pursuit_evasion/3d/`、`src/01_pursuit_evasion/3d/`、`outputs/01_pursuit_evasion/3d/`。
 
 ---
 

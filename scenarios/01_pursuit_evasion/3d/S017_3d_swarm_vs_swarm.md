@@ -1,6 +1,6 @@
 # S017 3D Upgrade — Swarm vs Swarm
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S017 original](../S017_swarm_vs_swarm.md)
 
 ---

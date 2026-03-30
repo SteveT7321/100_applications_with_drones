@@ -1,6 +1,6 @@
 # S012 3D Upgrade — Relay Pursuit
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S012 original](../S012_relay_pursuit.md)
 
 ---

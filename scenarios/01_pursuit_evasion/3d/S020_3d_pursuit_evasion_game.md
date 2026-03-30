@@ -1,6 +1,6 @@
 # S020 3D Upgrade — Pursuit-Evasion Game (RL Capstone)
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S020 original](../S020_pursuit_evasion_game.md)
 
 ---

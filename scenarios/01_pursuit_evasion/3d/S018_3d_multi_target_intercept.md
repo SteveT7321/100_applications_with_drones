@@ -1,6 +1,6 @@
 # S018 3D Upgrade — Multi-Target Intercept
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S018 original](../S018_multi_target_intercept.md)
 
 ---

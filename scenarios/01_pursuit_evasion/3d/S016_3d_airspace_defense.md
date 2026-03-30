@@ -1,6 +1,6 @@
 # S016 3D Upgrade — Airspace Defense
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S016 original](../S016_airspace_defense.md)
 
 ---

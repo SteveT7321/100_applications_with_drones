@@ -1,6 +1,6 @@
 # S014 3D Upgrade — Decoy & Lure
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S014 original](../S014_decoy_lure.md)
 
 ---

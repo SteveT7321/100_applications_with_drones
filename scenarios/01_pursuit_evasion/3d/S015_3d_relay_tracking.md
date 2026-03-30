@@ -1,6 +1,6 @@
 # S015 3D Upgrade — Relay Tracking
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S015 original](../S015_relay_tracking.md)
 
 ---

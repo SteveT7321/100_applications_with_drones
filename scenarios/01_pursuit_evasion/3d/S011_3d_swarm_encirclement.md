@@ -1,6 +1,6 @@
 # S011 3D Upgrade — Swarm Encirclement
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S011 original](../S011_swarm_encirclement.md)
 
 ---
