@@ -29,6 +29,7 @@ outputs/**/*.mp4
 
 # IDE / personal config
 .claude/
+!.claude/agents/
 .vscode/
 .idea/
 *.swp
