@@ -1,6 +1,6 @@
 # S021 Point Delivery
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐ | **Status**: Completed
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐ | **Status**: ✅ Completed
 
 ---
 

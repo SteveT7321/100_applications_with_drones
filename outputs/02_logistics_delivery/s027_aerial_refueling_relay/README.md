@@ -1,20 +1,46 @@
-# S027 Aerial Refueling Relay — Simulation Outputs
+# S027 Aerial Refueling Relay
+
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: ✅ Completed
+
+---
 
 ## Problem Definition
 
 A delivery drone (Receiver) departs from a base station toward a target 60 m away. Its battery alone is insufficient for the full round trip. A tanker drone launches simultaneously, flies ahead to a rendezvous waypoint at the mission midpoint, holds a loiter orbit, and waits for the Receiver. When the Receiver achieves soft-docking (relative position < ε_p, relative velocity < ε_v), an energy transfer is executed. The Receiver then resumes delivery; the Tanker returns to base.
 
+---
+
 ## Mathematical Model Summary
 
-| Component | Model |
-|---|---|
-| Battery drain | E_dot = -(k_f * v^2 + k_h) |
-| Remaining range | d_rem = (E / power) * v |
-| Rendezvous waypoint | w_rvz = (1-alpha)*base + alpha*target |
-| Loiter orbit | p_T = w_rvz + R_orb * [cos(omega*t), sin(omega*t), 0] |
-| Approach control (Phase 1) | u_R = -Kp*dr - Kd*dv + a_T (feedforward) |
-| Soft-dock control (Phase 2) | u_R = -Kp2*dr - Kd2*dv |
-| Energy transfer | E_R += dE_xfer; E_T -= dE_xfer*(1+eta_loss) |
+**Battery drain model**:
+
+$$\dot{E} = -(k_f v^2 + k_h)$$
+
+**Remaining range estimate**:
+
+$$d_{rem} = \frac{E}{k_f v^2 + k_h} \cdot v$$
+
+**Rendezvous waypoint** (midpoint fraction $\alpha$):
+
+$$\mathbf{w}_{rvz} = (1-\alpha)\,\mathbf{p}_{base} + \alpha\,\mathbf{p}_{target}$$
+
+**Tanker loiter orbit**:
+
+$$\mathbf{p}_T(t) = \mathbf{w}_{rvz} + R_{orb}\begin{bmatrix}\cos(\omega t)\\\sin(\omega t)\\0\end{bmatrix}$$
+
+**Receiver approach control** (Phase 1, with Tanker feed-forward):
+
+$$\mathbf{u}_R = -K_p\,\delta\mathbf{r} - K_d\,\delta\mathbf{v} + \mathbf{a}_T$$
+
+**Soft-dock control** (Phase 2):
+
+$$\mathbf{u}_R = -K_{p2}\,\delta\mathbf{r} - K_{d2}\,\delta\mathbf{v}$$
+
+**Energy transfer** (5% loss):
+
+$$E_R \mathrel{+}= \Delta E_{xfer}, \qquad E_T \mathrel{-}= \Delta E_{xfer}(1 + \eta_{loss})$$
+
+---
 
 ## Key Parameters
 
@@ -38,6 +64,8 @@ A delivery drone (Receiver) departs from a base station toward a target 60 m awa
 | Base-to-target distance | 60.0 m |
 | Simulation time-step DT | 0.02 s |
 
+---
+
 ## Simulation Results
 
 | Metric | Value |
@@ -55,35 +83,41 @@ A delivery drone (Receiver) departs from a base station toward a target 60 m awa
 | Tanker final SoC | 381.01 J |
 | Mission status | SUCCESS |
 
+---
+
 ## Output Files
 
-| File | Description |
-|---|---|
-| `animation.gif` | Animated 3D mission GIF (665 frames @ 15 fps): Receiver colour-coded by FSM phase (approach=red, docking=orange, post-refuel=green), Tanker in blue, 30-frame trails, RVZ waypoint and base/target markers |
-| `trajectory_3d.png` | 3D trajectory of Receiver (colour-coded by FSM phase) and Tanker; rendezvous waypoint, docking success point, base and target marked |
-| `battery_plot.png` | Battery SoC vs time for both drones with vertical event markers (loiter start, docking start, dock success) |
-| `battery_soc.png` | Same as battery_plot.png |
-| `docking_relative_motion.png` | Semi-log plots of relative distance and relative velocity during docking phase |
-| `loiter_orbit_topdown.png` | Top-down XY view showing the tanker loiter orbit and Receiver spiral approach |
-| `mission_comparison.png` | Battery energy comparison: mission with refueling vs mission without refueling (forced landing scenario) |
+### 3D Trajectory
+Receiver colour-coded by FSM phase (approach=red, docking=orange, post-refuel=green); Tanker in blue. Rendezvous waypoint, docking success point, base and target marked:
 
-### animation.gif
-![Animation](animation.gif)
+![3D Trajectory](trajectory_3d.png)
 
-### trajectory_3d.png
-![3D trajectory](trajectory_3d.png)
+### Battery SoC
+Battery state-of-charge vs time for both drones with vertical event markers (loiter start, docking start, dock success):
 
-### battery_plot.png
 ![Battery SoC](battery_plot.png)
 
-### docking_relative_motion.png
-![Docking relative motion](docking_relative_motion.png)
+### Docking Relative Motion
+Semi-log plots of relative distance and relative velocity during the docking phase:
 
-### loiter_orbit_topdown.png
-![Loiter orbit top-down](loiter_orbit_topdown.png)
+![Docking Relative Motion](docking_relative_motion.png)
 
-### mission_comparison.png
-![Mission comparison](mission_comparison.png)
+### Loiter Orbit Top-Down
+Top-down XY view showing the Tanker loiter orbit and Receiver spiral approach trajectory:
+
+![Loiter Orbit Top-Down](loiter_orbit_topdown.png)
+
+### Mission Comparison
+Battery energy comparison: mission with refueling vs mission without refueling (forced landing scenario):
+
+![Mission Comparison](mission_comparison.png)
+
+### Animation
+Full 26.56 s mission (665 frames @ 15 fps): Receiver colour-coded by FSM phase, Tanker in blue, 30-frame trails:
+
+![Animation](animation.gif)
+
+---
 
 ## Extensions
 
@@ -93,8 +127,10 @@ A delivery drone (Receiver) departs from a base station toward a target 60 m awa
 4. Partial transfer strategy: transfer only the minimum required energy
 5. Moving refueling platform: Tanker flies straight segment, Receiver intercepts a moving target
 
+---
+
 ## Related Scenarios
 
-- Prerequisites: [S021 Point Delivery](../s021_point_delivery/), [S024 Wind Compensation](../s024_wind_compensation/)
-- Follow-ups: [S028 Cargo Escort Formation](../s028_cargo_escort_formation/), [S036 Last Mile Relay](../s036_last_mile_relay/)
-- Cross-domain: S012 Relay Pursuit — relay handoff state machine pattern
+- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S024](../../../scenarios/02_logistics_delivery/S024_wind_compensation.md) — wind disturbance compensation
+- Follow-ups: [S028](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) — cargo escort formation, [S036](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md) — last-mile relay
+- Cross-domain: [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md) — relay handoff state machine pattern
