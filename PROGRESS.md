@@ -50,7 +50,7 @@
 
 ---
 
-## Domain 2: Logistics & Delivery — 5/20
+## Domain 2: Logistics & Delivery — 10/20
 
 ### 1v1 Scenarios
 - [x] **S021** Point Delivery — Shortest path from A to B with time-optimal landing
@@ -60,13 +60,13 @@
 - [x] **S025** Payload CoG Offset — Attitude compensation under asymmetric payload
 
 ### Nv1 Scenarios
-- [ ] **S026** Cooperative Heavy Lift — 2~4 drones suspending a single heavy load
-- [ ] **S027** Aerial Refueling Relay — Low-battery drone resupplied by tanker drone
-- [ ] **S028** Cargo Escort Formation — Escort drone formation
+- [x] **S026** Cooperative Heavy Lift — 2~4 drones suspending a single heavy load
+- [x] **S027** Aerial Refueling Relay — Low-battery drone resupplied by tanker drone
+- [x] **S028** Cargo Escort Formation — Escort drone formation
 
 ### NvM Scenarios
-- [ ] **S029** Urban Logistics Scheduling — Multi-depot multi-target VRP
-- [ ] **S030** Multi-Depot Delivery — Which drone departs from which depot
+- [x] **S029** Urban Logistics Scheduling — Multi-depot multi-target VRP
+- [x] **S030** Multi-Depot Delivery — Which drone departs from which depot
 - [ ] **S031** Path De-confliction — Time-based/altitude-based separation for multiple drones in the same airspace
 - [ ] **S032** Charging Queue — Battery management + mission continuity
 - [ ] **S033** Online Order Insertion — Inserting new targets mid-flight
@@ -160,8 +160,8 @@
 | Domain | Completed | Total |
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
-| Logistics & Delivery | 5 | 20 |
+| Logistics & Delivery | 10 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **25** | **100** |
+| **Total** | **30** | **100** |
