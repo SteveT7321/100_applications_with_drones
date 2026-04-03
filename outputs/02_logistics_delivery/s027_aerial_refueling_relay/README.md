@@ -59,12 +59,16 @@ A delivery drone (Receiver) departs from a base station toward a target 60 m awa
 
 | File | Description |
 |---|---|
+| `animation.gif` | Animated 3D mission GIF (665 frames @ 15 fps): Receiver colour-coded by FSM phase (approach=red, docking=orange, post-refuel=green), Tanker in blue, 30-frame trails, RVZ waypoint and base/target markers |
 | `trajectory_3d.png` | 3D trajectory of Receiver (colour-coded by FSM phase) and Tanker; rendezvous waypoint, docking success point, base and target marked |
 | `battery_plot.png` | Battery SoC vs time for both drones with vertical event markers (loiter start, docking start, dock success) |
 | `battery_soc.png` | Same as battery_plot.png |
 | `docking_relative_motion.png` | Semi-log plots of relative distance and relative velocity during docking phase |
 | `loiter_orbit_topdown.png` | Top-down XY view showing the tanker loiter orbit and Receiver spiral approach |
 | `mission_comparison.png` | Battery energy comparison: mission with refueling vs mission without refueling (forced landing scenario) |
+
+### animation.gif
+![Animation](animation.gif)
 
 ### trajectory_3d.png
 ![3D trajectory](trajectory_3d.png)

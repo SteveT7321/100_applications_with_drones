@@ -16,6 +16,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D          # noqa: F401  needed for 3-D projection
 from matplotlib.lines import Line2D
+from matplotlib.animation import FuncAnimation
 
 # ---------------------------------------------------------------------------
 # Output directory
@@ -574,3 +575,124 @@ plt.close()
 print("Saved mission_comparison.png")
 
 print(f"\nAll output files saved to: {OUT_DIR}/")
+
+# ---------------------------------------------------------------------------
+# Animation
+# ---------------------------------------------------------------------------
+
+def save_animation():
+    """Create an animated GIF of the full 3-D mission and save it to OUT_DIR."""
+
+    # Phase colour mapping for the Receiver (requirement colours)
+    _phase_anim_colours = {
+        "fly_to_rvz":    "red",
+        "docking":       "orange",
+        "deliver":       "green",
+        "return_home_R": "green",
+    }
+
+    # Sub-sample the history to keep the GIF to a manageable size.
+    # Target ~15 fps with at most ~600 animation frames.
+    n_total = len(t_arr)
+    stride  = max(1, n_total // 600)
+    idx_s   = np.arange(0, n_total, stride)
+
+    posR_s = posR_arr[idx_s]
+    posT_s = posT_arr[idx_s]
+    fsm_s  = fsm_arr[idx_s]
+
+    TRAIL = 30   # number of recent frames to show as trail lines
+
+    fig_a = plt.figure(figsize=(10, 7))
+    ax_a  = fig_a.add_subplot(111, projection="3d")
+
+    # Fixed limits from the full trajectory
+    pad = 2.0
+    x_all = np.concatenate([posR_arr[:, 0], posT_arr[:, 0]])
+    y_all = np.concatenate([posR_arr[:, 1], posT_arr[:, 1]])
+    z_all = np.concatenate([posR_arr[:, 2], posT_arr[:, 2]])
+    ax_a.set_xlim(x_all.min() - pad, x_all.max() + pad)
+    ax_a.set_ylim(y_all.min() - pad, y_all.max() + pad)
+    ax_a.set_zlim(z_all.min() - pad, z_all.max() + pad)
+
+    ax_a.set_xlabel("X [m]")
+    ax_a.set_ylabel("Y [m]")
+    ax_a.set_zlabel("Z [m]")
+
+    # Static scene markers
+    ax_a.scatter(*pos_base,   marker="s", s=100, color="black",  zorder=5)
+    ax_a.scatter(*pos_target, marker="*", s=180, color="crimson",zorder=5)
+    ax_a.scatter(*w_rvz,      marker="^", s=130, color="purple", zorder=5)
+
+    # Static legend proxies
+    legend_elems_a = [
+        Line2D([0],[0], color="red",    lw=2,  label="Receiver – approach"),
+        Line2D([0],[0], color="orange", lw=2,  label="Receiver – docking"),
+        Line2D([0],[0], color="green",  lw=2,  label="Receiver – post-refuel"),
+        Line2D([0],[0], color="blue",   lw=2,  label="Tanker"),
+        Line2D([0],[0], marker="s", color="w", markerfacecolor="black",  ms=7, label="Base"),
+        Line2D([0],[0], marker="*", color="w", markerfacecolor="crimson",ms=9, label="Target"),
+        Line2D([0],[0], marker="^", color="w", markerfacecolor="purple", ms=7, label="RVZ waypoint"),
+    ]
+    ax_a.legend(handles=legend_elems_a, loc="upper left", fontsize=7)
+
+    # Dynamic artists
+    trail_R,  = ax_a.plot([], [], [], color="red",   lw=1.5, alpha=0.7)
+    trail_T,  = ax_a.plot([], [], [], color="blue",  lw=1.5, alpha=0.7)
+    dot_R     = ax_a.scatter([], [], [], s=60,  color="red",  zorder=6, depthshade=False)
+    dot_T     = ax_a.scatter([], [], [], s=60,  color="blue", zorder=6, depthshade=False)
+    time_text = ax_a.text2D(0.02, 0.95, "", transform=ax_a.transAxes, fontsize=9)
+
+    def _init():
+        trail_R.set_data([], [])
+        trail_R.set_3d_properties([])
+        trail_T.set_data([], [])
+        trail_T.set_3d_properties([])
+        dot_R._offsets3d = (np.array([]), np.array([]), np.array([]))
+        dot_T._offsets3d = (np.array([]), np.array([]), np.array([]))
+        time_text.set_text("")
+        return trail_R, trail_T, dot_R, dot_T, time_text
+
+    def _update(frame):
+        i     = frame          # index into sub-sampled arrays
+        start = max(0, i - TRAIL + 1)
+
+        # --- Receiver trail: colour-code by current phase ---
+        phase  = fsm_s[i]
+        colour = _phase_anim_colours.get(phase, "red")
+        trail_R.set_color(colour)
+        seg_R  = posR_s[start:i + 1]
+        trail_R.set_data(seg_R[:, 0], seg_R[:, 1])
+        trail_R.set_3d_properties(seg_R[:, 2])
+
+        # --- Tanker trail ---
+        seg_T = posT_s[start:i + 1]
+        trail_T.set_data(seg_T[:, 0], seg_T[:, 1])
+        trail_T.set_3d_properties(seg_T[:, 2])
+
+        # --- Current positions ---
+        dot_R._offsets3d = (np.array([posR_s[i, 0]]),
+                            np.array([posR_s[i, 1]]),
+                            np.array([posR_s[i, 2]]))
+        dot_R.set_color(colour)
+        dot_T._offsets3d = (np.array([posT_s[i, 0]]),
+                            np.array([posT_s[i, 1]]),
+                            np.array([posT_s[i, 2]]))
+
+        sim_time = t_arr[idx_s[i]]
+        time_text.set_text(f"t = {sim_time:.1f} s  |  phase: {phase}")
+        return trail_R, trail_T, dot_R, dot_T, time_text
+
+    n_frames = len(idx_s)
+    anim = FuncAnimation(
+        fig_a, _update, frames=n_frames,
+        init_func=_init, blit=False, interval=1000 // 15
+    )
+
+    gif_path = os.path.join(OUT_DIR, "animation.gif")
+    anim.save(gif_path, writer="pillow", fps=15)
+    plt.close(fig_a)
+    print(f"Saved animation.gif  ({n_frames} frames @ 15 fps)")
+
+
+save_animation()
