@@ -18,6 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
+from matplotlib.animation import FuncAnimation
 
 # ─── Output directory ────────────────────────────────────────────────────────
 OUT_DIR = "outputs/02_logistics_delivery/s030_multi_depot_delivery"
@@ -434,6 +435,225 @@ def plot_per_drone_summary(summary_rows, strategy_name, filename):
     plt.close()
     print(f"  Saved: {fpath}")
 
+# ─── Animation ────────────────────────────────────────────────────────────────
+
+def _build_drone_trajectories(routes_by_depot):
+    """
+    Convert routes (node-index sequences) into per-drone (x, y) position arrays
+    sampled at uniform time steps (FPS=20, speed=V_DRONE m/s).
+
+    Returns:
+        trajectories : list of np.ndarray shape (T_drone, 2) — one per drone
+        depot_origin : list of int — origin depot index per drone
+        cust_delivery_frame : dict mapping customer node index -> (drone_idx, frame_idx)
+    """
+    FPS = 20
+    dt  = 1.0 / FPS                 # seconds per frame
+
+    trajectories    = []
+    depot_origin    = []
+    cust_del_frame  = {}            # cust_node -> (drone_idx, global frame when delivered)
+
+    drone_idx = 0
+    for m, depot_routes in enumerate(routes_by_depot):
+        for route in depot_routes:
+            # Build list of (x, y) waypoints for this drone
+            waypoints = [ALL_POS[n] for n in route]
+
+            # Simulate movement at V_DRONE m/s
+            positions = []
+            delivery_events = []   # (node, frame_at_delivery) in local frames
+
+            # Service time at each customer stop
+            for wi in range(len(waypoints) - 1):
+                p0 = waypoints[wi]
+                p1 = waypoints[wi + 1]
+                seg_dist = np.linalg.norm(p1 - p0)
+                n_fly    = max(1, int(round(seg_dist / (V_DRONE * dt))))
+                for f in range(n_fly):
+                    alpha = f / n_fly
+                    positions.append(p0 + alpha * (p1 - p0))
+
+                # Arrived at waypoint wi+1
+                arr_frame_local = len(positions)
+                node_at_p1 = route[wi + 1]
+                if node_at_p1 >= N_DEPOTS:          # it's a customer
+                    svc_frames = max(1, int(round(SVC_TIME * FPS)))
+                    for _ in range(svc_frames):
+                        positions.append(p1.copy())
+                    delivery_events.append((node_at_p1, arr_frame_local))
+                else:
+                    positions.append(p1.copy())     # depot arrival
+
+            traj = np.array(positions)
+            trajectories.append(traj)
+            depot_origin.append(m)
+
+            for node, local_f in delivery_events:
+                cust_del_frame[node] = (drone_idx, local_f)
+
+            drone_idx += 1
+
+    return trajectories, depot_origin, cust_del_frame
+
+
+def save_animation(routes_by_depot, partition, gif_path, fps=20):
+    """
+    Build and save a 2-D top-down animated GIF showing all drones flying
+    the AO routes simultaneously.
+
+    Parameters
+    ----------
+    routes_by_depot : list[list[list[int]]]  — output of all_routes() / open_route_return()
+    partition       : np.ndarray of shape (N_CUSTOMERS,)  — depot assignment
+    gif_path        : str  — full path for the output GIF
+    fps             : int  — frames per second (default 20)
+    """
+    TRAIL_LEN = 20
+
+    print("  Building drone trajectories for animation…")
+    trajectories, depot_origin, cust_del_frame = _build_drone_trajectories(routes_by_depot)
+
+    # Pad all trajectories to the same length (drones wait at last position)
+    T_max = max(len(t) for t in trajectories)
+    padded = []
+    for t in trajectories:
+        if len(t) < T_max:
+            pad = np.tile(t[-1], (T_max - len(t), 1))
+            t = np.vstack([t, pad])
+        padded.append(t)
+    trajectories = padded
+
+    n_drones = len(trajectories)
+
+    # Pre-compute per-customer delivery frame (global)
+    delivered_at = {}   # cust_node -> global frame
+    for node, (di, lf) in cust_del_frame.items():
+        delivered_at[node] = lf    # local frame == global frame since all start at 0
+
+    # ── Set up figure ──────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.set_xlim(0, 1200)
+    ax.set_ylim(0, 1200)
+    ax.set_aspect("equal")
+    ax.set_facecolor("#1a1a2e")
+    ax.grid(True, linestyle="--", alpha=0.2, color="white")
+    ax.tick_params(colors="white")
+    for spine in ax.spines.values():
+        spine.set_edgecolor("white")
+    ax.set_xlabel("x (m)", color="white")
+    ax.set_ylabel("y (m)", color="white")
+
+    # ── Static: depot triangles ────────────────────────────────────────────
+    for m in range(N_DEPOTS):
+        ax.scatter(*DEPOTS[m], marker="^", s=300,
+                   color=DEPOT_COLORS[m], zorder=6,
+                   edgecolors="white", linewidths=1.2)
+        ax.text(DEPOTS[m, 0] + 25, DEPOTS[m, 1] + 25,
+                DEPOT_LABELS[m], color=DEPOT_COLORS[m],
+                fontsize=8, fontweight="bold", zorder=7)
+
+    # ── Static: customer circles (will be updated each frame) ─────────────
+    cust_scatters = []
+    for c in range(N_CUSTOMERS):
+        sc = ax.scatter(*CUSTOMERS[c], s=80, color="#cccccc",
+                        edgecolors="white", linewidths=0.6, zorder=4)
+        ax.text(CUSTOMERS[c, 0] + 12, CUSTOMERS[c, 1] + 12,
+                str(c + 1), color="white", fontsize=5, zorder=5)
+        cust_scatters.append(sc)
+
+    # ── Dynamic: drone dots ────────────────────────────────────────────────
+    drone_dots = []
+    for di in range(n_drones):
+        m = depot_origin[di]
+        dot, = ax.plot([], [], "o", color=DEPOT_COLORS[m],
+                       ms=6, zorder=8,
+                       markeredgecolor="white", markeredgewidth=0.5)
+        drone_dots.append(dot)
+
+    # ── Dynamic: trail lines ───────────────────────────────────────────────
+    trail_lines = []
+    for di in range(n_drones):
+        m = depot_origin[di]
+        line, = ax.plot([], [], "-", color=DEPOT_COLORS[m],
+                        lw=1.0, alpha=0.5, zorder=3)
+        trail_lines.append(line)
+
+    # ── Title / frame counter ──────────────────────────────────────────────
+    title_text = ax.set_title("S030 Multi-Depot Delivery (AO) — frame 0",
+                              color="white", fontsize=11, fontweight="bold")
+
+    # ── Legend ─────────────────────────────────────────────────────────────
+    legend_handles = []
+    for m in range(N_DEPOTS):
+        legend_handles.append(
+            mpatches.Patch(color=DEPOT_COLORS[m], label=DEPOT_LABELS[m]))
+    legend_handles.append(
+        plt.scatter([], [], s=80, color="#cccccc",
+                    edgecolors="white", linewidths=0.6, label="Customer (undelivered)"))
+    legend_handles.append(
+        plt.scatter([], [], s=80, color="#00cc44",
+                    edgecolors="white", linewidths=0.6, label="Customer (delivered)"))
+    ax.legend(handles=legend_handles, loc="lower right",
+              fontsize=7, facecolor="#1a1a2e", labelcolor="white",
+              edgecolor="white")
+
+    fig.patch.set_facecolor("#1a1a2e")
+
+    # ── Init function ──────────────────────────────────────────────────────
+    def init():
+        for dot in drone_dots:
+            dot.set_data([], [])
+        for line in trail_lines:
+            line.set_data([], [])
+        for sc in cust_scatters:
+            sc.set_facecolor("#cccccc")
+        return drone_dots + trail_lines + cust_scatters + [title_text]
+
+    # ── Update function ────────────────────────────────────────────────────
+    def update(frame):
+        artists = []
+
+        # Update customer colours
+        for c in range(N_CUSTOMERS):
+            node = c + N_DEPOTS
+            if node in delivered_at and frame >= delivered_at[node]:
+                cust_scatters[c].set_facecolor("#00cc44")
+            else:
+                cust_scatters[c].set_facecolor("#cccccc")
+            artists.append(cust_scatters[c])
+
+        # Update drones
+        for di in range(n_drones):
+            traj = trajectories[di]
+            f = min(frame, len(traj) - 1)
+            x, y = traj[f]
+            drone_dots[di].set_data([x], [y])
+            artists.append(drone_dots[di])
+
+            # Trail
+            start = max(0, f - TRAIL_LEN)
+            tx = traj[start:f+1, 0]
+            ty = traj[start:f+1, 1]
+            trail_lines[di].set_data(tx, ty)
+            artists.append(trail_lines[di])
+
+        title_text.set_text(
+            f"S030 Multi-Depot Delivery (AO) — t = {frame / fps:.1f} s")
+        artists.append(title_text)
+        return artists
+
+    # ── Build and save ─────────────────────────────────────────────────────
+    print(f"  Rendering {T_max} frames at {fps} fps…")
+    anim = FuncAnimation(fig, update, frames=T_max,
+                         init_func=init, blit=True, interval=1000 // fps)
+
+    os.makedirs(os.path.dirname(gif_path), exist_ok=True)
+    anim.save(gif_path, writer="pillow", fps=fps)
+    plt.close(fig)
+    print(f"  Saved: {gif_path}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -528,6 +748,11 @@ def main():
     )
     plot_ao_convergence(ao_history)
     plot_per_drone_summary(summary_ao, "AO", "per_drone_metrics_ao.png")
+
+    # ── Animation ──────────────────────────────────────────────────────────
+    print("\nGenerating animation GIF…")
+    gif_path = os.path.join(OUT_DIR, "animation.gif")
+    save_animation(rts_ao, part_ao, gif_path, fps=20)
 
     print("\nAll outputs saved to:", OUT_DIR)
 

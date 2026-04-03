@@ -118,6 +118,11 @@ Route length and payload per sortie for each of the 9 active drones:
 
 ![Per-Drone Metrics](per_drone_metrics_ao.png)
 
+### Animation
+All 10 drones flying the AO routes simultaneously (top-down view). Depot markers are coloured triangles; customer circles turn green upon delivery; drone dots are coloured by origin depot with 20-frame trail lines:
+
+![Animation](animation.gif)
+
 ---
 
 ## Extensions
