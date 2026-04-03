@@ -102,6 +102,11 @@ Top-down cross formation at $t = 0$ s and $t = 10$ s (mid-cruise):
 
 ![Formation Snapshots](formation_snapshots.png)
 
+### Animation
+Full 20 s mission (lift → translate → descend) — 4 drones (colored dots) and load centroid (large blue dot) with 30-frame trail lines:
+
+![Animation](animation.gif)
+
 ---
 
 ## Extensions

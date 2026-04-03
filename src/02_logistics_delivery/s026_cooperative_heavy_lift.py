@@ -412,6 +412,102 @@ def plot_formation_snapshots(qp):
     print(f'  Saved: {fp}')
 
 
+# ── Animation ────────────────────────────────────────────────────────────────
+
+def save_animation(qp):
+    """Create and save an animated GIF of the 3D lift-translate-descend mission.
+
+    Uses the QP simulation data.  Shows 4 drone positions as colored dots,
+    the load centroid as a larger blue dot, and trail lines for the last 30
+    frames of each trajectory.
+    """
+    from matplotlib.animation import FuncAnimation
+
+    p = qp['p']            # (steps, N_DRONES, 3)
+    q = qp['q_ref'] + qp['q_err']   # (steps, 3) load centroid
+    time = qp['time']      # (steps,)
+
+    steps = len(time)
+    FPS   = 15
+    # We want to cover all 20 s; sub-sample so that FPS * duration = n_frames
+    n_frames = int(FPS * T_TOTAL)          # 15 * 20 = 300 frames
+    frame_idx = np.linspace(0, steps - 1, n_frames, dtype=int)
+
+    TRAIL = 30   # number of frames to keep in trail
+
+    # ── Pre-compute axis limits ───────────────────────────────────────────
+    all_x = np.concatenate([p[:, :, 0].ravel(), q[:, 0]])
+    all_y = np.concatenate([p[:, :, 1].ravel(), q[:, 1]])
+    all_z = np.concatenate([p[:, :, 2].ravel(), q[:, 2]])
+    pad = 0.3
+    xlim = (all_x.min() - pad, all_x.max() + pad)
+    ylim = (all_y.min() - pad, all_y.max() + pad)
+    zlim = (max(all_z.min() - pad, -0.1), all_z.max() + pad)
+
+    fig = plt.figure(figsize=(8, 6))
+    ax  = fig.add_subplot(111, projection='3d')
+    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.set_zlabel('Z (m)')
+    ax.set_title('S026 Cooperative Heavy Lift — Mission Animation')
+    ax.set_xlim(*xlim); ax.set_ylim(*ylim); ax.set_zlim(*zlim)
+
+    # Static reference path (faint)
+    ax.plot(q[:, 0], q[:, 1], q[:, 2], 'b:', linewidth=0.8, alpha=0.25)
+
+    # Trail line objects (one per drone + one for load)
+    trail_drone = [ax.plot([], [], [], '-', color=DRONE_COLORS[i],
+                           linewidth=1.0, alpha=0.45)[0]
+                   for i in range(N_DRONES)]
+    trail_load  = ax.plot([], [], [], 'b-', linewidth=1.2, alpha=0.55)[0]
+
+    # Dot objects (current position)
+    dot_drone = [ax.plot([], [], [], 'o', color=DRONE_COLORS[i],
+                         markersize=7, label=DRONE_LABELS[i])[0]
+                 for i in range(N_DRONES)]
+    dot_load  = ax.plot([], [], [], 'o', color='blue',
+                        markersize=11, label='Load centroid')[0]
+
+    time_text = ax.text2D(0.02, 0.95, '', transform=ax.transAxes, fontsize=9)
+
+    ax.legend(loc='upper left', fontsize=7, ncol=2)
+
+    def init():
+        for obj in trail_drone + [trail_load] + dot_drone + [dot_load]:
+            obj.set_data([], [])
+            obj.set_3d_properties([])
+        time_text.set_text('')
+        return trail_drone + [trail_load] + dot_drone + [dot_load, time_text]
+
+    def update(frame_no):
+        fi   = frame_idx[frame_no]
+        # Trail slice (indices into original step array)
+        lo   = frame_idx[max(frame_no - TRAIL, 0)]
+        hi   = fi + 1
+
+        for i in range(N_DRONES):
+            trail_drone[i].set_data(p[lo:hi, i, 0], p[lo:hi, i, 1])
+            trail_drone[i].set_3d_properties(p[lo:hi, i, 2])
+            dot_drone[i].set_data([p[fi, i, 0]], [p[fi, i, 1]])
+            dot_drone[i].set_3d_properties([p[fi, i, 2]])
+
+        trail_load.set_data(q[lo:hi, 0], q[lo:hi, 1])
+        trail_load.set_3d_properties(q[lo:hi, 2])
+        dot_load.set_data([q[fi, 0]], [q[fi, 1]])
+        dot_load.set_3d_properties([q[fi, 2]])
+
+        time_text.set_text(f't = {time[fi]:.1f} s')
+        return trail_drone + [trail_load] + dot_drone + [dot_load, time_text]
+
+    anim = FuncAnimation(
+        fig, update, frames=n_frames,
+        init_func=init, blit=True, interval=1000 // FPS
+    )
+
+    gif_path = os.path.join(OUTPUT_DIR, 'animation.gif')
+    anim.save(gif_path, writer='pillow', fps=FPS)
+    plt.close(fig)
+    print(f'  Saved: {gif_path}')
+
+
 # ── Metrics ───────────────────────────────────────────────────────────────────
 
 def print_metrics(qp, pi):
@@ -480,6 +576,9 @@ def main():
     plot_position_error(qp_data, pi_data)
     plot_tension_comparison(qp_data, pi_data)
     plot_formation_snapshots(qp_data)
+
+    print('\nGenerating animation...')
+    save_animation(qp_data)
 
     print_metrics(qp_data, pi_data)
 
