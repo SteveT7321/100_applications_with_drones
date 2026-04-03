@@ -90,11 +90,11 @@ drones/
 | Domain | Done | Total |
 |--------|------|-------|
 | Pursuit & Evasion | 20 | 20 |
-| Logistics & Delivery | 0 | 20 |
+| Logistics & Delivery | 1 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **20** | **100** |
+| **Total** | **21** | **100** |
 
 > **3D Upgrades**: 18 true-3D variants of S002–S020 are available under `src/01_pursuit_evasion/3d/` and `outputs/01_pursuit_evasion/3d/`.
 
