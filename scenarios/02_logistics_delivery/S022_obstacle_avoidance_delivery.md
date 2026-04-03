@@ -1,6 +1,6 @@
 # S022 Obstacle Avoidance Delivery
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
