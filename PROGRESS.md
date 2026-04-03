@@ -50,13 +50,13 @@
 
 ---
 
-## Domain 2: Logistics & Delivery — 1/20
+## Domain 2: Logistics & Delivery — 2/20
 
 ### 1v1 Scenarios
 - [x] **S021** Point Delivery — Shortest path from A to B with time-optimal landing
 - [ ] **S022** Obstacle Avoidance Delivery — RRT* path planning
 - [ ] **S023** Moving Landing Pad — Landing on a simulated moving truck
-- [ ] **S024** Wind Compensation — Trajectory correction under crosswind
+- [x] **S024** Wind Compensation — Trajectory correction under crosswind
 - [ ] **S025** Payload CoG Offset — Attitude compensation under asymmetric payload
 
 ### Nv1 Scenarios
@@ -160,8 +160,8 @@
 | Domain | Completed | Total |
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
-| Logistics & Delivery | 1 | 20 |
+| Logistics & Delivery | 2 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **21** | **100** |
+| **Total** | **22** | **100** |
