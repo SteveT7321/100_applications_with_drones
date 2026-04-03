@@ -10,6 +10,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib.animation import FuncAnimation
 from scipy.spatial.distance import cdist
 from itertools import combinations
 
@@ -442,6 +443,192 @@ def plot_delivery_table(metrics, strategy_name, filename):
     print(f"  Saved: {path}")
 
 
+# ─── Animation ───────────────────────────────────────────────────────────────
+
+def save_animation(drone_routes, depot_of_drone, cust_pos, depot_pos,
+                   details, fps=20, trail_len=20):
+    """
+    Create a 2-D top-down animated GIF showing all drones flying their routes
+    simultaneously over time (Clarke-Wright solution).
+
+    Each drone's route is pre-computed as a sequence of (x, y) waypoints at
+    every simulated time step (dt = 1/fps seconds of simulation per frame).
+    The animation runs until the last drone returns to its depot.
+    """
+    dt = 1.0 / fps   # simulated seconds per frame
+
+    # ── Build per-drone waypoint streams ─────────────────────────────────────
+    # For each drone we generate a continuous (x, y) position trace sampled at
+    # every dt seconds of simulation time.
+
+    def build_trace(route, dep_pos, cust_pos_arr, v, svc_time):
+        """
+        Returns a list of (t, x, y) samples plus a dict {customer: t_delivered}.
+        Samples are spaced at most dt apart; we'll interpolate to a uniform
+        time grid afterwards.
+        """
+        events = []          # (t_start, t_end, x_start, y_start, x_end, y_end)
+        delivered = {}       # customer_idx -> time delivered
+
+        pos = dep_pos.copy()
+        t = 0.0
+
+        for c in route:
+            dest = cust_pos_arr[c]
+            leg = dist(pos, dest)
+            travel_time = leg / v
+            t_arrive = t + travel_time
+            t_svc    = max(t_arrive, EARLY[c])
+            delivered[c] = t_svc
+
+            # Flight segment
+            events.append((t, t_arrive, pos[0], pos[1], dest[0], dest[1], "fly"))
+            # Wait (if any)
+            if t_svc > t_arrive:
+                events.append((t_arrive, t_svc,
+                                dest[0], dest[1], dest[0], dest[1], "wait"))
+            # Service
+            events.append((t_svc, t_svc + svc_time,
+                            dest[0], dest[1], dest[0], dest[1], "service"))
+            pos = dest.copy()
+            t = t_svc + svc_time
+
+        # Return-to-depot leg
+        leg = dist(pos, dep_pos)
+        travel_time = leg / V_DRONE
+        events.append((t, t + travel_time,
+                        pos[0], pos[1], dep_pos[0], dep_pos[1], "fly"))
+        t_end = t + travel_time
+        return events, delivered, t_end
+
+    drone_events   = []
+    drone_deliver  = []
+    drone_t_end    = []
+
+    for k, route in enumerate(drone_routes):
+        dep_pos = depot_pos[depot_of_drone[k]]
+        evts, deliv, t_end = build_trace(route, dep_pos, cust_pos, V_DRONE, SVC_TIME)
+        drone_events.append(evts)
+        drone_deliver.append(deliv)
+        drone_t_end.append(t_end)
+
+    t_total   = max(drone_t_end) if drone_t_end else 1.0
+    n_frames  = max(2, int(np.ceil(t_total / dt)) + 1)
+
+    def drone_pos_at(k, t_query):
+        """Return (x, y) position of drone k at simulation time t_query."""
+        for (t0, t1, x0, y0, x1, y1, kind) in drone_events[k]:
+            if t0 <= t_query <= t1:
+                span = t1 - t0
+                frac = (t_query - t0) / span if span > 1e-9 else 1.0
+                return x0 + frac * (x1 - x0), y0 + frac * (y1 - y0)
+        # After all events: sit at depot
+        dep_pos = depot_pos[depot_of_drone[k]]
+        return dep_pos[0], dep_pos[1]
+
+    # Pre-compute position arrays  [n_frames, n_drones, 2]
+    times = np.linspace(0, t_total, n_frames)
+    pos_arr = np.zeros((n_frames, N_DRONES, 2))
+    for f, t_q in enumerate(times):
+        for k in range(N_DRONES):
+            pos_arr[f, k] = drone_pos_at(k, t_q)
+
+    # Set of (drone_k, customer_idx) pairs and when they are delivered
+    deliver_events = {}   # (k, c) -> frame index when delivered
+    for k in range(N_DRONES):
+        for c, t_del in drone_deliver[k].items():
+            frame_idx = int(np.searchsorted(times, t_del))
+            deliver_events[(k, c)] = frame_idx
+
+    # ── Set up figure ─────────────────────────────────────────────────────────
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.set_xlim(0, 1000)
+    ax.set_ylim(0, 1000)
+    ax.set_aspect("equal")
+    ax.set_xlabel("x (m)", fontsize=9)
+    ax.set_ylabel("y (m)", fontsize=9)
+    ax.grid(True, alpha=0.25)
+    title_text = ax.set_title("Clarke-Wright Solution — t = 0 s", fontsize=11)
+
+    # Static: depot triangles
+    for d_idx, dp in enumerate(depot_pos):
+        ax.plot(dp[0], dp[1], marker="^", markersize=14,
+                color="crimson", zorder=6)
+        ax.text(dp[0] + 14, dp[1] + 14, f"D{d_idx}", fontsize=8,
+                color="crimson", fontweight="bold")
+
+    # Static: customer circles (initially blue, turn green when delivered)
+    cust_circles = []
+    for c in range(len(cust_pos)):
+        circ, = ax.plot(cust_pos[c, 0], cust_pos[c, 1], "o",
+                        markersize=9, color="steelblue", zorder=5)
+        cust_circles.append(circ)
+        ax.text(cust_pos[c, 0] + 11, cust_pos[c, 1] + 11,
+                f"C{c}", fontsize=7, color="navy")
+
+    # Drone dots
+    drone_dots = []
+    for k in range(N_DRONES):
+        dot, = ax.plot([], [], "o", color=COLORS[k],
+                       markersize=8, zorder=8)
+        drone_dots.append(dot)
+
+    # Trail lines (one per drone)
+    trail_lines = []
+    for k in range(N_DRONES):
+        line, = ax.plot([], [], "-", color=COLORS[k],
+                        lw=1.5, alpha=0.55, zorder=7)
+        trail_lines.append(line)
+
+    # Legend patches
+    legend_handles = [mpatches.Patch(color=COLORS[k],
+                                     label=f"Drone {k} (depot {depot_of_drone[k]})")
+                      for k in range(N_DRONES)]
+    ax.legend(handles=legend_handles, loc="lower right", fontsize=7)
+
+    # Track which customers have been delivered
+    delivered_flags = [False] * len(cust_pos)
+
+    def init():
+        for dot in drone_dots:
+            dot.set_data([], [])
+        for line in trail_lines:
+            line.set_data([], [])
+        for circ in cust_circles:
+            circ.set_color("steelblue")
+        return drone_dots + trail_lines + cust_circles + [title_text]
+
+    def update(frame):
+        t_now = times[frame]
+        title_text.set_text(f"Clarke-Wright Solution — t = {t_now:.1f} s")
+
+        # Check deliveries up to this frame
+        for (k, c), del_frame in deliver_events.items():
+            if frame >= del_frame and not delivered_flags[c]:
+                delivered_flags[c] = True
+                cust_circles[c].set_color("limegreen")
+
+        for k in range(N_DRONES):
+            x, y = pos_arr[frame, k]
+            drone_dots[k].set_data([x], [y])
+
+            # Trail: last trail_len frames
+            start = max(0, frame - trail_len)
+            trail_x = pos_arr[start:frame + 1, k, 0]
+            trail_y = pos_arr[start:frame + 1, k, 1]
+            trail_lines[k].set_data(trail_x, trail_y)
+
+        return drone_dots + trail_lines + cust_circles + [title_text]
+
+    anim = FuncAnimation(fig, update, frames=n_frames,
+                         init_func=init, blit=True, interval=1000 // fps)
+
+    gif_path = os.path.join(OUT_DIR, "animation.gif")
+    anim.save(gif_path, writer="pillow", fps=fps)
+    plt.close(fig)
+    print(f"  Saved: {gif_path}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -496,6 +683,10 @@ def main():
 
     plot_delivery_table(cw_metrics, "Clarke-Wright Savings",
                         "delivery_table_clarke_wright.png")
+
+    print("\nGenerating animation (Clarke-Wright solution) ...")
+    save_animation(cw_routes, cw_depot_of_drone, CUST_POS, DEPOT_POS,
+                   cw_details)
 
     # ── Console summary ────────────────────────────────────────────
     print("\n" + "=" * 60)

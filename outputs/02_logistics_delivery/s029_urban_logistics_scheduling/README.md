@@ -102,6 +102,11 @@ Delivery time, time window, and tardiness for each customer under Clarke-Wright:
 
 ![Delivery Table](delivery_table_clarke_wright.png)
 
+### Animation — Clarke-Wright Solution (Top-Down View)
+All 6 drones fly their Clarke-Wright routes simultaneously. Depot markers are red triangles; customer circles turn green upon delivery; coloured dots are drone positions; faded trail lines show the last 20 frames of each drone's path.
+
+![Animation](animation.gif)
+
 ---
 
 ## Extensions
