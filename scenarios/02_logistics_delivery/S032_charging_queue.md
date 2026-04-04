@@ -1,6 +1,6 @@
 # S032 Charging Queue
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

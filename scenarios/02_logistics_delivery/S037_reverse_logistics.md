@@ -1,6 +1,6 @@
 # S037 Reverse Logistics
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

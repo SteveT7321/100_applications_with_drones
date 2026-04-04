@@ -1,6 +1,6 @@
 # S039 Offshore Platform Exchange
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

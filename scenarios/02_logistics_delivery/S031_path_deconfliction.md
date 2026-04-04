@@ -1,6 +1,6 @@
 # S031 Path De-confliction
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

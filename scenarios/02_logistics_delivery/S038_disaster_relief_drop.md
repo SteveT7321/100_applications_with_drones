@@ -1,6 +1,6 @@
 # S038 Disaster Relief Drop
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

@@ -50,7 +50,7 @@
 
 ---
 
-## Domain 2: Logistics & Delivery — 10/20
+## Domain 2: Logistics & Delivery — 20/20
 
 ### 1v1 Scenarios
 - [x] **S021** Point Delivery — Shortest path from A to B with time-optimal landing
@@ -67,16 +67,16 @@
 ### NvM Scenarios
 - [x] **S029** Urban Logistics Scheduling — Multi-depot multi-target VRP
 - [x] **S030** Multi-Depot Delivery — Which drone departs from which depot
-- [ ] **S031** Path De-confliction — Time-based/altitude-based separation for multiple drones in the same airspace
-- [ ] **S032** Charging Queue — Battery management + mission continuity
-- [ ] **S033** Online Order Insertion — Inserting new targets mid-flight
-- [ ] **S034** Weather Rerouting — Dynamic rerouting around strong wind zones
-- [ ] **S035** UTM Simulation — Multiple drones requesting corridors, conflict alerts
-- [ ] **S036** Last-Mile Relay — Long-distance delivery beyond single drone range
-- [ ] **S037** Reverse Logistics — Recovering damaged drones or cargo
-- [ ] **S038** Disaster Relief Drop — Precision airdrop without landing zones
-- [ ] **S039** Offshore Platform Exchange — Landing under vessel pitch and roll
-- [ ] **S040** Fleet Load Balancing — Dynamically redistributing mission load across drones
+- [x] **S031** Path De-confliction — Time-based/altitude-based separation for multiple drones in the same airspace
+- [x] **S032** Charging Queue — Battery management + mission continuity
+- [x] **S033** Online Order Insertion — Inserting new targets mid-flight
+- [x] **S034** Weather Rerouting — Dynamic rerouting around strong wind zones
+- [x] **S035** UTM Simulation — Multiple drones requesting corridors, conflict alerts
+- [x] **S036** Last-Mile Relay — Long-distance delivery beyond single drone range
+- [x] **S037** Reverse Logistics — Recovering damaged drones or cargo
+- [x] **S038** Disaster Relief Drop — Precision airdrop without landing zones
+- [x] **S039** Offshore Platform Exchange — Landing under vessel pitch and roll
+- [x] **S040** Fleet Load Balancing — Dynamically redistributing mission load across drones
 
 ---
 
@@ -160,8 +160,8 @@
 | Domain | Completed | Total |
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
-| Logistics & Delivery | 10 | 20 |
+| Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 0 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **30** | **100** |
+| **Total** | **40** | **100** |

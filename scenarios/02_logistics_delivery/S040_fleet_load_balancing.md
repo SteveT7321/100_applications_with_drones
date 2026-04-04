@@ -1,6 +1,6 @@
 # S040 Fleet Load Balancing
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
