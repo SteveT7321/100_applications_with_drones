@@ -80,18 +80,18 @@
 
 ---
 
-## Domain 3: Environmental & SAR — 0/20
+## Domain 3: Environmental & SAR — 9/20
 
-- [ ] **S041** Wildfire Boundary Scan
-- [ ] **S042** Missing Person Search
-- [ ] **S043** Confined Space Exploration
+- [x] **S041** Wildfire Boundary Scan
+- [x] **S042** Missing Person Search
+- [x] **S043** Confined Space Exploration
 - [ ] **S044** Wall Crack Inspection
-- [ ] **S045** Chemical Plume Tracing
-- [ ] **S046** 3D Trilateration
-- [ ] **S047** Signal Relay Enhancement
-- [ ] **S048** Lawnmower Coverage
-- [ ] **S049** Dynamic Zone Assignment
-- [ ] **S050** Swarm SLAM
+- [x] **S045** Chemical Plume Tracing
+- [x] **S046** 3D Trilateration
+- [x] **S047** Signal Relay Enhancement
+- [x] **S048** Lawnmower Coverage
+- [x] **S049** Dynamic Zone Assignment
+- [x] **S050** Swarm SLAM
 - [ ] **S051** Post-Disaster Comm Network
 - [ ] **S052** Glacier Area Monitoring
 - [ ] **S053** Coral Reef 3D Mapping
@@ -161,7 +161,7 @@
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 0 | 20 |
+| Environmental & SAR | 9 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **40** | **100** |
+| **Total** | **49** | **100** |
