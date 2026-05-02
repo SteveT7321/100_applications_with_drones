@@ -80,12 +80,12 @@
 
 ---
 
-## Domain 3: Environmental & SAR — 9/20
+## Domain 3: Environmental & SAR — 10/20
 
 - [x] **S041** Wildfire Boundary Scan
 - [x] **S042** Missing Person Search
 - [x] **S043** Confined Space Exploration
-- [ ] **S044** Wall Crack Inspection
+- [x] **S044** Wall Crack Inspection
 - [x] **S045** Chemical Plume Tracing
 - [x] **S046** 3D Trilateration
 - [x] **S047** Signal Relay Enhancement
