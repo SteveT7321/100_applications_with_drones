@@ -36,7 +36,7 @@ CAM_RES_PX   = 2048    # pixels across FOV
 SIGMA_NOISE  = 0.05    # mm — crack width detection noise
 Z_MIN        = 0.5     # m  — minimum safe altitude
 Z_MAX        = 19.5    # m  — maximum altitude
-DT           = 0.1     # s  — simulation timestep
+DT           = 0.05    # s  — simulation timestep
 N_CRACKS     = 40      # synthetic crack count
 
 # Derived geometry
@@ -194,18 +194,18 @@ def run_simulation():
         k1 = min(nz, int((z_pos + H_STRIP) / GRID_RES) + 1)
         covered[j0:j1, k0:k1] = True
 
-        # ── Crack detection (vectorised) ────────────────────────────────
-        undetected = np.where(~detected)[0]
-        if len(undetected):
-            dy = y_pos - cracks[undetected, 0]
-            dz = z_pos - cracks[undetected, 1]
-            in_f = (np.abs(dy) <= H_STRIP) & (np.abs(dz) <= H_STRIP)
-            cands = undetected[in_f]
-            if len(cands):
-                slant = np.sqrt(dy[in_f]**2 + dz[in_f]**2 + D_STANDOFF**2)
-                p = ndtr((cracks[cands, 2] - w_min_at_range(slant)) / SIGMA_NOISE)
-                hits = rng_det.random(len(cands)) < p
-                detected[cands[hits]] = True
+        # ── Crack detection ─────────────────────────────────────────────
+        for ci, crack in enumerate(cracks):
+            if detected[ci]:
+                continue
+            dy = y_pos - crack[0]
+            dz = z_pos - crack[1]
+            in_frame = (abs(dy) <= H_STRIP) and (abs(dz) <= H_STRIP)
+            if in_frame:
+                slant = np.sqrt(dy**2 + dz**2 + D_STANDOFF**2)
+                p     = detection_prob(crack[2], slant)
+                if rng_det.random() < p:
+                    detected[ci] = True
 
     # Final coverage if last pass wasn't captured
     if len(pass_coverage) < N_PASS:
@@ -484,7 +484,7 @@ def save_animation(traj, cracks, detected, pass_heights, out_dir):
     trail_line, = ax.plot([], [], color='steelblue', lw=0.6, alpha=0.5)
 
     # Decimate for animation speed
-    step = max(1, len(traj) // 80)
+    step = max(1, len(traj) // 200)
     frames = range(0, len(traj), step)
     detected_so_far = np.zeros(N_CRACKS, dtype=bool)
 
@@ -499,7 +499,7 @@ def save_animation(traj, cracks, detected, pass_heights, out_dir):
         y  = traj[i, 0]
         z  = traj[i, 1]
         drone_dot.set_data([y], [z])
-        trail_line.set_data(traj[max(0,i-300):i+1, 0], traj[max(0,i-300):i+1, 1])
+        trail_line.set_data(traj[:i+1, 0], traj[:i+1, 1])
         footprint.set_xy((y - H_STRIP, z - H_STRIP))
 
         # Update crack colours as they get detected
@@ -529,10 +529,8 @@ def save_animation(traj, cracks, detected, pass_heights, out_dir):
         init_func=init, interval=30, blit=True
     )
     os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'animation.mp4')
-    plt.rcParams['animation.ffmpeg_path'] = r'C:\Users\user\anaconda3\envs\drones\Library\bin\ffmpeg.exe'
-    writer = animation.FFMpegWriter(fps=20, bitrate=1800)
-    ani.save(path, writer=writer, dpi=80)
+    path = os.path.join(out_dir, 'animation.gif')
+    ani.save(path, writer='pillow', fps=20, dpi=100)
     plt.close()
     print(f'Saved: {path}')
 

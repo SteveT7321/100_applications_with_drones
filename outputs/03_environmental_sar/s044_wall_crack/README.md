@@ -79,7 +79,7 @@ $$P_{det}(w_i, r) = \Phi\!\left(\frac{w_i - w_{min}(r)}{\sigma_{noise}}\right), 
 
 **Animation**:
 
-![Animation](animation.mp4)
+![Animation](animation.gif)
 
 ---
 
