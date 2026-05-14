@@ -1,35 +1,48 @@
 # S055 Coastline Oil Spill Tracking
 
 **Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Advection-Diffusion Simulation + Contour-Following + Kalman Prediction | **Dimension**: 2D
 
 ---
 
 ## Problem Definition
 
-**Setup**: An oil tanker accident has released crude oil into a $200 \times 100$ m coastal section.
-At $t = 0$ the spill is initialised as a Gaussian blob of radius $r_0 = 15$ m centred at the
-release point $\mathbf{c}_{spill} = (60, 50)$ m. The oil concentration field $C(x, y, t)$
-evolves under a simplified advection-diffusion model driven by a constant ocean current velocity
-$\mathbf{v}_{current}$ and isotropic diffusion coefficient $D$. A single drone flies at a fixed
-altitude of $z = 8$ m carrying a downward optical sensor that detects the oil/clean-water boundary
-via reflectance contrast (oil appears darker than clean water).
+**Setup**: An oil tanker accident has released a large surface slick in a $4 \times 4$ km coastal
+ocean area. The slick evolves continuously under the combined influence of a steady wind drift and
+a tidal current. Two drones are deployed from a shore base and must keep a real-time estimate of
+the spill boundary accurate enough to guide containment boom deployment. The spill is modelled as
+a 2D concentration field $C(x, y, t)$ on the ocean surface; the boundary is the iso-contour at a
+fixed contamination threshold $C_{thr}$.
+
+Each drone carries a downward-facing **hyperspectral or fluorescence sensor** that returns a
+binary above/below-threshold reading at its current position. The drones fly at constant altitude
+$z = 15$ m and constant speed $v = 8$ m/s. They circulate along the estimated boundary, taking
+samples every $\Delta s = 20$ m, and feed each observation into a **Kalman filter** that tracks
+the displacement of individual boundary landmark points. A **predictive replanning** step
+periodically advances the nominal boundary forward in time using the known advection velocity,
+enabling the drones to stay ahead of the spill rather than always chasing its last observed state.
 
 **Roles**:
-- **Oil spill** (environment): a spreading, advecting scalar concentration field whose
-  $C_{thresh}$-isosurface is the boundary to be tracked.
-- **Drone**: single agent using a contour-following zigzag strategy to repeatedly sweep the
-  oil/water boundary, relay the extracted polygon to a coast-guard vessel, and predict where
-  the boundary centroid will be $T_{pred} = 60$ s in the future so that chemical dispersant
-  drones can be pre-positioned.
+- **Drone A** and **Drone B**: symmetric boundary-patrol agents; each owns one half of the
+  boundary arc (split at the two points of maximum curvature). They share boundary-state estimates
+  via a common ground-station uplink.
+- **Spill field**: dynamic scalar field governed by advection-diffusion; truth known only to the
+  simulator, sampled by the drones at their flight positions.
+- **Ground station**: fuses both drones' observations, runs the Kalman filter update, and
+  broadcasts the updated boundary estimate back to both drones at each replanning epoch
+  $T_{replan} = 30$ s.
 
-**Objective**: Continuously track the evolving oil boundary with low positional error, estimate
-the spill area via the shoelace formula on the traced contour polygon, and deliver a Kalman
-filter prediction of the boundary centroid $T_{pred} = 60$ s ahead at each lap completion.
+**Objective**: Maintain **boundary coverage** $\eta(t) \geq 0.85$ at all times, where $\eta$ is
+the fraction of boundary arc length whose most recent observation is fresher than $T_{stale} = 60$
+s, while the spill expands under advection-diffusion dynamics over a $T_{mission} = 30$ min
+mission.
 
-**Key question**: How does boundary-tracking lag grow as current speed increases? At what
-advection velocity does the single-drone contour-follower fail to close the contour polygon
-before the spill boundary has moved by more than one sensor footprint width?
+**Comparison strategies**:
+1. **Static partition, no prediction** — each drone patrols its fixed initial semicircle at
+   constant angular speed; boundary estimate never replanned.
+2. **Adaptive partition, no prediction** — partitions are rebalanced at each epoch to equalise
+   per-drone uncovered arc length; no forward prediction.
+3. **Adaptive partition + predictive replanning** — partitions rebalanced and boundary estimate
+   propagated forward by one epoch using advection velocity before each replanning step.
 
 ---
 
@@ -37,133 +50,121 @@ before the spill boundary has moved by more than one sensor footprint width?
 
 ### Advection-Diffusion Spill Dynamics
 
-The oil concentration field $C(\mathbf{x}, t) \in [0, 1]$ evolves according to the
-advection-diffusion PDE:
+The oil concentration field $C(\mathbf{x}, t)$ with $\mathbf{x} = (x, y)$ satisfies the 2D
+advection-diffusion equation:
 
-$$\frac{\partial C}{\partial t} = -\mathbf{v} \cdot \nabla C + D \nabla^2 C$$
+$$\frac{\partial C}{\partial t} = -\mathbf{u} \cdot \nabla C + D \nabla^2 C$$
 
-where $\mathbf{v} = (v_x, v_y)^T$ is the depth-averaged ocean current velocity (m/s) and
-$D$ is the turbulent diffusion coefficient (m$^2$/s). The domain $[0, 200] \times [0, 100]$ m
-is discretised onto a grid with cell size $\delta = 0.5$ m. At each timestep $\Delta t$ the
-concentration is updated with an explicit finite-difference scheme:
+where $\mathbf{u} = (u_x, u_y)$ is the combined wind-drift and tidal-current velocity vector
+(m/s) and $D$ (m$^2$/s) is the effective horizontal diffusivity. In the simulation the field
+is advanced in time on a $200 \times 200$ grid using a finite-difference scheme.
 
-$$C_{i,j}^{t+1} = C_{i,j}^t
-  - \Delta t \left( v_x \frac{C_{i+1,j}^t - C_{i-1,j}^t}{2\delta}
-                  + v_y \frac{C_{i,j+1}^t - C_{i,j-1}^t}{2\delta} \right)
-  + D\Delta t \frac{C_{i+1,j}^t + C_{i-1,j}^t + C_{i,j+1}^t + C_{i,j-1}^t - 4C_{i,j}^t}{\delta^2}$$
+**Initial condition**: a circular patch of radius $R_0 = 200$ m centred at $\mathbf{x}_0$:
 
-Boundary conditions: Neumann (zero-flux) on all four domain edges. Stability condition
-(CFL + diffusion):
+$$C(\mathbf{x}, 0) = C_0 \exp\!\left(-\frac{\|\mathbf{x} - \mathbf{x}_0\|^2}{2 R_0^2}\right)$$
 
-$$\Delta t \leq \min\!\left(\frac{\delta}{2\|\mathbf{v}\|_\infty},\; \frac{\delta^2}{4D}\right)$$
+**Finite-difference update** (forward Euler, timestep $\delta t$):
 
-### Oil / Clean-Water Boundary
+$$C_{i,j}^{n+1} = C_{i,j}^n
+  - \frac{u_x \delta t}{2h}\!\left(C_{i+1,j}^n - C_{i-1,j}^n\right)
+  - \frac{u_y \delta t}{2h}\!\left(C_{i,j+1}^n - C_{i,j-1}^n\right)
+  + \frac{D \delta t}{h^2}\!\left(C_{i+1,j}^n + C_{i-1,j}^n + C_{i,j+1}^n + C_{i,j-1}^n - 4C_{i,j}^n\right)$$
 
-The spill boundary $\partial\Omega(t)$ is the $C_{thresh}$-level set of the concentration field:
+where $h$ is the grid cell size (m) and indices $(i, j)$ correspond to the $(x, y)$ directions.
 
-$$\partial\Omega(t) = \bigl\{(x, y) : C(x, y, t) = C_{thresh}\bigr\}$$
+### Spill Boundary Representation
 
-The boundary polygon is extracted from the grid using marching-squares on the concentration field,
-yielding an ordered sequence of $M$ vertices
-$\{(x_1, y_1), \ldots, (x_M, y_M)\}$.
+The boundary $\partial \Omega(t)$ is the level-set contour:
 
-### Optical Sensor Model
+$$\partial \Omega(t) = \{\mathbf{x} : C(\mathbf{x}, t) = C_{thr}\}$$
 
-The drone at position $\mathbf{p}_d = (p_x, p_y)$ observes a disc of radius $r_s = 1.5$ m on the
-water surface. The raw reflectance reading is:
+For the Kalman filter the boundary is parametrised as $N_b = 36$ landmark points evenly spaced
+in arc length: $\mathbf{b}_k(t) \in \mathbb{R}^2$, $k = 0, \ldots, N_b - 1$.
 
-$$\rho(\mathbf{p}_d) = \rho_{oil} \cdot \bar{C}_{footprint} + \rho_{water} \cdot (1 - \bar{C}_{footprint}) + \eta$$
+### Landmark Motion Model
 
-where $\bar{C}_{footprint}$ is the area-averaged concentration within the sensor footprint,
-$\rho_{oil} = 0.05$, $\rho_{water} = 0.40$ are the reflectance values (0–1 scale), and
-$\eta \sim \mathcal{N}(0, \sigma_{opt}^2)$ is optical noise with $\sigma_{opt} = 0.01$.
-The oil detection flag is:
+Each boundary landmark drifts with the local advection velocity:
 
-$$\hat{O}(\mathbf{p}_d) = \mathbf{1}\!\left[\rho(\mathbf{p}_d) \leq \rho_{thresh}\right], \qquad \rho_{thresh} = 0.20$$
+$$\dot{\mathbf{b}}_k = \mathbf{u} + \boldsymbol{\xi}_k, \qquad
+\boldsymbol{\xi}_k \sim \mathcal{N}(\mathbf{0},\, \sigma_q^2 \mathbf{I})$$
 
-### Contour-Following Guidance Law
+The process noise $\sigma_q$ captures diffusion-induced boundary deformation not explained by
+pure advection. In discrete time with epoch $T_{replan}$:
 
-The drone executes a boundary-hugging zigzag: it steers so that its sensor footprint straddles
-the oil/water boundary, alternating between two sub-modes depending on the current detection flag:
+$$\mathbf{b}_k^{n+1} = \mathbf{b}_k^n + \mathbf{u}\, T_{replan} + \boldsymbol{\xi}_k$$
 
-| Detection flag | Action |
-|----------------|--------|
-| $\hat{O} = 1$ (oil detected) | Turn toward clean water: apply yaw rate $+\omega_{turn}$ |
-| $\hat{O} = 0$ (clean water detected) | Turn toward oil: apply yaw rate $-\omega_{turn}$ |
+### Kalman Filter Boundary Estimation
 
-The heading $\psi$ and position update in polar form:
+Each landmark $k$ has state $\hat{\mathbf{b}}_k \in \mathbb{R}^2$ and covariance
+$\mathbf{P}_k \in \mathbb{R}^{2 \times 2}$.
 
-$$\psi_{t+1} = \psi_t + s(\hat{O}_t) \cdot \omega_{turn} \cdot \Delta t, \qquad
-s(\hat{O}) = \begin{cases} +1 & \hat{O} = 0 \\ -1 & \hat{O} = 1 \end{cases}$$
+**Predict** (propagate between replan epochs):
 
-$$\mathbf{p}_{t+1} = \mathbf{p}_t + v_{cruise}\,(\cos\psi_t,\,\sin\psi_t)^T\,\Delta t$$
+$$\hat{\mathbf{b}}_k^{-} = \hat{\mathbf{b}}_k + \mathbf{u}\, T_{replan}$$
 
-This produces a boundary-tracing sinusoid whose wavelength $\lambda \approx \pi v_{cruise} / \omega_{turn}$
-controls tracking fidelity. The drone crosses the boundary roughly every
-$\Delta s = v_{cruise} / \omega_{turn}$ metres of lateral motion.
+$$\mathbf{P}_k^{-} = \mathbf{P}_k + \sigma_q^2 T_{replan} \mathbf{I}$$
 
-### Contour Polygon Lap Detection
+**Update** when a drone samples at position $\mathbf{p}_d$ near landmark $k$ (nearest-landmark
+association, acceptance radius $r_{assoc} = 30$ m):
 
-A lap is completed when the drone returns within $r_{lap} = 5$ m of its lap-start position after
-having traversed at least $L_{min} = 50$ m. At each lap completion:
+The measurement is a projected position reading. A drone crossing the estimated boundary at
+measured position $\mathbf{m}$ provides a 1D innovation along the boundary normal
+$\hat{\mathbf{n}}_k$:
 
-1. The contour polygon is extracted from the estimated concentration grid using marching squares.
-2. The polygon area and centroid are computed (see below).
-3. The Kalman filter is updated with the new centroid measurement.
-4. A T = 60 s centroid prediction is issued.
+$$z_k = \hat{\mathbf{n}}_k^T (\mathbf{m} - \hat{\mathbf{b}}_k^{-})$$
 
-### Spill Area Estimation (Shoelace Formula)
+$$S_k = \hat{\mathbf{n}}_k^T \mathbf{P}_k^{-} \hat{\mathbf{n}}_k + \sigma_r^2$$
 
-Given the ordered boundary polygon vertices
-$\{(x_1, y_1), \ldots, (x_M, y_M)\}$ extracted from the concentration grid:
+$$\mathbf{K}_k = \mathbf{P}_k^{-} \hat{\mathbf{n}}_k\, S_k^{-1}$$
 
-$$A(t) = \frac{1}{2} \left|\sum_{i=1}^{M} \bigl(x_i \, y_{i+1} - x_{i+1} \, y_i\bigr)\right|$$
+$$\hat{\mathbf{b}}_k = \hat{\mathbf{b}}_k^{-} + \mathbf{K}_k z_k$$
 
-with indices taken modulo $M$. The polygon centroid:
+$$\mathbf{P}_k = (\mathbf{I} - \mathbf{K}_k \hat{\mathbf{n}}_k^T)\, \mathbf{P}_k^{-}$$
 
-$$x_c = \frac{1}{6A} \sum_{i=1}^{M} (x_i + x_{i+1})(x_i y_{i+1} - x_{i+1} y_i)$$
+where $\sigma_r$ is the sensor position noise (GPS + sensor footprint combined).
 
-$$y_c = \frac{1}{6A} \sum_{i=1}^{M} (y_i + y_{i+1})(x_i y_{i+1} - x_{i+1} y_i)$$
+### Drone Boundary-Following Trajectory
 
-### Kalman Filter Boundary Centroid Prediction
+Each drone follows the estimated boundary at constant arc-length speed $v_{arc}$. The commanded
+velocity at drone position $\mathbf{p}_d$ assigned to boundary segment $[k, k+1]$ is:
 
-The spill centroid $\mathbf{x}_c = (x_c, y_c)^T$ is modelled as a constant-velocity linear system:
+$$\mathbf{v}_{cmd} = v_{arc}\, \hat{\boldsymbol{\tau}}_k + k_{lat}\!\left(\mathbf{b}_k^{proj} - \mathbf{p}_d\right)$$
 
-$$\mathbf{s}_t = \begin{pmatrix} x_c \\ y_c \\ \dot{x}_c \\ \dot{y}_c \end{pmatrix}, \qquad
-\mathbf{s}_{t+1} = A\,\mathbf{s}_t + \mathbf{q}_t$$
+where $\hat{\boldsymbol{\tau}}_k$ is the unit tangent of the boundary arc at the nearest landmark,
+$\mathbf{b}_k^{proj}$ is the orthogonal projection of $\mathbf{p}_d$ onto the estimated boundary
+segment, and $k_{lat}$ is a lateral correction gain that drives the drone back onto the boundary.
 
-$$A = \begin{pmatrix} I_2 & \Delta\tau \cdot I_2 \\ 0 & I_2 \end{pmatrix}, \qquad
-\mathbf{q}_t \sim \mathcal{N}(\mathbf{0}, Q)$$
+### Predictive Boundary Propagation
 
-where $\Delta\tau$ is the inter-lap interval (s), $Q = \sigma_q^2 \operatorname{diag}(1,1,1,1)$
-is the process noise covariance ($\sigma_q = 0.1$ m or m/s per lap), and the measurement model
-is $\mathbf{z}_t = H\,\mathbf{s}_t + \mathbf{r}_t$ with $H = [I_2 \mid 0]$ and
-$\mathbf{r}_t \sim \mathcal{N}(\mathbf{0}, R)$, $R = \sigma_r^2 I_2$, $\sigma_r = 1.0$ m.
+Before each replanning step the estimated boundary is propagated forward by one epoch duration
+$T_{replan}$ using the known advection velocity:
 
-**Prediction** $T_{pred} = 60$ s ahead at lap $k$:
+$$\tilde{\mathbf{b}}_k = \hat{\mathbf{b}}_k + \mathbf{u}\, T_{replan}, \qquad k = 0, \ldots, N_b - 1$$
 
-$$\hat{\mathbf{s}}_{k+T_{pred}/\Delta\tau \mid k} = A^{\lfloor T_{pred}/\Delta\tau \rfloor}\,\hat{\mathbf{s}}_{k\mid k}$$
+Drone waypoints for the next epoch are computed from $\{\tilde{\mathbf{b}}_k\}$ rather than
+$\{\hat{\mathbf{b}}_k\}$, so the drones intercept the boundary at its predicted future location.
 
-The predicted centroid $(\hat{x}_c, \hat{y}_c)$ is the upper two components of the predicted state.
+### Partition Rebalancing
 
-### Performance Metrics
+Let $L_A$ and $L_B$ be the arc lengths currently assigned to drone A and drone B. The split
+point index $k^*$ is chosen to minimise the imbalance in uncovered arc length:
 
-**Boundary tracking lag** — mean displacement between the true spill centroid and the most recent
-contour-polygon centroid:
+$$k^* = \arg\min_{k} \left|\sum_{i=0}^{k} \ell_i - \frac{L_{total}}{2}\right|$$
 
-$$\varepsilon_{lag}(t) = \|\mathbf{c}_{true}(t) - \mathbf{c}_{polygon}(t_{lap})\|$$
+where $\ell_i = \|\mathbf{b}_{i+1} - \mathbf{b}_i\|$ is the $i$-th landmark segment length and
+$L_{total} = \sum_i \ell_i$ is the total estimated perimeter.
 
-where $t_{lap}$ is the time of the most recently completed lap.
+### Coverage Metric
 
-**Prediction error** at lap $k$:
+The staleness age of boundary landmark $k$ at time $t$ is:
 
-$$\varepsilon_{pred}^{(k)} = \|\hat{\mathbf{c}}_{k+T_{pred}/\Delta\tau} - \mathbf{c}_{true}(t_k + T_{pred})\|$$
+$$\tau_k(t) = t - t_k^{last}$$
 
-**Area estimation error**:
+where $t_k^{last}$ is the last time a drone sampled within $r_{assoc}$ of $\mathbf{b}_k$.
+Boundary coverage is:
 
-$$\varepsilon_A(t) = \frac{|A_{polygon}(t) - A_{true}(t)|}{A_{true}(t)} \times 100\%$$
-
-where $A_{true}(t)$ is the true area of the $C > C_{thresh}$ region computed directly from the grid.
+$$\eta(t) = \frac{\sum_{k=0}^{N_b - 1} \ell_k \cdot \mathbf{1}[\tau_k(t) \leq T_{stale}]}
+                 {\sum_{k=0}^{N_b - 1} \ell_k}$$
 
 ---
 
@@ -173,278 +174,161 @@ where $A_{true}(t)$ is the true area of the $C > C_{thresh}$ region computed dir
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.contour import QuadContourSet
+from scipy.ndimage import gaussian_filter
 
-# ── Domain ──────────────────────────────────────────────────────────────────
-LX, LY       = 200.0, 100.0      # m — domain width and height
-GRID_DX      = 0.5               # m — grid cell size (same in x and y)
-NX           = int(LX / GRID_DX)
-NY           = int(LY / GRID_DX)
+# Key constants — domain and grid
+AREA_SIZE     = 4000.0       # m, square domain side length
+GRID_N        = 200          # grid cells per axis
+H_CELL        = AREA_SIZE / GRID_N   # m, cell size
 
-# ── Spill physics ────────────────────────────────────────────────────────────
-V_CURRENT    = np.array([0.15, 0.05])  # m/s — ocean current (x, y)
-D_DIFF       = 0.3                     # m^2/s — turbulent diffusion coefficient
-C_THRESH     = 0.10                    # concentration detection threshold
-C_INIT_PEAK  = 1.0                     # peak concentration at t=0
-R_INIT       = 15.0                    # m — initial spill radius (Gaussian sigma)
-SPILL_CENTRE = np.array([60.0, 50.0]) # m — initial spill centre
+# Spill parameters
+C0            = 1.0          # initial peak concentration (normalised)
+R0            = 200.0        # m, initial spill radius
+X0            = np.array([2000.0, 2000.0])   # m, spill centre
 
-# ── Optical sensor ───────────────────────────────────────────────────────────
-RHO_OIL      = 0.05    # reflectance over pure oil
-RHO_WATER    = 0.40    # reflectance over clean water
-RHO_THRESH   = 0.20    # oil/water classification threshold
-SIGMA_OPT    = 0.01    # optical noise std
-SENSOR_R     = 1.5     # m — sensor footprint radius
+# Advection-diffusion
+U_WIND        = np.array([0.4, 0.15])   # m/s, combined wind+current drift
+D_DIFF        = 5.0          # m^2/s, horizontal diffusivity
+DT_FIELD      = 2.0          # s, PDE timestep (CFL must be satisfied)
 
-# ── Drone dynamics ───────────────────────────────────────────────────────────
-V_CRUISE     = 2.0     # m/s — cruise speed
-OMEGA_TURN   = 0.5     # rad/s — contour-following yaw rate
-Z_FLY        = 8.0     # m — fixed altitude
+# Boundary tracking
+C_THR         = 0.08         # contamination threshold (normalised)
+N_LANDMARKS   = 36           # boundary landmark points
+SIGMA_Q       = 0.5          # m/s^0.5, process noise std
+SIGMA_R       = 15.0         # m, measurement noise std
+R_ASSOC       = 30.0         # m, landmark association radius
 
-# ── Lap detection ────────────────────────────────────────────────────────────
-R_LAP        = 5.0     # m — lap-closure radius
-L_MIN_LAP    = 50.0    # m — minimum path length to count as a lap
+# Drone parameters
+V_ARC         = 8.0          # m/s, boundary-following speed
+K_LAT         = 0.5          # lateral correction gain (1/s)
+DELTA_S       = 20.0         # m, sampling interval along boundary
+T_REPLAN      = 30.0         # s, replanning epoch
+T_STALE       = 60.0         # s, max observation age for "fresh"
+T_MISSION     = 1800.0       # s, total mission duration
+DT_SIM        = 0.5          # s, drone simulation timestep
 
-# ── Kalman filter ────────────────────────────────────────────────────────────
-SIGMA_Q      = 0.1     # process noise std (m or m/s per lap)
-SIGMA_R_KF   = 1.0     # centroid measurement noise std (m)
-T_PRED       = 60.0    # s — prediction horizon
+def init_concentration_field(grid_x, grid_y):
+    """Gaussian initial spill patch."""
+    dist2 = (grid_x - X0[0])**2 + (grid_y - X0[1])**2
+    return C0 * np.exp(-dist2 / (2.0 * R0**2))
 
-# ── Simulation ───────────────────────────────────────────────────────────────
-DT           = 0.2     # s — simulation timestep
-T_SIM        = 300.0   # s — total simulation duration
+def advance_field(C, u, D, h, dt):
+    """One forward-Euler advection-diffusion step on a 2D field."""
+    # Central-difference advection
+    adv_x = u[0] * (np.roll(C, -1, axis=0) - np.roll(C, 1, axis=0)) / (2.0 * h)
+    adv_y = u[1] * (np.roll(C, -1, axis=1) - np.roll(C, 1, axis=1)) / (2.0 * h)
+    # Five-point Laplacian diffusion
+    lap   = (np.roll(C, -1, axis=0) + np.roll(C, 1, axis=0)
+           + np.roll(C, -1, axis=1) + np.roll(C, 1, axis=1) - 4.0 * C) / h**2
+    return C - dt * (adv_x + adv_y) + dt * D * lap
 
-
-def init_concentration():
-    """Gaussian blob initial condition centred at SPILL_CENTRE."""
-    xs = (np.arange(NX) + 0.5) * GRID_DX
-    ys = (np.arange(NY) + 0.5) * GRID_DX
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-    dist2 = (X - SPILL_CENTRE[0])**2 + (Y - SPILL_CENTRE[1])**2
-    return C_INIT_PEAK * np.exp(-dist2 / (2.0 * R_INIT**2))
-
-
-def advect_diffuse(C, dt):
-    """One explicit finite-difference step of advection-diffusion."""
-    vx, vy = V_CURRENT
-
-    # Central-difference advection (interior only; boundary uses zero-flux)
-    dCdx = np.zeros_like(C)
-    dCdy = np.zeros_like(C)
-    dCdx[1:-1, :] = (C[2:, :] - C[:-2, :]) / (2.0 * GRID_DX)
-    dCdy[:, 1:-1] = (C[:, 2:] - C[:, :-2]) / (2.0 * GRID_DX)
-
-    # Five-point Laplacian
-    lap = np.zeros_like(C)
-    lap[1:-1, 1:-1] = (
-        C[2:,  1:-1] + C[:-2, 1:-1] +
-        C[1:-1, 2:] + C[1:-1, :-2] -
-        4.0 * C[1:-1, 1:-1]
-    ) / GRID_DX**2
-
-    C_new = C - dt * (vx * dCdx + vy * dCdy) + D_DIFF * dt * lap
-    return np.clip(C_new, 0.0, 1.0)
-
-
-def optical_reading(C_field, drone_pos, rng):
-    """Return reflectance measurement and oil detection flag."""
-    xs = (np.arange(NX) + 0.5) * GRID_DX
-    ys = (np.arange(NY) + 0.5) * GRID_DX
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-    dist = np.hypot(X - drone_pos[0], Y - drone_pos[1])
-    footprint = dist <= SENSOR_R
-
-    C_footprint_mean = C_field[footprint].mean() if footprint.any() else 0.0
-    rho = (RHO_OIL * C_footprint_mean
-           + RHO_WATER * (1.0 - C_footprint_mean)
-           + rng.normal(0.0, SIGMA_OPT))
-    oil_detected = rho <= RHO_THRESH
-    return rho, oil_detected
-
-
-def shoelace_area_centroid(vertices):
-    """Compute area and centroid of a closed polygon (Nx2 array)."""
-    x = vertices[:, 0]
-    y = vertices[:, 1]
-    cross = x[:-1] * y[1:] - x[1:] * y[:-1]
-    A = 0.5 * abs(cross.sum())
-    if A < 1e-6:
-        return A, np.mean(vertices, axis=0)
-    cx = np.sum((x[:-1] + x[1:]) * cross) / (6.0 * A)
-    cy = np.sum((y[:-1] + y[1:]) * cross) / (6.0 * A)
-    return A, np.array([cx, cy])
-
-
-def extract_contour_polygon(C_field):
-    """Extract the C_THRESH level-set polygon using matplotlib's contour finder."""
-    xs = (np.arange(NX) + 0.5) * GRID_DX
-    ys = (np.arange(NY) + 0.5) * GRID_DX
+def extract_boundary_landmarks(C, grid_x, grid_y, n_landmarks, c_thr):
+    """Extract n_landmarks points evenly spaced in angle around the C=c_thr contour."""
+    from matplotlib.contour import QuadContourSet
     fig_tmp, ax_tmp = plt.subplots()
-    cs = ax_tmp.contour(xs, ys, C_field.T, levels=[C_THRESH])
-    plt.close(fig_tmp)
+    cs = ax_tmp.contour(grid_x, grid_y, C, levels=[c_thr])
     paths = cs.collections[0].get_paths() if cs.collections else []
+    plt.close(fig_tmp)
     if not paths:
         return None
-    # Return the longest path (main spill boundary)
-    longest = max(paths, key=lambda p: len(p.vertices))
-    return longest.vertices   # shape (M, 2)
+    # Take the longest contour path
+    verts = max(paths, key=lambda p: len(p.vertices)).vertices
+    # Resample to n_landmarks equally arc-length spaced points
+    diffs  = np.diff(verts, axis=0)
+    seg_l  = np.linalg.norm(diffs, axis=1)
+    cumlen = np.concatenate([[0.0], np.cumsum(seg_l)])
+    total  = cumlen[-1]
+    sample_d = np.linspace(0, total, n_landmarks, endpoint=False)
+    landmarks = np.array([
+        np.interp(d, cumlen, verts[:, col]) for col in range(2)
+    ]).T
+    return landmarks
 
+class BoundaryKalmanFilter:
+    """Independent Kalman filter for each boundary landmark (x, y)."""
 
-def true_spill_area(C_field):
-    """True area of C > C_THRESH region from the grid."""
-    return np.sum(C_field > C_THRESH) * GRID_DX**2
+    def __init__(self, landmarks_init, sigma_q, sigma_r):
+        self.n   = len(landmarks_init)
+        self.mu  = landmarks_init.copy()          # (N, 2)
+        self.P   = np.tile(sigma_r**2 * np.eye(2), (self.n, 1, 1))  # (N, 2, 2)
+        self.sq  = sigma_q
+        self.sr  = sigma_r
 
+    def predict(self, u_vec, dt):
+        self.mu += u_vec * dt
+        self.P  += self.sq**2 * dt * np.eye(2)[None]
 
-def true_spill_centroid(C_field):
-    """Centroid of C > C_THRESH region."""
-    xs = (np.arange(NX) + 0.5) * GRID_DX
-    ys = (np.arange(NY) + 0.5) * GRID_DX
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-    mask = C_field > C_THRESH
-    if not mask.any():
-        return np.array([LX / 2, LY / 2])
-    return np.array([X[mask].mean(), Y[mask].mean()])
+    def update(self, k, m_pos, n_hat):
+        """Scalar innovation update along boundary normal n_hat for landmark k."""
+        innov  = n_hat @ (m_pos - self.mu[k])
+        S      = n_hat @ self.P[k] @ n_hat + self.sr**2
+        K      = self.P[k] @ n_hat / S           # (2,) Kalman gain
+        self.mu[k]  += K * innov
+        self.P[k]   -= np.outer(K, n_hat) @ self.P[k]
 
+    def boundary_normals(self):
+        """Unit outward normals at each landmark (finite-difference tangent rotated 90 deg)."""
+        prev_idx = (np.arange(self.n) - 1) % self.n
+        next_idx = (np.arange(self.n) + 1) % self.n
+        tangent  = self.mu[next_idx] - self.mu[prev_idx]   # (N, 2)
+        norms    = np.linalg.norm(tangent, axis=1, keepdims=True) + 1e-9
+        tangent  /= norms
+        # Rotate 90 deg CCW: (tx, ty) -> (-ty, tx)
+        normals  = np.stack([-tangent[:, 1], tangent[:, 0]], axis=1)
+        return normals
 
-class BoundaryCentroidKF:
-    """Linear Kalman filter on 4D state [x_c, y_c, vx_c, vy_c]."""
+class BoundaryDrone:
+    """Single drone that patrols an arc of the estimated boundary."""
 
-    def __init__(self, init_centroid, dt_lap):
-        self.dt = dt_lap
-        A_sub = np.array([[1, 0, dt_lap, 0],
-                          [0, 1, 0, dt_lap],
-                          [0, 0, 1,      0],
-                          [0, 0, 0,      1]])
-        self.A = A_sub
-        self.H = np.array([[1, 0, 0, 0],
-                           [0, 1, 0, 0]])
-        self.Q = SIGMA_Q**2 * np.eye(4)
-        self.R = SIGMA_R_KF**2 * np.eye(2)
-        self.x = np.array([init_centroid[0], init_centroid[1], 0.0, 0.0])
-        self.P = np.eye(4) * 10.0
+    def __init__(self, drone_id, start_pos, landmark_indices, kf):
+        self.id          = drone_id
+        self.pos         = start_pos.copy()
+        self.indices     = landmark_indices   # owned landmark range
+        self.kf          = kf
+        self.arc_ptr     = 0                  # index into self.indices
+        self.dist_accum  = 0.0               # distance since last sample
 
-    def predict(self):
-        self.x = self.A @ self.x
-        self.P = self.A @ self.P @ self.A.T + self.Q
+    def step(self, dt, t_now, last_obs_times):
+        """Advance drone along boundary, record samples, update KF."""
+        idx  = self.indices[self.arc_ptr % len(self.indices)]
+        tgt  = self.kf.mu[idx]
+        diff = tgt - self.pos
+        dist = np.linalg.norm(diff)
+        if dist < 5.0:
+            self.arc_ptr += 1
+        else:
+            lateral_err = diff / (dist + 1e-9)
+            v_cmd = V_ARC * lateral_err
+            self.pos = self.pos + v_cmd * dt
 
-    def update(self, z):
-        y  = z - self.H @ self.x
-        S  = self.H @ self.P @ self.H.T + self.R
-        K  = self.P @ self.H.T @ np.linalg.inv(S)
-        self.x = self.x + K @ y
-        self.P = (np.eye(4) - K @ self.H) @ self.P
+        # Sample when enough arc length accumulated
+        self.dist_accum += V_ARC * dt
+        if self.dist_accum >= DELTA_S:
+            self.dist_accum = 0.0
+            nearest_k = min(self.indices,
+                            key=lambda k: np.linalg.norm(self.kf.mu[k] - self.pos))
+            if np.linalg.norm(self.kf.mu[nearest_k] - self.pos) < R_ASSOC:
+                n_hat = self.kf.boundary_normals()[nearest_k]
+                self.kf.update(nearest_k, self.pos, n_hat)
+                last_obs_times[nearest_k] = t_now
 
-    def predict_ahead(self, n_steps):
-        """Predict centroid n_steps laps ahead."""
-        An = np.linalg.matrix_power(self.A, n_steps)
-        x_pred = An @ self.x
-        return x_pred[:2]
+def compute_coverage(kf, last_obs_times, t_now, t_stale):
+    """Arc-length-weighted fraction of boundary with fresh observations."""
+    next_idx = (np.arange(kf.n) + 1) % kf.n
+    seg_len  = np.linalg.norm(kf.mu[next_idx] - kf.mu, axis=1)
+    fresh    = (t_now - last_obs_times) <= t_stale
+    return np.sum(seg_len * fresh) / (np.sum(seg_len) + 1e-9)
 
-
-def run_simulation(seed=0):
-    rng = np.random.default_rng(seed)
-
-    C = init_concentration()
-
-    # Drone initial state: place on known boundary, heading east
-    pos = np.array([SPILL_CENTRE[0] + R_INIT, SPILL_CENTRE[1]])
-    heading = 0.0  # radians (east)
-    lap_start = pos.copy()
-    path_len_since_lap = 0.0
-
-    # KF initialised at first centroid
-    kf = BoundaryCentroidKF(true_spill_centroid(C), dt_lap=30.0)
-
-    # Logs
-    traj = [pos.copy()]
-    t_axis = []
-    true_areas = []
-    poly_areas = []
-    true_centroids = []
-    poly_centroids = []
-    kf_predictions = []     # (t_issued, predicted_centroid, t_target)
-    pred_errors = []
-    lap_times = []
-
-    n_steps = int(T_SIM / DT)
-
-    for step in range(n_steps):
-        t = step * DT
-
-        # 1. Advance spill
-        C = advect_diffuse(C, DT)
-
-        # 2. Sense
-        _, oil_flag = optical_reading(C, pos, rng)
-
-        # 3. Contour-following yaw update
-        s = -1.0 if oil_flag else +1.0
-        heading += s * OMEGA_TURN * DT
-
-        # 4. Move
-        vel = V_CRUISE * np.array([np.cos(heading), np.sin(heading)])
-        new_pos = pos + vel * DT
-        new_pos = np.clip(new_pos, [0, 0], [LX, LY])
-        step_len = np.linalg.norm(new_pos - pos)
-        pos = new_pos
-        path_len_since_lap += step_len
-        traj.append(pos.copy())
-
-        # 5. Lap detection
-        dist_to_start = np.linalg.norm(pos - lap_start)
-        if dist_to_start < R_LAP and path_len_since_lap > L_MIN_LAP:
-            # Lap completed — extract contour polygon
-            verts = extract_contour_polygon(C)
-            if verts is not None and len(verts) >= 3:
-                poly_A, poly_c = shoelace_area_centroid(verts)
-            else:
-                poly_A = np.nan
-                poly_c = np.array([np.nan, np.nan])
-
-            # KF update
-            if not np.isnan(poly_c[0]):
-                kf.update(poly_c)
-            kf.predict()
-
-            # Predict T_PRED seconds ahead
-            n_ahead = max(1, int(T_PRED / 30.0))
-            c_pred = kf.predict_ahead(n_ahead)
-            t_target = t + T_PRED
-            kf_predictions.append((t, c_pred.copy(), t_target))
-
-            lap_times.append(t)
-            poly_areas.append(poly_A)
-            poly_centroids.append(poly_c.copy())
-
-            # Reset lap
-            lap_start = pos.copy()
-            path_len_since_lap = 0.0
-
-        # 6. Log ground-truth metrics
-        t_axis.append(t)
-        true_areas.append(true_spill_area(C))
-        true_centroids.append(true_spill_centroid(C))
-
-    # Compute prediction errors retrospectively
-    t_axis_arr = np.array(t_axis)
-    true_centroids_arr = np.array(true_centroids)
-    for t_issued, c_pred, t_target in kf_predictions:
-        idx = np.argmin(np.abs(t_axis_arr - t_target))
-        err = np.linalg.norm(c_pred - true_centroids_arr[idx])
-        pred_errors.append(err)
-
-    return {
-        "C_final"          : C,
-        "trajectory"       : np.array(traj),
-        "t_axis"           : t_axis_arr,
-        "true_areas"       : np.array(true_areas),
-        "poly_areas"       : np.array(poly_areas),
-        "true_centroids"   : true_centroids_arr,
-        "poly_centroids"   : np.array(poly_centroids) if poly_centroids else np.empty((0, 2)),
-        "kf_predictions"   : kf_predictions,
-        "pred_errors"      : np.array(pred_errors),
-        "lap_times"        : np.array(lap_times),
-    }
+def split_boundary(kf, n_landmarks):
+    """Rebalance the arc partition at the midpoint index by total arc length."""
+    next_idx = (np.arange(n_landmarks) + 1) % n_landmarks
+    seg_len  = np.linalg.norm(kf.mu[next_idx] - kf.mu, axis=1)
+    cumlen   = np.cumsum(seg_len)
+    half     = cumlen[-1] / 2.0
+    split_k  = int(np.searchsorted(cumlen, half))
+    idx_A    = list(range(0, split_k))
+    idx_B    = list(range(split_k, n_landmarks))
+    return idx_A, idx_B
 ```
 
 ---
@@ -453,78 +337,81 @@ def run_simulation(seed=0):
 
 | Parameter | Value |
 |-----------|-------|
-| Domain size | $200 \times 100$ m |
-| Grid cell size $\delta$ | 0.5 m |
-| Ocean current $\mathbf{v}_{current}$ | $(0.15,\;0.05)$ m/s |
-| Diffusion coefficient $D$ | 0.3 m$^2$/s |
-| Detection threshold $C_{thresh}$ | 0.10 |
-| Initial spill radius $r_0$ | 15 m |
-| Initial spill centre | $(60, 50)$ m |
-| Drone cruise speed $v_{cruise}$ | 2.0 m/s |
-| Drone altitude $z$ | 8.0 m |
-| Contour-following yaw rate $\omega_{turn}$ | 0.5 rad/s |
-| Sensor footprint radius $r_s$ | 1.5 m |
-| Optical noise $\sigma_{opt}$ | 0.01 |
-| Reflectance threshold $\rho_{thresh}$ | 0.20 |
-| Lap-closure radius $r_{lap}$ | 5.0 m |
-| Min lap path length $L_{min}$ | 50.0 m |
-| KF process noise $\sigma_q$ | 0.1 m (or m/s) per lap |
-| KF measurement noise $\sigma_r$ | 1.0 m |
-| Prediction horizon $T_{pred}$ | 60 s |
-| Simulation timestep $\Delta t$ | 0.2 s |
-| Simulation duration $T_{sim}$ | 300 s |
+| Domain area | 4000 × 4000 m |
+| Grid resolution | 200 × 200 cells (20 m/cell) |
+| Initial spill radius $R_0$ | 200 m |
+| Initial peak concentration $C_0$ | 1.0 (normalised) |
+| Contamination threshold $C_{thr}$ | 0.08 |
+| Advection velocity $\mathbf{u}$ | $(0.40,\; 0.15)$ m/s |
+| Diffusivity $D$ | 5.0 m$^2$/s |
+| PDE timestep $\delta t$ | 2.0 s |
+| Number of boundary landmarks $N_b$ | 36 |
+| Process noise $\sigma_q$ | 0.5 m/s$^{1/2}$ |
+| Measurement noise $\sigma_r$ | 15.0 m |
+| Landmark association radius $r_{assoc}$ | 30 m |
+| Number of drones | 2 |
+| Drone speed $v_{arc}$ | 8.0 m/s |
+| Sampling interval $\Delta s$ | 20 m |
+| Lateral correction gain $k_{lat}$ | 0.5 s$^{-1}$ |
+| Replanning epoch $T_{replan}$ | 30 s |
+| Staleness threshold $T_{stale}$ | 60 s |
+| Mission duration $T_{mission}$ | 1800 s (30 min) |
+| Simulation timestep $\Delta t_{sim}$ | 0.5 s |
 
 ---
 
 ## Expected Output
 
-- **Spill evolution snapshots**: four 2D top-down colour maps of $C(x, y)$ at $t = 0, 100, 200, 300$ s,
-  with the $C_{thresh}$ contour overlaid in red, the drone position marked in orange, and the ocean
-  current arrow in the upper corner. Colourbar from 0 to 1 (concentration).
-- **Drone trajectory plot**: full drone path colour-coded from blue (early) to red (late), superimposed
-  on the final concentration field; lap-start markers shown as circles; KF prediction arrows drawn
-  from each lap's centroid toward the predicted 60 s position.
-- **Spill area vs time**: dual plot showing true area $A_{true}(t)$ (solid line) and per-lap polygon
-  area estimate $A_{polygon}$ (scatter markers) over time; relative area error $\varepsilon_A$ on a
-  secondary axis.
-- **Boundary centroid tracking plot**: $x_c(t)$ and $y_c(t)$ for the true centroid (solid), the
-  Kalman-filtered estimate at each lap (dashed), and the $T_{pred} = 60$ s prediction (dotted arrow
-  tips); centroid tracking lag $\varepsilon_{lag}$ annotated.
-- **Kalman prediction error bar chart**: per-lap prediction error $\varepsilon_{pred}^{(k)}$ (m)
-  shown as a bar chart over lap index; mean error annotated with a dashed horizontal line.
-- **Animation (GIF)**: top-down spreading spill (colour fill evolving), drone icon tracing the
-  boundary in real time with sensor footprint circle, $C_{thresh}$ contour updating each frame,
-  and current KF centroid prediction arrow updating at each lap.
+- **Spill evolution snapshots**: four top-down concentration field heatmaps at $t =$ 0, 600, 1200,
+  1800 s; estimated boundary contour (dashed white) overlaid on truth contour (solid red);
+  Kalman filter landmark positions shown as coloured dots sized by their covariance trace.
+- **Drone trajectory overlay**: full flight paths of drone A (orange) and drone B (cyan) plotted
+  on the final-frame concentration map; sample points marked; partition split boundary indicated.
+- **Boundary coverage time series**: $\eta(t)$ for all three strategies plotted together;
+  target threshold $\eta = 0.85$ shown as a horizontal dashed line; replanning epoch ticks
+  on the x-axis.
+- **Boundary estimation error**: mean positional error $\bar{e}(t) = \frac{1}{N_b}\sum_k
+  \|\hat{\mathbf{b}}_k - \mathbf{b}_k^{truth}\|$ vs time for each strategy; shaded band
+  showing $\pm 1$ standard deviation across landmark ensemble.
+- **Kalman covariance trace evolution**: $\frac{1}{N_b}\sum_k \mathrm{tr}(\mathbf{P}_k)$ vs
+  time showing how uncertainty grows during flight gaps and contracts on observation updates.
+- **Perimeter growth curve**: estimated total spill perimeter $L_{total}(t)$ vs time compared
+  against the truth contour perimeter; illustrates that predictive replanning tracks the growth
+  more accurately.
+- **Strategy comparison bar chart**: mean boundary coverage $\bar{\eta}$, mean estimation error
+  $\bar{e}$, and total uncovered arc-time (staleness violations in km·s) for all three strategies
+  over $N_{trials} = 10$ Monte Carlo runs with randomised wind directions.
+- **Animation (GIF)**: advancing concentration field with truth boundary (red) and estimated
+  boundary (white dashed); both drone icons moving along boundary; coverage fraction displayed
+  as a live text overlay; replanning event flashes indicated.
 
 ---
 
 ## Extensions
 
-1. **Wind-shifted current**: introduce a sudden 45-degree current direction change at $t = 150$ s
-   (e.g. tidal reversal); measure how quickly the Kalman filter detects the velocity shift and how
-   the contour-follower loses and re-acquires the boundary under the accelerated lateral drift.
-2. **Multi-drone relay**: deploy $N = 2$ drones on opposite sides of the spill boundary so that
-   each covers half the perimeter; compare per-lap completion time and tracking lag against the
-   single-drone baseline; analyse how much the lap interval shortens as a function of $N$.
-3. **Non-uniform diffusion**: introduce a coastal shallows region (left half of the domain) with
-   $D_{shallow} = 0.05$ m$^2$/s and open water (right half) with $D_{open} = 0.6$ m$^2$/s;
-   observe asymmetric spill shape and evaluate shoelace area accuracy on a non-convex polygon.
-4. **Dispersant pre-positioning**: use the KF 60 s centroid prediction to autonomously command a
-   second (dispersant) drone to arrive at the predicted boundary leading edge before the spill does;
-   quantify reaction time saved vs a reactive strategy that waits for the boundary to be confirmed.
-5. **EKF nonlinear state**: replace the constant-velocity KF with an EKF whose state includes
-   centroid position, velocity, and spill radius; incorporate the shoelace area measurement as an
-   additional observation to improve area-growth rate estimation.
+1. **Irregular coastline constraint**: add a no-fly zone representing the shoreline; drones must
+   plan boundary-following paths that avoid land using a visibility-graph or RRT* layer on top of
+   the boundary-following controller.
+2. **Time-varying current**: replace the constant drift $\mathbf{u}$ with a tidal-cycle velocity
+   field $\mathbf{u}(t) = U_0 \cos(2\pi t / T_{tide})\,\hat{\mathbf{e}}$; update the Kalman
+   prediction model with the known tidal phase to maintain accurate boundary forecasts.
+3. **Three-drone relay with battery swap**: introduce a battery constraint ($E_{max} = 900$ s
+   flight time); a third drone waits at the shore base and is dispatched to relieve the drone
+   with lowest remaining battery, maintaining two active boundary-patrollers at all times.
+4. **Multi-source spill**: initialise two separate patches that merge as they diffuse; the
+   boundary becomes non-convex; test whether the landmark parametrisation and Kalman filter
+   remain stable through a topology change and add a landmark resampling step if needed.
+5. **Level-set boundary representation**: replace the landmark Kalman filter with a full level-set
+   PDE propagation model; the boundary $\phi(\mathbf{x}, t) = 0$ is advected as a signed-distance
+   function and corrected by drone observations via a data-assimilation update.
+6. **RL dispatch policy**: train a PPO agent to decide, at each replanning epoch, how to split the
+   boundary between the two drones; state includes the current coverage map, staleness ages, and
+   drone positions; reward is $\eta(t)$ minus a fuel-cost penalty.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md) (boundary-following logic
-  and coverage freshness metrics), [S045 Chemical Plume Tracing](S045_plume_tracing.md) (scalar
-  advection field and contour detection)
-- Follow-ups: [S056 Radiation Hotspot Detection](S056_radiation_hotspot.md) (similar gradient-field
-  tracking, point-source variant)
-- Algorithmic cross-reference: [S041 Wildfire Boundary](S041_wildfire_boundary.md) (gradient-following
-  guidance law), [S045 Plume Tracing](S045_plume_tracing.md) (advection-diffusion PDE and sensor
-  model structure)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S048 Lawnmower Coverage](S048_lawnmower.md)
+- Follow-ups: [S056 Radiation Hotspot Detection](S056_radiation.md) (adaptive sampling of a scalar field), [S058 Typhoon Eye Penetration](S058_typhoon.md) (extreme-environment boundary tracking)
+- Algorithmic cross-reference: [S045 Chemical Plume Tracing](S045_plume_tracing.md) (advecting scalar field, same PDE structure), [S049 Dynamic Zone Assignment](S049_dynamic_zone.md) (partition rebalancing between agents), [S052 Glacier Area Monitoring](S052_glacier.md) (slowly evolving boundary)

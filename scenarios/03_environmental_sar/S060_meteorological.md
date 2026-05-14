@@ -1,153 +1,134 @@
 # S060 Multi-Drone Cooperative Meteorological Measurement
 
 **Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Altitude-Stratified Sampling + Kriging 3D Interpolation | **Dimension**: 3D
 
 ---
 
 ## Problem Definition
 
-**Setup**: A $200 \times 200 \times 100$ m atmospheric volume must be characterised for temperature,
-humidity, and wind speed. The true atmospheric field varies smoothly with position — primarily
-governed by an altitude-dependent lapse rate modulated by horizontal sinusoidal perturbations that
-represent mesoscale boundary-layer structures. No pre-existing sensor network exists; all data must
-be gathered in situ by airborne drones within a fixed flight-time budget.
-
-A coordinator dispatches $N = 5$ lightweight UAVs, each carrying a miniature meteorological payload
-(thermistor, capacitive humidity sensor, ultrasonic anemometer). To maximise vertical coverage and
-avoid redundant sampling, the volume is partitioned into $N$ equal-depth altitude layers and each
-drone is assigned exactly one layer. Within its layer, the drone executes a **lawnmower
-(boustrophedon) path** — a systematic back-and-forth sweep — to maximise horizontal coverage.
-All collected samples are relayed to a ground station, which merges them and fits a **Kriging
-spatial interpolator** to reconstruct the full 3D atmospheric field on a regular grid.
+**Setup**: Three research drones are deployed in a $600 \times 600$ m horizontal domain to
+reconstruct a continuous 3D atmospheric profile of temperature, relative humidity, and wind speed
+magnitude. The measurement volume spans altitudes from $z_{min} = 20$ m to $z_{max} = 500$ m.
+Each drone is assigned a non-overlapping altitude band and follows a helical or lawnmower
+waypoint path through its band, collecting sensor readings at discrete sample locations. After
+all drones complete their sampling passes, the ground station fuses all observations via
+Ordinary Kriging to produce a continuous volumetric field estimate on a dense 3D grid. A
+held-out set of validation points (not visited by any drone) is used to compute reconstruction
+RMSE against a synthetic ground-truth atmospheric field.
 
 **Roles**:
-- **Drones** ($N = 5$): homogeneous platforms; each assigned one altitude layer; fly independently
-  within their layer; broadcast sensor readings to the ground station upon completion.
-- **Ground station**: receives all sample points, fits the Kriging model, evaluates RMSE against
-  the analytic ground-truth field, and produces 3D field reconstructions.
+- **Drone 1** ($z$-band: 20 – 180 m): samples the atmospheric boundary layer; temperature
+  gradients and humidity are most pronounced here; carries temperature and humidity sensors.
+- **Drone 2** ($z$-band: 180 – 340 m): samples the lower free atmosphere transition zone;
+  carries temperature and wind-speed sensors.
+- **Drone 3** ($z$-band: 340 – 500 m): samples the free atmosphere; temperature lapse rate
+  dominates; carries temperature and wind-speed sensors.
+- **Ground station**: receives all sample data, runs the Hungarian altitude-band assignment
+  optimisation at mission start, and executes the Kriging interpolation and validation pipeline.
 
-**Objective**: Reconstruct the 3D temperature field $\hat{T}(\mathbf{x})$ with minimum RMSE
-relative to the analytic truth $T(\mathbf{x})$. Two strategies are compared under an equal total
-flight-time budget:
-
-1. **Single-drone full-volume sweep** — one drone covers all altitudes sequentially; same total
-   path length as the cooperative approach.
-2. **Multi-drone stratified sweep** (proposed) — five drones cover their assigned layers in
-   parallel; each drone has one-fifth the path length but the ensemble provides uniform vertical
-   stratification.
+**Objective**: Assign the three altitude bands to drones via the Hungarian algorithm to minimise
+total flight path length, then plan waypoints inside each band that maximise spatial coverage.
+After sampling, reconstruct the 3D atmospheric fields via Ordinary Kriging and evaluate
+reconstruction quality as RMSE over held-out validation points.
 
 ---
 
 ## Mathematical Model
 
-### True Atmospheric Field
+### Synthetic Atmospheric Field
 
-The analytic temperature field combines a linear lapse rate with horizontal sinusoidal perturbations
-representing atmospheric wave structures:
+The true atmospheric fields are generated analytically as smooth functions of 3D position
+$\mathbf{x} = (x, y, z)$ to serve as ground truth. For temperature:
 
-$$T(x, y, z) = T_0 - \Gamma z + A \sin\!\left(\frac{2\pi x}{\lambda_x}\right) \cos\!\left(\frac{2\pi y}{\lambda_y}\right)$$
+$$T(x, y, z) = T_0 - \Gamma_d \cdot z + A_T \sin\!\left(\frac{2\pi x}{L_x}\right)\cos\!\left(\frac{2\pi y}{L_y}\right)e^{-z/H_T}$$
 
-where:
-- $T_0 = 25\,^\circ\mathrm{C}$ — surface reference temperature
-- $\Gamma = 0.0065\,^\circ\mathrm{C}\,\mathrm{m}^{-1}$ — environmental lapse rate (dry adiabatic $\approx 9.8$, moist $\approx 6.5$)
-- $A = 2.0\,^\circ\mathrm{C}$ — horizontal perturbation amplitude
-- $\lambda_x = 100\,\mathrm{m}$, $\lambda_y = 100\,\mathrm{m}$ — horizontal wavelengths
+where $T_0 = 288$ K is the surface reference temperature, $\Gamma_d = 6.5 \times 10^{-3}$ K/m
+is the dry adiabatic lapse rate, $A_T = 2$ K is the amplitude of horizontal thermal structure,
+and $H_T = 300$ m is the decay scale height. Sensor noise is additive Gaussian:
 
-Sensor noise is additive Gaussian:
+$$\tilde{f}(\mathbf{x}_i) = f(\mathbf{x}_i) + \epsilon_i, \qquad \epsilon_i \sim \mathcal{N}(0,\, \sigma_s^2)$$
 
-$$\tilde{T}(\mathbf{p}) = T(\mathbf{p}) + \varepsilon, \qquad \varepsilon \sim \mathcal{N}(0,\, \sigma_T^2)$$
+### Variogram Model
 
-### Altitude Layer Assignment
+The spatial correlation structure of the atmospheric field is characterised by the
+experimental semivariogram computed from the $N$ sample pairs:
 
-The vertical extent $[0, z_{max}]$ is partitioned into $N$ equal-depth layers. Drone $i$
-($i = 1, \ldots, N$) is assigned the layer:
+$$\hat{\gamma}(h) = \frac{1}{2\,|N(h)|} \sum_{(\mathbf{x}_i,\, \mathbf{x}_j) \in N(h)} \bigl[\tilde{f}(\mathbf{x}_i) - \tilde{f}(\mathbf{x}_j)\bigr]^2$$
 
-$$h_i \in \left[\frac{(i-1)\, z_{max}}{N},\; \frac{i\, z_{max}}{N}\right]$$
+where $N(h)$ is the set of all sample pairs separated by lag distance $h =
+\|\mathbf{x}_i - \mathbf{x}_j\|$. The fitted theoretical model is an exponential variogram:
 
-Each drone flies at the mid-altitude of its assigned layer:
+$$\gamma(h) = C_0 + C_1\!\left(1 - e^{-h/a}\right)$$
 
-$$z_i^{fly} = \frac{(2i - 1)\, z_{max}}{2N}$$
+with nugget $C_0 \geq 0$ (sensor noise floor), sill $C_0 + C_1$ (total field variance), and
+range $a$ (correlation length beyond which samples are effectively independent). Parameters
+$(C_0, C_1, a)$ are estimated by non-linear least squares fit to the experimental variogram.
 
-### Lawnmower Sampling Path
+### Ordinary Kriging Estimator
 
-Within layer $i$, the drone executes a boustrophedon sweep over the $200 \times 200$ m horizontal
-footprint. Given $n_{strips}$ equally spaced east–west passes separated by $\delta y = x_{max} / (n_{strips} - 1)$,
-the waypoint sequence for strip $j$ is:
+Given $N$ observations $\{f(\mathbf{x}_i)\}_{i=1}^N$ with the fitted variogram, the Kriging
+estimate at an unsampled prediction point $\mathbf{x}_0$ is the minimum-variance linear
+unbiased estimator (BLUE):
 
-$$\mathbf{w}_{j,k} = \begin{cases}
-(k \cdot \delta x,\; (j-1) \cdot \delta y,\; z_i^{fly}) & j \text{ odd} \\
-(x_{max} - k \cdot \delta x,\; (j-1) \cdot \delta y,\; z_i^{fly}) & j \text{ even}
-\end{cases}$$
+$$\hat{f}(\mathbf{x}_0) = \sum_{i=1}^{N} \lambda_i(\mathbf{x}_0)\, \tilde{f}(\mathbf{x}_i)$$
 
-where $\delta x$ is the inter-sample spacing along each strip. Samples are collected at every
-waypoint $\mathbf{w}_{j,k}$.
+The Kriging weights $\boldsymbol{\lambda}$ are obtained by solving the Kriging system, which
+enforces unbiasedness via a Lagrange multiplier $\mu$:
 
-### Kriging 3D Interpolation
+$$\begin{bmatrix} \mathbf{\Gamma} & \mathbf{1} \\ \mathbf{1}^T & 0 \end{bmatrix}
+\begin{bmatrix} \boldsymbol{\lambda} \\ \mu \end{bmatrix}
+= \begin{bmatrix} \boldsymbol{\gamma}_0 \\ 1 \end{bmatrix}$$
 
-Kriging (Gaussian process regression) estimates the field value at an unvisited location
-$\mathbf{p}_0$ as a weighted linear combination of the $n_s$ observed values
-$\{Z(\mathbf{p}_i)\}_{i=1}^{n_s}$:
+where $\Gamma_{ij} = \gamma(\|\mathbf{x}_i - \mathbf{x}_j\|)$ is the $N \times N$ semivariogram
+matrix evaluated at all pairs of sample locations, $\boldsymbol{\gamma}_0$ is the $N$-vector
+of semivariogram values between all sample locations and the prediction point $\mathbf{x}_0$:
 
-$$\hat{Z}(\mathbf{p}_0) = \sum_{i=1}^{n_s} w_i \, Z(\mathbf{p}_i)$$
+$$(\boldsymbol{\gamma}_0)_i = \gamma(\|\mathbf{x}_i - \mathbf{x}_0\|)$$
 
-The weights are determined by the variogram structure. The **empirical variogram** is estimated
-from data:
+Solving gives the weights and the Kriging estimation variance (interpolation uncertainty):
 
-$$\hat{\gamma}(h) = \frac{1}{2 |N(h)|} \sum_{(i,j) \in N(h)} \bigl(Z(\mathbf{p}_i) - Z(\mathbf{p}_j)\bigr)^2$$
+$$\boldsymbol{\lambda} = \mathbf{\Gamma}^{-1}(\boldsymbol{\gamma}_0 - \mu\,\mathbf{1})$$
 
-where $N(h)$ is the set of sample pairs separated by lag distance $h$. A theoretical model
-(spherical or Gaussian) is then fitted to $\hat{\gamma}(h)$.
+$$\sigma^2_K(\mathbf{x}_0) = \sum_{i=1}^{N} \lambda_i\,\gamma(\|\mathbf{x}_i - \mathbf{x}_0\|) + \mu$$
 
-The **ordinary Kriging system** enforces unbiasedness ($\sum_i w_i = 1$) via a Lagrange multiplier
-$\mu$:
+### Optimal Altitude Band Assignment via Hungarian Algorithm
 
-$$\begin{bmatrix} \boldsymbol{\Gamma} + \lambda \mathbf{I} & \mathbf{1} \\ \mathbf{1}^\top & 0 \end{bmatrix}
-\begin{bmatrix} \mathbf{w} \\ \mu \end{bmatrix}
-=
-\begin{bmatrix} \boldsymbol{\gamma}_0 \\ 1 \end{bmatrix}$$
+Let $D = 3$ be the number of drones and $B = 3$ be the number of altitude bands. Define the
+cost matrix $\mathbf{C} \in \mathbb{R}^{D \times B}$ where entry $C_{db}$ is the total
+waypoint path length that drone $d$ would travel if assigned band $b$, computed from its
+current position to the first waypoint of that band:
 
-where:
-- $\Gamma_{ij} = \hat{\gamma}(\|\mathbf{p}_i - \mathbf{p}_j\|)$ — variogram matrix between sample pairs
-- $\gamma_{0,i} = \hat{\gamma}(\|\mathbf{p}_i - \mathbf{p}_0\|)$ — variogram between each sample and the prediction point
-- $\lambda \geq 0$ — nugget regularisation term (handles noise and numerical conditioning)
+$$C_{db} = \|\mathbf{p}_d^{(0)} - \mathbf{w}_b^{(1)}\| + L_b^{path}$$
 
-Solving the $(n_s + 1) \times (n_s + 1)$ linear system yields the Kriging weights $\mathbf{w}$.
+where $\mathbf{p}_d^{(0)}$ is the initial position of drone $d$, $\mathbf{w}_b^{(1)}$ is the
+entry waypoint of band $b$, and $L_b^{path}$ is the fixed intra-band path length. The
+Hungarian algorithm finds the bijective assignment $\sigma: \{1,2,3\} \to \{1,2,3\}$ that
+minimises total cost:
 
-### Variogram Models
+$$\sigma^* = \arg\min_{\sigma} \sum_{d=1}^{D} C_{d,\,\sigma(d)}$$
 
-Two standard parametric variogram models are compared:
+### Waypoint Path Design Within Each Altitude Band
 
-**Gaussian variogram**:
+Each altitude band $[z_{lo}, z_{hi}]$ is covered by a helical lawnmower pattern: the drone
+sweeps horizontal rows spaced $\Delta_y$ apart at $N_z$ discrete altitude levels uniformly
+spaced within the band, reversing direction at each row end (boustrophedon). The $k$-th
+waypoint altitude within a band of thickness $\Delta z = z_{hi} - z_{lo}$ is:
 
-$$\gamma(h) = c_0 + c_1 \left[1 - \exp\!\left(-\frac{h^2}{a^2}\right)\right]$$
+$$z_k = z_{lo} + \frac{(k-1)}{N_z - 1}\,\Delta z, \qquad k = 1, \ldots, N_z$$
 
-**Spherical variogram**:
+Total sample count per drone: $N_{samples} = N_z \times N_{rows}$.
 
-$$\gamma(h) = \begin{cases}
-c_0 + c_1 \left[\dfrac{3h}{2a} - \dfrac{h^3}{2a^3}\right] & h \leq a \\
-c_0 + c_1 & h > a
-\end{cases}$$
+### Reconstruction Quality Metric
 
-where $c_0$ — nugget, $c_1$ — partial sill, $a$ — range parameter.
+After Kriging, reconstruction quality is evaluated against $N_{val}$ held-out validation
+points drawn from a uniform grid inside the measurement volume:
 
-### Quality Metric: RMSE
+$$\text{RMSE} = \sqrt{\frac{1}{N_{val}} \sum_{j=1}^{N_{val}} \left[\hat{f}(\mathbf{x}_j^{val}) - f(\mathbf{x}_j^{val})\right]^2}$$
 
-After Kriging reconstruction on a regular $G_x \times G_y \times G_z$ evaluation grid, the
-root-mean-square error against the analytic truth is:
+The mean Kriging variance over all prediction grid points serves as a model-internal uncertainty
+estimate:
 
-$$\mathrm{RMSE} = \sqrt{\frac{1}{N_{grid}} \sum_{j=1}^{N_{grid}} \bigl(\hat{T}(\mathbf{p}_j) - T(\mathbf{p}_j)\bigr)^2}$$
-
-where $N_{grid} = G_x \times G_y \times G_z$ is the total number of evaluation points.
-
-### Coverage per Layer
-
-The fraction of the horizontal extent sampled in layer $i$ is:
-
-$$C_i = \frac{n_{samples,i} \cdot r_{sample}^2}{\,x_{max} \cdot y_{max}\,}$$
-
-where $r_{sample}$ is the effective sensor footprint radius. Uniform stratification ensures
-$C_i \approx C_j$ for all pairs $i, j$.
+$$\bar{\sigma}^2_K = \frac{1}{N_{grid}} \sum_{j=1}^{N_{grid}} \sigma^2_K(\mathbf{x}_j^{grid})$$
 
 ---
 
@@ -157,272 +138,180 @@ $C_i \approx C_j$ for all pairs $i, j$.
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.animation as animation
-from scipy.linalg import solve
+from scipy.optimize import minimize, linear_sum_assignment
+from scipy.spatial.distance import cdist
 
-# ── Simulation constants ──────────────────────────────────────────────────────
-N_DRONES    = 5
-X_MAX       = 200.0      # m — volume east-west extent
-Y_MAX       = 200.0      # m — volume north-south extent
-Z_MAX       = 100.0      # m — volume vertical extent
-DRONE_SPEED = 5.0        # m/s — cruise speed
+# Key constants
+N_DRONES       = 3
+X_RANGE        = 600.0       # m — horizontal domain width
+Y_RANGE        = 600.0       # m — horizontal domain depth
+Z_MIN          = 20.0        # m — lowest sampling altitude
+Z_MAX          = 500.0       # m — highest sampling altitude
+T0             = 288.0       # K — surface reference temperature
+LAPSE_RATE     = 6.5e-3      # K/m — dry adiabatic lapse rate
+A_TEMP         = 2.0         # K — horizontal thermal perturbation amplitude
+H_DECAY        = 300.0       # m — thermal structure scale height
+SIGMA_SENSOR   = 0.3         # K — sensor noise standard deviation
+N_Z_LEVELS     = 6           # altitude levels per band
+N_ROWS         = 8           # horizontal sweep rows per altitude level
+N_VAL          = 200         # held-out validation points
 
-# Atmospheric field parameters
-T0      = 25.0           # °C — surface temperature
-GAMMA   = 0.0065         # °C/m — lapse rate
-A_PERTURB = 2.0          # °C — horizontal perturbation amplitude
-LAMBDA_X  = 100.0        # m  — east-west wavelength
-LAMBDA_Y  = 100.0        # m  — north-south wavelength
-SIGMA_T   = 0.2          # °C — sensor noise std dev
-
-# Sampling path
-N_STRIPS  = 10           # lawnmower strips per layer
-N_SAMPLES_PER_STRIP = 20 # waypoints per strip
-
-# Evaluation grid (for RMSE computation)
-GX, GY, GZ = 20, 20, 20
-
-# Kriging nugget regularisation
-KRIGING_NUGGET = 1e-3
-
+# Altitude band boundaries for 3 drones
+BAND_EDGES = np.array([20.0, 180.0, 340.0, 500.0])   # m
 
 def true_temperature(x, y, z):
-    """Analytic 3D temperature field."""
-    return (T0
-            - GAMMA * z
-            + A_PERTURB * np.sin(2 * np.pi * x / LAMBDA_X)
-                        * np.cos(2 * np.pi * y / LAMBDA_Y))
+    """Synthetic 3D temperature field (ground truth)."""
+    base    = T0 - LAPSE_RATE * z
+    perturb = A_TEMP * np.sin(2*np.pi*x / X_RANGE) * np.cos(2*np.pi*y / Y_RANGE)
+    return base + perturb * np.exp(-z / H_DECAY)
 
-
-def assign_altitude_layers(n_drones, z_max):
-    """Return (z_low, z_mid, z_high) for each drone layer."""
-    layers = []
-    for i in range(n_drones):
-        z_low  = i * z_max / n_drones
-        z_high = (i + 1) * z_max / n_drones
-        z_mid  = (z_low + z_high) / 2.0
-        layers.append((z_low, z_mid, z_high))
-    return layers
-
-
-def lawnmower_path(z_fly, n_strips, n_per_strip, x_max, y_max):
-    """
-    Generate lawnmower waypoints for a single altitude layer.
-    Returns (n_strips * n_per_strip, 3) array of (x, y, z) positions.
-    """
+def plan_band_waypoints(z_lo, z_hi, n_z, n_rows, x_range, y_range):
+    """Generate boustrophedon waypoints covering one altitude band."""
     waypoints = []
-    y_positions = np.linspace(0, y_max, n_strips)
-    x_positions = np.linspace(0, x_max, n_per_strip)
-
-    for j, y in enumerate(y_positions):
-        xs = x_positions if j % 2 == 0 else x_positions[::-1]
-        for x in xs:
-            waypoints.append([x, y, z_fly])
-
+    z_levels  = np.linspace(z_lo, z_hi, n_z)
+    y_lines   = np.linspace(0.0, y_range, n_rows)
+    for iz, z in enumerate(z_levels):
+        for ir, y in enumerate(y_lines):
+            if ir % 2 == 0:
+                xs = [0.0, x_range]
+            else:
+                xs = [x_range, 0.0]
+            for x in xs:
+                waypoints.append([x, y, z])
     return np.array(waypoints)
 
+def build_cost_matrix(drone_starts, band_entry_points, band_path_lengths):
+    """C[d, b] = transit cost + intra-band path length for drone d in band b."""
+    transit = cdist(drone_starts, band_entry_points)    # (D, B)
+    return transit + band_path_lengths[np.newaxis, :]   # broadcast over drones
 
-def collect_samples(waypoints, rng):
-    """
-    Simulate meteorological measurements at each waypoint.
-    Returns array of (x, y, z, T_measured).
-    """
-    samples = []
-    for wp in waypoints:
-        T_true = true_temperature(*wp)
-        T_obs  = T_true + rng.normal(0, SIGMA_T)
-        samples.append([wp[0], wp[1], wp[2], T_obs])
-    return np.array(samples)   # (n_pts, 4)
+def assign_bands(drone_starts, band_entry_points, band_path_lengths):
+    """Hungarian assignment: returns (row_ind, col_ind) optimal assignment."""
+    C = build_cost_matrix(drone_starts, band_entry_points, band_path_lengths)
+    row_ind, col_ind = linear_sum_assignment(C)
+    return row_ind, col_ind, C
 
+def exponential_variogram(h, C0, C1, a):
+    """Theoretical exponential variogram model."""
+    return C0 + C1 * (1.0 - np.exp(-h / a))
 
-def compute_empirical_variogram(samples, n_lags=15, max_lag=None):
-    """
-    Estimate empirical variogram from scattered 3D samples.
-    Returns (lag_centres, gamma_values).
-    """
-    coords = samples[:, :3]    # (n, 3)
-    values = samples[:, 3]     # (n,)
-
-    # All pairwise distances and squared differences
-    n = len(coords)
-    lags, sq_diffs = [], []
-    for i in range(n):
-        for j in range(i + 1, n):
-            h = np.linalg.norm(coords[i] - coords[j])
-            sd = (values[i] - values[j]) ** 2
-            lags.append(h)
-            sq_diffs.append(sd)
-
-    lags     = np.array(lags)
-    sq_diffs = np.array(sq_diffs)
-
-    if max_lag is None:
-        max_lag = lags.max() / 2.0
-
-    bins = np.linspace(0, max_lag, n_lags + 1)
-    centres = (bins[:-1] + bins[1:]) / 2.0
-    gamma   = np.zeros(n_lags)
-
+def fit_variogram(sample_pts, sample_vals, n_lags=15):
+    """Estimate and fit exponential variogram from sample data."""
+    dists   = cdist(sample_pts, sample_pts)
+    n       = len(sample_vals)
+    d_max   = dists.max()
+    lag_edges = np.linspace(0, d_max * 0.6, n_lags + 1)
+    lags, gammas = [], []
     for k in range(n_lags):
-        mask = (lags >= bins[k]) & (lags < bins[k + 1])
-        if mask.sum() > 0:
-            gamma[k] = 0.5 * np.mean(sq_diffs[mask])
+        mask = (dists > lag_edges[k]) & (dists <= lag_edges[k+1])
+        pairs = [(i, j) for i in range(n) for j in range(i+1, n) if mask[i, j]]
+        if len(pairs) < 2:
+            continue
+        sv  = np.mean([(sample_vals[i] - sample_vals[j])**2 for i, j in pairs]) / 2.0
+        lags.append((lag_edges[k] + lag_edges[k+1]) / 2.0)
+        gammas.append(sv)
+    lags, gammas = np.array(lags), np.array(gammas)
+    # Non-linear least squares fit of (C0, C1, a)
+    def residuals(params):
+        C0, C1, a = np.abs(params)
+        return exponential_variogram(lags, C0, C1, a) - gammas
+    from scipy.optimize import least_squares
+    result = least_squares(residuals, x0=[0.1, np.var(sample_vals), d_max/3],
+                           bounds=(0, np.inf))
+    C0, C1, a = np.abs(result.x)
+    return C0, C1, a, lags, gammas
 
-    return centres, gamma
-
-
-def gaussian_variogram(h, nugget, sill, range_param):
-    """γ(h) = nugget + (sill - nugget) * (1 - exp(-h² / range²))"""
-    return nugget + (sill - nugget) * (1 - np.exp(-(h ** 2) / (range_param ** 2)))
-
-
-def fit_variogram(lag_centres, gamma_vals):
-    """
-    Least-squares fit of a Gaussian variogram model.
-    Returns (nugget, sill, range_param).
-    """
-    from scipy.optimize import curve_fit
-    valid = gamma_vals > 0
-    if valid.sum() < 3:
-        return 0.0, gamma_vals.max(), lag_centres.max() / 2.0
-    try:
-        popt, _ = curve_fit(
-            gaussian_variogram,
-            lag_centres[valid],
-            gamma_vals[valid],
-            p0=[0.01, gamma_vals[valid].max(), lag_centres[valid].mean()],
-            bounds=([0, 0, 1], [np.inf, np.inf, np.inf]),
-            maxfev=2000
-        )
-        return popt
-    except RuntimeError:
-        return 0.0, gamma_vals.max(), lag_centres.max() / 2.0
-
-
-def kriging_interpolate(samples, query_pts, nugget, sill, range_param):
-    """
-    Ordinary Kriging on 3D scattered data.
-    samples   : (n_s, 4) — [x, y, z, value]
-    query_pts : (n_q, 3) — [x, y, z] prediction locations
-    Returns   : (n_q,) array of Kriging estimates.
-    """
-    coords  = samples[:, :3]
-    values  = samples[:, 3]
-    n_s     = len(coords)
-
-    # Build variogram matrix Γ + nugget on diagonal
-    dists   = np.linalg.norm(
-        coords[:, np.newaxis, :] - coords[np.newaxis, :, :], axis=2
-    )  # (n_s, n_s)
-    Gamma   = gaussian_variogram(dists, nugget, sill, range_param)
-    Gamma  += KRIGING_NUGGET * np.eye(n_s)
-
-    # Augment with unbiasedness constraint
-    A = np.zeros((n_s + 1, n_s + 1))
-    A[:n_s, :n_s] = Gamma
-    A[:n_s,  n_s] = 1.0
-    A[n_s,  :n_s] = 1.0
-
-    # Predict each query point
-    estimates = np.zeros(len(query_pts))
-    for q_idx, q in enumerate(query_pts):
-        d0   = np.linalg.norm(coords - q, axis=1)   # (n_s,)
-        g0   = gaussian_variogram(d0, nugget, sill, range_param)
-        rhs  = np.append(g0, 1.0)
-        try:
-            sol  = solve(A, rhs)
-        except np.linalg.LinAlgError:
-            sol  = np.linalg.lstsq(A, rhs, rcond=None)[0]
-        weights    = sol[:n_s]
-        estimates[q_idx] = weights @ values
-
-    return estimates
-
-
-def compute_rmse(samples, eval_grid_pts, nugget, sill, range_param):
-    """Kriging RMSE on a regular 3D grid vs analytic truth."""
-    T_krig  = kriging_interpolate(samples, eval_grid_pts, nugget, sill, range_param)
-    T_true  = true_temperature(
-        eval_grid_pts[:, 0], eval_grid_pts[:, 1], eval_grid_pts[:, 2]
-    )
-    return float(np.sqrt(np.mean((T_krig - T_true) ** 2)))
-
-
-def build_eval_grid(gx=GX, gy=GY, gz=GZ):
-    """Build a regular 3D evaluation grid; return (N_grid, 3) array."""
-    xs = np.linspace(0, X_MAX, gx)
-    ys = np.linspace(0, Y_MAX, gy)
-    zs = np.linspace(0, Z_MAX, gz)
-    xx, yy, zz = np.meshgrid(xs, ys, zs, indexing='ij')
-    return np.column_stack([xx.ravel(), yy.ravel(), zz.ravel()])
-
+def kriging_predict(sample_pts, sample_vals, pred_pts, C0, C1, a):
+    """Ordinary Kriging prediction at pred_pts; returns estimates and variances."""
+    N   = len(sample_vals)
+    M   = len(pred_pts)
+    # Build (N+1)x(N+1) Kriging system matrix
+    Gamma_ss = exponential_variogram(cdist(sample_pts, sample_pts), C0, C1, a)
+    A        = np.block([[Gamma_ss,            np.ones((N, 1))],
+                         [np.ones((1, N)),     np.zeros((1, 1))]])
+    z_hat    = np.zeros(M)
+    sigma2   = np.zeros(M)
+    for j in range(M):
+        gamma_s0 = exponential_variogram(
+            np.linalg.norm(sample_pts - pred_pts[j], axis=1), C0, C1, a)
+        rhs      = np.append(gamma_s0, 1.0)
+        weights  = np.linalg.solve(A, rhs)
+        lam, mu  = weights[:-1], weights[-1]
+        z_hat[j] = lam @ sample_vals
+        sigma2[j] = float(lam @ gamma_s0 + mu)
+    return z_hat, sigma2
 
 def run_simulation():
+    """Main simulation: assign bands, sample, Kriging reconstruct, evaluate RMSE."""
     rng = np.random.default_rng(42)
-    eval_grid = build_eval_grid()
 
-    # ── Multi-drone stratified sampling ──────────────────────────────────────
-    layers    = assign_altitude_layers(N_DRONES, Z_MAX)
-    all_paths = []
-    all_samples_multi = []
+    # Drone starting positions at ground level corners
+    drone_starts = np.array([[0.0, 0.0, Z_MIN],
+                              [X_RANGE, 0.0, Z_MIN],
+                              [X_RANGE/2, Y_RANGE, Z_MIN]])
 
-    for drone_id, (z_low, z_mid, z_high) in enumerate(layers):
-        path    = lawnmower_path(z_mid, N_STRIPS, N_SAMPLES_PER_STRIP, X_MAX, Y_MAX)
-        samples = collect_samples(path, rng)
-        all_paths.append(path)
-        all_samples_multi.append(samples)
+    # Plan waypoints for each altitude band
+    all_band_wps = []
+    for b in range(N_DRONES):
+        z_lo, z_hi = BAND_EDGES[b], BAND_EDGES[b+1]
+        wps = plan_band_waypoints(z_lo, z_hi, N_Z_LEVELS, N_ROWS,
+                                  X_RANGE, Y_RANGE)
+        all_band_wps.append(wps)
 
-    samples_multi = np.vstack(all_samples_multi)
+    # Band entry points and path lengths for cost matrix
+    band_entries = np.array([wps[0] for wps in all_band_wps])
+    band_lengths = np.array([
+        np.sum(np.linalg.norm(np.diff(wps, axis=0), axis=1))
+        for wps in all_band_wps
+    ])
 
-    # ── Single-drone full-volume sweep (same total path length) ───────────────
-    z_levels      = np.linspace(0, Z_MAX, N_DRONES * N_STRIPS)
-    all_samples_single = []
-    n_per_strip_single = N_SAMPLES_PER_STRIP
+    # Hungarian assignment
+    row_ind, col_ind, cost_matrix = assign_bands(
+        drone_starts, band_entries, band_lengths)
 
-    for j, z in enumerate(z_levels):
-        path_s  = lawnmower_path(z, 1, n_per_strip_single, X_MAX, Y_MAX)
-        samp_s  = collect_samples(path_s, rng)
-        all_samples_single.append(samp_s)
+    # Sample temperature field along assigned waypoints (with sensor noise)
+    all_sample_pts  = []
+    all_sample_vals = []
+    for d, b in zip(row_ind, col_ind):
+        wps  = all_band_wps[b]
+        vals = true_temperature(wps[:,0], wps[:,1], wps[:,2])
+        vals = vals + rng.normal(0, SIGMA_SENSOR, size=len(vals))
+        all_sample_pts.append(wps)
+        all_sample_vals.append(vals)
 
-    samples_single = np.vstack(all_samples_single)
+    sample_pts  = np.vstack(all_sample_pts)
+    sample_vals = np.concatenate(all_sample_vals)
 
-    # ── Variogram fitting and Kriging for each strategy ───────────────────────
-    results = {}
-    for label, samples in [("multi", samples_multi), ("single", samples_single)]:
-        lag_c, gamma_v = compute_empirical_variogram(samples)
-        nugget, sill, r_param = fit_variogram(lag_c, gamma_v)
-        rmse = compute_rmse(samples, eval_grid, nugget, sill, r_param)
-        results[label] = {
-            "samples":    samples,
-            "lag_c":      lag_c,
-            "gamma_v":    gamma_v,
-            "nugget":     nugget,
-            "sill":       sill,
-            "range":      r_param,
-            "rmse":       rmse,
-        }
-        print(f"[{label:>6s}]  n_samples={len(samples):4d}  "
-              f"RMSE={rmse:.4f} °C  "
-              f"nugget={nugget:.4f}  sill={sill:.4f}  range={r_param:.2f} m")
+    # Fit variogram and reconstruct via Kriging
+    C0, C1, a, exp_lags, exp_gammas = fit_variogram(sample_pts, sample_vals)
 
-    # ── RMSE vs number of samples curve ──────────────────────────────────────
-    sample_counts = np.linspace(50, len(samples_multi), 12, dtype=int)
-    rmse_vs_n_multi,  rmse_vs_n_single = [], []
+    # Validation points (held-out uniform grid)
+    val_x = rng.uniform(0, X_RANGE, N_VAL)
+    val_y = rng.uniform(0, Y_RANGE, N_VAL)
+    val_z = rng.uniform(Z_MIN, Z_MAX, N_VAL)
+    val_pts  = np.column_stack([val_x, val_y, val_z])
+    val_true = true_temperature(val_x, val_y, val_z)
 
-    for n in sample_counts:
-        idx_m = rng.choice(len(samples_multi),  size=min(n, len(samples_multi)),  replace=False)
-        idx_s = rng.choice(len(samples_single), size=min(n, len(samples_single)), replace=False)
+    z_hat_val, sigma2_val = kriging_predict(
+        sample_pts, sample_vals, val_pts, C0, C1, a)
+    rmse = np.sqrt(np.mean((z_hat_val - val_true)**2))
 
-        for idx, rmse_list, label in [
-            (idx_m, rmse_vs_n_multi,  "multi"),
-            (idx_s, rmse_vs_n_single, "single"),
-        ]:
-            sub = (samples_multi if label == "multi" else samples_single)[idx]
-            lag_c2, gamma_v2 = compute_empirical_variogram(sub, n_lags=10)
-            ng2, si2, rp2 = fit_variogram(lag_c2, gamma_v2)
-            rmse_list.append(compute_rmse(sub, eval_grid, ng2, si2, rp2))
-
-    return results, all_paths, layers, sample_counts, rmse_vs_n_multi, rmse_vs_n_single
+    return {
+        "sample_pts":     sample_pts,
+        "sample_vals":    sample_vals,
+        "val_pts":        val_pts,
+        "val_true":       val_true,
+        "z_hat_val":      z_hat_val,
+        "sigma2_val":     sigma2_val,
+        "rmse":           rmse,
+        "variogram_params": (C0, C1, a),
+        "exp_lags":       exp_lags,
+        "exp_gammas":     exp_gammas,
+        "assignment":     list(zip(row_ind.tolist(), col_ind.tolist())),
+        "cost_matrix":    cost_matrix,
+        "all_band_wps":   all_band_wps,
+        "drone_starts":   drone_starts,
+    }
 ```
 
 ---
@@ -431,70 +320,78 @@ def run_simulation():
 
 | Parameter | Value |
 |-----------|-------|
-| Volume extent $(x_{max}, y_{max}, z_{max})$ | $200 \times 200 \times 100$ m |
-| Number of drones $N$ | 5 |
-| Drone cruise speed $v$ | 5.0 m/s |
-| Surface temperature $T_0$ | 25.0 °C |
-| Lapse rate $\Gamma$ | 0.0065 °C m$^{-1}$ |
-| Horizontal perturbation amplitude $A$ | 2.0 °C |
-| Horizontal wavelengths $\lambda_x, \lambda_y$ | 100 m |
-| Sensor noise std dev $\sigma_T$ | 0.2 °C |
-| Lawnmower strips per layer | 10 |
-| Samples per strip | 20 |
-| Total samples (multi-drone) | 1 000 |
-| Total samples (single-drone, equal budget) | 1 000 |
-| Evaluation grid $G_x \times G_y \times G_z$ | $20 \times 20 \times 20 = 8\,000$ points |
-| Kriging nugget regularisation $\lambda$ | $10^{-3}$ |
-| Variogram model | Gaussian |
-| Variogram lags | 15 |
-| Random seed | 42 |
+| Number of drones $N$ | 3 |
+| Horizontal domain $X \times Y$ | $600 \times 600$ m |
+| Altitude range $[z_{min}, z_{max}]$ | 20 – 500 m |
+| Altitude band boundaries | 20, 180, 340, 500 m |
+| Surface reference temperature $T_0$ | 288 K |
+| Dry adiabatic lapse rate $\Gamma_d$ | 6.5 $\times$ 10$^{-3}$ K/m |
+| Thermal perturbation amplitude $A_T$ | 2 K |
+| Thermal decay scale height $H_T$ | 300 m |
+| Sensor noise std dev $\sigma_s$ | 0.3 K |
+| Altitude levels per band $N_z$ | 6 |
+| Horizontal sweep rows per level $N_{rows}$ | 8 |
+| Samples per drone | 96 (6 levels $\times$ 8 rows $\times$ 2 endpoints) |
+| Total sample count | 288 |
+| Held-out validation points $N_{val}$ | 200 |
+| Variogram model | Exponential: $C_0 + C_1(1 - e^{-h/a})$ |
+| Expected reconstruction RMSE | $< 0.5$ K |
 
 ---
 
 ## Expected Output
 
-- **3D drone path visualisation**: one 3D axes showing all five lawnmower paths simultaneously,
-  each drawn in a distinct colour with altitude-coded transparency; layer boundaries shown as
-  horizontal semi-transparent planes; axes labelled in metres.
-- **RMSE vs number of samples**: two curves (multi-drone stratified vs. single-drone full-volume)
-  as a function of total sample count from 50 to 1 000; multi-drone curve expected to lie
-  consistently below single-drone curve due to uniform vertical coverage; y-axis in °C.
-- **Vertical profile comparison**: 1D plot of horizontally averaged reconstructed temperature
-  $\langle \hat{T} \rangle_{xy}(z)$ vs analytic mean profile $\langle T \rangle_{xy}(z)$ for both
-  strategies; multi-drone reconstruction expected to track the lapse rate more faithfully.
-- **Animation** (`s060_sampling.gif`): top-down and side-view dual-panel animation showing drone
-  positions advancing along their lawnmower paths at each time step; sampled points accumulating
-  as coloured dots colour-coded by measured temperature; frame rate 10 fps, 60 frames total.
-- **Metrics reported** (console output):
-  - RMSE (°C) for multi-drone vs single-drone Kriging reconstruction
-  - Coverage fraction per altitude layer (should be $\approx 1.0$ for all five layers)
-  - Total flight distance per drone (m) and mission time (s)
-  - Fitted variogram parameters: nugget, sill, range (m)
+- **3D flight path plot**: three drone trajectories in the measurement volume, coloured by
+  altitude band (low: green, mid: orange, high: purple); sample point locations marked as
+  small dots; domain bounding box shown as a wire frame; drone start positions marked with
+  filled circles.
+- **Hungarian assignment cost matrix heatmap**: $3 \times 3$ grid showing $C_{db}$ values
+  with the optimal assignment diagonal highlighted; total cost of optimal vs. unoptimised
+  (identity) assignment annotated.
+- **Experimental variogram with fitted model**: scatter of $\hat{\gamma}(h)$ values versus
+  lag distance $h$; fitted exponential curve overlaid; nugget $C_0$, sill $C_0 + C_1$, and
+  range $a$ annotated with dashed lines.
+- **3D reconstructed temperature field**: volumetric slice visualisation (three orthogonal
+  cross-sections at $x = 300$ m, $y = 300$ m, $z = 200$ m) showing Kriging-estimated
+  temperature with a diverging colormap; sample locations projected onto slices.
+- **3D Kriging variance map**: same three cross-sections showing $\sigma^2_K(\mathbf{x})$;
+  high-uncertainty zones (far from sample paths) highlighted; demonstrates how the helical
+  boustrophedon path reduces variance within each band while band boundaries show
+  elevated uncertainty.
+- **Reconstruction RMSE vs. samples-per-drone**: curve sweeping $N_z \in \{3, 4, 6, 8, 10\}$
+  levels, showing how RMSE and mean Kriging variance decrease as sampling density increases;
+  operating point ($N_z = 6$) marked.
+- **Validation scatter plot**: predicted $\hat{T}$ vs. true $T$ at the 200 held-out points;
+  diagonal reference line; RMSE and R$^2$ annotated.
 
 ---
 
 ## Extensions
 
-1. **Humidity and wind-speed reconstruction**: extend the sensor model to output three scalar
-   fields $(T, \mathrm{RH}, \|\mathbf{u}\|)$ simultaneously; fit independent Kriging models for
-   each and visualise the joint 3D reconstruction as a multi-variable volumetric rendering.
-2. **Adaptive re-sampling**: after an initial coarse sweep, identify high-gradient regions
-   (large Kriging variance $\sigma^2_K(\mathbf{p}_0)$) and task one drone to perform a targeted
-   densification flight; measure RMSE reduction per additional sample (information gain).
-3. **Hilbert-curve path**: replace the lawnmower with a 2D Hilbert-curve traversal within each
-   layer; compare spatial coverage uniformity using a discrepancy metric and resulting RMSE at
-   equal sample counts.
-4. **Kriging vs RBF interpolation**: compare ordinary Kriging against radial basis function (RBF)
-   interpolation (`scipy.interpolate.RBFInterpolator`) and thin-plate splines; plot RMSE vs.
-   sample count for all three; analyse computational cost scaling with $n_s$.
-5. **Wind-drift compensation**: introduce a constant horizontal wind field $\mathbf{u}_{wind}$
-   that displaces the drone from its nominal waypoint; re-plan paths in real time to compensate
-   for drift and evaluate the impact on layer coverage completeness.
+1. **Adaptive sampling with Kriging variance feedback**: after each drone completes a pass,
+   recompute $\sigma^2_K$ over the remaining unvisited volume and redirect drones to the
+   highest-uncertainty subregion; compare final RMSE against fixed-path sampling.
+2. **Multi-variable co-Kriging**: jointly interpolate temperature, humidity, and wind speed
+   using cross-variograms that capture physical correlations (e.g. higher humidity correlated
+   with lower temperature inversions); derive the co-Kriging system and show RMSE reduction
+   over independent single-variable Kriging.
+3. **Online variogram estimation with streaming updates**: fit variogram parameters
+   incrementally as samples arrive using recursive exponential smoothing of the experimental
+   semivariogram; evaluate fit convergence speed and effect on early-mission reconstruction
+   quality.
+4. **Time-varying atmospheric field**: introduce a slow drift in the temperature field
+   $T(x,y,z,t)$ driven by a wind-advection term; propagate the Kriging estimate forward in
+   time using a Kalman-Kriging (space-time Kriging) framework and quantify prediction accuracy
+   for a 10-minute forecast horizon.
+5. **N-drone scaling study**: vary the number of drones from 1 to 6 and re-run the Hungarian
+   assignment and Kriging pipeline; plot reconstruction RMSE vs. drone count; identify the
+   diminishing-returns inflection point where adding more drones yields less than 5% RMSE
+   improvement.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S046 Multi-Drone 3D Trilateration](S046_trilateration.md), [S047 Signal Relay](S047_signal_relay_enhancement.md), [S059 Swarm Formation Morphing](S059_swarm_formation_morphing.md)
-- Follow-ups: S061 Industrial Gas Leak Detection (domain 4 opener)
-- Algorithmic cross-reference: [S050 Swarm Cooperative Mapping (EKF-SLAM)](S050_slam.md) (multi-agent data fusion), [S042 Missing Person Search](S042_missing_person_search.md) (Bayesian spatial inference), [S007 Blind Pursuit under Jamming](../01_pursuit_evasion/S007_blind_pursuit_jamming.md) (noisy field estimation)
+- Prerequisites: [S048 Lawnmower Coverage](S048_lawnmower.md), [S045 Chemical Plume Tracing](S045_plume_tracing.md)
+- Follow-ups: [S058 Typhoon Eye Probing](S058_typhoon.md)
+- Algorithmic cross-reference: [S046 Multi-Drone 3D Trilateration](S046_trilateration.md) (3D spatial measurement fusion), [S052 Glacier Surface Mapping](S052_glacier.md) (spatial interpolation over complex terrain)

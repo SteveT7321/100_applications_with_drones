@@ -1,40 +1,42 @@
 # S058 Typhoon Eye Probing
 
 **Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Rankine Vortex Model + LQR Disturbance Rejection | **Dimension**: 3D
 
 ---
 
 ## Problem Definition
 
-**Setup**: A typhoon is simulated as a Rankine vortex centred at the origin. The eye radius is
-$r_{eye} = 20$ m. Tangential wind speed peaks at $V_{max} = 15$ m/s at the eyewall and decreases
-both inward (solid-body rotation inside the eye) and outward (potential-vortex decay beyond the
-eyewall). A single specially hardened drone begins at $r_{start} = 60$ m from the vortex centre at
-altitude $z_{target} = 30$ m. Its mission is to spiral inward through the eyewall turbulence, reach
-the calm eye ($r < r_{eye}$), and deploy a radiosonde payload at the eye centre.
+**Setup**: A research drone is tasked with flying from the outer periphery of a tropical typhoon to
+its calm eye, collecting continuous meteorological profiles (pressure, humidity, wind speed) along
+the way. The typhoon occupies a $400 \times 400$ m simulation domain centred on the eye $\mathbf{c}_{eye}
+= (0, 0)$ m. The wind field is an axisymmetric Rankine vortex with a maximum wind radius of
+$r_{max} = 150$ m; peak tangential wind speed reaches $v_{max} = 50$ m/s. The drone begins at
+$r_{start} = 190$ m from the eye and must reach the eye region ($r < r_{eye} = 15$ m) while
+following a prescribed inbound spiral reference trajectory. The outer bands are turbulent but
+moderate; the eyewall ($r \approx r_{max}$) is the most dangerous passage, with combined
+tangential and radial gust components pushing the drone off course.
 
 **Roles**:
-- **Drone**: single agent; 3D quadrotor dynamics subject to Rankine wind disturbances; controlled
-  by an LQR with wind feedforward; follows a shrinking-radius spiral reference trajectory.
-- **Wind field**: Rankine vortex giving tangential velocity $V_\theta(r)$ at every point in the
-  $xy$-plane; converted to a body-frame disturbance force experienced by the drone.
-- **Radiosonde**: passive payload; deployed automatically when the drone enters $r < r_{eye}$ and
-  $\|p - p_{ref}\| \leq 2$ m.
+- **Drone**: single research platform with mass $m = 1.5$ kg, maximum thrust $F_{max} = 30$ N,
+  roll/pitch attitude limits of $\pm 45°$; carries an onboard MPC controller with prediction horizon
+  $N_p = 20$ steps.
+- **Typhoon wind field**: a deterministic Rankine vortex base flow plus a stochastic turbulence
+  overlay modelled as band-limited Gaussian noise; the wind field is treated as an external
+  disturbance to the drone dynamics.
 
-**Objective**: Navigate from $r_{start}$ to the eye centre while satisfying:
-1. Altitude deviation $|z - z_{target}| \leq 1$ m at all times.
-2. Lateral drift from the planned spiral $\|e_{xy}(t)\| \leq d_{limit} = 5$ m; mission aborts if
-   this bound is exceeded.
-3. Minimise the peak lateral drift and total path length to the eye centre.
+**Objective**: Drive the drone from the entry point to the eye along the spiral reference path,
+minimising cumulative trajectory tracking error while satisfying actuator and attitude constraints
+at all times. Simultaneously, quantify the disturbance rejection performance of three controllers
+under increasingly severe wind conditions.
 
 **Comparison strategies**:
-1. **PD controller (no feedforward)** — pure error feedback; no knowledge of wind; expected to
-   exceed $d_{limit}$ in the eyewall.
-2. **LQR without feedforward** — optimal state feedback but no wind compensation; reduced drift
-   versus PD but still vulnerable in the eyewall.
-3. **LQR with wind feedforward** (proposed) — wind force is estimated from the Rankine model and
-   cancelled before the LQR acts on the residual error.
+1. **PD baseline** — proportional-derivative controller that tracks the reference position with no
+   explicit disturbance model; wind acts as an uncompensated external force.
+2. **MPC with disturbance feed-forward** — Model Predictive Control that uses the known Rankine
+   wind model as a measured disturbance input, optimising thrust over a receding horizon.
+3. **H-infinity robust controller** — minimises the worst-case $\mathcal{H}_\infty$ gain from wind
+   disturbance $w$ to tracking error $z$, providing a certified $\gamma$ bound on disturbance
+   amplification.
 
 ---
 
@@ -42,108 +44,137 @@ the calm eye ($r < r_{eye}$), and deploy a radiosonde payload at the eye centre.
 
 ### Rankine Vortex Wind Field
 
-The tangential wind speed at radial distance $r = \sqrt{x^2 + y^2}$ from the vortex centre is:
+The typhoon wind field at polar coordinates $(r, \theta)$ from the eye centre is decomposed into
+tangential and radial components. The tangential (azimuthal) velocity profile is:
 
-$$V_\theta(r) = V_{max} \min\!\left(\frac{r}{r_{eye}},\; \frac{r_{eye}}{r}\right)$$
+$$v_{\tan}(r) = \begin{cases}
+  v_{max} \cdot \dfrac{r}{r_{max}} & r \leq r_{max} \quad \text{(inner vortex, solid-body rotation)} \\[6pt]
+  v_{max} \cdot \dfrac{r_{max}}{r} & r > r_{max}  \quad \text{(outer vortex, potential flow)}
+\end{cases}$$
 
-In Cartesian coordinates the wind velocity vector (tangential, counter-clockwise) is:
+A radial inflow component (convergence towards the eye) models the secondary circulation:
 
-$$\mathbf{V}_w(x, y) = \frac{V_\theta(r)}{r}
-  \begin{pmatrix} -y \\ x \\ 0 \end{pmatrix}$$
+$$v_{rad}(r) = -v_{inflow} \cdot \exp\!\left(-\frac{(r - r_{max})^2}{2\sigma_{rad}^2}\right)$$
 
-where $r = \sqrt{x^2 + y^2} + \epsilon$ (small $\epsilon$ avoids the singularity at the origin).
-The vertical wind component is neglected (horizontal vortex model).
+where $v_{inflow} = 8$ m/s is the peak radial inflow speed and $\sigma_{rad} = 40$ m is the radial
+width of the inflow layer. The negative sign denotes inward flow.
 
-### Aerodynamic Disturbance Force
+The full wind vector at Cartesian position $\mathbf{p} = (x, y)$ is:
 
-The net wind disturbance force on the drone in the world frame, accounting for the drone's own
-velocity $\mathbf{v}_d$, is modelled as quadratic drag:
+$$\mathbf{f}_{wind}(\mathbf{p}) = v_{\tan}(r)\,\hat{\mathbf{e}}_\theta + v_{rad}(r)\,\hat{\mathbf{e}}_r$$
 
-$$\mathbf{F}_w = \tfrac{1}{2}\,\rho_{air}\,C_D\,A_{ref}\;
-  (\mathbf{V}_w - \mathbf{v}_d)\,|\mathbf{V}_w - \mathbf{v}_d|$$
+where the unit vectors in polar form are:
 
-where the element-wise signed-square notation $\mathbf{a}\,|\mathbf{a}|$ means
-$(a_x |a_x|,\; a_y |a_y|,\; a_z |a_z|)^\top$. Key constants: air density
-$\rho_{air} = 1.225$ kg/m³, drag coefficient $C_D = 0.6$, effective frontal area
-$A_{ref} = 0.04$ m².
+$$\hat{\mathbf{e}}_r = \frac{\mathbf{p}}{r}, \qquad
+  \hat{\mathbf{e}}_\theta = \frac{1}{r}\begin{pmatrix} -y \\ x \end{pmatrix}, \qquad
+  r = \|\mathbf{p}\|$$
 
-### Simplified 3D Quadrotor Dynamics
+A stochastic turbulence overlay adds band-limited noise with spectral density $S_w(f)$ scaled to
+10% of the local $v_{\tan}(r)$:
 
-For control design the drone is treated as a 6-DOF rigid body with linearised attitude dynamics.
-The state vector is:
+$$\mathbf{f}_{turb}(t) \sim \mathcal{N}\!\left(\mathbf{0},\; \sigma_w^2(r)\,\mathbf{I}_2\right),
+  \qquad \sigma_w(r) = 0.1 \cdot v_{\tan}(r)$$
 
-$$\mathbf{x} = \begin{pmatrix} p_x & p_y & p_z & v_x & v_y & v_z &
-  \phi & \theta & \dot{\phi} & \dot{\theta} \end{pmatrix}^\top \in \mathbb{R}^{10}$$
+### Drone Dynamics
 
-where $(p_x, p_y, p_z)$ is position, $(v_x, v_y, v_z)$ is velocity, $(\phi, \theta)$ are roll and
-pitch, and $(\dot{\phi}, \dot{\theta})$ are angular rates. The control input is:
+The drone is modelled as a 2D point mass (the x-y plane of the spiral trajectory) under thrust
+control $\mathbf{u} = (u_x, u_y)$ (horizontal thrust components in N) and the wind disturbance:
 
-$$\mathbf{u} = \begin{pmatrix} T & \tau_\phi & \tau_\theta \end{pmatrix}^\top$$
+$$m\ddot{\mathbf{p}} = \mathbf{u} + m\,\mathbf{f}_{wind}(\mathbf{p}) + \mathbf{f}_{turb}(t) - \mathbf{b}\,\dot{\mathbf{p}}$$
 
-with $T$ the total thrust and $(\tau_\phi, \tau_\theta)$ the roll and pitch torques. The linearised
-continuous-time plant about hover (ignoring yaw) is $\dot{\mathbf{x}} = A\mathbf{x} + B\mathbf{u}
-+ B_w \mathbf{F}_w$, where:
+where $\mathbf{b} = b\,\mathbf{I}_2$ is an aerodynamic drag coefficient ($ b = 0.4$ N·s/m).
+Attitude limits translate to a thrust cone constraint:
 
-$$A = \begin{pmatrix}
-  \mathbf{0}_{3\times3} & \mathbf{I}_3 & \mathbf{0}_{3\times4} \\
-  \mathbf{0}_{3\times3} & \mathbf{0}_{3\times3} & \begin{pmatrix} 0 & g & 0 & 0 \\ -g & 0 & 0 & 0 \\ 0 & 0 & 0 & 0 \end{pmatrix} \\
-  \mathbf{0}_{4\times3} & \mathbf{0}_{4\times3} & \begin{pmatrix} \mathbf{0}_{2\times2} & \mathbf{I}_2 \\ \mathbf{0}_{2\times2} & \mathbf{0}_{2\times2} \end{pmatrix}
-\end{pmatrix}$$
+$$\|\mathbf{u}\| \leq F_{max}, \qquad
+  \tan(\phi) = \frac{\|\mathbf{u}\|}{mg} \leq \tan(45°) = 1 \implies \|\mathbf{u}\| \leq mg$$
 
-with $g = 9.81$ m/s², and $B_w = \mathrm{blkdiag}(\mathbf{0}_3,\, \frac{1}{m}\mathbf{I}_3,\, \mathbf{0}_4)$
-(wind force enters as a linear acceleration).
+The combined saturation constraint is therefore $\|\mathbf{u}\| \leq \min(F_{max}, mg) = mg$.
 
-### LQR Disturbance Rejection
+The state vector is $\mathbf{x} = (\mathbf{p}, \dot{\mathbf{p}})^\top \in \mathbb{R}^4$; the
+linearised continuous-time state-space model about hover is:
 
-The LQR solves the infinite-horizon optimal control problem:
+$$\dot{\mathbf{x}} = A\mathbf{x} + B\mathbf{u} + E\mathbf{w}$$
 
-$$J = \int_0^\infty \left(\mathbf{x}^\top Q\, \mathbf{x} + \mathbf{u}^\top R\, \mathbf{u}\right) dt$$
+$$A = \begin{pmatrix} \mathbf{0}_2 & \mathbf{I}_2 \\ \mathbf{0}_2 & -\frac{b}{m}\mathbf{I}_2 \end{pmatrix}, \quad
+  B = \begin{pmatrix} \mathbf{0}_2 \\ \frac{1}{m}\mathbf{I}_2 \end{pmatrix}, \quad
+  E = \begin{pmatrix} \mathbf{0}_2 \\ \mathbf{I}_2 \end{pmatrix}$$
 
-The optimal gain matrix $K \in \mathbb{R}^{3 \times 10}$ is obtained from the algebraic Riccati
-equation:
-
-$$A^\top P + P A - P B R^{-1} B^\top P + Q = 0, \qquad K = R^{-1} B^\top P$$
-
-The control law with wind feedforward is:
-
-$$\mathbf{u}(t) = -K\,\mathbf{e}(t) - K_{ff}\,\mathbf{F}_w(t)$$
-
-where $\mathbf{e}(t) = \mathbf{x}(t) - \mathbf{x}_{ref}(t)$ is the tracking error relative to the
-spiral reference, and $K_{ff} = (B^\top B)^{-1} B^\top B_w$ is the least-squares feedforward gain
-that pre-cancels the wind disturbance in the input channel.
+where $\mathbf{w} = \mathbf{f}_{wind} + \mathbf{f}_{turb}/m \in \mathbb{R}^2$ is the total
+disturbance acceleration.
 
 ### Spiral Reference Trajectory
 
-The reference trajectory spirals inward at constant altitude:
+The inbound spiral in polar coordinates is parameterised by time $t$:
 
-$$r_{ref}(t) = r_{start} - \dot{r}\, t, \qquad \psi_{ref}(t) = \omega_{spiral}\, t$$
+$$r_{ref}(t) = r_{start} - v_{inbound} \cdot t, \qquad
+  \theta_{ref}(t) = \theta_0 + \omega_{spiral} \cdot t$$
 
-$$p_x^{ref}(t) = r_{ref}(t)\cos\psi_{ref}(t), \quad
-  p_y^{ref}(t) = r_{ref}(t)\sin\psi_{ref}(t), \quad
-  p_z^{ref}(t) = z_{target}$$
+with $v_{inbound} = 0.8$ m/s (radial closure rate), $\omega_{spiral} = 0.12$ rad/s
+(angular sweep rate), and $\theta_0 = 0$ (entry angle). The Cartesian reference is:
 
-Reference velocity is obtained by differentiating analytically:
+$$\mathbf{p}_{ref}(t) = r_{ref}(t) \begin{pmatrix} \cos\theta_{ref}(t) \\ \sin\theta_{ref}(t) \end{pmatrix}$$
 
-$$v_x^{ref} = -\dot{r}\cos\psi_{ref} - r_{ref}\,\omega_{spiral}\sin\psi_{ref}$$
-$$v_y^{ref} = -\dot{r}\sin\psi_{ref} + r_{ref}\,\omega_{spiral}\cos\psi_{ref}$$
+The reference velocity:
 
-The spiral terminates when $r_{ref} \leq r_{eye}$, after which the drone holds position at the eye
-centre.
+$$\dot{\mathbf{p}}_{ref}(t) = \dot{r}_{ref}\,\hat{\mathbf{e}}_r + r_{ref}\,\dot{\theta}_{ref}\,\hat{\mathbf{e}}_\theta
+  = -v_{inbound}\,\hat{\mathbf{e}}_r + r_{ref}\,\omega_{spiral}\,\hat{\mathbf{e}}_\theta$$
 
-### Tracking Error and Abort Condition
+The trajectory terminates when $r_{ref}(t) \leq r_{eye}$, giving a total mission time
+$T_{mission} = (r_{start} - r_{eye})/v_{inbound} \approx 219$ s.
 
-The instantaneous lateral drift from the spiral reference is:
+### MPC Formulation
 
-$$e(t) = \|\mathbf{p}_{xy}(t) - \mathbf{p}_{xy}^{ref}(t)\|$$
+Discretise the dynamics with timestep $\Delta t = 0.1$ s:
 
-where $\mathbf{p}_{xy} = (p_x, p_y)^\top$. The altitude deviation is $|p_z(t) - z_{target}|$. The
-mission is aborted at the first time $t^*$ such that:
+$$\mathbf{x}_{k+1} = A_d\,\mathbf{x}_k + B_d\,\mathbf{u}_k + E_d\,\mathbf{w}_k$$
 
-$$e(t^*) > d_{limit} = 5 \text{ m}$$
+At each control step $k$, solve the finite-horizon QP over prediction horizon $N_p = 20$:
 
-The overall performance metric is:
+$$\min_{\{u_k, \ldots, u_{k+N_p-1}\}} \sum_{j=0}^{N_p-1} \Bigl(
+  \|\mathbf{x}_{k+j} - \mathbf{x}_{ref,k+j}\|^2_Q + \|\mathbf{u}_{k+j}\|^2_R
+\Bigr) + \|\mathbf{x}_{k+N_p} - \mathbf{x}_{ref,k+N_p}\|^2_P$$
 
-$$\text{drift}_{peak} = \max_{t \in [0, T_{mission}]} e(t)$$
+subject to:
+
+$$\|\mathbf{u}_{k+j}\|_\infty \leq u_{max} = \frac{mg}{\sqrt{2}}, \qquad j = 0, \ldots, N_p - 1$$
+
+The disturbance term $\mathbf{w}_k$ is provided as a feed-forward input using the known Rankine
+wind model evaluated at the predicted positions. The state weighting matrix
+$Q = \mathrm{diag}(10, 10, 1, 1)$ penalises position error more than velocity error; the control
+weight $R = 0.1\,\mathbf{I}_2$; the terminal weight $P$ is the solution to the discrete algebraic
+Riccati equation (DARE).
+
+### H-Infinity Disturbance Rejection
+
+Define the tracking error output $\mathbf{z} = C_z(\mathbf{x} - \mathbf{x}_{ref})$ with
+$C_z = \mathrm{diag}(\sqrt{Q_{pos}}, \sqrt{Q_{pos}}, 0, 0)$ selecting position states. The closed-loop
+transfer function from disturbance $\mathbf{w}$ to error $\mathbf{z}$ is $T_{zw}(s)$.
+
+The $\mathcal{H}_\infty$ control problem seeks a state-feedback gain $K_\infty$ such that the
+closed-loop system $(A - BK_\infty)$ is stable and the $\mathcal{H}_\infty$ norm is bounded:
+
+$$\|T_{zw}\|_\infty = \sup_{\omega \in \mathbb{R}} \bar{\sigma}\!\left[T_{zw}(j\omega)\right] < \gamma$$
+
+The optimal $\gamma^*$ and gain $K_\infty$ are found by solving the $\mathcal{H}_\infty$ Riccati
+equation via bisection on $\gamma$. The closed-loop control is:
+
+$$\mathbf{u} = -K_\infty(\mathbf{x} - \mathbf{x}_{ref}) + \mathbf{u}_{ref}$$
+
+where $\mathbf{u}_{ref}$ is the feed-forward reference thrust needed to track $\dot{\mathbf{p}}_{ref}$.
+
+### Tracking Error Metric
+
+Mean radial tracking error over the mission:
+
+$$\bar{e}_{pos} = \frac{1}{T_{steps}} \sum_{k=1}^{T_{steps}} \|\mathbf{p}_k - \mathbf{p}_{ref,k}\|$$
+
+Peak error (worst-case passage through the eyewall):
+
+$$e_{peak} = \max_{k} \|\mathbf{p}_k - \mathbf{p}_{ref,k}\|$$
+
+Control effort (total thrust expenditure):
+
+$$J_{effort} = \Delta t \sum_{k=1}^{T_{steps}} \|\mathbf{u}_k\|$$
 
 ---
 
@@ -152,501 +183,226 @@ $$\text{drift}_{peak} = \max_{t \in [0, T_{mission}]} e(t)$$
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.animation import FuncAnimation
-from scipy.linalg import solve_continuous_are
+from scipy.linalg import solve_discrete_are, expm
 
-# ── Physical constants ────────────────────────────────────────────────────────
-G           = 9.81      # m/s²
-MASS        = 1.0       # kg
-RHO_AIR     = 1.225     # kg/m³
-C_D         = 0.6       # drag coefficient
-A_REF       = 0.04      # m²  effective frontal area
-I_XX        = 0.01      # kg·m²  roll inertia
-I_YY        = 0.01      # kg·m²  pitch inertia
+# Key constants
+M_DRONE      = 1.5       # kg — drone mass
+G            = 9.81      # m/s^2
+B_DRAG       = 0.4       # N·s/m — aerodynamic drag coefficient
+F_MAX        = M_DRONE * G  # N — max horizontal thrust (45 deg attitude limit)
+R_MAX        = 150.0     # m — Rankine vortex max-wind radius
+V_MAX        = 50.0      # m/s — peak tangential wind speed
+V_INFLOW     = 8.0       # m/s — peak radial inflow speed
+SIGMA_RAD    = 40.0      # m — radial width of inflow layer
+R_START      = 190.0     # m — drone entry radius
+R_EYE        = 15.0      # m — eye radius (mission success threshold)
+V_INBOUND    = 0.8       # m/s — radial closure rate
+W_SPIRAL     = 0.12      # rad/s — spiral angular rate
+DT           = 0.1       # s — simulation timestep
+N_PRED       = 20        # MPC prediction horizon (steps)
+Q_MPC        = np.diag([10., 10., 1., 1.])
+R_MPC        = 0.1 * np.eye(2)
 
-# ── Typhoon parameters ────────────────────────────────────────────────────────
-R_EYE       = 20.0      # m  eyewall radius
-V_MAX       = 15.0      # m/s  peak tangential wind speed
-
-# ── Trajectory parameters ────────────────────────────────────────────────────
-R_START     = 60.0      # m  initial spiral radius
-Z_TARGET    = 30.0      # m  target altitude
-R_DOT       = 0.3       # m/s  radial inward speed
-OMEGA_SPIRAL = 0.12     # rad/s  angular rate of spiral
-D_LIMIT     = 5.0       # m  abort drift threshold
-DEPLOY_RADIUS = 2.0     # m  radiosonde deployment radius
-
-# ── LQR weights ───────────────────────────────────────────────────────────────
-# State: [px, py, pz, vx, vy, vz, phi, theta, dphi, dtheta]
-Q_DIAG = np.array([10., 10., 20.,   # position (z weighted higher)
-                    2.,  2.,  4.,    # velocity
-                    5.,  5.,          # attitude
-                    1.,  1.])         # angular rate
-R_DIAG = np.array([0.1, 1.0, 1.0])  # [thrust, tau_phi, tau_theta]
-
-# ── Simulation ────────────────────────────────────────────────────────────────
-DT          = 0.02      # s  integration timestep
-T_MAX       = 300.0     # s  mission timeout
-
-
-def rankine_wind(x, y):
-    """Return 3D wind velocity vector [Vx, Vy, 0] from Rankine vortex."""
-    r = np.sqrt(x**2 + y**2) + 1e-9
-    V_theta = V_MAX * min(r / R_EYE, R_EYE / r)
-    # Counter-clockwise tangential direction: (-y/r, x/r)
-    Vx = -V_theta * y / r
-    Vy =  V_theta * x / r
-    return np.array([Vx, Vy, 0.0])
-
-
-def wind_force(drone_vel, wind_vel):
-    """Quadratic aerodynamic drag disturbance force (world frame)."""
-    dv = wind_vel - drone_vel
-    return 0.5 * RHO_AIR * C_D * A_REF * dv * np.abs(dv)
-
-
-def build_linear_system():
-    """
-    Construct linearised continuous-time matrices A (10x10), B (10x3),
-    Bw (10x3) for hover about origin.
-    State: [px, py, pz, vx, vy, vz, phi, theta, dphi, dtheta]
-    Input: [T (thrust deviation), tau_phi, tau_theta]
-    """
-    n, m = 10, 3
-    A = np.zeros((n, n))
-    B = np.zeros((n, m))
-    Bw = np.zeros((n, 3))
-
-    # Position kinematics
-    A[0, 3] = 1.0   # dpx = vx
-    A[1, 4] = 1.0   # dpy = vy
-    A[2, 5] = 1.0   # dpz = vz
-
-    # Velocity dynamics (linearised about hover)
-    # dvx/dt = g * theta,  dvy/dt = -g * phi,  dvz/dt = T/m - g
-    A[3, 7] =  G          # dvx from pitch
-    A[4, 6] = -G          # dvy from roll
-    B[5, 0] =  1.0 / MASS # dvz from thrust deviation
-
-    # Attitude kinematics
-    A[6, 8] = 1.0   # dphi  = dphi_dot
-    A[7, 9] = 1.0   # dtheta = dtheta_dot
-
-    # Attitude dynamics (torques -> angular accelerations)
-    B[8, 1]  = 1.0 / I_XX   # tau_phi  -> dphi_dot
-    B[9, 2]  = 1.0 / I_YY   # tau_theta -> dtheta_dot
-
-    # Wind force enters as linear acceleration on vx, vy, vz
-    Bw[3, 0] = 1.0 / MASS
-    Bw[4, 1] = 1.0 / MASS
-    Bw[5, 2] = 1.0 / MASS
-
-    return A, B, Bw
-
-
-def compute_lqr_gain(A, B):
-    """Solve algebraic Riccati equation and return LQR gain K."""
-    Q = np.diag(Q_DIAG)
-    R = np.diag(R_DIAG)
-    P = solve_continuous_are(A, B, Q, R)
-    K = np.linalg.solve(R, B.T @ P)
-    return K
-
-
-def compute_feedforward_gain(B, Bw):
-    """Least-squares feedforward gain: K_ff such that B @ u_ff = Bw @ Fw."""
-    K_ff, _, _, _ = np.linalg.lstsq(B, Bw, rcond=None)
-    return K_ff
-
+def rankine_wind(pos):
+    """Rankine vortex wind vector at Cartesian position pos = (x, y)."""
+    r = np.linalg.norm(pos)
+    if r < 1e-6:
+        return np.zeros(2)
+    e_r = pos / r
+    e_th = np.array([-pos[1], pos[0]]) / r
+    v_tan = V_MAX * r / R_MAX if r <= R_MAX else V_MAX * R_MAX / r
+    v_rad = -V_INFLOW * np.exp(-((r - R_MAX)**2) / (2 * SIGMA_RAD**2))
+    return v_tan * e_th + v_rad * e_r
 
 def spiral_reference(t):
+    """Return (p_ref, v_ref) on the inbound Archimedean spiral at time t."""
+    r_ref = max(R_EYE, R_START - V_INBOUND * t)
+    theta_ref = W_SPIRAL * t
+    e_r = np.array([np.cos(theta_ref), np.sin(theta_ref)])
+    e_th = np.array([-np.sin(theta_ref), np.cos(theta_ref)])
+    p_ref = r_ref * e_r
+    v_ref = -V_INBOUND * e_r + r_ref * W_SPIRAL * e_th
+    return p_ref, v_ref
+
+def build_discrete_ss(dt):
+    """Exact ZOH discretisation of the 2D double-integrator + drag model."""
+    A = np.block([[np.zeros((2, 2)), np.eye(2)],
+                  [np.zeros((2, 2)), -(B_DRAG / M_DRONE) * np.eye(2)]])
+    B = np.block([[np.zeros((2, 2))],
+                  [(1 / M_DRONE) * np.eye(2)]])
+    E = np.block([[np.zeros((2, 2))],
+                  [np.eye(2)]])
+    n, m = A.shape[0], B.shape[1]
+    # Matrix exponential for ZOH
+    M_exp = expm(np.block([[A, B, E],
+                            [np.zeros((m + 2, n + m + 2))]]) * dt)
+    Ad = M_exp[:n, :n]
+    Bd = M_exp[:n, n:n + m]
+    Ed = M_exp[:n, n + m:]
+    return Ad, Bd, Ed
+
+def mpc_step(x, x_ref_seq, w_seq, Ad, Bd, Ed, P_terminal):
     """
-    Return reference state [px, py, pz, vx, vy, vz, 0, 0, 0, 0] at time t.
-    Holds at eye centre once r_ref reaches zero.
+    Solve a simplified MPC QP via unconstrained LQR rollout (with clipping).
+    Returns the first optimal control action.
     """
-    r_ref = max(R_START - R_DOT * t, 0.0)
-    psi   = OMEGA_SPIRAL * t
+    Np = len(x_ref_seq) - 1
+    u_seq = []
+    x_k = x.copy()
+    # Single-step greedy approximation (replace with full QP solver for exact MPC)
+    for k in range(Np):
+        x_ref_k = x_ref_seq[k]
+        w_k = w_seq[k]
+        e_k = x_k - x_ref_k
+        # LQR gain from terminal P (one-step approximation)
+        K_lqr = np.linalg.inv(R_MPC + Bd.T @ P_terminal @ Bd) @ Bd.T @ P_terminal @ Ad
+        u_k = -K_lqr @ e_k - Ed @ w_k  # feed-forward wind cancellation
+        u_k = np.clip(u_k, -F_MAX / np.sqrt(2), F_MAX / np.sqrt(2))
+        u_seq.append(u_k)
+        x_k = Ad @ x_k + Bd @ u_k + Ed @ w_k
+    return u_seq[0]
 
-    px_r = r_ref * np.cos(psi)
-    py_r = r_ref * np.sin(psi)
-    pz_r = Z_TARGET
+def run_simulation(controller='mpc'):
+    Ad, Bd, Ed = build_discrete_ss(DT)
+    # Terminal cost: DARE solution
+    P_terminal = solve_discrete_are(Ad, Bd, Q_MPC, R_MPC)
 
-    if r_ref > 0.0:
-        vx_r = -R_DOT * np.cos(psi) - r_ref * OMEGA_SPIRAL * np.sin(psi)
-        vy_r = -R_DOT * np.sin(psi) + r_ref * OMEGA_SPIRAL * np.cos(psi)
-    else:
-        vx_r, vy_r = 0.0, 0.0
+    T_mission = (R_START - R_EYE) / V_INBOUND
+    t_steps = int(T_mission / DT)
 
-    x_ref = np.array([px_r, py_r, pz_r, vx_r, vy_r, 0.0,
-                       0.0, 0.0, 0.0, 0.0])
-    return x_ref, r_ref
+    pos = np.array([R_START, 0.0])
+    vel = np.zeros(2)
+    x = np.concatenate([pos, vel])
 
+    traj = [pos.copy()]
+    refs = []
+    errors = []
+    wind_at_drone = []
 
-def run_simulation(use_feedforward=True, seed=0):
-    """
-    Simulate typhoon eye-probing mission.
-    Returns trajectory dict and mission outcome.
-    """
-    rng = np.random.default_rng(seed)
+    for k in range(t_steps):
+        t = k * DT
+        p_ref, v_ref = spiral_reference(t)
+        x_ref = np.concatenate([p_ref, v_ref])
+        refs.append(p_ref.copy())
 
-    A, B, Bw = build_linear_system()
-    K  = compute_lqr_gain(A, B)
-    Kff = compute_feedforward_gain(B, Bw) if use_feedforward else np.zeros((3, 3))
+        # Wind disturbance at current position
+        w_now = rankine_wind(x[:2]) + (0.1 * np.linalg.norm(rankine_wind(x[:2]))
+                                        * np.random.randn(2))
+        wind_at_drone.append(np.linalg.norm(w_now))
 
-    # Initialise state at r_start, z_target
-    x = np.array([R_START, 0.0, Z_TARGET,
-                  0.0, 0.0, 0.0,
-                  0.0, 0.0, 0.0, 0.0], dtype=float)
+        if controller == 'pd':
+            Kp, Kd = 4.0, 2.5
+            u = Kp * (p_ref - x[:2]) + Kd * (v_ref - x[2:])
+            u = np.clip(u, -F_MAX / np.sqrt(2), F_MAX / np.sqrt(2))
 
-    t = 0.0
-    log = dict(t=[], pos=[], vel=[], drift=[], alt_dev=[], wind=[])
-    mission_success = False
-    aborted = False
-    radiosonde_deployed = False
+        elif controller == 'mpc':
+            # Build prediction sequences
+            x_ref_seq = []
+            w_seq = []
+            for j in range(N_PRED + 1):
+                p_r, v_r = spiral_reference(t + j * DT)
+                x_ref_seq.append(np.concatenate([p_r, v_r]))
+                w_seq.append(rankine_wind(x[:2]))  # zero-order hold on wind
+            u = mpc_step(x, x_ref_seq, w_seq, Ad, Bd, Ed, P_terminal)
 
-    while t < T_MAX:
-        x_ref, r_ref = spiral_reference(t)
-        e = x - x_ref
+        elif controller == 'hinf':
+            # H-inf state feedback (pre-computed gain K_inf)
+            # Placeholder: use LQR gain with disturbance feed-forward
+            K_inf = np.linalg.inv(R_MPC + Bd.T @ P_terminal @ Bd) @ Bd.T @ P_terminal @ Ad
+            u_ref = M_DRONE * (v_ref - x[2:]) / DT  # reference feed-forward
+            u = -K_inf @ (x - x_ref) + np.clip(u_ref, -F_MAX, F_MAX) - M_DRONE * w_now
+            u = np.clip(u, -F_MAX / np.sqrt(2), F_MAX / np.sqrt(2))
 
-        # Current wind at drone position
-        Vw = rankine_wind(x[0], x[1])
-        Fw = wind_force(x[3:6], Vw)
+        # Propagate dynamics
+        x = Ad @ x + Bd @ u + Ed @ w_now
+        traj.append(x[:2].copy())
+        errors.append(np.linalg.norm(x[:2] - p_ref))
 
-        # LQR control + optional feedforward
-        u = -K @ e - Kff @ Fw
-
-        # Thrust saturation (physical limits)
-        u[0] = np.clip(u[0], -MASS * G * 0.8, MASS * G * 1.2)
-
-        # Compute acceleration from full nonlinear force (simplified)
-        acc = np.array([
-            G * x[7],                         # ax = g*theta
-           -G * x[6],                          # ay = -g*phi
-            u[0] / MASS - G,                   # az = T/m - g
-        ]) + Fw / MASS
-
-        # Attitude dynamics
-        alpha_phi   = u[1] / I_XX
-        alpha_theta = u[2] / I_YY
-
-        # Euler integration
-        x[0:3] += x[3:6] * DT
-        x[3:6] += acc * DT
-        x[6]   += x[8] * DT
-        x[7]   += x[9] * DT
-        x[8]   += alpha_phi * DT
-        x[9]   += alpha_theta * DT
-
-        # Attitude angle clamp (small-angle regime)
-        x[6:8] = np.clip(x[6:8], -0.5, 0.5)
-
-        # Metrics
-        r_drone = np.sqrt(x[0]**2 + x[1]**2)
-        drift   = np.linalg.norm(x[0:2] - x_ref[0:2])
-        alt_dev = abs(x[2] - Z_TARGET)
-
-        log['t'].append(t)
-        log['pos'].append(x[0:3].copy())
-        log['vel'].append(x[3:6].copy())
-        log['drift'].append(drift)
-        log['alt_dev'].append(alt_dev)
-        log['wind'].append(Vw.copy())
-
-        # Abort check
-        if drift > D_LIMIT:
-            aborted = True
+        if np.linalg.norm(x[:2]) < R_EYE:
+            print(f"Eye reached at t = {t:.1f} s (step {k})")
             break
 
-        # Radiosonde deployment
-        if not radiosonde_deployed and r_drone < R_EYE and drift < DEPLOY_RADIUS:
-            radiosonde_deployed = True
-
-        # Success: reached eye centre and deployed
-        if radiosonde_deployed and r_ref == 0.0:
-            mission_success = True
-            break
-
-        t += DT
-
-    # Convert logs
-    for k in ('pos', 'vel', 'wind'):
-        log[k] = np.array(log[k])
-    for k in ('t', 'drift', 'alt_dev'):
-        log[k] = np.array(log[k])
-
-    outcome = {
-        'success': mission_success,
-        'aborted': aborted,
-        'radiosonde_deployed': radiosonde_deployed,
-        'peak_drift': float(log['drift'].max()) if len(log['drift']) else np.nan,
-        'peak_alt_dev': float(log['alt_dev'].max()) if len(log['alt_dev']) else np.nan,
-        'mission_time': float(log['t'][-1]) if len(log['t']) else np.nan,
-    }
-    return log, outcome
-
-
-def plot_wind_field(ax=None):
-    """Plot 2D Rankine vortex wind field as a quiver plot."""
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(7, 7))
-    grid = np.linspace(-70, 70, 25)
-    X, Y = np.meshgrid(grid, grid)
-    Vx = np.zeros_like(X)
-    Vy = np.zeros_like(Y)
-    Vmag = np.zeros_like(X)
-    for i in range(X.shape[0]):
-        for j in range(X.shape[1]):
-            Vw = rankine_wind(X[i, j], Y[i, j])
-            Vx[i, j], Vy[i, j] = Vw[0], Vw[1]
-            Vmag[i, j] = np.sqrt(Vw[0]**2 + Vw[1]**2)
-    ax.quiver(X, Y, Vx, Vy, Vmag, cmap='plasma', alpha=0.8)
-    circle_eye = plt.Circle((0, 0), R_EYE, color='cyan', fill=False,
-                             linestyle='--', linewidth=2, label=f'Eye ($r_{{eye}}={R_EYE}$ m)')
-    ax.add_patch(circle_eye)
-    ax.set_aspect('equal')
-    ax.set_xlabel('x (m)')
-    ax.set_ylabel('y (m)')
-    ax.set_title('Rankine Vortex Wind Field')
-    ax.legend()
-    return ax
-
-
-def plot_results(log_ff, log_noff, outcome_ff, outcome_noff):
-    """Generate comparison figures for LQR+feedforward vs LQR-only."""
-    fig = plt.figure(figsize=(18, 12))
-
-    # ── Plot 1: 2D wind field with spiral overlay ─────────────────────────────
-    ax1 = fig.add_subplot(2, 3, 1)
-    plot_wind_field(ax1)
-    pos_ff = log_ff['pos']
-    ax1.plot(pos_ff[:, 0], pos_ff[:, 1], 'r-', linewidth=1.5, label='LQR+FF')
-    pos_noff = log_noff['pos']
-    ax1.plot(pos_noff[:, 0], pos_noff[:, 1], 'b--', linewidth=1.5, label='LQR only')
-    ax1.scatter([R_START], [0], c='green', zorder=5, s=80, label='Start')
-    ax1.scatter([0], [0], c='magenta', zorder=5, s=120, marker='*', label='Eye centre')
-    ax1.legend(fontsize=8)
-    ax1.set_title('Horizontal trajectories + Wind field')
-
-    # ── Plot 2: 3D spiral trajectory ──────────────────────────────────────────
-    ax2 = fig.add_subplot(2, 3, 2, projection='3d')
-    ax2.plot(pos_ff[:, 0], pos_ff[:, 1], pos_ff[:, 2],
-             'r-', linewidth=1.5, label='LQR+FF')
-    ax2.plot(pos_noff[:, 0], pos_noff[:, 1], pos_noff[:, 2],
-             'b--', linewidth=1.5, label='LQR only')
-    # Reference spiral
-    t_ref = np.linspace(0, (R_START / R_DOT), 400)
-    px_r = np.maximum(R_START - R_DOT * t_ref, 0) * np.cos(OMEGA_SPIRAL * t_ref)
-    py_r = np.maximum(R_START - R_DOT * t_ref, 0) * np.sin(OMEGA_SPIRAL * t_ref)
-    ax2.plot(px_r, py_r, np.full_like(px_r, Z_TARGET),
-             'g:', linewidth=1, label='Reference spiral')
-    ax2.set_xlabel('x (m)')
-    ax2.set_ylabel('y (m)')
-    ax2.set_zlabel('z (m)')
-    ax2.set_title('3D Spiral Trajectory')
-    ax2.legend(fontsize=8)
-
-    # ── Plot 3: Lateral drift over time ───────────────────────────────────────
-    ax3 = fig.add_subplot(2, 3, 3)
-    ax3.plot(log_ff['t'], log_ff['drift'], 'r-', label='LQR+FF')
-    ax3.plot(log_noff['t'], log_noff['drift'], 'b--', label='LQR only')
-    ax3.axhline(D_LIMIT, color='k', linestyle=':', linewidth=1.5, label=f'Abort limit ({D_LIMIT} m)')
-    ax3.axhline(R_EYE, color='cyan', linestyle=':', linewidth=1,
-                label=f'Eye radius ({R_EYE} m)')
-    ax3.set_xlabel('Time (s)')
-    ax3.set_ylabel('Lateral drift (m)')
-    ax3.set_title('Tracking Error vs Time')
-    ax3.legend(fontsize=8)
-
-    # ── Plot 4: Altitude deviation ────────────────────────────────────────────
-    ax4 = fig.add_subplot(2, 3, 4)
-    ax4.plot(log_ff['t'], log_ff['alt_dev'], 'r-', label='LQR+FF')
-    ax4.plot(log_noff['t'], log_noff['alt_dev'], 'b--', label='LQR only')
-    ax4.axhline(1.0, color='k', linestyle=':', linewidth=1.5, label='±1 m limit')
-    ax4.set_xlabel('Time (s)')
-    ax4.set_ylabel('Altitude deviation (m)')
-    ax4.set_title('Altitude Deviation vs Time')
-    ax4.legend(fontsize=8)
-
-    # ── Plot 5: Wind speed along trajectory ───────────────────────────────────
-    ax5 = fig.add_subplot(2, 3, 5)
-    wind_mag_ff = np.linalg.norm(log_ff['wind'], axis=1)
-    r_ff = np.linalg.norm(log_ff['pos'][:, :2], axis=1)
-    ax5.scatter(r_ff, wind_mag_ff, s=2, c='red', alpha=0.4, label='LQR+FF')
-    r_vals = np.linspace(0, 70, 300)
-    V_theory = V_MAX * np.minimum(r_vals / R_EYE, R_EYE / r_vals)
-    ax5.plot(r_vals, V_theory, 'k-', linewidth=1.5, label='Rankine profile')
-    ax5.axvline(R_EYE, color='cyan', linestyle='--', label=f'$r_{{eye}}$')
-    ax5.set_xlabel('Radial distance r (m)')
-    ax5.set_ylabel('Wind speed (m/s)')
-    ax5.set_title('Wind Speed vs Radial Position')
-    ax5.legend(fontsize=8)
-
-    # ── Plot 6: Mission outcome summary ───────────────────────────────────────
-    ax6 = fig.add_subplot(2, 3, 6)
-    labels = ['LQR+FF', 'LQR only']
-    peak_drifts = [outcome_ff['peak_drift'], outcome_noff['peak_drift']]
-    colours = ['red', 'steelblue']
-    bars = ax6.bar(labels, peak_drifts, color=colours, alpha=0.8)
-    ax6.axhline(D_LIMIT, color='k', linestyle=':', linewidth=1.5,
-                label=f'Abort limit ({D_LIMIT} m)')
-    for bar, od, val in zip(bars,
-                            [outcome_ff, outcome_noff],
-                            peak_drifts):
-        label = f'{val:.2f} m'
-        if od['aborted']:
-            label += '\n(ABORTED)'
-        elif od['success']:
-            label += '\n(SUCCESS)'
-        ax6.text(bar.get_x() + bar.get_width() / 2, val + 0.1,
-                 label, ha='center', va='bottom', fontsize=9)
-    ax6.set_ylabel('Peak lateral drift (m)')
-    ax6.set_title('Mission Outcome Summary')
-    ax6.legend(fontsize=8)
-
-    plt.tight_layout()
-    plt.savefig('outputs/03_environmental_sar/s058_typhoon/trajectory_analysis.png',
-                dpi=150, bbox_inches='tight')
-    plt.show()
-
-
-def animate_spiral(log):
-    """Animate drone spiralling into the typhoon eye (top-down view)."""
-    pos = log['pos']
-    n_frames = len(pos)
-    step = max(1, n_frames // 200)
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    plot_wind_field(ax)
-    trail, = ax.plot([], [], 'r-', linewidth=1.5, label='Drone path')
-    dot,   = ax.plot([], [], 'ro', markersize=8)
-    time_text = ax.text(-65, 60, '', fontsize=10)
-
-    def init():
-        trail.set_data([], [])
-        dot.set_data([], [])
-        return trail, dot, time_text
-
-    def update(frame):
-        idx = frame * step
-        trail.set_data(pos[:idx, 0], pos[:idx, 1])
-        dot.set_data([pos[idx, 0]], [pos[idx, 1]])
-        time_text.set_text(f't = {log["t"][idx]:.1f} s  drift = {log["drift"][idx]:.2f} m')
-        return trail, dot, time_text
-
-    anim = FuncAnimation(fig, update, frames=n_frames // step,
-                         init_func=init, blit=True, interval=50)
-    anim.save('outputs/03_environmental_sar/s058_typhoon/spiral_entry.gif',
-              writer='pillow', fps=20)
-    plt.close()
-
-
-if __name__ == '__main__':
-    print('Running S058 Typhoon Eye Probing ...')
-
-    log_ff,   outcome_ff   = run_simulation(use_feedforward=True,  seed=0)
-    log_noff, outcome_noff = run_simulation(use_feedforward=False, seed=0)
-
-    print(f"LQR+FF   : success={outcome_ff['success']}  "
-          f"aborted={outcome_ff['aborted']}  "
-          f"peak_drift={outcome_ff['peak_drift']:.2f} m  "
-          f"peak_alt_dev={outcome_ff['peak_alt_dev']:.2f} m")
-    print(f"LQR only : success={outcome_noff['success']}  "
-          f"aborted={outcome_noff['aborted']}  "
-          f"peak_drift={outcome_noff['peak_drift']:.2f} m  "
-          f"peak_alt_dev={outcome_noff['peak_alt_dev']:.2f} m")
-
-    plot_results(log_ff, log_noff, outcome_ff, outcome_noff)
-    animate_spiral(log_ff)
-    print('Done. Outputs saved to outputs/03_environmental_sar/s058_typhoon/')
+    return np.array(traj), np.array(refs), np.array(errors), np.array(wind_at_drone)
 ```
 
 ---
 
 ## Key Parameters
 
-| Parameter | Symbol | Value |
-|-----------|--------|-------|
-| Eye radius | $r_{eye}$ | 20 m |
-| Peak tangential wind speed | $V_{max}$ | 15 m/s |
-| Initial spiral radius | $r_{start}$ | 60 m |
-| Target altitude | $z_{target}$ | 30 m |
-| Radial inward speed | $\dot{r}$ | 0.3 m/s |
-| Spiral angular rate | $\omega_{spiral}$ | 0.12 rad/s |
-| Abort drift threshold | $d_{limit}$ | 5 m |
-| Radiosonde deploy radius | — | 2 m |
-| Drone mass | $m$ | 1.0 kg |
-| Air density | $\rho_{air}$ | 1.225 kg/m³ |
-| Drag coefficient | $C_D$ | 0.6 |
-| Effective frontal area | $A_{ref}$ | 0.04 m² |
-| Roll / pitch inertia | $I_{xx}, I_{yy}$ | 0.01 kg·m² |
-| LQR position weights | $Q_{p}$ | diag(10, 10, 20) |
-| LQR velocity weights | $Q_{v}$ | diag(2, 2, 4) |
-| LQR attitude weights | $Q_{\phi\theta}$ | diag(5, 5) |
-| LQR input weight | $R$ | diag(0.1, 1, 1) |
-| Simulation timestep | $\Delta t$ | 0.02 s |
-| Mission timeout | $T_{max}$ | 300 s |
+| Parameter | Value |
+|-----------|-------|
+| Typhoon domain radius | 200 m |
+| Eye radius $r_{eye}$ | 15 m |
+| Max-wind radius $r_{max}$ | 150 m |
+| Peak tangential wind $v_{max}$ | 50 m/s |
+| Peak radial inflow $v_{inflow}$ | 8 m/s |
+| Inflow layer width $\sigma_{rad}$ | 40 m |
+| Turbulence intensity | 10 % of local $v_{tan}$ |
+| Drone mass $m$ | 1.5 kg |
+| Max horizontal thrust $F_{max}$ | $mg \approx 14.7$ N (45 deg limit) |
+| Aerodynamic drag $b$ | 0.4 N·s/m |
+| Entry radius $r_{start}$ | 190 m |
+| Radial closure rate $v_{inbound}$ | 0.8 m/s |
+| Spiral angular rate $\omega_{spiral}$ | 0.12 rad/s |
+| Mission duration $T_{mission}$ | ~219 s |
+| Simulation timestep $\Delta t$ | 0.1 s |
+| MPC prediction horizon $N_p$ | 20 steps (2 s) |
+| MPC position weight $Q_{pos}$ | 10 |
+| MPC control weight $R$ | 0.1 |
 
 ---
 
 ## Expected Output
 
-- **Wind field quiver plot**: 2D top-down quiver map of the Rankine vortex over a $140 \times 140$ m
-  domain; colour-coded by wind speed magnitude; eyewall circle ($r = r_{eye}$) marked; overlaid
-  horizontal trajectories of LQR+FF (red) and LQR-only (blue dashed).
-- **3D spiral trajectory**: `mpl_toolkits.mplot3d` plot showing actual drone path versus reference
-  spiral (green dotted); altitude deviation visible on the $z$-axis; both controllers compared.
-- **Lateral drift vs time**: time series of $e(t)$ for both strategies; abort limit $d_{limit}$
-  shown as a dashed horizontal line; eyewall transit interval shaded; radiosonde deployment instant
-  marked with a vertical line.
-- **Altitude deviation vs time**: $|p_z - z_{target}|$ over the mission; ±1 m bound shown;
-  LQR+FF expected to stay well within bound throughout.
-- **Wind speed vs radial position**: scatter of wind magnitude experienced by the drone versus
-  instantaneous $r$, overlaid on the theoretical Rankine profile; shows peak exposure at $r_{eye}$.
-- **Mission outcome bar chart**: peak lateral drift for each strategy with abort-limit reference;
-  SUCCESS / ABORTED label on each bar.
-- **Spiral entry animation (GIF)**: top-down drone trail growing frame-by-frame on the quiver
-  background; current time and drift annotated; mission result displayed on completion.
-
-**Expected metric targets** (LQR+FF strategy):
-
-| Metric | Target |
-|--------|--------|
-| Peak lateral drift | $< 4$ m |
-| Peak altitude deviation | $< 0.5$ m |
-| Mission outcome | SUCCESS (radiosonde deployed) |
-| LQR-only outcome | ABORTED (drift $> 5$ m in eyewall) |
+- **Spiral trajectory plot**: x-y plane showing the prescribed spiral reference (dashed) and
+  actual drone trajectories for all three controllers (PD in orange, MPC in green, H-inf in
+  purple); eye boundary drawn as a filled green circle; eyewall ring at $r_{max}$ shown as a
+  light-grey annulus; wind speed colour-mapped in the background.
+- **Wind field quiver plot**: 2D vector field of $\mathbf{f}_{wind}(\mathbf{p})$ over the domain,
+  showing the rotational vortex structure with peak vectors at $r_{max}$; drone entry point marked
+  with an arrow.
+- **Tracking error time series**: $\|\mathbf{p}(t) - \mathbf{p}_{ref}(t)\|$ vs time for all three
+  controllers on the same axes; vertical dashed line at the eyewall crossing ($r \approx r_{max}$);
+  shaded region indicating the critical passage zone.
+- **Wind speed profile**: $v_{tan}(r)$ and $|v_{rad}(r)|$ vs radial distance $r$, highlighting the
+  Rankine discontinuity of slope at $r_{max}$ and the inflow layer.
+- **Controller comparison bar chart**: mean tracking error $\bar{e}_{pos}$, peak error $e_{peak}$,
+  and control effort $J_{effort}$ for PD, MPC, and H-inf; success/failure indicator (did the drone
+  reach the eye?).
+- **Control input time series**: $u_x(t)$ and $u_y(t)$ vs time showing saturation events during
+  eyewall crossing; thrust magnitude $\|\mathbf{u}(t)\|$ with $F_{max}$ dashed.
+- **Animation (GIF)**: drone moving along the spiral inbound path with a wind-vector arrow
+  updating in real time; colour trace fading behind the drone; eye region lighting up green on
+  successful arrival.
 
 ---
 
 ## Extensions
 
-1. **Stochastic wind gusts**: superimpose a turbulence model (e.g. Dryden or von Kármán spectrum)
-   on the deterministic Rankine field; evaluate LQR robustness versus an $H_\infty$ robust controller
-   designed for a bounded gust amplitude.
-2. **Online wind estimation**: replace the known-wind feedforward with an onboard EKF that estimates
-   local wind velocity from the difference between commanded and actual acceleration; evaluate
-   convergence speed and drift penalty during the estimation transient.
-3. **Asymmetric eyewall**: replace the perfectly circular Rankine model with an elliptic eyewall
-   (different $r_{eye}$ in cardinal directions); re-optimise the spiral trajectory and assess the
-   increased directional sensitivity of the controller.
-4. **Multi-drone coordinated entry**: deploy three drones simultaneously at equal angular spacing
-   ($120°$ apart) with a shared entry trajectory plan; study wind interference and collision
-   avoidance inside the constrained eye volume.
-5. **Real radiosonde descent modelling**: after deployment, simulate the parachute-borne radiosonde
-   drifting with the wind as it descends from $z_{target}$; compute the ground impact point and
-   compare with and without the Rankine eye correction.
+1. **Adaptive wind estimation**: the true wind field is not known to the controller; implement an
+   online Extended Kalman Filter (EKF) to estimate wind speed and direction from the drone's IMU
+   residuals, and feed the estimate into the MPC disturbance term. Evaluate convergence rate vs
+   estimation error within the eyewall.
+2. **3D vertical profile**: extend the simulation to three dimensions and assign a vertical
+   profile mission — the drone descends from 500 m (upper troposphere) to 50 m (boundary layer)
+   while spiralling inward, collecting a full meteorological sounding. The vertical wind shear adds
+   an additional z-disturbance layer.
+3. **Multi-drone constellation**: deploy $N = 3$ drones at evenly-spaced entry angles
+   ($120°$ apart) to sample the azimuthal wind variability and compare simultaneous eyewall
+   crossings; coordinate so that drones reach the eye simultaneously for a joint pressure
+   measurement.
+4. **Moving eye**: allow the eye centre to translate at $v_{eye} = 5$ m/s (typhoon track), so the
+   reference spiral must be continuously recomputed in the eye-fixed frame; assess how eye
+   translation degrades tracking performance and what look-ahead horizon the MPC needs.
+5. **RL disturbance rejection**: train a PPO agent on randomised vortex intensities
+   ($v_{max} \in [20, 60]$ m/s) and eye radii ($r_{max} \in [80, 200]$ m); test zero-shot
+   generalisation to a Category-5 vortex profile not seen during training; compare with the
+   H-inf controller on worst-case wind scenarios.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md) (environmental
-  monitoring structure), [S045 Chemical Plume Tracing](S045_plume_tracing.md) (wind-field
-  navigation), [S060 Glacier Crack Survey](S060_glacier_crack_survey.md) (high-difficulty SAR
-  culmination)
-- Algorithmic cross-reference: [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md)
-  (quadrotor dynamics reference), [S050 Swarm Cooperative Mapping](S050_slam.md) (complex 3D
-  mission structure)
-- Follow-ups: deploy the trained controller in a full physics simulation using gym-pybullet-drones
-  with custom wind plugin; extend to adaptive MPC for real-time eyewall trajectory optimisation
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S060 Meteorological Profiling](S060_meteorological_profiling.md)
+- Follow-ups: [S059 Sonar Buoy Relay](S059_sonar_buoy_relay.md) (ocean hazard environment), [S055 Oil Spill Tracking](S055_oil_spill_tracking.md) (extreme environment monitoring)
+- Algorithmic cross-reference: [S034 Weather Rerouting](../02_logistics_delivery/S034_weather_rerouting.md) (wind disturbance replanning), [S004 Disturbance Rejection Chase](../01_pursuit_evasion/S004_disturbance_rejection.md) (H-inf control in pursuit context)

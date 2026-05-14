@@ -1,132 +1,153 @@
 # S052 Glacier Melt Area Measurement
 
 **Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Boustrophedon Coverage with Overlap Control | **Dimension**: 2D
 
 ---
 
 ## Problem Definition
 
-**Setup**: A single drone is tasked with producing a complete orthophoto mosaic of a glacier
-survey area ($100 \times 80$ m) in order to measure the current melt boundary. The drone flies at
-a fixed altitude $h$, and its nadir-pointing camera covers a ground footprint of width
-$w = 2h\tan(\theta_{FOV}/2)$. Adjacent flight strips must overlap by at least 20% in the
-cross-track direction so that image-stitching software can register adjacent frames. The drone
-begins at one corner of the glacier area and executes a **strip-based boustrophedon (lawnmower)**
-path, flying alternating parallel strips along the long axis, with lateral steps at each end.
-
-A simulated melt boundary is generated as a Gaussian-blurred binary mask representing the
-ice/water interface. After coverage, the boundary polygon is extracted from the intensity map
-by thresholding and contour detection.
+**Setup**: A single survey drone is deployed over a mountain glacier to measure changes in melt area
+between seasonal surveys. The glacier occupies a roughly rectangular region of
+$L_{area} \times W_{area} = 800 \times 600$ m. The drone carries a downward-facing RGB+NIR camera
+and flies a systematic boustrophedon (lawnmower) grid at a fixed survey altitude $h = 80$ m above
+the glacier surface. The camera's field of view and the required overlap ratios determine strip
+spacing and photo interval, ensuring every point on the glacier is captured by at least three
+overlapping images — the minimum for reliable Structure-from-Motion (SfM) photogrammetry and
+orthophoto stitching. After the survey flight, NDWI (Normalised Difference Water Index) is computed
+from the mosaicked orthophoto to segment melt-water pools from clean ice, and the total melt area
+$A_{melt}$ is reported in m².
 
 **Roles**:
-- **Drone**: single UAV executing a pre-planned orthophoto mosaic path; no in-flight replanning.
-- **Glacier area**: static $100 \times 80$ m rectangle with a simulated melt boundary embedded as
-  an intensity mask; discretised into $0.5 \times 0.5$ m grid cells for coverage accounting.
+- **Survey drone**: single fixed-wing or multirotor at altitude $h$; flies the coverage path,
+  triggers the camera at intervals $\Delta x = B_x$, and returns to the launch point at the end of
+  each flight leg.
 
-**Objective**: Minimise total flight distance (equivalently, total mission time) while guaranteeing
-100% image coverage with at least 20% cross-track overlap throughout the survey area. Secondary
-objective: extract the melt boundary as a closed polygon from the simulated orthophoto intensity
-mask and compute the melt area.
+**Objective**: Design a photogrammetric coverage path that guarantees forward overlap
+$O_f = 80\%$ and side overlap $O_s = 60\%$ across the entire glacier area, minimise total flight
+distance, and produce an NDWI-derived melt-area estimate $A_{melt}$ with ground sampling distance
+$\text{GSD} \leq 5$ cm/pixel.
 
-**Key question**: How does the required overlap ratio affect total path length and mission time?
-What is the minimum altitude that satisfies the Ground Sample Distance (GSD) constraint while
-keeping the strip count manageable?
+**Comparison strategies**:
+1. **Unidirectional lawnmower** — all strips flown in the same direction; drone repositions at the
+   far end of each strip before starting the next.
+2. **Boustrophedon lawnmower** — strips flown alternately left-to-right and right-to-left;
+   eliminates the long repositioning leg between strips.
+3. **Adaptive strip spacing** — strip spacing reduced in marginal zones identified by a prior coarse
+   pass to ensure overlap is maintained on sloped glacier flanks.
 
 ---
 
 ## Mathematical Model
 
-### Camera Footprint and Ground Sample Distance
+### Ground Sampling Distance
 
-The drone flies at altitude $h$ with a camera whose horizontal field of view is $\theta_{FOV}$.
-The ground footprint width (cross-track swath) is:
+The ground sampling distance (GSD) relates sensor pixel pitch $p$ (mm), focal length $f$ (mm), and
+survey altitude $h$ (m):
 
-$$w = 2h \tan\!\left(\frac{\theta_{FOV}}{2}\right)$$
+$$\text{GSD} = \frac{h \cdot p}{f}$$
 
-The Ground Sample Distance — the real-world distance represented by one image pixel — is:
+For a sensor of total width $s_w$ (mm) and height $s_h$ (mm) with image resolution
+$n_w \times n_h$ pixels, the pixel pitch is $p = s_w / n_w$, and the camera footprint on the
+ground is:
 
-$$\text{GSD} = \frac{s_w}{n_{px}} \cdot \frac{h}{f}$$
+$$W_{fp} = \frac{h \cdot s_w}{f}, \qquad L_{fp} = \frac{h \cdot s_h}{f}$$
 
-where $s_w$ is the physical sensor width (m), $n_{px}$ is the image width in pixels, and $f$ is
-the focal length (m). For a fixed camera, GSD scales linearly with altitude $h$.
+Equivalently, using the horizontal and vertical half-angles of the field of view:
 
-### Optimal Strip Spacing
+$$W_{fp} = 2h \tan\!\left(\frac{\text{FOV}_h}{2}\right), \qquad
+L_{fp} = 2h \tan\!\left(\frac{\text{FOV}_v}{2}\right)$$
 
-Given a required cross-track overlap ratio $\rho \in [0, 1)$, the effective strip spacing
-(centre-to-centre distance between adjacent parallel strips) is:
+### Coverage Path Geometry
 
-$$d^* = w \cdot (1 - \rho)$$
+With forward overlap $O_f$ (fraction) along the flight direction and side overlap $O_s$ (fraction)
+across strips, the base distance (trigger interval along-track) and strip spacing are:
 
-At $\rho = 0.20$ and $h = 10$ m with $\theta_{FOV} = 60°$:
+$$B_x = L_{fp} \cdot (1 - O_f)$$
 
-$$w = 2 \times 10 \times \tan(30°) \approx 11.55 \text{ m}, \qquad d^* = 11.55 \times 0.80 \approx 9.24 \text{ m}$$
+$$B_y = W_{fp} \cdot (1 - O_s)$$
 
-### Strip Count and Waypoint Generation
+The number of parallel strips required to cover the glacier width $W_{area}$:
 
-For a survey area of cross-track width $W$ with strips running along the along-track dimension
-$L_{area}$, the number of strips required is:
+$$N_{strips} = \left\lceil \frac{W_{area}}{B_y} \right\rceil$$
 
-$$N = \left\lceil \frac{W}{d^*} \right\rceil$$
+The number of photo triggers per strip to cover the glacier length $L_{area}$:
 
-Strip $i$ ($i = 0, 1, \ldots, N-1$) is centred at cross-track position:
+$$N_{photos} = \left\lceil \frac{L_{area}}{B_x} \right\rceil$$
 
-$$y_i = y_{start} + \left(i + \tfrac{1}{2}\right) d^*$$
+Total photos acquired during the survey:
 
-The along-track start and end of strip $i$ alternate direction (boustrophedon):
+$$N_{total} = N_{strips} \times N_{photos}$$
 
-$$\mathbf{w}_{i}^{start} = \begin{cases} (x_{min},\; y_i) & i \text{ even} \\ (x_{max},\; y_i) & i \text{ odd} \end{cases}, \qquad \mathbf{w}_{i}^{end} = \begin{cases} (x_{max},\; y_i) & i \text{ even} \\ (x_{min},\; y_i) & i \text{ odd} \end{cases}$$
+### Flight Path Length
 
-The full waypoint sequence is:
+For the boustrophedon pattern, the drone flies $N_{strips}$ legs each of length $L_{area}$, with
+$N_{strips} - 1$ short cross-track transitions of length $B_y$:
 
-$$\mathbf{w}_0^{start},\; \mathbf{w}_0^{end},\; \mathbf{w}_1^{start},\; \mathbf{w}_1^{end},\; \ldots,\; \mathbf{w}_{N-1}^{start},\; \mathbf{w}_{N-1}^{end}$$
+$$D_{flight} = N_{strips} \cdot L_{area} + (N_{strips} - 1) \cdot B_y$$
 
-where each transition segment $\mathbf{w}_{i}^{end} \to \mathbf{w}_{i+1}^{start}$ is a lateral
-step of length $d^*$ (the turn leg).
+For the unidirectional pattern, each transition is a full repositioning leg of length
+$L_{area} + B_y$, giving a longer total:
 
-### Total Path Length
+$$D_{uni} = N_{strips} \cdot L_{area} + (N_{strips} - 1) \cdot (L_{area} + B_y)$$
 
-The total flight distance decomposes into $N$ along-track scan strips and $N-1$ lateral turn legs:
+The boustrophedon saving over unidirectional flight:
 
-$$L_{total} = \underbrace{N \cdot L_{area}}_{\text{scan strips}} + \underbrace{(N-1) \cdot d^*}_{\text{turn legs}}$$
+$$\Delta D = D_{uni} - D_{flight} = (N_{strips} - 1) \cdot L_{area}$$
 
-where $L_{area} = 100$ m is the along-track strip length and $W = 80$ m is the cross-track width.
+### Drone Kinematics
 
-### Coverage Efficiency
+The drone flies at constant speed $v$ and fixed altitude $h$. Position update at timestep $\Delta t$:
 
-The survey area is discretised into a grid of $0.5 \times 0.5$ m cells. A cell at position
-$(x_c, y_c)$ is marked **imaged** when the drone's ground projection passes within half the
-footprint width of the cell's $y$-coordinate:
+$$\mathbf{p}(t + \Delta t) = \mathbf{p}(t) + v \cdot \hat{\mathbf{u}}(t) \cdot \Delta t$$
 
-$$\text{cell}(x_c, y_c) \text{ imaged} \iff \exists\, i : |y_c - y_i| \leq \tfrac{w}{2}$$
+where $\hat{\mathbf{u}}(t)$ is the unit vector toward the current waypoint. Total survey time:
 
-The coverage rate and efficiency are:
+$$T_{survey} = \frac{D_{flight}}{v}$$
 
-$$C = \frac{\bigl|\{(x_c, y_c) : \text{imaged}\}\bigr|}{W \cdot L_{area}} \times 100\%$$
+### Camera Trigger Model
 
-$$\eta = \frac{\text{unique area covered}}{N \cdot w \cdot L_{area}}$$
+A photo is triggered when the along-track distance from the last trigger position exceeds $B_x$:
 
-where $\eta < 1$ reflects that strip edges overlap and $\eta = 1$ would be the idealised
-non-overlapping case.
+$$\text{trigger at } \mathbf{p}_k \iff \|\mathbf{p}_k - \mathbf{p}_{k-1}\|_{along} \geq B_x$$
 
-### Melt Boundary Extraction
+The footprint of photo $k$ is the axis-aligned rectangle centred at the nadir point
+$\mathbf{p}_k^{xy}$ with dimensions $W_{fp} \times L_{fp}$.
 
-The simulated orthophoto intensity mask $I(x, y)$ is constructed as a Gaussian-blurred binary
-field separating ice (high intensity) from melt water (low intensity). The melt boundary is
-extracted by:
+### NDWI Melt-Area Estimation
 
-1. Applying a binary threshold at intensity $I_{thresh} = 0.5$:
+After flight, the orthophoto mosaic is assembled from all photo footprints. Each pixel $(u, v)$ of
+the mosaic carries a green-band radiance $\rho_G(u,v)$ and a near-infrared radiance $\rho_{NIR}(u,v)$.
+The Normalised Difference Water Index is:
 
-$$M(x, y) = \mathbf{1}\!\left[I(x, y) \geq I_{thresh}\right]$$
+$$\text{NDWI}(u,v) = \frac{\rho_G(u,v) - \rho_{NIR}(u,v)}{\rho_G(u,v) + \rho_{NIR}(u,v)}$$
 
-2. Running contour extraction on $M$ (e.g., marching squares) to obtain the boundary polygon
-   $\mathcal{B} = \{(x_k, y_k)\}_{k=1}^{K}$.
+Melt-water pixels are classified by thresholding:
 
-3. Computing the melt area as the complement of the ice area within the survey region:
+$$\text{melt}(u,v) = \begin{cases} 1 & \text{if } \text{NDWI}(u,v) > \theta \\ 0 & \text{otherwise} \end{cases}$$
 
-$$A_{melt} = (W \cdot L_{area}) - \frac{1}{2} \left|\sum_{k=0}^{K-1}(x_k y_{k+1} - x_{k+1} y_k)\right|$$
+with threshold $\theta = 0.2$ (standard open-water threshold). The total melt area in m² is:
 
-using the shoelace formula for the ice polygon area.
+$$A_{melt} = \sum_{u,v} \text{melt}(u,v) \cdot \text{GSD}^2$$
+
+To simulate realistic NDWI, the synthetic glacier mosaic models clean ice as having low NDWI
+(mean $\mu_{ice} = -0.3$, $\sigma = 0.05$) and melt pools as having high NDWI (mean $\mu_{melt} = 0.4$,
+$\sigma = 0.08$):
+
+$$\text{NDWI}_{synthetic}(u,v) \sim \begin{cases} \mathcal{N}(-0.3,\; 0.05^2) & \text{pixel in ice region} \\ \mathcal{N}(0.4,\; 0.08^2) & \text{pixel in melt region} \end{cases}$$
+
+### Overlap Coverage Map
+
+The coverage count at ground point $\mathbf{q} = (x, y)$ is the number of photo footprints that
+contain it:
+
+$$C(\mathbf{q}) = \sum_{k=1}^{N_{total}} \mathbf{1}\bigl[\mathbf{q} \in \text{footprint}_k\bigr]$$
+
+The minimum coverage over the survey area must satisfy $\min_{\mathbf{q}} C(\mathbf{q}) \geq 3$
+for SfM reconstruction. The mean coverage:
+
+$$\bar{C} = \frac{1}{|O_f|} \cdot \frac{1}{|O_s|}$$
+
+where $\bar{C} = 1 / ((1 - O_f)(1 - O_s))$ follows directly from the overlap fractions.
 
 ---
 
@@ -136,189 +157,162 @@ using the shoelace formula for the ice polygon area.
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-from matplotlib.animation import FuncAnimation
-from scipy.ndimage import gaussian_filter
+from matplotlib.colors import Normalize
+import matplotlib.cm as cm
 
-# ── Key constants ──────────────────────────────────────────────────────────────
-AREA_L          = 100.0    # m — along-track length of survey area
-AREA_W          = 80.0     # m — cross-track width of survey area
-SCAN_HEIGHT     = 10.0     # m — drone altitude (fixed)
-SENSOR_FOV_DEG  = 60.0     # deg — camera horizontal field of view
-OVERLAP_RATIO   = 0.20     # — required cross-track overlap (20%)
-GRID_RESOLUTION = 0.5      # m — coverage grid cell size
-V_CRUISE        = 5.0      # m/s — drone cruise speed
-DT              = 0.2      # s — simulation timestep
-I_THRESH        = 0.5      # — intensity threshold for melt boundary
+# Key constants — photogrammetry parameters
+ALTITUDE        = 80.0      # m — survey altitude above glacier surface
+FOCAL_LENGTH    = 25.0      # mm — camera focal length
+SENSOR_W        = 17.3      # mm — sensor width (micro four-thirds)
+SENSOR_H        = 13.0      # mm — sensor height
+IMAGE_W         = 4608      # px — image width
+IMAGE_H         = 3456      # px — image height
 
-# ── Derived geometry ───────────────────────────────────────────────────────────
-FOV_RAD   = np.deg2rad(SENSOR_FOV_DEG)
-FOOTPRINT = 2.0 * SCAN_HEIGHT * np.tan(FOV_RAD / 2.0)   # swath width w (m)
-STRIP_D   = FOOTPRINT * (1.0 - OVERLAP_RATIO)            # optimal strip spacing d* (m)
-N_STRIPS  = int(np.ceil(AREA_W / STRIP_D))               # number of strips N
+FORWARD_OVERLAP = 0.80      # fraction — along-track overlap
+SIDE_OVERLAP    = 0.60      # fraction — cross-track overlap
 
+GLACIER_L       = 800.0     # m — glacier length (along flight strips)
+GLACIER_W       = 600.0     # m — glacier width (across strips)
+DRONE_SPEED     = 10.0      # m/s — cruise speed
+DT              = 0.5       # s — simulation timestep
+NDWI_THRESHOLD  = 0.2       # NDWI melt-water classification threshold
 
-def generate_lawnmower_waypoints(area_l, area_w, strip_d):
-    """Return ordered (x, y) waypoints for a boustrophedon orthophoto survey."""
-    n_strips = int(np.ceil(area_w / strip_d))
+def compute_footprint(altitude, focal_length_mm, sensor_w_mm, sensor_h_mm):
+    """Compute ground footprint width and height from camera parameters."""
+    fp_w = altitude * sensor_w_mm / focal_length_mm
+    fp_h = altitude * sensor_h_mm / focal_length_mm
+    gsd  = altitude * (sensor_w_mm / IMAGE_W) / focal_length_mm * 1000  # m/px → cm/px
+    return fp_w, fp_h, gsd
+
+def compute_strip_geometry(fp_w, fp_h, forward_overlap, side_overlap,
+                           glacier_l, glacier_w):
+    """Derive strip spacing, base distance, and photo counts."""
+    Bx = fp_h * (1 - forward_overlap)   # trigger interval (along strip)
+    By = fp_w * (1 - side_overlap)       # strip spacing (cross-track)
+    n_strips = int(np.ceil(glacier_w / By))
+    n_photos = int(np.ceil(glacier_l / Bx))
+    return Bx, By, n_strips, n_photos
+
+def boustrophedon_waypoints(n_strips, By, glacier_l, origin=(0.0, 0.0)):
+    """Generate boustrophedon strip waypoints."""
     waypoints = []
+    ox, oy = origin
     for i in range(n_strips):
-        y_centre = (i + 0.5) * strip_d
-        if i % 2 == 0:          # left to right (increasing x)
-            waypoints.append((0.0,    y_centre))
-            waypoints.append((area_l, y_centre))
-        else:                   # right to left (decreasing x)
-            waypoints.append((area_l, y_centre))
-            waypoints.append((0.0,    y_centre))
-    return waypoints, n_strips
+        x = ox + i * By + By / 2
+        if i % 2 == 0:
+            waypoints.append((x, oy))
+            waypoints.append((x, oy + glacier_l))
+        else:
+            waypoints.append((x, oy + glacier_l))
+            waypoints.append((x, oy))
+    return waypoints
 
-
-def compute_path_length(waypoints):
-    """Total Euclidean path length along the waypoint sequence."""
-    total = 0.0
-    pts = np.array(waypoints)
-    for k in range(len(pts) - 1):
-        total += np.linalg.norm(pts[k + 1] - pts[k])
-    return total
-
-
-def simulate_coverage(waypoints, area_l, area_w, footprint_w, grid_res, v_cruise, dt):
-    """Simulate drone flight; return coverage grid (scan-count) and trajectory."""
-    nx = int(area_l / grid_res)
-    ny = int(area_w / grid_res)
-    grid = np.zeros((ny, nx), dtype=np.int32)
-
-    xs = np.arange(nx) * grid_res + grid_res / 2.0   # cell-centre x coords
-    ys = np.arange(ny) * grid_res + grid_res / 2.0   # cell-centre y coords
-    CX, CY = np.meshgrid(xs, ys)
-
-    trajectory = []
-    pos = np.array(waypoints[0], dtype=float)
-    trajectory.append(pos.copy())
+def simulate_survey_flight(waypoints, drone_speed, Bx, dt):
+    """Simulate drone flight and record trigger positions."""
+    positions   = []
+    triggers    = []
+    pos         = np.array(waypoints[0], dtype=float)
+    last_trig   = pos.copy()
+    t           = 0.0
 
     for wp in waypoints[1:]:
         target = np.array(wp, dtype=float)
-        diff   = target - pos
-        dist   = np.linalg.norm(diff)
-        if dist < 1e-6:
-            continue
-        unit  = diff / dist
-        steps = max(1, int(np.ceil(dist / (v_cruise * dt))))
-        step_dist = dist / steps
-        for _ in range(steps):
-            pos = pos + unit * step_dist
-            trajectory.append(pos.copy())
-            # Mark cells within cross-track half-swath
-            in_swath = np.abs(CY - pos[1]) <= footprint_w / 2.0
-            grid[in_swath] += 1
+        while True:
+            diff = target - pos
+            dist = np.linalg.norm(diff)
+            if dist < drone_speed * dt:
+                pos = target.copy()
+                positions.append(pos.copy())
+                t += dist / drone_speed
+                break
+            step = diff / dist * drone_speed * dt
+            pos += step
+            positions.append(pos.copy())
+            t += dt
+            # Camera trigger check (along y-axis for N-S strips)
+            along_dist = np.linalg.norm(pos - last_trig)
+            if along_dist >= Bx:
+                triggers.append(pos.copy())
+                last_trig = pos.copy()
 
-    return np.array(trajectory), grid
+    return np.array(positions), np.array(triggers), t
 
+def build_coverage_map(triggers, fp_w, fp_h, glacier_l, glacier_w,
+                       gsd_m, resolution=1.0):
+    """Rasterise photo footprints into a coverage-count grid."""
+    nx = int(glacier_w / resolution)
+    ny = int(glacier_l / resolution)
+    coverage = np.zeros((ny, nx), dtype=np.int32)
 
-def generate_melt_mask(area_l, area_w, grid_res, sigma=12.0, seed=42):
-    """
-    Simulate an orthophoto intensity mask with a smooth melt boundary.
-    Ice (high intensity) occupies the upper portion; melt water (low) below.
-    A Gaussian-blurred random field creates a realistic irregular boundary.
-    """
+    for tx, ty in triggers:
+        x0 = int((tx - fp_w / 2) / resolution)
+        x1 = int((tx + fp_w / 2) / resolution)
+        y0 = int((ty - fp_h / 2) / resolution)
+        y1 = int((ty + fp_h / 2) / resolution)
+        x0, x1 = max(0, x0), min(nx, x1)
+        y0, y1 = max(0, y0), min(ny, y1)
+        coverage[y0:y1, x0:x1] += 1
+
+    return coverage
+
+def synthetic_ndwi(glacier_l, glacier_w, gsd_m, melt_fraction=0.25, seed=42):
+    """Generate a synthetic NDWI mosaic with Gaussian noise per class."""
     rng = np.random.default_rng(seed)
-    nx  = int(area_l / grid_res)
-    ny  = int(area_w / grid_res)
+    nx  = int(glacier_w / gsd_m)
+    ny  = int(glacier_l / gsd_m)
+    ndwi = rng.normal(-0.3, 0.05, (ny, nx))
 
-    # Base gradient: ice in upper half (high y), melt water in lower half
-    ys = np.linspace(0, 1, ny)
-    base = np.tile(ys[:, np.newaxis], (1, nx))
+    # Place circular melt pools
+    n_pools = 8
+    for _ in range(n_pools):
+        cx = rng.integers(nx // 6, 5 * nx // 6)
+        cy = rng.integers(ny // 6, 5 * ny // 6)
+        r  = rng.integers(nx // 20, nx // 8)
+        yy, xx = np.ogrid[:ny, :nx]
+        mask = (xx - cx)**2 + (yy - cy)**2 <= r**2
+        ndwi[mask] = rng.normal(0.4, 0.08, mask.sum())
 
-    # Add random perturbation and smooth to simulate fractal boundary
-    noise = rng.standard_normal((ny, nx))
-    noise_smooth = gaussian_filter(noise, sigma=sigma / grid_res)
-    mask = base + 0.3 * noise_smooth / noise_smooth.std()
+    return ndwi
 
-    # Normalise to [0, 1]
-    mask = (mask - mask.min()) / (mask.max() - mask.min())
-    return mask
-
-
-def extract_melt_boundary(mask, i_thresh, grid_res):
-    """
-    Extract melt boundary polygon by thresholding the intensity mask.
-    Returns binary ice map and approximate boundary cell coordinates.
-    """
-    ice_map = (mask >= i_thresh).astype(np.uint8)
-
-    # Find boundary cells (ice adjacent to non-ice) using finite differences
-    pad = np.pad(ice_map, 1, constant_values=0)
-    boundary_mask = np.zeros_like(ice_map, dtype=bool)
-    for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        neighbour = pad[1 + di:ice_map.shape[0] + 1 + di,
-                        1 + dj:ice_map.shape[1] + 1 + dj]
-        boundary_mask |= (ice_map == 1) & (neighbour == 0)
-
-    rows, cols = np.where(boundary_mask)
-    bx = cols * grid_res + grid_res / 2.0   # x coordinate (along-track)
-    by = rows * grid_res + grid_res / 2.0   # y coordinate (cross-track)
-
-    # Approximate melt area as complement of ice area
-    ice_cells  = np.sum(ice_map == 1)
-    ice_area   = ice_cells * grid_res**2
-    total_area = ice_map.size * grid_res**2
-    melt_area  = total_area - ice_area
-
-    return ice_map, bx, by, melt_area
-
-
-def compute_metrics(waypoints, n_strips, area_l, area_w, footprint_w,
-                    strip_d, grid_res, v_cruise, dt):
-    """Compute and print mission metrics; return trajectory and grid."""
-    traj, grid = simulate_coverage(
-        waypoints, area_l, area_w, footprint_w, grid_res, v_cruise, dt
-    )
-    L          = n_strips * area_l + (n_strips - 1) * strip_d
-    t_mission  = L / v_cruise
-    total_cells = grid.size
-    covered     = int(np.sum(grid > 0))
-    coverage_pct = 100.0 * covered / total_cells
-    eta          = (covered * grid_res**2) / (n_strips * footprint_w * area_l)
-
-    print(f"Footprint width w     : {footprint_w:.2f} m")
-    print(f"Strip spacing d*      : {strip_d:.2f} m")
-    print(f"Number of strips N    : {n_strips}")
-    print(f"Total path length L   : {L:.1f} m")
-    print(f"Mission time          : {t_mission:.1f} s  ({t_mission/60:.2f} min)")
-    print(f"Coverage rate         : {coverage_pct:.1f}%")
-    print(f"Coverage efficiency η : {eta:.3f}")
-    return traj, grid, L, t_mission, coverage_pct, eta
-
+def compute_melt_area(ndwi, gsd_m, threshold=0.2):
+    """Threshold NDWI and compute melt area in m²."""
+    melt_mask = ndwi > threshold
+    return melt_mask.sum() * gsd_m**2, melt_mask
 
 def run_simulation():
-    waypoints, n_strips = generate_lawnmower_waypoints(AREA_L, AREA_W, STRIP_D)
+    fp_w, fp_h, gsd_cm = compute_footprint(
+        ALTITUDE, FOCAL_LENGTH, SENSOR_W, SENSOR_H
+    )
+    gsd_m = gsd_cm / 100.0  # convert cm/px to m/px (gsd_cm is actually in m here)
+    # Recompute properly: gsd in metres
+    gsd_m = ALTITUDE * (SENSOR_W / IMAGE_W) / FOCAL_LENGTH  # m/px
 
-    traj, grid, L, t_miss, cov_pct, eta = compute_metrics(
-        waypoints, n_strips, AREA_L, AREA_W, FOOTPRINT,
-        STRIP_D, GRID_RESOLUTION, V_CRUISE, DT
+    Bx, By, n_strips, n_photos = compute_strip_geometry(
+        fp_w, fp_h, FORWARD_OVERLAP, SIDE_OVERLAP, GLACIER_L, GLACIER_W
     )
 
-    mask = generate_melt_mask(AREA_L, AREA_W, GRID_RESOLUTION)
-    ice_map, bx, by, melt_area = extract_melt_boundary(mask, I_THRESH, GRID_RESOLUTION)
+    waypoints = boustrophedon_waypoints(n_strips, By, GLACIER_L)
+    positions, triggers, T_survey = simulate_survey_flight(
+        waypoints, DRONE_SPEED, Bx, DT
+    )
 
-    print(f"\nGlacier total area    : {AREA_L * AREA_W:.0f} m²")
-    print(f"Ice area              : {np.sum(ice_map) * GRID_RESOLUTION**2:.1f} m²")
-    print(f"Melt area             : {melt_area:.1f} m²")
-    print(f"Melt fraction         : {melt_area / (AREA_L * AREA_W) * 100:.1f}%")
+    coverage = build_coverage_map(triggers, fp_w, fp_h,
+                                  GLACIER_L, GLACIER_W, gsd_m, resolution=1.0)
+    ndwi     = synthetic_ndwi(GLACIER_L, GLACIER_W, gsd_m)
+    A_melt, melt_mask = compute_melt_area(ndwi, gsd_m, NDWI_THRESHOLD)
 
     return {
-        "waypoints"   : waypoints,
-        "trajectory"  : traj,
-        "grid"        : grid,
-        "mask"        : mask,
-        "ice_map"     : ice_map,
-        "boundary_x"  : bx,
-        "boundary_y"  : by,
-        "melt_area"   : melt_area,
-        "n_strips"    : n_strips,
-        "path_length" : L,
-        "mission_time": t_miss,
-        "coverage_pct": cov_pct,
-        "efficiency"  : eta,
+        "fp_w": fp_w, "fp_h": fp_h, "gsd_m": gsd_m,
+        "Bx": Bx, "By": By,
+        "n_strips": n_strips, "n_photos": n_photos,
+        "n_total": len(triggers),
+        "T_survey": T_survey,
+        "positions": positions,
+        "triggers": triggers,
+        "coverage": coverage,
+        "ndwi": ndwi,
+        "melt_mask": melt_mask,
+        "A_melt": A_melt,
     }
 ```
 
@@ -328,70 +322,71 @@ def run_simulation():
 
 | Parameter | Value |
 |-----------|-------|
-| Survey area | 100 × 80 m |
-| Scan altitude $h$ | 10.0 m |
-| Camera FOV $\theta_{FOV}$ | 60° |
-| Image footprint width $w$ | $\approx 11.55$ m |
-| Required cross-track overlap $\rho$ | 20% |
-| Optimal strip spacing $d^*$ | $\approx 9.24$ m |
-| Number of strips $N$ | $\lceil 80 / 9.24 \rceil = 9$ |
-| Total path length $L$ | $\approx 974$ m |
-| Drone cruise speed $v$ | 5.0 m/s |
-| Estimated mission time | $\approx 195$ s |
-| Grid resolution | 0.5 × 0.5 m |
-| Simulation timestep $\Delta t$ | 0.2 s |
-| Melt boundary intensity threshold $I_{thresh}$ | 0.5 |
-| Gaussian blur sigma for melt mask | 12.0 m (effective) |
+| Survey altitude $h$ | 80 m |
+| Focal length $f$ | 25 mm |
+| Sensor size | 17.3 × 13.0 mm (micro four-thirds) |
+| Image resolution | 4608 × 3456 px |
+| GSD | $\approx 4.8$ cm/px |
+| Camera footprint | $\approx 55.4 \times 41.6$ m |
+| Forward overlap $O_f$ | 80% |
+| Side overlap $O_s$ | 60% |
+| Base distance $B_x$ | $\approx 8.3$ m |
+| Strip spacing $B_y$ | $\approx 22.2$ m |
+| Glacier area | 800 × 600 m |
+| Number of strips $N_{strips}$ | $\approx 27$ |
+| Photos per strip $N_{photos}$ | $\approx 97$ |
+| Total photos $N_{total}$ | $\approx 2619$ |
+| Drone cruise speed $v$ | 10 m/s |
+| Survey flight distance | $\approx 21.7$ km |
+| Estimated survey time | $\approx 36$ min |
+| NDWI threshold $\theta$ | 0.2 |
+| Minimum coverage count | 3 images/point |
+| Mean coverage $\bar{C}$ | $= 1 / ((1-O_f)(1-O_s)) = 12.5$ images/point |
 
 ---
 
 ## Expected Output
 
-- **Flight path diagram**: 2D top-down view of the full boustrophedon waypoint sequence over the
-  $100 \times 80$ m glacier area; strips colour-coded by index (blue early, red late); turn legs
-  shown as dashed segments; footprint swath boundaries drawn as translucent grey bands along each
-  strip.
-- **Coverage heatmap**: scan-count grid rendered as a top-down 2D heatmap (white = 0 scans,
-  light blue = 1 scan, dark blue = 2+ scans in overlap zones); drone trajectory overlaid as an
-  orange line; colour bar labelled "Scan count per cell".
-- **Simulated orthophoto + melt boundary**: intensity mask $I(x,y)$ displayed as a grayscale
-  image with the extracted melt boundary polygon overlaid as a red contour; ice region labelled
-  in white, melt water region in blue; melt area printed in the figure title.
-- **Overlap sensitivity plot**: total path length $L$ and strip count $N$ plotted as functions of
-  overlap ratio $\rho \in [0\%, 50\%]$; vertical dashed line at the required $\rho = 20\%$;
-  secondary y-axis showing mission time in minutes.
-- **Animation (GIF)**: real-time top-down view of the drone sweeping the lawnmower path strip by
-  strip; coverage cells fill in blue as the drone passes; melt boundary contour visible in the
-  background; current strip index and cumulative coverage rate displayed in the title.
-- **Printed metrics** (console): footprint width, strip spacing, strip count, total path length,
-  mission time, coverage rate, coverage efficiency $\eta$, ice area, melt area, melt fraction.
+- **Coverage path map**: 2D top-down view of the glacier area showing the boustrophedon strip
+  flight path (grey line), photo trigger positions (blue dots), and camera footprint rectangles
+  at a sampled subset of triggers; strip numbering and flight direction arrows annotated.
+- **Coverage count heatmap**: rasterised grid showing the number of overlapping photo footprints
+  per ground cell; colour scale from 0 (uncovered, red) to $\geq 15$ (deep blue); annotated with
+  minimum and mean coverage values.
+- **Synthetic NDWI mosaic**: false-colour map of the entire glacier area with NDWI values rendered
+  on a diverging blue-to-red colormap; melt-water pools appear in blue ($\text{NDWI} > 0.2$) and
+  clean ice in red/white.
+- **Melt area classification map**: binary mask overlaid on the NDWI mosaic highlighting classified
+  melt pixels; total melt area $A_{melt}$ displayed in the title in m² and as a percentage of the
+  glacier area.
+- **Strategy comparison bar chart**: total flight distance and survey time for unidirectional
+  vs boustrophedon vs adaptive patterns; percentage saving annotated on each bar.
+- **GSD vs altitude curve**: plot of GSD (cm/px) as a function of survey altitude (40–160 m) for
+  the given camera, with the selected operating point and $\text{GSD} = 5$ cm threshold marked.
 
 ---
 
 ## Extensions
 
-1. **Non-rectangular glacier polygon**: replace the rectangular survey area with an arbitrary
-   convex or concave glacier boundary polygon; compute the boustrophedon decomposition by clipping
-   each strip against the polygon and flying only the clipped segments, reducing wasted overflights
-   outside the ice extent.
-2. **Altitude-GSD trade-off**: sweep altitude $h \in [5, 30]$ m and plot GSD and mission time
-   jointly; identify the Pareto-optimal altitude that minimises mission time subject to a
-   maximum GSD constraint (e.g. GSD $\leq 2$ cm/pixel for change-detection accuracy).
-3. **Longitudinal overlap constraint**: add a minimum along-track overlap $\rho_{lon}$ (e.g. 60%)
-   driven by forward motion blur and compute the maximum permissible cruise speed
-   $v_{max} = (1 - \rho_{lon}) \cdot f_{image} \cdot w_{footprint}$ where $f_{image}$ is the
-   image capture rate; integrate this speed constraint into path-length optimisation.
-4. **Multi-temporal change detection**: run the simulation at $t = 0$ and $t = T_{season}$ with
-   different melt masks; compute the symmetric difference polygon between the two ice boundaries
-   to estimate seasonal melt area and compare with ground-truth reference polygons.
-5. **Wind-corrected crab-angle flight**: add a constant crosswind that displaces the drone
-   laterally; compute the required crab angle $\alpha = \arcsin(v_{wind}/v_{air})$ to maintain
-   straight strips; adjust effective swath width for the resulting ground track angle.
+1. **Terrain-following altitude**: use a digital elevation model (DEM) of the glacier surface to
+   maintain constant GSD despite elevation variation; vary $h$ along-track to keep
+   $\text{GSD} = \text{const}$.
+2. **Multi-temporal change detection**: run two simulated surveys separated by a notional 30-day
+   melt period; compute $\Delta A_{melt} = A_{melt}^{(2)} - A_{melt}^{(1)}$ and map the spatial
+   pattern of advance and retreat.
+3. **Oblique strip insertion**: add side-looking oblique strips at the glacier margins to capture
+   vertical ice-cliff faces; model the 3D footprint geometry on vertical surfaces.
+4. **3D SfM point cloud**: replace the 2D orthophoto model with a simplified SfM depth estimation
+   (planar homography + triangulation) to reconstruct glacier surface elevation and estimate
+   volumetric ice loss.
+5. **Wind-drift compensation**: model lateral wind displacing the nadir point from the planned
+   strip centreline; compute the resulting along-track and cross-track footprint registration
+   errors and the minimum wind speed that violates the overlap constraint.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md) (boundary extraction from sensor masks), [S048 Full-Area Coverage Scan](S048_lawnmower.md) (boustrophedon path planning fundamentals)
-- Follow-ups: [S055 Coastline Oil Spill Tracking](S055_oil_spill.md) (dynamic contamination boundary over a mapped region)
-- Algorithmic cross-reference: [S067 Spray Overlap Optimisation](../../04_industrial_agriculture/S067_spray_overlap_optimization.md) (same strip-spacing trade-off in precision agriculture)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md)
+- Follow-ups: [S053 Coral Reef 3D Mapping](S053_coral_reef_3d_mapping.md) (underwater photogrammetry), [S057 Wildlife Census](S057_wildlife_census.md) (orthophoto-based counting)
+- Algorithmic cross-reference: [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md) (adaptive coverage), [S065 Building 3D Scan Path](../../04_industrial_agriculture/S065_building_3d_scan_path.md) (viewpoint planning)

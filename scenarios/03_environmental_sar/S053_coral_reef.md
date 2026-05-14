@@ -1,177 +1,178 @@
 # S053 Coral Reef 3D Reconstruction
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: SfM Viewpoint Coverage + TSP Tour | **Dimension**: 3D
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
 
 ---
 
 ## Problem Definition
 
-**Setup**: A survey drone is deployed over a $30 \times 30$ m coral reef patch located 3–8 m below
-the water surface. The reef surface is irregular: depth varies continuously across the patch,
-forming a rough 3D topology that must be captured at sub-centimetre resolution for offline
-Structure-from-Motion (SfM) reconstruction. No pre-existing bathymetric chart is available; the
-mission plan is computed from a coarse prior mesh of the reef (modelled here as a sinusoidal height
-field). The drone flies above the water surface at one of two flight altitudes: $h_{low} = 5$ m and
-$h_{high} = 12$ m above the surface (8–15 m above the deepest reef faces), carrying a nadir-tilting
-RGB camera with focal length $f = 24$ mm (full-frame equivalent), sensor width $s_w = 36$ mm,
-and image width $W_{px} = 6000$ pixels.
-
-Candidate camera viewpoints are distributed on a hemisphere dome at each altitude: a $5 \times 9$
-latitude–longitude grid at $h_{low}$ (45 positions) and a $3 \times 9$ grid at $h_{high}$
-(27 positions), giving $N_v = 72$ candidate viewpoints in total. The reef surface is discretised
-into $M = 400$ triangular face-lets (a $20 \times 20$ quad mesh of $1.5 \times 1.5$ m cells,
-each split into two triangles).
+**Setup**: A coral reef occupying a $60 \times 40$ m footprint lies at a mean depth of $z = 0$ m
+(surface reference). The reef's 3D morphology is represented as a heightmap
+$h(x, y) \in [-3.0,\; 0.5]$ m generated from a procedural sum-of-Gaussians model that produces
+realistic bommie formations — isolated columns, overhanging ridges, and inter-colony channels.
+An autonomous underwater vehicle (AUV) or low-altitude UAV carries a downward-facing stereo
+camera with a fixed field of view $\alpha_{fov} = 70°$ and a maximum operational altitude of
+$z_{max} = 6.0$ m above the reef crest. The drone must plan a 3D inspection path that ensures
+every surface point receives at least $N_{min} = 2$ distinct views from within the acceptance
+angle, providing sufficient stereo overlap for multi-view stereo (MVS) photogrammetric
+reconstruction.
 
 **Roles**:
-- **Drone**: single survey platform; moves between selected viewpoints at cruise speed $v = 4.0$ m/s;
-  hovers for $t_{cap} = 2.0$ s at each viewpoint to capture a full-resolution image.
-- **Reef surface**: static 3D structure; modelled as a sinusoidal height field
-  $z_{reef}(x, y) = -5.5 + 2.5 \sin(2\pi x / 15) \cos(2\pi y / 20)$ m (relative to water surface);
-  surface normal $\hat{\mathbf{n}}(x,y)$ computed analytically for visibility tests.
+- **Drone**: single platform executing a pre-planned 3D path above the reef; captures images at
+  discrete waypoints spaced $\Delta s$ apart along the trajectory.
+- **Reef surface**: static target represented by heightmap $H \in \mathbb{R}^{G_x \times G_y}$;
+  each grid cell $p_{ij}$ carries a surface normal $\hat{\mathbf{n}}_{ij}$ computed from finite
+  differences.
+- **Reconstruction engine** (simulated post-process): accumulates the per-point view count and
+  computes point-cloud density and ground sample distance (GSD) metrics.
 
-**Objective**: Select the minimum subset $S \subseteq \{1, \ldots, N_v\}$ of camera viewpoints such
-that every reef face-let is observed from at least $k_{min} = 3$ distinct viewpoints (triangulation
-condition), with adjacent captured images sharing $\geq 60\%$ overlap (feature matching condition),
-and then find a shortest TSP tour through $S$ to minimise total flight time. Three strategies are
-compared:
+**Objective**: Plan a waypoint sequence $\mathcal{W} = \{\mathbf{w}_1, \mathbf{w}_2, \ldots,
+\mathbf{w}_K\}$ that **maximises the fraction of reef surface points with $\geq N_{min}$ valid
+views** while keeping total path length $L_{path}$ below a battery endurance budget
+$L_{max} = 500$ m, and minimises the mean reconstruction error $\bar{\varepsilon}$.
 
-1. **Nadir-only grid** — uniform lawnmower at $h_{low}$; all camera axes point straight down.
-2. **Single-altitude greedy cover** — greedy set-cover using only $h_{low}$ viewpoints.
-3. **Dual-altitude greedy cover + TSP** (proposed) — set-cover on all 72 viewpoints, followed by
-   nearest-neighbour TSP tour optimisation.
+**Comparison strategies**:
+1. **Flat lawnmower** — boustrophedon raster at constant altitude $z = 4.0$ m; baseline coverage
+   reference identical to S048.
+2. **Altitude-adaptive lawnmower** — raster path at constant standoff $\Delta z = 3.0$ m above
+   local reef height $h(x, y)$; improves GSD uniformity but ignores surface normals.
+3. **Spiral descent with altitude levels** — concentric rectangular spirals at three altitude
+   bands ($z \in \{5.0, 3.5, 2.0\}$ m), alternating inward/outward to maximise overlap on
+   steep reef faces.
 
 ---
 
 ## Mathematical Model
 
-### Ground Sampling Distance and Resolution Condition
+### Reef Heightmap Generation
 
-For a camera at altitude $h$ above a reef face at depth $d_{reef}$ below the surface, the effective
-camera-to-face distance is $H = h + |d_{reef}|$. The Ground Sampling Distance (GSD) — the real-world
-size of one image pixel on the face — is:
+The reef surface is modelled as a superposition of Gaussian bommies plus low-frequency
+background undulation:
 
-$$\mathrm{GSD}(H) = \frac{s_w \cdot H}{f \cdot W_{px}}$$
+$$h(x, y) = \sum_{k=1}^{N_B} A_k \exp\!\left(-\frac{(x - x_k)^2}{2\sigma_{x,k}^2}
+  - \frac{(y - y_k)^2}{2\sigma_{y,k}^2}\right) + \eta(x, y)$$
 
-The resolution condition requires $\mathrm{GSD} < \mathrm{GSD}_{max} = 2$ cm so that feature
-keypoints can be extracted at sub-centimetre scale. For a viewpoint at altitude $h$ observing a
-face at depth $d_{reef}$:
+where $N_B = 12$ bommies with random centres $(x_k, y_k)$, amplitudes $A_k \in [0.3, 1.5]$ m,
+and widths $\sigma_k \in [1.5, 5.0]$ m. $\eta(x, y)$ is a smooth background term generated by
+bicubic interpolation of random control-point offsets $\in [-0.3, 0]$ m (reef base always
+below datum). The heightmap is clamped: $h(x, y) \leq 0.5$ m above datum.
 
-$$\mathrm{GSD}(h + |d_{reef}|) < 0.02 \;\text{m}$$
+### Surface Normal Estimation
 
-This gives a maximum admissible camera-to-face distance:
+At grid cell $(i, j)$ with spacing $\delta = 0.5$ m, the outward surface normal is:
 
-$$H_{max} = \frac{f \cdot W_{px} \cdot 0.02}{s_w} = \frac{0.024 \times 6000 \times 0.02}{0.036} = 80 \;\text{m}$$
+$$\hat{\mathbf{n}}_{ij} = \frac{\mathbf{n}_{ij}}{\|\mathbf{n}_{ij}\|}, \qquad
+\mathbf{n}_{ij} = \begin{pmatrix}
+  -(h_{i+1,j} - h_{i-1,j}) / (2\delta) \\
+  -(h_{i,j+1} - h_{i,j-1}) / (2\delta) \\
+  1
+\end{pmatrix}$$
 
-All candidate viewpoints at $h_{low}$ and $h_{high}$ satisfy this condition for the reef depth range
-considered.
+Central differences are used for interior cells; forward/backward differences at boundaries.
 
-### Visibility Matrix
+### Viewing Cone Visibility Condition
 
-A viewpoint $i$ at position $\mathbf{c}_i \in \mathbb{R}^3$ covers face-let $j$ with centroid
-$\mathbf{f}_j$ and outward normal $\hat{\mathbf{n}}_j$ if and only if three conditions are jointly
-satisfied:
+A surface point $\mathbf{p}_{ij} = (x_i,\, y_j,\, h_{ij})^\top$ is **visible** from drone
+position $\mathbf{d} = (d_x, d_y, d_z)^\top$ if and only if three conditions hold
+simultaneously:
 
-1. **Incidence angle** (camera not grazing the face):
+**1. Incidence angle within acceptance cone:**
 
-$$\cos\theta_{ij} = -\frac{(\mathbf{c}_i - \mathbf{f}_j)}{\|\mathbf{c}_i - \mathbf{f}_j\|} \cdot \hat{\mathbf{n}}_j \geq \cos\theta_{max}$$
+$$\cos\theta_{ij}(\mathbf{d}) = \hat{\mathbf{n}}_{ij} \cdot \frac{\mathbf{d} - \mathbf{p}_{ij}}{\|\mathbf{d} - \mathbf{p}_{ij}\|} \geq \cos\theta_{max}$$
 
-with $\theta_{max} = 60°$ (i.e., $\cos\theta_{max} = 0.5$).
+with $\theta_{max} = 45°$ (MVS reconstruction degrades beyond oblique angles).
 
-2. **Resolution condition**: $\mathrm{GSD}(\|\mathbf{c}_i - \mathbf{f}_j\|) < \mathrm{GSD}_{max}$.
+**2. Point inside camera footprint:**
 
-3. **Field-of-view**: face centroid $\mathbf{f}_j$ projects inside the image sensor footprint
-   (half-angle $\psi = \arctan(s_w / (2f)) \approx 36.9°$):
+The camera projects a ground footprint of half-width $r_{fp}(z_{rel}) = z_{rel} \cdot \tan(\alpha_{fov}/2)$, where $z_{rel} = d_z - h_{ij}$ is the altitude above the surface point:
 
-$$\left|\arccos\!\left(\frac{(\mathbf{f}_j - \mathbf{c}_i) \cdot \hat{\mathbf{a}}_i}{\|\mathbf{f}_j - \mathbf{c}_i\|}\right)\right| \leq \psi$$
+$$\sqrt{(d_x - x_i)^2 + (d_y - y_j)^2} \leq r_{fp}(d_z - h_{ij})$$
 
-where $\hat{\mathbf{a}}_i$ is the camera optical axis direction at viewpoint $i$ (pointing toward the
-reef centroid for non-nadir viewpoints). The binary visibility matrix is:
+**3. No occlusion by intervening reef material** (ray-heightmap intersection test):
 
-$$V[i,j] = \mathbf{1}\!\left[\text{conditions 1–3 all hold}\right] \in \{0,1\}^{N_v \times M}$$
+The line-of-sight ray from $\mathbf{d}$ to $\mathbf{p}_{ij}$ must not intersect any heightmap cell
+at altitude above the ray height at that $(x, y)$ location:
 
-### Coverage Condition
+$$h(x_r, y_r) < d_z - (d_z - h_{ij}) \cdot \frac{\|\mathbf{p}_r - \mathbf{p}_{ij}\|}{\|\mathbf{d} - \mathbf{p}_{ij}\|} \quad \forall\; (x_r, y_r) \text{ along ray}$$
 
-For a selected viewpoint set $S \subseteq \{1,\ldots,N_v\}$, define the coverage count of face $j$:
+### Coverage Metric
 
-$$c_j(S) = \sum_{i \in S} V[i,j]$$
+Let $V_{ij} \in \mathbb{Z}_{\geq 0}$ be the view count accumulated over all $K$ waypoints.
+The **coverage fraction** is:
 
-The $k_{min}$-fold coverage constraint requires:
+$$C = \frac{1}{N_{surf}} \sum_{i,j} \mathbf{1}\bigl[V_{ij} \geq N_{min}\bigr]$$
 
-$$\forall\, j \in \{1,\ldots,M\} : \quad c_j(S) \geq k_{min} = 3$$
+where $N_{surf}$ is the total number of reef surface cells (those with $h_{ij} > h_{base} + 0.05$ m,
+i.e., structurally above the sandy substrate). Full reconstruction requires $C \geq 0.90$.
 
-The optimisation objective is:
+### Ground Sample Distance
 
-$$\min_{S} \;|S| \quad \text{s.t.} \quad c_j(S) \geq k_{min} \;\forall j$$
+GSD (metres per pixel) at surface point $\mathbf{p}_{ij}$ from drone at $\mathbf{d}$:
 
-### Greedy Set-Cover Algorithm
+$$\text{GSD}_{ij}(\mathbf{d}) = \frac{z_{rel} \cdot \text{sensor\_width}}{f \cdot \text{image\_width}}
+  = \frac{(d_z - h_{ij}) \cdot s_w}{f \cdot W_{px}}$$
 
-Finding the minimum $|S|$ is NP-hard in general (weighted set cover). The greedy algorithm with
-$k_{min}$-fold coverage selects viewpoints iteratively:
+with sensor width $s_w = 6.3$ mm, focal length $f = 4.5$ mm, image width $W_{px} = 4000$ px.
+The **mean GSD** over all viewed cells:
 
-$$i^* = \arg\max_{i \notin S} \;\left|\left\{j : c_j(S \cup \{i\}) > c_j(S) \;\text{ and }\; c_j(S) < k_{min}\right\}\right|$$
+$$\overline{\text{GSD}} = \frac{1}{|\mathcal{V}|}\sum_{(i,j)\in\mathcal{V}} \min_{\mathbf{w}_k}
+  \text{GSD}_{ij}(\mathbf{w}_k)$$
 
-At each step, the viewpoint that covers the most currently under-covered face-lets (those with
-$c_j < k_{min}$) is added to $S$. The algorithm terminates when $c_j(S) \geq k_{min}$ for all $j$,
-or when no further improvement is possible (infeasible faces flagged). The greedy approximation
-guarantee is within a $\ln(M)$ factor of the true optimum.
+where $\mathcal{V} = \{(i,j) : V_{ij} \geq 1\}$.
 
-### Image Overlap Condition
+### Reconstruction Error Bound
 
-Two adjacent captured images (from viewpoints $i$ and $i'$ consecutive in the TSP tour) must share
-at least $p_{ov} = 60\%$ footprint overlap for reliable feature matching in SfM. The footprint of
-viewpoint $i$ projected onto the reef plane at mean depth $\bar{d} = 5.5$ m is approximately a
-rectangle of side:
+From standard photogrammetric theory, the expected tie-point triangulation error for a stereo
+pair with overlap fraction $\rho_{ov}$ and GSD $g$ is:
 
-$$L_i = 2 (h_i + \bar{d}) \tan\psi$$
+$$\varepsilon \approx \frac{g}{\rho_{ov} \cdot \sqrt{N_{views}}}$$
 
-The linear overlap fraction between footprints of adjacent viewpoints $i, i'$ separated by
-horizontal distance $\delta_{ii'} = \|\mathbf{c}_i^{xy} - \mathbf{c}_{i'}^{xy}\|$ is:
+where $\rho_{ov}$ is the fractional image overlap between successive frames and $N_{views}$ is
+the local view count. For a target $\varepsilon_{target} \leq 0.008$ m (8 mm accuracy) and
+$g = 0.004$ m (4 mm GSD at $z_{rel} = 2.5$ m), the required overlap is:
 
-$$p_{ov}(i,i') = \max\!\left(0,\; 1 - \frac{\delta_{ii'}}{\min(L_i, L_{i'})}\right) \geq 0.60$$
+$$\rho_{ov} \geq \frac{g}{\varepsilon_{target} \cdot \sqrt{N_{min}}} = \frac{0.004}{0.008 \cdot \sqrt{2}} \approx 0.354$$
 
-This constraint is enforced as a post-check after TSP tour construction; viewpoints with
-insufficient overlap to their tour neighbours are flagged for insertion of an intermediate capture
-position.
+meaning successive camera footprints must overlap by at least 35%.
 
-### Baseline Angle and Reprojection Error
+### Point Cloud Density
 
-For each face $j$, let $I_j = \{i \in S : V[i,j] = 1\}$ be the set of viewpoints covering it.
-For any pair $i, i' \in I_j$, the **baseline angle** is the angle between the two viewing directions
-toward face $j$:
+The expected point-cloud density (points per m²) over the entire reef footprint is:
 
-$$\alpha_{ii'} = \arccos\!\left(\hat{\mathbf{v}}_{ij} \cdot \hat{\mathbf{v}}_{i'j}\right)$$
+$$\rho_{pc} = \frac{N_{photos} \cdot \rho_{ov}^2 \cdot W_{px} \cdot H_{px}}{A_{reef} \cdot \overline{\text{GSD}}^2}$$
 
-where $\hat{\mathbf{v}}_{ij} = (\mathbf{f}_j - \mathbf{c}_i) / \|\mathbf{f}_j - \mathbf{c}_i\|$.
+where $N_{photos}$ is the total number of captured frames, $H_{px}$ is image height in pixels,
+and $A_{reef}$ is the reef's projected surface area in m².
 
-The approximate **reprojection error** for SfM triangulation from a pair of views at mean distance
-$\bar{H}_j = \frac{1}{2}(\|\mathbf{f}_j - \mathbf{c}_i\| + \|\mathbf{f}_j - \mathbf{c}_{i'}\|)$ is:
+### Spiral Descent Path Planning
 
-$$\varepsilon_j \approx \frac{\sigma_{px} \cdot \bar{H}_j}{f_{px} \cdot \sin\alpha_{ii'}}$$
+The spiral descent strategy generates waypoints on three concentric rectangular spirals at
+altitudes $z \in \mathcal{Z} = \{z_1, z_2, z_3\}$ (high to low). At altitude level $l$, the
+inward rectangular spiral covers the reef bounding box $[x_{min}, x_{max}] \times [y_{min}, y_{max}]$
+with lateral spacing:
 
-where $\sigma_{px} = 0.5$ px is the keypoint localisation error and
-$f_{px} = f \cdot W_{px} / s_w = 4000$ px is the focal length in pixels. Larger baseline angles
-reduce $\varepsilon_j$; the dual-altitude plan mixes $h_{low}$ and $h_{high}$ viewpoints to
-increase effective $\alpha_{ii'}$ beyond what a single altitude can achieve.
+$$\Delta_{lat}(z_l) = 2 \cdot (z_l - h_{max}) \cdot \tan\!\left(\frac{\alpha_{fov}}{2}\right) \cdot (1 - \rho_{ov})$$
 
-The mean reconstruction error over all faces:
+where $h_{max} = \max_{i,j} h_{ij}$ is the tallest reef feature. This ensures adjacent flight
+strips overlap by at least $\rho_{ov}$ at the reef crest level.
 
-$$\bar{\varepsilon} = \frac{1}{M} \sum_{j=1}^{M} \min_{(i,i') \in \binom{I_j}{2}} \varepsilon_j(i,i')$$
+Waypoints on the spiral at altitude $z_l$ are spaced longitudinally by:
 
-### TSP Nearest-Neighbour Tour
+$$\Delta_{lon}(z_l) = \Delta_{lat}(z_l) \cdot \frac{W_{px}}{H_{px}}$$
 
-Given the selected viewpoint set $S$ of size $n_s = |S|$, the flight path is computed by the
-nearest-neighbour heuristic starting from the viewpoint closest to the launch position
-$\mathbf{p}_{launch} = (15, 15, h_{low})$ m:
+(maintaining square image footprints). The total waypoint count per level is:
 
-$$\pi_1 = \arg\min_{i \in S} \|\mathbf{c}_i - \mathbf{p}_{launch}\|$$
+$$K_l = \left\lceil \frac{L_x}{\Delta_{lat}(z_l)} \right\rceil \times \left\lceil \frac{L_y}{\Delta_{lon}(z_l)} \right\rceil$$
 
-$$\pi_{k+1} = \arg\min_{i \in S \setminus \{\pi_1,\ldots,\pi_k\}} \|\mathbf{c}_i - \mathbf{c}_{\pi_k}\|$$
+### Path Length and Battery Budget
 
-Total tour length $L_{tour} = \sum_{k=1}^{n_s - 1} \|\mathbf{c}_{\pi_{k+1}} - \mathbf{c}_{\pi_k}\|$
-and estimated flight time (excluding hover time):
+Total 3D path length between consecutive waypoints $\mathbf{w}_k$, $\mathbf{w}_{k+1}$:
 
-$$T_{flight} = \frac{L_{tour}}{v} + n_s \cdot t_{cap}$$
+$$L_{path} = \sum_{k=1}^{K-1} \|\mathbf{w}_{k+1} - \mathbf{w}_k\|$$
+
+The altitude transition between spiral levels contributes an additional climb cost. The
+battery endurance constraint: $L_{path} \leq L_{max} = 500$ m at cruise speed $v = 1.5$ m/s
+(AUV-scale), corresponding to a mission time $T_{max} = 333$ s.
 
 ---
 
@@ -181,394 +182,207 @@ $$T_{flight} = \frac{L_{tour}}{v} + n_s \cdot t_{cap}$$
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from mpl_toolkits.mplot3d.art3d import Poly3DCollection
-from itertools import combinations
 
-# ── Constants ──────────────────────────────────────────────────────────────────
-REEF_SIZE      = 30.0          # m, square patch side
-GRID_N         = 20            # quad mesh resolution (20×20 quads → 800 triangles)
-H_LOW          = 5.0           # m, low-altitude flight height above surface
-H_HIGH         = 12.0          # m, high-altitude flight height above surface
-F_MM           = 24e-3         # m, focal length
-SW_M           = 36e-3         # m, sensor width
-W_PX           = 6000          # pixels, image width
-F_PX           = F_MM * W_PX / SW_M   # 4000 px
-GSD_MAX        = 0.02          # m, max ground sampling distance (2 cm)
-H_MAX          = F_MM * W_PX * GSD_MAX / SW_M  # 80 m
-THETA_MAX      = np.deg2rad(60.0)     # max incidence angle from face normal
-PSI            = np.arctan(SW_M / (2 * F_MM))  # camera half-FOV ≈ 36.9 deg
-K_MIN          = 3             # minimum viewpoints per face (triangulation)
-P_OV_MIN       = 0.60          # minimum image overlap fraction
-DRONE_SPEED    = 4.0           # m/s
-T_CAP          = 2.0           # s, hover time per capture
-SIGMA_PX       = 0.5           # px, keypoint localisation noise
-LAUNCH_POS     = np.array([15.0, 15.0, H_LOW])
+# Key constants
+REEF_LX       = 60.0    # m — reef bounding box x-extent
+REEF_LY       = 40.0    # m — reef bounding box y-extent
+GRID_SPACING  = 0.5     # m — heightmap cell size
+N_BOMMIES     = 12      # number of Gaussian coral formations
+THETA_MAX     = 45.0    # deg — max incidence angle for valid view
+FOV_DEG       = 70.0    # deg — camera half-angle (full cone)
+SENSOR_W_MM   = 6.3     # mm — camera sensor width
+FOCAL_MM      = 4.5     # mm — focal length
+IMAGE_W_PX    = 4000    # pixels — image width
+IMAGE_H_PX    = 3000    # pixels — image height
+OVERLAP       = 0.60    # fractional image overlap between strips
+N_MIN_VIEWS   = 2       # minimum views per surface point
+ALT_LEVELS    = [5.0, 3.5, 2.0]   # m — spiral descent altitudes
+L_MAX         = 500.0   # m — max path length (battery budget)
+CRUISE_SPEED  = 1.5     # m/s
 
+# Heightmap generation
+def generate_reef_heightmap(lx, ly, dx, n_bommies, seed=42):
+    rng = np.random.default_rng(seed)
+    nx = int(lx / dx) + 1
+    ny = int(lx / dx) + 1  # use lx for consistent square grid
+    ny = int(ly / dx) + 1
+    xs = np.linspace(0, lx, nx)
+    ys = np.linspace(0, ly, ny)
+    X, Y = np.meshgrid(xs, ys, indexing='ij')
+    H = np.zeros((nx, ny))
+    for _ in range(n_bommies):
+        cx = rng.uniform(5, lx - 5)
+        cy = rng.uniform(5, ly - 5)
+        amp = rng.uniform(0.3, 1.5)
+        sx  = rng.uniform(1.5, 5.0)
+        sy  = rng.uniform(1.5, 5.0)
+        H += amp * np.exp(-((X - cx)**2 / (2*sx**2) + (Y - cy)**2 / (2*sy**2)))
+    H = H - H.max() * 0.5   # shift so reef crest ~ +0.5 m
+    H = np.clip(H, -3.0, 0.5)
+    return X, Y, H
 
-# ── Reef surface model ─────────────────────────────────────────────────────────
-def reef_depth(x, y):
-    """Reef depth below water surface (negative = below surface)."""
-    return -5.5 + 2.5 * np.sin(2 * np.pi * x / 15.0) * np.cos(2 * np.pi * y / 20.0)
+# Surface normal computation (finite differences)
+def compute_normals(H, dx):
+    dhdx = np.gradient(H, dx, axis=0)
+    dhdy = np.gradient(H, dx, axis=1)
+    N = np.stack([-dhdx, -dhdy, np.ones_like(H)], axis=-1)
+    norm = np.linalg.norm(N, axis=-1, keepdims=True)
+    return N / (norm + 1e-12)
 
-def reef_normal(x, y):
-    """Outward (upward) unit normal of the reef surface."""
-    dz_dx = 2.5 * (2 * np.pi / 15.0) * np.cos(2 * np.pi * x / 15.0) * np.cos(2 * np.pi * y / 20.0)
-    dz_dy = -2.5 * (2 * np.pi / 20.0) * np.sin(2 * np.pi * x / 15.0) * np.sin(2 * np.pi * y / 20.0)
-    n = np.array([-dz_dx, -dz_dy, 1.0])
-    return n / np.linalg.norm(n)
-
-
-def build_reef_mesh():
+# Visibility check: incidence angle + footprint (occlusion simplified)
+def check_visibility(drone_pos, surf_pts, normals, theta_max_rad, fov_half_rad):
     """
-    Build triangular face-lets over the reef patch.
-    Returns:
-        centroids : (M, 3) array of face centroid positions
-        normals   : (M, 3) array of outward unit normals
-        verts     : list of M triangle vertex arrays, each (3, 3)
+    drone_pos : (3,)
+    surf_pts  : (N, 3) reef surface point coordinates
+    normals   : (N, 3) outward unit normals
+    Returns boolean mask (N,) of visible points from this drone position.
     """
-    xs = np.linspace(0.0, REEF_SIZE, GRID_N + 1)
-    ys = np.linspace(0.0, REEF_SIZE, GRID_N + 1)
-    centroids, normals, verts = [], [], []
+    to_drone = drone_pos[np.newaxis, :] - surf_pts        # (N,3)
+    dist = np.linalg.norm(to_drone, axis=1, keepdims=True)
+    to_drone_unit = to_drone / (dist + 1e-12)
 
-    for ix in range(GRID_N):
-        for iy in range(GRID_N):
-            # Four corners of the quad
-            corners = [
-                (xs[ix],   ys[iy]),
-                (xs[ix+1], ys[iy]),
-                (xs[ix+1], ys[iy+1]),
-                (xs[ix],   ys[iy+1]),
-            ]
-            corners_3d = [np.array([cx, cy, reef_depth(cx, cy)]) for cx, cy in corners]
+    # Incidence angle condition
+    cos_theta = np.sum(normals * to_drone_unit, axis=1)
+    angle_ok = cos_theta >= np.cos(theta_max_rad)
 
-            # Two triangles per quad
-            for tri_idx in [(0, 1, 2), (0, 2, 3)]:
-                tri = [corners_3d[k] for k in tri_idx]
-                c = np.mean(tri, axis=0)
-                cx, cy = c[0], c[1]
-                n = reef_normal(cx, cy)
-                centroids.append(c)
-                normals.append(n)
-                verts.append(np.array(tri))
+    # Camera footprint condition
+    z_rel = drone_pos[2] - surf_pts[:, 2]
+    r_fp  = z_rel * np.tan(fov_half_rad)
+    lateral_dist = np.linalg.norm(drone_pos[:2] - surf_pts[:, :2], axis=1)
+    footprint_ok = (lateral_dist <= r_fp) & (z_rel > 0.1)
 
-    return np.array(centroids), np.array(normals), verts
+    return angle_ok & footprint_ok
 
+# Spiral descent waypoint generation
+def generate_spiral_waypoints(lx, ly, alt_levels, overlap, fov_half_rad, h_max):
+    waypoints = []
+    for i, z in enumerate(alt_levels):
+        z_rel_crest = z - h_max
+        strip_width = 2 * z_rel_crest * np.tan(fov_half_rad) * (1 - overlap)
+        strip_width = max(strip_width, 1.0)   # minimum 1 m spacing
+        xs = np.arange(0, lx + strip_width, strip_width)
+        for j, x in enumerate(xs):
+            if j % 2 == 0:
+                waypoints.append([x, 0.0,  z])
+                waypoints.append([x, ly, z])
+            else:
+                waypoints.append([x, ly, z])
+                waypoints.append([x, 0.0,  z])
+    return np.array(waypoints)
 
-# ── Viewpoint generation ───────────────────────────────────────────────────────
-def build_viewpoints():
-    """
-    Generate candidate viewpoints on a hemisphere dome at h_low and h_high.
-    Camera optical axis points toward reef centroid (15, 15, reef_depth(15,15)).
-    Returns: (N_v, 3) array of viewpoint positions.
-    """
-    reef_center = np.array([15.0, 15.0, reef_depth(15.0, 15.0)])
-    viewpoints = []
+# Coverage simulation
+def simulate_coverage(waypoints, X, Y, H, normals, theta_max_rad, fov_half_rad):
+    nx, ny = H.shape
+    surf_pts = np.stack([X.ravel(), Y.ravel(), H.ravel()], axis=1)  # (N,3)
+    nrm_flat = normals.reshape(-1, 3)
+    view_count = np.zeros(len(surf_pts), dtype=int)
 
-    for altitude, n_lat, n_lon in [(H_LOW, 5, 9), (H_HIGH, 3, 9)]:
-        # lat in [0, 60 deg], lon in [0, 360 deg)
-        for lat_deg in np.linspace(0.0, 60.0, n_lat):
-            for lon_deg in np.linspace(0.0, 360.0, n_lon, endpoint=False):
-                lat = np.deg2rad(lat_deg)
-                lon = np.deg2rad(lon_deg)
-                # Offset from reef centre on hemisphere
-                r_horiz = (altitude + abs(reef_center[2])) * np.tan(lat)
-                x = reef_center[0] + r_horiz * np.cos(lon)
-                y = reef_center[1] + r_horiz * np.sin(lon)
-                z = altitude
-                # Clamp to a generous boundary
-                x = np.clip(x, -10.0, REEF_SIZE + 10.0)
-                y = np.clip(y, -10.0, REEF_SIZE + 10.0)
-                viewpoints.append(np.array([x, y, z]))
+    for wp in waypoints:
+        vis = check_visibility(wp, surf_pts, nrm_flat, theta_max_rad, fov_half_rad)
+        view_count[vis] += 1
 
-    return np.array(viewpoints)
+    view_map = view_count.reshape(nx, ny)
+    coverage = np.mean(view_count >= N_MIN_VIEWS)
+    return view_map, coverage
 
+# Path length
+def path_length(waypoints):
+    diffs = np.diff(waypoints, axis=0)
+    return np.sum(np.linalg.norm(diffs, axis=1))
 
-# ── Visibility matrix ──────────────────────────────────────────────────────────
-def build_visibility_matrix(viewpoints, centroids, normals):
-    """
-    Compute V[i, j] = 1 if viewpoint i covers face j.
-    Checks: incidence angle, GSD, field-of-view.
-    Returns: (N_v, M) bool array.
-    """
-    N_v = len(viewpoints)
-    M   = len(centroids)
-    V   = np.zeros((N_v, M), dtype=bool)
-
-    reef_center = np.array([15.0, 15.0, reef_depth(15.0, 15.0)])
-
-    for i, cam in enumerate(viewpoints):
-        # Camera optical axis: nadir for lat=0, tilted toward reef_center otherwise
-        axis = reef_center - cam
-        axis_norm = np.linalg.norm(axis)
-        if axis_norm < 1e-6:
-            continue
-        a_hat = axis / axis_norm
-
-        for j, (face, nhat) in enumerate(zip(centroids, normals)):
-            vec = face - cam
-            dist = np.linalg.norm(vec)
-            if dist < 1e-6:
-                continue
-            v_hat = vec / dist
-
-            # 1. Incidence angle check
-            cos_theta = -v_hat @ nhat     # nhat points upward, v_hat points down
-            if cos_theta < np.cos(THETA_MAX):
-                continue
-
-            # 2. GSD check
-            gsd = SW_M * dist / (F_MM * W_PX)
-            if gsd >= GSD_MAX:
-                continue
-
-            # 3. Field-of-view check
-            cos_fov = v_hat @ a_hat
-            if cos_fov < np.cos(PSI):
-                continue
-
-            V[i, j] = True
-
-    return V
-
-
-# ── Greedy set-cover ───────────────────────────────────────────────────────────
-def greedy_set_cover(V, k_min=K_MIN):
-    """
-    Greedy k-fold set cover.
-    Args:
-        V     : (N_v, M) bool visibility matrix
-        k_min : required coverage count per face
-    Returns:
-        selected : list of selected viewpoint indices
-        coverage : (M,) int array of final coverage counts
-    """
-    N_v, M = V.shape
-    coverage = np.zeros(M, dtype=int)
-    selected = []
-    remaining = set(range(N_v))
-
-    while True:
-        under = coverage < k_min
-        if not np.any(under):
-            break
-        if not remaining:
-            print(f"WARNING: {np.sum(under)} faces could not reach {k_min}-fold coverage.")
-            break
-
-        # Choose viewpoint that covers the most under-covered faces
-        best_i, best_gain = -1, -1
-        for i in remaining:
-            gain = np.sum(V[i] & under)
-            if gain > best_gain:
-                best_gain, best_i = gain, i
-
-        if best_gain == 0:
-            print(f"WARNING: No further coverage gain possible. "
-                  f"{np.sum(under)} faces remain under-covered.")
-            break
-
-        selected.append(best_i)
-        coverage += V[best_i].astype(int)
-        remaining.remove(best_i)
-
-    return selected, coverage
-
-
-# ── TSP nearest-neighbour tour ─────────────────────────────────────────────────
-def tsp_nearest_neighbour(viewpoints, selected_idx, launch=LAUNCH_POS):
-    """
-    Nearest-neighbour TSP heuristic starting from viewpoint closest to launch.
-    Args:
-        viewpoints   : (N_v, 3) all candidate positions
-        selected_idx : list of selected viewpoint indices
-    Returns:
-        tour  : ordered list of viewpoint indices
-        dists : list of leg distances (m)
-    """
-    pts = viewpoints[selected_idx]
-    n = len(selected_idx)
-
-    # Start from viewpoint nearest to launch
-    start = int(np.argmin(np.linalg.norm(pts - launch, axis=1)))
-    tour_local = [start]
-    visited = {start}
-
-    while len(tour_local) < n:
-        current = tour_local[-1]
-        best_j, best_d = -1, np.inf
-        for j in range(n):
-            if j in visited:
-                continue
-            d = np.linalg.norm(pts[j] - pts[current])
-            if d < best_d:
-                best_d, best_j = d, j
-        tour_local.append(best_j)
-        visited.add(best_j)
-
-    tour = [selected_idx[k] for k in tour_local]
-    dists = [np.linalg.norm(viewpoints[tour[k+1]] - viewpoints[tour[k]])
-             for k in range(n - 1)]
-    return tour, dists
-
-
-# ── Reprojection error ─────────────────────────────────────────────────────────
-def compute_reprojection_errors(viewpoints, centroids, V, selected_idx):
-    """
-    For each face, find the pair in selected viewpoints with the largest baseline
-    angle and compute the approximate reprojection error.
-    Returns: (M,) array of per-face reprojection errors (m).
-    """
-    S_set = set(selected_idx)
-    errors = np.full(len(centroids), np.nan)
-
-    for j, face in enumerate(centroids):
-        covering = [i for i in selected_idx if V[i, j]]
-        if len(covering) < 2:
-            continue
-        best_alpha, best_eps = 0.0, np.inf
-        for i, ip in combinations(covering, 2):
-            vi = (face - viewpoints[i])
-            vip = (face - viewpoints[ip])
-            vi_hat  = vi  / (np.linalg.norm(vi)  + 1e-9)
-            vip_hat = vip / (np.linalg.norm(vip) + 1e-9)
-            cos_a = np.clip(vi_hat @ vip_hat, -1.0, 1.0)
-            alpha = np.arccos(cos_a)
-            if alpha > best_alpha:
-                best_alpha = alpha
-                H_bar = 0.5 * (np.linalg.norm(vi) + np.linalg.norm(vip))
-                eps = SIGMA_PX * H_bar / (F_PX * np.sin(alpha + 1e-9))
-                best_eps = eps
-        errors[j] = best_eps
-
-    return errors
-
-
-# ── Main simulation ────────────────────────────────────────────────────────────
 def run_simulation():
-    rng = np.random.default_rng(42)
+    X, Y, H = generate_reef_heightmap(REEF_LX, REEF_LY, GRID_SPACING, N_BOMMIES)
+    normals  = compute_normals(H, GRID_SPACING)
+    h_max    = H.max()
 
-    print("Building reef mesh …")
-    centroids, normals, verts = build_reef_mesh()
-    M = len(centroids)
-    print(f"  {M} face-lets generated.")
+    theta_max_rad = np.radians(THETA_MAX)
+    fov_half_rad  = np.radians(FOV_DEG / 2)
 
-    print("Building viewpoints …")
-    viewpoints = build_viewpoints()
-    N_v = len(viewpoints)
-    print(f"  {N_v} candidate viewpoints.")
-
-    print("Building visibility matrix …")
-    V = build_visibility_matrix(viewpoints, centroids, normals)
-    print(f"  Visibility matrix: {V.shape}, density={V.mean():.3f}")
-
-    print("Running greedy set-cover …")
-    selected, coverage = greedy_set_cover(V, k_min=K_MIN)
-    n_s = len(selected)
-    print(f"  Selected {n_s} viewpoints; "
-          f"min coverage={coverage.min()}, mean={coverage.mean():.2f}")
-
-    print("Computing TSP tour …")
-    tour, leg_dists = tsp_nearest_neighbour(viewpoints, selected)
-    L_tour = sum(leg_dists)
-    T_flight = L_tour / DRONE_SPEED + n_s * T_CAP
-    print(f"  Tour length: {L_tour:.1f} m | Estimated flight time: {T_flight:.1f} s")
-
-    print("Computing reprojection errors …")
-    errors = compute_reprojection_errors(viewpoints, centroids, V, selected)
-    valid_errors = errors[~np.isnan(errors)]
-    print(f"  Mean reprojection error: {valid_errors.mean()*100:.2f} cm  "
-          f"| Max: {valid_errors.max()*100:.2f} cm")
-
-    return viewpoints, centroids, normals, verts, V, selected, coverage, tour, leg_dists, errors
+    # Strategy 3: spiral descent
+    waypoints = generate_spiral_waypoints(
+        REEF_LX, REEF_LY, ALT_LEVELS, OVERLAP, fov_half_rad, h_max
+    )
+    view_map, coverage = simulate_coverage(
+        waypoints, X, Y, H, normals, theta_max_rad, fov_half_rad
+    )
+    L = path_length(waypoints)
+    print(f"Coverage: {coverage:.1%}  |  Path length: {L:.1f} m  |  Waypoints: {len(waypoints)}")
+    return X, Y, H, waypoints, view_map, coverage
 ```
 
 ---
 
 ## Key Parameters
 
-| Parameter | Symbol | Value |
-|-----------|--------|-------|
-| Reef patch size | — | 30 × 30 m |
-| Reef depth range | $d_{reef}$ | −3 m to −8 m |
-| Mesh resolution | $N_{grid}$ | 20 × 20 quads → 800 triangles |
-| Low flight altitude | $h_{low}$ | 5 m |
-| High flight altitude | $h_{high}$ | 12 m |
-| Candidate viewpoints | $N_v$ | 72 |
-| Focal length | $f$ | 24 mm |
-| Sensor width | $s_w$ | 36 mm |
-| Image width | $W_{px}$ | 6000 px |
-| Focal length (pixels) | $f_{px}$ | 4000 px |
-| Max GSD | $\mathrm{GSD}_{max}$ | 2 cm |
-| Max incidence angle | $\theta_{max}$ | 60° |
-| Camera half-FOV | $\psi$ | ≈ 36.9° |
-| Min coverage fold | $k_{min}$ | 3 |
-| Min image overlap | $p_{ov}$ | 60% |
-| Cruise speed | $v$ | 4.0 m/s |
-| Hover time per capture | $t_{cap}$ | 2.0 s |
-| Keypoint noise | $\sigma_{px}$ | 0.5 px |
+| Parameter | Value |
+|-----------|-------|
+| Reef footprint | 60 × 40 m |
+| Heightmap resolution $\delta$ | 0.5 m |
+| Number of bommies $N_B$ | 12 |
+| Reef height range | −3.0 to +0.5 m |
+| Camera FOV $\alpha_{fov}$ | 70° |
+| Max incidence angle $\theta_{max}$ | 45° |
+| Sensor width $s_w$ | 6.3 mm |
+| Focal length $f$ | 4.5 mm |
+| Image resolution | 4000 × 3000 px |
+| Target image overlap $\rho_{ov}$ | 60% |
+| Minimum views per point $N_{min}$ | 2 |
+| Spiral altitude levels $\mathcal{Z}$ | {5.0, 3.5, 2.0} m |
+| Battery path budget $L_{max}$ | 500 m |
+| Cruise speed $v$ | 1.5 m/s |
+| Target coverage $C$ | ≥ 90% |
+| Target reconstruction error $\varepsilon$ | ≤ 8 mm |
+| Target mean GSD | ≤ 5 mm/px |
 
 ---
 
 ## Expected Output
 
-- **Reef surface and viewpoint map (3D)**: `mpl_toolkits.mplot3d` scene showing the sinusoidal reef
-  surface colour-coded by depth (blue → green); all 72 candidate viewpoints as grey spheres at their
-  respective altitudes; selected viewpoints highlighted in red; camera frustum cones drawn from each
-  selected viewpoint toward the reef centroid.
-- **Visibility coverage heatmap (3D)**: reef face-lets colour-coded by coverage count $c_j(S)$
-  after greedy set-cover; faces with $c_j < k_{min}$ flagged in magenta (should be zero for a
-  feasible plan); colour bar from 0 to $\max c_j$.
-- **TSP flight path animation**: 3D animated GIF (`FuncAnimation`) showing the drone icon
-  (red sphere) traversing the selected viewpoints in tour order; completed legs drawn as a solid
-  red polyline; at each capture viewpoint a brief camera-frustum flash indicates image acquisition;
-  reef surface rendered as a semi-transparent mesh.
-- **Reprojection error map (3D)**: face-lets colour-coded by per-face minimum reprojection error
-  $\varepsilon_j$ (blue = sub-mm, yellow/red = > 5 mm); annotated with mean and max values;
-  dual-altitude plan expected to show substantially lower $\varepsilon_j$ than single-altitude
-  baseline.
-- **Strategy comparison bar chart**: three grouped bars (Nadir grid / Single-altitude greedy /
-  Dual-altitude greedy + TSP) for: number of selected viewpoints, total flight time $T_{flight}$,
-  mean reprojection error $\bar{\varepsilon}$, fraction of faces achieving $\geq 3$-fold coverage.
-- **Metrics printed to stdout**:
-
-```
-Selected viewpoints : 28
-Tour length         : 312.4 m
-Flight time         : 134.1 s
-Min coverage        : 3
-Mean coverage       : 4.7
-Mean reproj. error  : 0.81 cm
-Max reproj. error   : 2.34 cm
-```
+- **3D reef + path plot**: Matplotlib 3D surface rendering of the heightmap coloured by depth,
+  with the spiral waypoint trajectory drawn as a coloured line descending through altitude levels
+  (high = purple, mid = orange, low = red); camera frustum cones shown at selected waypoints.
+- **Coverage heatmap**: 2D top-down grid showing per-cell view count $V_{ij}$ (colour scale from
+  0 = grey to $\geq 4$ = dark blue); coverage fraction $C$ and uncovered patches highlighted in
+  red for each strategy.
+- **Strategy comparison bar chart**: side-by-side bars for Flat Lawnmower / Altitude-Adaptive /
+  Spiral Descent showing coverage fraction $C$, mean GSD, mean reconstruction error $\bar{\varepsilon}$,
+  and path length $L_{path}$.
+- **GSD distribution histogram**: frequency distribution of per-cell best-GSD values for each
+  strategy, with vertical lines at target 5 mm/px and degraded 10 mm/px thresholds.
+- **Coverage vs path length trade-off curve**: $C$ as a function of cumulative $L_{path}$ as
+  waypoints are added one by one for the spiral strategy; shows diminishing returns and the
+  90%-coverage knee point.
+- **Normal-angle distribution**: polar histogram of incidence angles $\theta_{ij}$ for all
+  viewed surface cells, confirming the 45° threshold is respected.
+- **Animation (GIF)**: top-down view of the reef heightmap with the drone moving along its path;
+  cells turn from grey (unviewed) to blue (1 view) to green (2+ views) as the drone flies
+  overhead.
 
 ---
 
 ## Extensions
 
-1. **Adaptive GSD-driven densification**: after a first SfM pass produces a sparse point cloud,
-   identify faces with point density below a threshold and automatically insert additional close-up
-   viewpoints at $h_{extra} = 3$ m to fill coverage gaps; re-run TSP on the augmented set.
-2. **Water refraction correction**: account for the refractive index of water ($n_w = 1.33$) when
-   computing the apparent position of underwater features; the GSD formula becomes
-   $\mathrm{GSD}_{refr} = \mathrm{GSD} \cdot (h + |d_{reef}|/n_w) / (h + |d_{reef}|)$;
-   update the visibility and reprojection error models accordingly.
-3. **Photogrammetry-aware viewpoint selection**: replace the greedy set-cover with a
-   differentiable coverage objective and solve via gradient-free optimisation (CMA-ES) that jointly
-   maximises baseline diversity $\bar{\alpha}$ and minimises $n_s$, trading off the two objectives
-   on a Pareto front.
-4. **Wind-disturbed hover model**: at each capture viewpoint, the drone hovers under a random wind
-   force $\mathbf{w} \sim \mathcal{N}(\mathbf{0}, \sigma_w^2 \mathbf{I})$; image blur is modelled
-   as a function of the lateral drift during $t_{cap}$; re-plan the tour to avoid capture near the
-   upwind reef edge where turbulence is highest.
-5. **Online re-planning from live SfM**: stream partial reconstruction results from an onboard
-   SfM pipeline; when a face's point cloud variance exceeds a threshold mid-mission, insert an
-   additional repair viewpoint immediately after the current position in the tour and recompute the
-   remaining path.
+1. **Occlusion-aware replanning**: implement the full ray-heightmap occlusion test and run a
+   greedy next-best-view (NBV) algorithm that selects each successive waypoint to maximise
+   the number of newly covered previously-occluded cells; compare NBV coverage to the
+   open-loop spiral at equal path length.
+2. **Adaptive GSD control**: vary cruise altitude continuously along the path using a
+   proportional controller $z_{cmd}(x,y) = h(x,y) + \Delta z_{standoff}$ to maintain constant
+   GSD across the entire reef surface regardless of topographic relief.
+3. **Multi-drone parallel survey**: split the reef into $K$ spatial partitions using Voronoi
+   decomposition; assign one drone per region and co-ordinate altitude transitions to avoid
+   inter-drone occlusion (relates to S049 Dynamic Zone Assignment).
+4. **Photogrammetric accuracy propagation**: integrate a full SfM tie-point model (OpenCV
+   feature matching simulation) to predict 3D reconstruction confidence from the simulated
+   view graph, rather than using the analytical $\varepsilon$ bound.
+5. **Current disturbance rejection**: add a constant horizontal drift $\mathbf{v}_{current}$
+   (simulating underwater current) and apply a feedback correction to keep the drone on the
+   planned path within a position error tolerance of $\pm 0.2$ m.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md) (systematic 2D coverage baseline), [S050 Swarm Cooperative Mapping](S050_slam.md) (3D map building), [S044 Wall Crack Inspection](S044_wall_crack_inspection.md) (close-range surface imaging)
-- Follow-ups: [S054 Post-Disaster Photogrammetry](S054_post_disaster_photogrammetry.md) (urban SfM reconstruction)
-- Algorithmic cross-reference: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md) (TSP path planning), [S050 Swarm Cooperative Mapping](S050_slam.md) (visibility and map quality metrics), [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md) (coverage optimisation)
+- Prerequisites: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md), [S046 3D Trilateration](S046_3d_trilateration.md)
+- Follow-ups: [S054 Minefield Detection](S054_minefield_detection.md), [S065 Building 3D Scan Path](../04_industrial_agriculture/S065_building_3d_scan_path.md)
+- Algorithmic cross-reference: [S050 Swarm SLAM](S050_swarm_slam.md) (map-building from drone views), [S074 Mine 3D Mapping](../04_industrial_agriculture/S074_mine_3d_mapping.md) (confined-space photogrammetry)

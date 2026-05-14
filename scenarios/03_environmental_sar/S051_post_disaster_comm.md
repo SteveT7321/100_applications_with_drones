@@ -1,114 +1,141 @@
 # S051 Post-Disaster Communication Network Restoration
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Max-coverage greedy set-cover + connectivity repair (MST / relay chain) | **Dimension**: 2D
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
 
 ---
 
 ## Problem Definition
 
-**Setup**: A natural disaster has destroyed all ground communication infrastructure across a
-$200 \times 200$ m zone. $K = 8$ survivor camps are scattered throughout the area; none of them
-can communicate with each other or with the rescue base station located at the zone boundary. A
-fleet of $N = 5$ drones is deployed to act as airborne relay nodes hovering at a fixed altitude.
-Each drone has a communication radius $r_{comm} = 30$ m within which it can relay packets between
-two endpoints. A camp is considered **covered** if it falls within $r_{comm}$ of at least one drone.
-A drone placement configuration is **connected** if the induced graph — nodes are drones plus the
-base station, edges connect pairs within $r_{comm}$ of each other — is a single connected component.
-Battery-life limits impose a maximum relay distance from the base: no drone may be placed farther
-than $D_{max} = 120$ m from the base station (Manhattan distance along the relay chain is not
-directly constrained, but total chain length is bounded by the reachable hover grid).
+**Setup**: A major earthquake has destroyed ground-based cellular infrastructure across a
+$2000 \times 2000$ m urban area. A population density map divides the area into $G = 40 \times 40$
+grid cells; each cell $u$ has a known population weight $\text{pop}_u \geq 0$ (people). A fleet of
+$K = 5$ drones is available at a single charge station $\mathbf{p}_{base}$. Each drone can hover
+at a fixed position and act as a temporary airborne cell tower, covering all population within a
+ground-projected radius $r_{cov} = 300$ m. Drones must remain airborne for the duration of the
+mission; the battery constraint limits total hover time to $T_{max} = 1800$ s before each drone
+must return to charge.
 
 **Roles**:
-- **Base station**: fixed anchor at position $(0, 100)$ m (left edge midpoint); always included as
-  a node in the connectivity graph.
-- **Drones** ($N = 5$): homogeneous relay nodes; each hovers at one position selected from a
-  discrete candidate grid; communication range $r_{comm}$ is symmetric and omnidirectional.
-- **Survivor camps** ($K = 8$): fixed demand points at known positions; a camp is served if any
-  drone covers it.
+- **Charge station** (base): single fixed point $\mathbf{p}_{base}$; all drones depart from and
+  return to this point for recharging.
+- **Drones** ($K = 5$): each drone $k$ hovers at position $\mathbf{p}_{d_k} \in \mathbb{R}^2$ at
+  a fixed altitude $z = 50$ m; ground-projected coverage radius is $r_{cov}$.
+- **Population grid** ($G$ cells): each cell $u$ has centroid $\mathbf{c}_u$ and weight
+  $\text{pop}_u$; a cell is served if at least one drone is within $r_{cov}$.
 
-**Objective**: Choose $N$ hover positions from a candidate grid that **maximise the fraction of
-covered camps** subject to the constraint that the relay graph (drones + base station) is
-**connected**. If full coverage is not achievable, the algorithm reports the maximum attainable
-coverage rate and the minimum number of drones needed for full coverage (sensitivity analysis).
+**Objective**: Jointly optimise the $K$ drone hover positions
+$\{\mathbf{p}_{d_1}, \ldots, \mathbf{p}_{d_K}\}$ to **maximise total covered population** subject
+to:
+
+1. The $K$ drone positions form a **connected communication graph** (adjacent drones within radio
+   range $r_{comm} = 600$ m) so that each drone can relay data back to the charge station.
+2. Each drone can reach its assigned hover position and return to base within the battery time
+   budget $T_{max}$, given transit speed $v = 15$ m/s.
 
 **Comparison strategies**:
-1. **Greedy max-coverage (no connectivity constraint)** — pure set-cover greedy; ignores whether
-   the resulting relay graph is connected.
-2. **Greedy + connectivity repair (2-opt swaps)** — start from the greedy solution, then apply
-   position swaps to repair disconnected components while minimising coverage loss.
-3. **MST-anchored relay chain** — build a minimum spanning tree over camps and base station, place
-   drones along MST edges to guarantee connectivity, then maximise residual coverage.
+1. **Greedy placement** — sequentially place each drone at the grid cell centroid with the highest
+   uncovered population, without enforcing connectivity.
+2. **Simulated annealing (SA)** — optimise positions from a random initialisation, accepting
+   connectivity-violating moves with decreasing probability; connectivity enforced as a hard
+   penalty.
+3. **Greedy + connectivity repair** — greedy placement followed by a Steiner-tree-inspired
+   reconnection pass that repositions disconnected drones to restore the relay chain.
 
 ---
 
 ## Mathematical Model
 
-### Candidate Grid and Coverage Sets
+### Coverage Indicator and Objective
 
-Discretise the $200 \times 200$ m area into a grid with resolution $\delta = 5$ m, yielding
-$G = 40 \times 40 = 1600$ candidate hover positions. Let $\mathcal{P} = \{g_1, \ldots, g_G\}$
-be the candidate set. For each candidate position $g \in \mathcal{P}$ define its **coverage set**:
+Let $\mathcal{U}$ be the set of all grid cells, $\mathcal{D} = \{1, \ldots, K\}$ be the set of
+drone indices, and $\mathbf{p}_{d_k} \in \mathbb{R}^2$ be the ground-projected hover position of
+drone $k$.
 
-$$C(g) = \bigl\{c \in \mathcal{C} : \|g - c\| \leq r_{comm}\bigr\}$$
+Coverage indicator for cell $u$ by drone $k$:
 
-where $\mathcal{C} = \{c_1, \ldots, c_K\}$ is the set of camp positions. A camp $c$ is covered by
-a placement $S \subseteq \mathcal{P}$ of $N$ drones if $\exists\, g \in S : c \in C(g)$.
+$$I(u, k) = \begin{cases} 1 & \text{if } \|\mathbf{c}_u - \mathbf{p}_{d_k}\| \leq r_{cov} \\ 0 & \text{otherwise} \end{cases}$$
 
-### Max-$N$-Coverage Objective
+Total covered population (objective to maximise):
 
-$$\max_{S \subseteq \mathcal{P},\; |S| = N} \; f(S) := \left|\bigcup_{g \in S} C(g)\right|$$
+$$C\!\left(\{\mathbf{p}_{d_k}\}\right) = \sum_{u \in \mathcal{U}} \text{pop}_u \cdot \mathbf{1}\!\left[\max_{k \in \mathcal{D}} I(u, k) \geq 1\right]$$
 
-This is the **maximum $k$-coverage problem**, an NP-hard generalisation of set cover. The greedy
-$(1 - 1/e) \approx 63.2\%$ approximation guarantee applies: at each step, add the candidate with
-maximum **marginal gain**:
+Equivalently, using union coverage:
 
-$$\Delta(g \mid S) = \bigl|C(g) \setminus \bigcup_{q \in S} C(q)\bigr|$$
-
-$$g^* = \arg\max_{g \in \mathcal{P} \setminus S} \Delta(g \mid S), \qquad S \leftarrow S \cup \{g^*\}$$
+$$C = \sum_{u \in \mathcal{U}} \text{pop}_u \cdot \mathbf{1}\!\left[\bigcup_{k=1}^{K} \left\{\|\mathbf{c}_u - \mathbf{p}_{d_k}\| \leq r_{cov}\right\}\right]$$
 
 ### Connectivity Constraint
 
-Define the relay graph $\mathcal{G}(S) = (V, E)$ where $V = S \cup \{b\}$ ($b$ = base station)
-and:
+Build an undirected graph $\mathcal{G} = (\mathcal{V}, \mathcal{E})$ where
+$\mathcal{V} = \{0\} \cup \mathcal{D}$, node $0$ represents the charge station, and edge
+$(i, j) \in \mathcal{E}$ exists if:
 
-$$E = \bigl\{(u, v) : \|u - v\| \leq r_{comm},\; u, v \in V\bigr\}$$
+$$\|\mathbf{p}_i - \mathbf{p}_j\| \leq r_{comm}$$
 
-The placement $S$ is **connected** iff $\mathcal{G}(S)$ is a single connected component,
-verified via BFS/DFS from $b$:
+The connectivity constraint requires $\mathcal{G}$ to be **connected** (there exists a path from
+every drone $k$ to node $0$). Equivalently, the graph's Laplacian matrix $\mathbf{L}$ must have
+exactly one zero eigenvalue:
 
-$$\text{connected}(S) = \bigl(|\text{BFS}(b, \mathcal{G}(S))| = N + 1\bigr)$$
+$$\lambda_2(\mathbf{L}) > 0 \qquad \text{(algebraic connectivity)}$$
 
-### Connectivity Repair via 2-opt Swaps
+In the simulated annealing cost function the connectivity violation is penalised as:
 
-After the greedy phase, if $\mathcal{G}(S)$ is disconnected, let $\mathcal{K}$ be the set of
-connected components not containing $b$. For each isolated component $K_i \in \mathcal{K}$,
-find the swap that adds a bridge position with minimum coverage loss:
+$$\text{penalty}(\mathcal{G}) = \alpha \cdot \bigl(K + 1 - |\text{nodes in largest connected component containing node 0}|\bigr)$$
 
-$$(\hat{g}_{out}, \hat{g}_{in}) = \arg\min_{\substack{g_{out} \in S \cap K_i \\ g_{in} \in \mathcal{P} \setminus S}} \;\bigl[f(S) - f\bigl((S \setminus \{g_{out}\}) \cup \{g_{in}\}\bigr)\bigr]$$
+with penalty weight $\alpha$ chosen large enough to dominate the coverage term when any drone is
+disconnected.
 
-subject to $g_{in}$ reducing the number of disconnected components (i.e., $g_{in}$ is within
-$r_{comm}$ of a node in a component already connected to $b$). Swaps are applied iteratively until
-$\text{connected}(S) = \text{True}$.
+### Battery (Range) Constraint
 
-### MST-Anchored Relay Chain (Baseline)
+Drone $k$ must transit from base to hover position and back within $T_{max}$:
 
-Construct a minimum spanning tree $T^*$ over the $K$ camps and base station $b$ using Euclidean
-edge weights. For each MST edge $(u, v)$ with length $\ell_{uv} > r_{comm}$, place
-$\lceil \ell_{uv} / r_{comm} \rceil - 1$ relay drones uniformly along the segment $[u, v]$,
-snapping each to the nearest grid point in $\mathcal{P}$. If the total number of relays exceeds
-$N$, prioritise edges incident to $b$ (backbone first). Residual drones (if any) are placed
-greedily for coverage.
+$$\frac{2 \|\mathbf{p}_{d_k} - \mathbf{p}_{base}\|}{v} + T_{hover} \leq T_{max}$$
 
-### Coverage and Network Metrics
+where $T_{hover}$ is the intended hover duration. Rearranging, the maximum reachable distance from
+base is:
 
-| Metric | Formula |
-|--------|---------|
-| Camp coverage rate | $\displaystyle\eta = \frac{1}{K}\left|\bigcup_{g \in S} C(g)\right|$ |
-| Relay hop count | $\displaystyle H = \max_{c \in \mathcal{C}_{cov}} \text{dist}_{\mathcal{G}}(b, g_c)$ where $g_c$ covers $c$ |
-| Network diameter | $\displaystyle D_{net} = \max_{u,v \in V} \text{dist}_{\mathcal{G}}(u, v)$ (in hops) |
-| Coverage loss from repair | $\displaystyle \Delta\eta_{repair} = f(S_{greedy}) - f(S_{repaired})$ (in camps) |
-| Min drones for full coverage | smallest $N'$ such that $\max_{S, |S|=N'} f(S) = K$ |
+$$D_{max} = \frac{v \cdot (T_{max} - T_{hover})}{2}$$
+
+Hover positions outside $D_{max}$ are infeasible and receive an additional hard penalty.
+
+### Simulated Annealing
+
+State: continuous positions $\mathbf{x} = [\mathbf{p}_{d_1}^\top, \ldots, \mathbf{p}_{d_K}^\top]^\top \in \mathbb{R}^{2K}$.
+
+Cost function (to minimise):
+
+$$E(\mathbf{x}) = -C(\mathbf{x}) + \text{penalty}(\mathcal{G}(\mathbf{x}))$$
+
+Perturbation at each SA step: randomly select one drone $k$ and displace it by
+$\Delta \mathbf{p} \sim \mathcal{U}([-\delta, \delta]^2)$ where $\delta$ decreases with temperature.
+
+Acceptance probability for a move $\mathbf{x} \to \mathbf{x}'$:
+
+$$P_{accept} = \min\!\left(1,\; \exp\!\left(-\frac{E(\mathbf{x}') - E(\mathbf{x})}{T_{SA}}\right)\right)$$
+
+Temperature schedule (geometric cooling):
+
+$$T_{SA}^{(n+1)} = \beta \cdot T_{SA}^{(n)}, \qquad \beta = 0.995, \quad T_{SA}^{(0)} = T_0$$
+
+### Greedy Connectivity Repair
+
+After greedy placement, for each disconnected drone $k$ (not reachable from node $0$ in
+$\mathcal{G}$):
+
+1. Find the nearest drone $k^*$ that **is** connected to node $0$.
+2. Compute the midpoint $\mathbf{m} = \frac{1}{2}(\mathbf{p}_{d_k} + \mathbf{p}_{d_{k^*}})$.
+3. Relocate $k$ to $\mathbf{m}$ if $\|\mathbf{p}_{d_k} - \mathbf{m}\| \leq r_{comm}$ and
+   $\|\mathbf{m} - \mathbf{p}_{d_{k^*}}\| \leq r_{comm}$; otherwise step $k$ toward $k^*$ by
+   $r_{comm} - \epsilon$.
+4. Recompute coverage loss and accept if coverage decrease is below threshold $\Delta C_{tol}$.
+
+### Set Cover Relaxation (Lower Bound)
+
+The weighted maximum coverage problem is NP-hard in general. A greedy $(1 - 1/e)$-approximation
+bound applies when each drone covers a fixed circular region and the cells are discrete:
+
+$$C_{greedy} \geq \left(1 - \frac{1}{e}\right) \cdot C_{OPT} \approx 0.632 \cdot C_{OPT}$$
+
+This bound is used to evaluate how close the SA solution is to the theoretical optimum.
 
 ---
 
@@ -117,306 +144,138 @@ greedily for coverage.
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.spatial.distance import cdist
-from collections import deque
+from scipy.spatial import distance_matrix
+import networkx as nx
 
-# -------------------------------------------------------------------
 # Key constants
-# -------------------------------------------------------------------
-AREA_SIZE    = 200.0      # m — square zone side length
-GRID_RES     = 5.0        # m — candidate grid resolution
-N_DRONES     = 5          # number of relay drones
-K_CAMPS      = 8          # number of survivor camps
-R_COMM       = 30.0       # m — communication / coverage radius
-D_MAX        = 120.0      # m — maximum distance from base station
-BASE_POS     = np.array([0.0, 100.0])   # base station position
-SEED         = 42
+K_DRONES   = 5          # number of relay drones
+AREA_SIZE  = 2000.0     # m — side length of square area
+GRID_N     = 40         # grid resolution per axis
+R_COV      = 300.0      # m — coverage radius per drone
+R_COMM     = 600.0      # m — inter-drone communication radius
+V_DRONE    = 15.0       # m/s — transit speed
+T_MAX      = 1800.0     # s — total battery budget
+T_HOVER    = 1500.0     # s — intended hover duration
+ALPHA      = 1e6        # connectivity penalty weight
+T0_SA      = 500.0      # initial SA temperature
+BETA_SA    = 0.995      # SA cooling rate
+N_SA_STEPS = 80_000     # total SA iterations
+DELTA_MAX  = 200.0      # m — max perturbation at T0
 
-# -------------------------------------------------------------------
-# Build candidate hover grid
-# -------------------------------------------------------------------
-def build_candidate_grid(area_size, res):
-    """Return (G, 2) array of candidate hover positions."""
-    xs = np.arange(res / 2, area_size, res)
-    ys = np.arange(res / 2, area_size, res)
-    xv, yv = np.meshgrid(xs, ys, indexing='ij')
-    return np.stack([xv.ravel(), yv.ravel()], axis=1)
+BASE_POS   = np.array([1000.0, 100.0])   # charge station position
 
-# -------------------------------------------------------------------
-# Connectivity check via BFS
-# -------------------------------------------------------------------
-def is_connected(selected_pos, base, r_comm):
-    """
-    Return True if the relay graph (selected_pos + base) is connected.
-    selected_pos: (N, 2) array of drone positions.
-    """
-    nodes = np.vstack([base[np.newaxis], selected_pos])  # (N+1, 2)
-    n = len(nodes)
-    dist_mat = cdist(nodes, nodes)
-    adj = dist_mat <= r_comm
-    np.fill_diagonal(adj, False)
+# Derived feasibility radius
+D_MAX = V_DRONE * (T_MAX - T_HOVER) / 2.0   # = 2250 m > AREA_SIZE/2 => all positions reachable
 
-    visited = np.zeros(n, dtype=bool)
-    queue = deque([0])   # start BFS from base (index 0)
-    visited[0] = True
-    while queue:
-        u = queue.popleft()
-        for v in np.where(adj[u])[0]:
-            if not visited[v]:
-                visited[v] = True
-                queue.append(v)
-    return visited.all()
+def build_population_map(grid_n, area_size, seed=42):
+    """Generate synthetic population density with 3 urban clusters."""
+    rng = np.random.default_rng(seed)
+    # Cell centroids
+    cell_size = area_size / grid_n
+    xs = np.linspace(cell_size / 2, area_size - cell_size / 2, grid_n)
+    ys = np.linspace(cell_size / 2, area_size - cell_size / 2, grid_n)
+    cx, cy = np.meshgrid(xs, ys)
+    centroids = np.stack([cx.ravel(), cy.ravel()], axis=1)  # (N, 2)
 
-def connected_components(selected_pos, base, r_comm):
-    """
-    Return list of component index sets.
-    Node 0 = base; nodes 1..N = drones.
-    """
-    nodes = np.vstack([base[np.newaxis], selected_pos])
-    n = len(nodes)
-    dist_mat = cdist(nodes, nodes)
-    adj = dist_mat <= r_comm
-    np.fill_diagonal(adj, False)
+    # Three population clusters
+    pop = np.zeros(grid_n * grid_n)
+    clusters = [(400, 1600, 8000, 350), (1200, 1200, 12000, 400), (1700, 700, 6000, 250)]
+    for (mx, my, peak, sigma) in clusters:
+        d2 = (centroids[:, 0] - mx)**2 + (centroids[:, 1] - my)**2
+        pop += peak * np.exp(-d2 / (2 * sigma**2))
+    pop += rng.uniform(0, 200, size=pop.shape)   # background noise
+    return centroids, pop
 
-    visited = np.zeros(n, dtype=bool)
-    components = []
-    for start in range(n):
-        if visited[start]:
-            continue
-        comp = []
-        queue = deque([start])
-        visited[start] = True
-        while queue:
-            u = queue.popleft()
-            comp.append(u)
-            for v in np.where(adj[u])[0]:
-                if not visited[v]:
-                    visited[v] = True
-                    queue.append(v)
-        components.append(set(comp))
-    return components
+def coverage(positions, centroids, pop, r_cov):
+    """Total covered population for given drone hover positions."""
+    # positions: (K, 2); centroids: (N, 2)
+    dists = distance_matrix(centroids, positions)          # (N, K)
+    covered_mask = np.any(dists <= r_cov, axis=1)          # (N,)
+    return np.sum(pop[covered_mask])
 
-# -------------------------------------------------------------------
-# Coverage helpers
-# -------------------------------------------------------------------
-def compute_coverage_sets(candidates, camps, r_comm):
-    """
-    Return list of frozensets: coverage_sets[i] = camps covered by candidates[i].
-    """
-    dist = cdist(candidates, camps)     # (G, K)
-    covered = dist <= r_comm            # (G, K) bool
-    return [frozenset(np.where(row)[0]) for row in covered]
+def connectivity_penalty(positions, base_pos, r_comm, alpha):
+    """Penalty for disconnected relay graph."""
+    nodes = np.vstack([base_pos, positions])               # (K+1, 2)
+    dists = distance_matrix(nodes, nodes)
+    adj = dists <= r_comm
+    G = nx.from_numpy_array(adj.astype(int))
+    component = nx.node_connected_component(G, 0)
+    n_connected = len(component)
+    n_total = len(nodes)
+    return alpha * (n_total - n_connected)
 
-def total_covered(selected_indices, coverage_sets):
-    """Number of unique camps covered by the selected candidate positions."""
-    union = set()
-    for i in selected_indices:
-        union |= coverage_sets[i]
-    return len(union)
+def sa_cost(positions, centroids, pop, r_cov, base_pos, r_comm, alpha):
+    cov = coverage(positions, centroids, pop, r_cov)
+    pen = connectivity_penalty(positions, base_pos, r_comm, alpha)
+    return -cov + pen
 
-# -------------------------------------------------------------------
-# Greedy max-coverage (no connectivity constraint)
-# -------------------------------------------------------------------
-def greedy_max_coverage(coverage_sets, n_drones, n_camps):
-    """
-    Standard greedy set-cover for max-k-coverage.
-    Returns list of selected candidate indices.
-    """
-    selected = []
-    covered  = set()
-    for _ in range(n_drones):
-        best_idx, best_gain = -1, -1
-        for i, cs in enumerate(coverage_sets):
-            if i in selected:
-                continue
-            gain = len(cs - covered)
-            if gain > best_gain:
-                best_gain = gain
-                best_idx  = i
-        if best_idx == -1 or best_gain == 0:
-            # No further coverage gain; pick any unused position (placeholder)
-            remaining = [i for i in range(len(coverage_sets)) if i not in selected]
-            best_idx = remaining[0] if remaining else 0
-        selected.append(best_idx)
-        covered |= coverage_sets[best_idx]
-    return selected
+def simulated_annealing(centroids, pop, base_pos, k_drones,
+                        r_cov, r_comm, alpha, area_size,
+                        t0, beta, n_steps):
+    """SA optimisation of drone hover positions."""
+    rng = np.random.default_rng(0)
+    # Initialise positions randomly within area
+    positions = rng.uniform(0, area_size, size=(k_drones, 2))
+    best_pos = positions.copy()
+    best_cost = sa_cost(positions, centroids, pop, r_cov, base_pos, r_comm, alpha)
+    current_cost = best_cost
+    T = t0
 
-# -------------------------------------------------------------------
-# Connectivity repair via 2-opt swaps
-# -------------------------------------------------------------------
-def repair_connectivity(selected, candidates, coverage_sets, base, r_comm):
-    """
-    Iteratively swap out isolated-component drones for bridge positions
-    until the relay graph is connected. Returns repaired selection and
-    the number of coverage-loss camps.
-    """
-    selected = list(selected)
-    max_iters = 50
+    for step in range(n_steps):
+        k = rng.integers(k_drones)
+        delta = rng.uniform(-DELTA_MAX, DELTA_MAX, size=2) * (T / t0)
+        new_pos = positions.copy()
+        new_pos[k] = np.clip(new_pos[k] + delta, 0, area_size)
+        new_cost = sa_cost(new_pos, centroids, pop, r_cov, base_pos, r_comm, alpha)
+        dE = new_cost - current_cost
+        if dE < 0 or rng.random() < np.exp(-dE / T):
+            positions = new_pos
+            current_cost = new_cost
+            if current_cost < best_cost:
+                best_cost = current_cost
+                best_pos = positions.copy()
+        T *= beta
 
-    for _ in range(max_iters):
-        if is_connected(candidates[selected], base, r_comm):
-            break
+    return best_pos, best_cost
 
-        comps = connected_components(candidates[selected], base, r_comm)
-        # Find first component that does NOT contain the base (node 0)
-        base_comp = next(c for c in comps if 0 in c)
-        isolated_comp = next(c for c in comps if 0 not in c)
+def greedy_placement(centroids, pop, base_pos, k_drones, r_cov):
+    """Sequential greedy placement: maximise marginal covered population."""
+    positions = []
+    remaining_pop = pop.copy()
+    for _ in range(k_drones):
+        best_cov = -1
+        best_pos = None
+        for c in centroids:
+            d = np.linalg.norm(centroids - c, axis=1)
+            new_cov = np.sum(remaining_pop[d <= r_cov])
+            if new_cov > best_cov:
+                best_cov = new_cov
+                best_pos = c.copy()
+        positions.append(best_pos)
+        d = np.linalg.norm(centroids - best_pos, axis=1)
+        remaining_pop[d <= r_cov] = 0.0
+    return np.array(positions)
 
-        # Drone indices within the isolated component (subtract 1 for base offset)
-        isolated_drone_ids = [node - 1 for node in isolated_comp]
-        # Candidate indices of drones in base_comp (for edge proximity check)
-        base_nodes = np.array([candidates[selected[node - 1]]
-                                for node in base_comp if node != 0])
-        base_nodes = np.vstack([base[np.newaxis], base_nodes])
-
-        best_swap = None
-        best_loss = np.inf
-
-        for out_id in isolated_drone_ids:
-            out_sel_idx = selected[out_id]
-            # Current coverage without this drone
-            test_sel = [s for s in selected if s != out_sel_idx]
-            cov_without = total_covered(test_sel, coverage_sets)
-
-            # Find bridge candidates: within r_comm of base component
-            for in_idx in range(len(candidates)):
-                if in_idx in selected:
-                    continue
-                p_in = candidates[in_idx]
-                # Bridge condition: close to base_comp node AND close to isolated node
-                dist_to_base_comp = np.min(cdist([p_in], base_nodes))
-                dist_to_isolated  = np.min(cdist(
-                    [p_in],
-                    candidates[[selected[j] for j in isolated_drone_ids]]
-                ))
-                if dist_to_base_comp > r_comm or dist_to_isolated > r_comm:
-                    continue
-
-                cov_with = total_covered(test_sel + [in_idx], coverage_sets)
-                loss = cov_without - cov_with  # negative = gain
-                if loss < best_loss:
-                    best_loss = loss
-                    best_swap = (out_id, in_idx)
-
-        if best_swap is None:
-            # No valid bridge found; fall back to connecting nearest pair
-            break
-        out_id, in_idx = best_swap
-        selected[out_id] = in_idx
-
-    coverage_loss = 0
-    if best_swap is not None:
-        coverage_loss = max(0, best_loss)
-    return selected, coverage_loss
-
-# -------------------------------------------------------------------
-# MST-anchored relay chain baseline
-# -------------------------------------------------------------------
-def mst_relay_chain(camps, base, candidates, coverage_sets, n_drones, r_comm):
-    """
-    Build MST over camps + base, place relay drones along MST edges,
-    then use residual drones for greedy coverage.
-    Returns selected candidate indices.
-    """
-    from scipy.sparse.csgraph import minimum_spanning_tree
-    from scipy.sparse import csr_matrix
-
-    all_pts = np.vstack([base[np.newaxis], camps])   # (K+1, 2)
-    dist_all = cdist(all_pts, all_pts)
-    mst = minimum_spanning_tree(csr_matrix(dist_all)).toarray()
-
-    relay_positions = []
-    edges = np.argwhere(mst > 0)
-    for u, v in edges:
-        length = dist_all[u, v]
-        n_relays = max(0, int(np.ceil(length / r_comm)) - 1)
-        if n_relays == 0:
-            continue
-        for k in range(1, n_relays + 1):
-            t = k / (n_relays + 1)
-            p = (1 - t) * all_pts[u] + t * all_pts[v]
-            # Snap to nearest grid candidate
-            dists_to_grid = np.linalg.norm(candidates - p, axis=1)
-            relay_positions.append(int(np.argmin(dists_to_grid)))
-        if len(relay_positions) >= n_drones:
-            break
-
-    relay_positions = list(dict.fromkeys(relay_positions))[:n_drones]  # dedup + cap
-
-    # Fill remaining slots with greedy coverage
-    if len(relay_positions) < n_drones:
-        remaining = n_drones - len(relay_positions)
-        covered = set()
-        for i in relay_positions:
-            covered |= coverage_sets[i]
-        for _ in range(remaining):
-            best_idx, best_gain = -1, -1
-            for i, cs in enumerate(coverage_sets):
-                if i in relay_positions:
-                    continue
-                gain = len(cs - covered)
-                if gain > best_gain:
-                    best_gain = gain
-                    best_idx  = i
-            if best_idx == -1:
-                break
-            relay_positions.append(best_idx)
-            covered |= coverage_sets[best_idx]
-
-    return relay_positions
-
-# -------------------------------------------------------------------
-# Main simulation entry point
-# -------------------------------------------------------------------
 def run_simulation():
-    rng = np.random.default_rng(SEED)
+    centroids, pop = build_population_map(GRID_N, AREA_SIZE)
+    total_pop = np.sum(pop)
 
-    # Generate K random camp positions inside the area
-    camps = rng.uniform(10.0, AREA_SIZE - 10.0, size=(K_CAMPS, 2))
+    # Strategy 1: greedy (no connectivity)
+    greedy_pos = greedy_placement(centroids, pop, BASE_POS, K_DRONES, R_COV)
+    greedy_cov = coverage(greedy_pos, centroids, pop, R_COV)
 
-    candidates = build_candidate_grid(AREA_SIZE, GRID_RES)
-    coverage_sets = compute_coverage_sets(candidates, camps, R_COMM)
-
-    results = {}
-
-    # Strategy 1: Greedy (no connectivity constraint)
-    sel_greedy = greedy_max_coverage(coverage_sets, N_DRONES, K_CAMPS)
-    cov_greedy  = total_covered(sel_greedy, coverage_sets)
-    conn_greedy = is_connected(candidates[sel_greedy], BASE_POS, R_COMM)
-    results['greedy'] = dict(selected=sel_greedy, coverage=cov_greedy,
-                              connected=conn_greedy)
-    print(f"[greedy]   coverage={cov_greedy}/{K_CAMPS}  connected={conn_greedy}")
-
-    # Strategy 2: Greedy + connectivity repair
-    sel_repaired, loss = repair_connectivity(
-        sel_greedy, candidates, coverage_sets, BASE_POS, R_COMM
+    # Strategy 2: SA with connectivity penalty
+    sa_pos, _ = simulated_annealing(
+        centroids, pop, BASE_POS, K_DRONES, R_COV, R_COMM,
+        ALPHA, AREA_SIZE, T0_SA, BETA_SA, N_SA_STEPS
     )
-    cov_repaired  = total_covered(sel_repaired, coverage_sets)
-    conn_repaired = is_connected(candidates[sel_repaired], BASE_POS, R_COMM)
-    results['repaired'] = dict(selected=sel_repaired, coverage=cov_repaired,
-                                connected=conn_repaired, coverage_loss=loss)
-    print(f"[repaired] coverage={cov_repaired}/{K_CAMPS}  connected={conn_repaired}"
-          f"  loss={loss} camps")
+    sa_cov = coverage(sa_pos, centroids, pop, R_COV)
 
-    # Strategy 3: MST-anchored relay chain
-    sel_mst = mst_relay_chain(camps, BASE_POS, candidates, coverage_sets,
-                               N_DRONES, R_COMM)
-    cov_mst  = total_covered(sel_mst, coverage_sets)
-    conn_mst = is_connected(candidates[sel_mst], BASE_POS, R_COMM)
-    results['mst'] = dict(selected=sel_mst, coverage=cov_mst, connected=conn_mst)
-    print(f"[mst]      coverage={cov_mst}/{K_CAMPS}  connected={conn_mst}")
-
-    # Sensitivity: minimum drones needed for full coverage (ignoring connectivity)
-    for n_test in range(1, 20):
-        sel_test = greedy_max_coverage(coverage_sets, n_test, K_CAMPS)
-        if total_covered(sel_test, coverage_sets) == K_CAMPS:
-            print(f"Min drones for full camp coverage (unconstrained): {n_test}")
-            break
-
-    return results, candidates, camps
-
-if __name__ == "__main__":
-    run_simulation()
+    results = {
+        'greedy': (greedy_pos, greedy_cov / total_pop),
+        'sa': (sa_pos, sa_cov / total_pop),
+    }
+    return centroids, pop, results
 ```
 
 ---
@@ -425,78 +284,70 @@ if __name__ == "__main__":
 
 | Parameter | Value |
 |-----------|-------|
-| Zone area | 200 × 200 m |
-| Candidate grid resolution $\delta$ | 5 m (40 × 40 = 1600 positions) |
-| Number of relay drones $N$ | 5 |
-| Number of survivor camps $K$ | 8 |
-| Communication / coverage radius $r_{comm}$ | 30 m |
-| Maximum distance from base $D_{max}$ | 120 m |
-| Base station position | $(0,\; 100)$ m |
-| Greedy approximation ratio | $1 - 1/e \approx 63.2\%$ |
-| Connectivity repair max iterations | 50 |
-| Bridge candidate criterion | within $r_{comm}$ of both components |
-| MST edge weight | Euclidean distance |
-| Random seed | 42 |
+| Drone fleet size $K$ | 5 |
+| Area | 2000 × 2000 m |
+| Population grid resolution | 40 × 40 cells |
+| Coverage radius $r_{cov}$ | 300 m |
+| Communication radius $r_{comm}$ | 600 m |
+| Hover altitude | 50 m |
+| Transit speed $v$ | 15 m/s |
+| Battery horizon $T_{max}$ | 1800 s |
+| Intended hover duration $T_{hover}$ | 1500 s |
+| Max reachable distance $D_{max}$ | 2250 m |
+| Connectivity penalty weight $\alpha$ | $10^6$ |
+| SA initial temperature $T_0$ | 500 |
+| SA cooling rate $\beta$ | 0.995 |
+| SA iterations | 80 000 |
+| Population clusters | 3 (peaks at 8 000, 12 000, 6 000 persons) |
+| Charge station $\mathbf{p}_{base}$ | (1000, 100) m |
+| Greedy approximation ratio | $\geq 1 - 1/e \approx 0.632$ |
 
 ---
 
 ## Expected Output
 
-- **Network topology plot**: 2D top-down map of the $200 \times 200$ m zone showing: survivor camp
-  positions as yellow stars; base station as a black square; candidate grid as faint grey dots;
-  selected drone hover positions for each of the three strategies as coloured circles (red = greedy,
-  blue = repaired, green = MST); communication range circles ($r_{comm}$) drawn around each drone;
-  relay edges (lines between nodes within $r_{comm}$) for each strategy; covered camps highlighted
-  with a filled circle, uncovered camps as open markers.
-- **Coverage comparison bar chart**: grouped bar chart showing the number of covered camps (out of
-  $K = 8$) for the three strategies side by side, with a horizontal dashed line at $K = 8$ (full
-  coverage); annotated with whether the relay graph is connected.
-- **Connectivity graph panels**: three separate network diagrams (one per strategy) drawn as
-  force-directed or positional graphs; nodes are base station + drones; edges are active relay
-  links; disconnected components shown in different colours; BFS tree from base highlighted.
-- **Sensitivity curve**: line plot of camp coverage fraction $\eta$ vs number of drones $N'$
-  (sweeping $N' = 1$ to $15$) for the greedy-only strategy; mark the minimum $N'$ achieving
-  $\eta = 100\%$; overlay the same curve with the connectivity constraint enforced.
-- **Printed console metrics**:
-
-  ```
-  [greedy]   coverage=X/8  connected=True/False
-  [repaired] coverage=X/8  connected=True   loss=Y camps
-  [mst]      coverage=X/8  connected=True
-  Min drones for full camp coverage (unconstrained): Z
-  ```
-
-- **Coverage area heatmap animation (GIF)**: top-down view sweeping through $N' = 1$ to $10$
-  drones; at each frame, the greedy placement is shown with coverage discs filled in; camps colour
-  from red (uncovered) to green (covered) as $N'$ increases; frame rate 2 fps.
+- **Population density map**: 2D heatmap of $\text{pop}_u$ across the grid; urban cluster peaks
+  labelled; charge station marked with a black star.
+- **Coverage comparison map**: side-by-side top-down plots for each strategy showing drone hover
+  positions (coloured circles with radius $r_{cov}$), communication edges (dashed lines between
+  drones within $r_{comm}$), and coloured grid cells indicating covered vs uncovered population.
+- **Communication graph overlay**: networkx-drawn relay graph superimposed on the map; connected
+  components highlighted in different colours; disconnected drones flagged in red.
+- **Coverage fraction bar chart**: total covered population as a percentage of total population for
+  each strategy (Greedy, SA, Greedy+Repair); horizontal reference line at the $(1-1/e)$ greedy
+  bound.
+- **SA convergence curve**: cost $E$ (negative coverage + penalty) vs SA iteration number; penalty
+  trace overlaid to show when connectivity is first achieved and maintained.
+- **Sensitivity analysis**: coverage fraction vs $r_{cov}$ (250 – 450 m) and vs $K$ (1 – 8 drones)
+  for the SA solution; plotted as two line charts.
+- **Animation (GIF)**: SA optimisation progress over iterations — drone positions move across the
+  map as the algorithm converges, covered region shading updating in real time.
 
 ---
 
 ## Extensions
 
-1. **Probabilistic link model**: replace the hard $r_{comm}$ threshold with a distance-dependent
-   packet delivery rate $p_{link}(d) = \exp(-\lambda d^2)$; redefine coverage as expected delivery
-   probability $\geq 0.9$ and connectivity as the probability that a path from base to any drone
-   exists above a threshold; solve the resulting chance-constrained placement problem via
-   sample-average approximation.
-2. **Mobile relay drones**: allow drones to move continuously rather than hover; formulate as a
-   vehicle routing problem where drones periodically reposition to maintain coverage as camps are
-   evacuated and new camps emerge; use a rolling-horizon replanning loop.
-3. **Heterogeneous radios**: equip some drones with long-range (low-bandwidth) backbone radios
-   ($r_{backbone} = 80$ m) and others with short-range (high-bandwidth) access-point radios
-   ($r_{access} = 20$ m); design a two-tier placement: backbone drones first ensure connectivity,
-   then access-point drones maximise per-camp throughput.
-4. **Energy-aware hover time**: each hover position has a wind-dependent power draw; model battery
-   depletion as $\dot{E} = P_{hover}(\mathbf{p})$; jointly optimise placement and drone rotation
-   schedule (drones swap out for charging) to maximise total uptime of the relay network.
-5. **Adversarial jamming**: a jammer at an unknown location disrupts links within its jamming
-   radius $r_{jam}$; implement an online detection scheme (link quality monitoring) and trigger a
-   repositioning response using the remaining available drones to route around the jammed region.
+1. **Time-varying population**: population density changes throughout the day (e.g., daytime
+   concentration in commercial zones, nighttime in residential zones); optimise a hover-position
+   schedule with at most one repositioning per drone per hour.
+2. **Heterogeneous coverage radii**: drones carry different antenna configurations giving
+   $r_{cov,k} \in \{200, 300, 400\}$ m; incorporate the asymmetric disk model into the SA cost.
+3. **Relay chain bandwidth**: model data throughput $B_{link} \propto r_{comm}^{-2}$ along each
+   relay edge; add a minimum-bandwidth constraint so that the bottleneck link meets a threshold
+   $B_{min}$.
+4. **Simultaneous coverage and relay charging**: drones hover in a rotating schedule —
+   one drone at a time returns to base for recharging while the remaining $K-1$ maintain coverage;
+   minimise coverage gap during the rotation cycle.
+5. **RL placement policy**: train a PPO agent to place $K$ drones sequentially given the
+   population map as a 2D input feature; compare sample efficiency and solution quality against SA
+   on held-out city layouts.
+6. **3D building shadow model**: tall buildings block ground-level signal; extend coverage
+   indicator to account for line-of-sight obstructions using a city building height map.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S047 Signal Relay Placement](S047_signal_relay.md) (single-relay coverage geometry), [S049 Dynamic Zone Search](S049_dynamic_zone.md) (Voronoi partitioning, multi-drone coordination), [S050 Swarm SLAM](S050_slam.md) (inter-drone communication topology during mapping)
-- Follow-ups: [S052 Flood Extent Mapping](S052_flood_extent.md) (coverage maximisation in post-disaster terrain)
-- Algorithmic cross-reference: [S011 Network Flow Interception](../01_pursuit_evasion/S011_network_flow.md) (graph connectivity, flow constraints), [S036 Multi-Depot Routing](../02_logistics_delivery/S036_multi_depot_routing.md) (MST-based path planning)
+- Prerequisites: [S047 Signal Relay Enhancement](S047_signal_relay_enhancement.md), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md), [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md)
+- Follow-ups: [S052 Glacier Area Monitoring](S052_glacier_area_monitoring.md) (persistent multi-drone coverage)
+- Algorithmic cross-reference: [S029 Urban Logistics Scheduling](../02_logistics_delivery/S029_urban_logistics_scheduling.md) (multi-agent area assignment), [S015 Communication Relay Tracking](../01_pursuit_evasion/S015_comm_relay_tracking.md) (relay chain geometry)

@@ -1,132 +1,129 @@
 # S057 Wildlife Population Census
 
 **Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Distance-Sampling Census + Lawnmower Coverage | **Dimension**: 2D
 
 ---
 
 ## Problem Definition
 
-**Setup**: A single drone surveys a $500 \times 300$ m savanna reserve to count a target wildlife
-species. The true population size is $N_{true} = 40$ animals. Animals are modelled as point
-targets whose locations are drawn from a **2D spatial Poisson process** with non-uniform intensity
-$\lambda(x, y)$: individuals cluster near two water sources, producing a bimodal spatial
-distribution rather than uniform scatter.
+**Setup**: A single survey drone systematically photographs a $500 \times 500$ m wildlife reserve
+to estimate the total population of a ground-dwelling species (e.g., wildebeest, deer). Animals
+are distributed in $G = 20$ spatially clustered groups; each group $g$ occupies a centroid
+$\mathbf{c}_g$ with a Gaussian spread $\sigma_g = 8$ m and contains $n_g \in [1, 20]$ individuals.
+The drone executes a **lawnmower (boustrophedon) scan pattern** at a chosen constant altitude $h$
+and ground speed $v$. Its downward-facing camera has a fixed half-angle field of view
+$\theta_{FOV} = 25°$, producing a ground-level strip of width $w(h) = 2h\tan(\theta_{FOV})$ on
+each pass. Detection of any individual within the scan strip is probabilistic: the probability
+declines with altitude (sensor resolution) and speed (motion blur), and is reduced by a per-group
+camouflage factor $c_g \in [0, 1]$.
 
-The drone flies a **boustrophedon (lawnmower) path** at a fixed altitude $h$. Its nadir-pointing
-sensor has a half-power detection radius $r_{half}$: an animal at ground-range $r$ from the
-drone's nadir point is detected with probability given by a Gaussian roll-off model. The strip
-width is set to $d = 2\,r_{half}$, which is the classical optimal spacing for the half-power
-sensor model. Missed detections and false alarms are both possible.
-
-After the flight the raw count $N_{detected}$ is corrected using the **distance-sampling
-estimator**: the population estimate $N_{est}$ adjusts for the fraction of animals within each
-strip that the sensor is expected to miss. The quality of the estimator is assessed by running
-100 Monte Carlo trials (different random animal placements from the same Poisson process) and
-computing the bias and coefficient of variation of $N_{est}$.
+The core trade-off is **altitude vs. speed**: flying low and slow maximises per-pass detection
+probability but increases mission time; flying high and fast covers the area quickly but misses
+more animals. The scenario compares three fixed operating points and reports estimated vs. true
+counts.
 
 **Roles**:
-- **Animals**: $N_{true}$ stationary point targets placed at mission start via a Poisson draw
-  from $\lambda(x, y)$; they do not move during the flight.
-- **Drone**: single UAV executing a pre-planned lawnmower path; no replanning.
+- **Survey drone**: single agent executing a pre-planned lawnmower trajectory at fixed $(h, v)$.
+- **Animal groups** ($G = 20$): static clusters with known ground-truth size $n_g$, random
+  centroid positions, and individual camouflage ratings $c_g$.
 
-**Objective**: Quantify the accuracy of the distance-sampling population estimator by reporting
-bias $= \mathbb{E}[N_{est}] - N_{true}$, variance $\text{Var}(N_{est})$, and coefficient of
-variation $\text{CV}(N_{est}) = \sigma(N_{est}) / \mathbb{E}[N_{est}]$ over the Monte Carlo ensemble.
+**Objective**: Estimate total population $\hat{N}$ and compare to ground truth $N^* = \sum_g n_g$.
+Evaluate three operating strategies:
+
+1. **High-altitude fast** — $h = 40$ m, $v = 12$ m/s (wide strip, low $P_d$, short mission).
+2. **Mid-altitude medium** — $h = 20$ m, $v = 6$ m/s (balanced).
+3. **Low-altitude slow** — $h = 8$ m, $v = 2$ m/s (narrow strip, high $P_d$, long mission).
+
+Report for each strategy: estimated count $\hat{N}$, miss count, double-count rate, mission
+duration $T_{mission}$, and counting error $\epsilon = |\hat{N} - N^*| / N^*$.
 
 ---
 
 ## Mathematical Model
 
-### Animal Spatial Distribution
+### Scan Strip and Coverage
 
-Animals are distributed according to a 2D inhomogeneous Poisson process with intensity:
+At altitude $h$ with half-angle FOV $\theta_{FOV}$, each lawnmower pass sweeps a strip of width:
 
-$$\lambda(x, y) = \lambda_0 \left[
-    \exp\!\left(-\frac{(x-x_1)^2 + (y-y_1)^2}{2\sigma_c^2}\right)
-  + \exp\!\left(-\frac{(x-x_2)^2 + (y-y_2)^2}{2\sigma_c^2}\right)
-\right]$$
+$$w(h) = 2\,h\,\tan(\theta_{FOV})$$
 
-where $(x_1, y_1)$ and $(x_2, y_2)$ are water-source locations, $\sigma_c$ controls cluster
-spread, and $\lambda_0$ is scaled so that $\iint_{\mathcal{A}} \lambda(x, y)\,dx\,dy = N_{true}$.
-The total animal count per realisation $N \sim \text{Poisson}(N_{true})$; individual locations
-are drawn by thinning a uniform Poisson process with acceptance probability
-$\lambda(x, y) / \lambda_{max}$.
+The number of parallel passes required to cover the $W = 500$ m wide reserve (no overlap) is:
+
+$$n_{passes} = \left\lceil \frac{W}{w(h)} \right\rceil$$
+
+Total lawnmower path length (including turn legs, neglecting turn radius):
+
+$$L_{total}(h) = n_{passes} \cdot W + (n_{passes} - 1) \cdot w(h)$$
+
+Mission duration at ground speed $v$:
+
+$$T_{mission}(h, v) = \frac{L_{total}(h)}{v}$$
 
 ### Detection Probability Model
 
-The drone at position $\mathbf{p}(t)$ detects an animal at ground location $\mathbf{a}_k$ with
-probability:
+For a drone flying at altitude $h$ and ground speed $v$, the probability of detecting a single
+animal that falls within the scan strip footprint is:
 
-$$P_d(r_k) = \exp\!\left(-\frac{r_k^2}{r_{half}^2}\right), \qquad r_k = \|\mathbf{p}(t) - \mathbf{a}_k\|$$
+$$P_d(h, v, c_g) = P_{d0} \cdot \exp(-\alpha\,h) \cdot \exp(-\beta\,v) \cdot (1 - c_g)$$
 
-Here $r_{half}$ is the **half-power radius**: the range at which $P_d = 1/e \approx 0.368$.
-Detection events are drawn as independent Bernoulli trials:
+where:
+- $P_{d0} = 0.95$ — baseline detection probability at ground level, zero speed, no camouflage.
+- $\alpha = 0.04$ m$^{-1}$ — altitude decay coefficient (sensor resolution degradation).
+- $\beta = 0.08$ s/m — speed decay coefficient (motion blur at image capture).
+- $c_g \in [0, 1]$ — camouflage factor for group $g$ (0 = fully visible, 1 = invisible).
 
-$$Z_k \sim \text{Bernoulli}(P_d(r_k)), \quad k = 1, \ldots, N$$
+### Expected Detections per Group
 
-Only animals within the sensor footprint $r_k \leq r_{half}$ (the active strip half-width) are
-considered at each drone position.
+Group $g$ is in the scan footprint of pass $j$ if any individual from that group lies within the
+strip boundaries. Individual $i$ of group $g$ is at position:
 
-### Lawnmower Path and Strip Geometry
+$$\mathbf{x}_{g,i} = \mathbf{c}_g + \boldsymbol{\epsilon}_{g,i}, \qquad
+\boldsymbol{\epsilon}_{g,i} \sim \mathcal{N}(\mathbf{0},\, \sigma_g^2 \mathbf{I})$$
 
-The reserve is divided into parallel east-west strips of width $d = 2\,r_{half}$. The number of
-strips is:
+Let $\mathcal{F}_j(h)$ denote the footprint rectangle of pass $j$ (a $500 \times w(h)$ m strip).
+The indicator $\mathbb{1}[g \in j]$ is 1 if $\mathbf{c}_g$ projects into strip $j$'s lateral
+extent. The expected number of individuals detected from group $g$ on pass $j$ is:
 
-$$N_{strips} = \left\lceil \frac{W}{d} \right\rceil$$
+$$E[\hat{n}_{g,j}] = n_g \cdot \mathbb{1}[g \in j] \cdot P_d(h, v, c_g)$$
 
-where $W = 300$ m is the north-south width of the reserve. Strip $i$ is centred at:
+Summing over all passes and groups gives the expected total count:
 
-$$y_i = y_0 + \left(i + \tfrac{1}{2}\right) d, \quad i = 0, 1, \ldots, N_{strips} - 1$$
+$$E[\hat{N}] = \sum_{g=1}^{G} \sum_{j=1}^{n_{passes}} E[\hat{n}_{g,j}]$$
 
-The boustrophedon direction alternates per strip:
+In simulation each individual detection is drawn as an independent Bernoulli trial:
 
-$$\mathbf{w}_{i}^{start} = \begin{cases}(x_{min},\; y_i) & i \text{ even} \\ (x_{max},\; y_i) & i \text{ odd}\end{cases}, \qquad \mathbf{w}_{i}^{end} = \begin{cases}(x_{max},\; y_i) & i \text{ even} \\ (x_{min},\; y_i) & i \text{ odd}\end{cases}$$
+$$\hat{n}_{g,j} = \sum_{i=1}^{n_g} \mathbb{1}[i \in \mathcal{F}_j] \cdot \text{Bernoulli}(P_d(h, v, c_g))$$
 
-Total path length:
+### Miss Rate and Double-Count Rate
 
-$$L = N_{strips} \cdot H + (N_{strips} - 1) \cdot d$$
+Miss rate (fraction of animals present in footprint but undetected):
 
-where $H = 500$ m is the east-west (along-track) length.
+$$R_{miss}(h, v, c_g) = 1 - P_d(h, v, c_g)$$
 
-### Effective Strip Half-Width (Distance Sampling)
+If adjacent passes overlap (overlap fraction $\delta > 0$), an animal near the strip edge may be
+detected twice. For a strip overlap $\delta = \max(0,\; 2w - W/n_{passes}) / w$, the probability
+an animal in the overlap zone is counted on both passes:
 
-The key quantity for the distance-sampling correction is the **effective strip half-width** $\mu$,
-the distance at which an animal "could just as well have been at zero range with certainty":
+$$P_{double} = P_d^2(h, v, c_g) \cdot \delta$$
 
-$$\mu = \int_0^{\infty} P_d(r)\,dr = \int_0^{\infty} \exp\!\left(-\frac{r^2}{r_{half}^2}\right)dr = \frac{r_{half}\,\sqrt{\pi}}{2}$$
+The expected number of double-counts contributed by group $g$:
 
-The effective strip area swept per unit flight distance is:
+$$E[D_g] = n_g \cdot \mathbb{1}[g \text{ in overlap zone}] \cdot P_{double}$$
 
-$$w_{eff} = 2\mu = r_{half}\,\sqrt{\pi}$$
+### Population Estimate and Error
 
-### Population Estimator
+The raw simulation count $\hat{N}_{raw}$ sums all individual Bernoulli detections across all
+passes, including double-counts. The corrected estimate applies a standard strip-transect
+correction for detection probability:
 
-The expected number of detections per strip of along-track length $H$ given $N_{true}$ animals
-uniformly distributed in area $A_{total} = H \times W$ is:
+$$\hat{N}_{corrected} = \frac{\hat{N}_{raw}}{\overline{P}_d(h, v)}$$
 
-$$\mathbb{E}[N_{det}] = N_{true} \cdot \frac{N_{strips} \cdot w_{eff} \cdot H}{A_{total}}$$
+where $\overline{P}_d(h, v) = P_{d0} \cdot \exp(-\alpha h) \cdot \exp(-\beta v) \cdot (1 - \bar{c})$
+uses the mean camouflage $\bar{c} = \frac{1}{G}\sum_g c_g$.
 
-Inverting this gives the **distance-sampling population estimator**:
+Relative counting error:
 
-$$N_{est} = N_{det} \cdot \frac{A_{total}}{N_{strips} \cdot w_{eff} \cdot H}$$
-
-Because $N_{det}$ is a random variable, $N_{est}$ is also random. The estimator is **unbiased**
-when animals are uniformly distributed; with the non-uniform (clustered) distribution the bias
-measures the effect of spatial heterogeneity.
-
-### Monte Carlo Performance Metrics
-
-Over $M = 100$ independent realisations indexed by $m$:
-
-$$\mathbb{E}[N_{est}] \approx \frac{1}{M}\sum_{m=1}^{M} N_{est}^{(m)}, \qquad
-\text{Bias} = \mathbb{E}[N_{est}] - N_{true}$$
-
-$$\text{Var}(N_{est}) \approx \frac{1}{M-1}\sum_{m=1}^{M}\bigl(N_{est}^{(m)} - \mathbb{E}[N_{est}]\bigr)^2$$
-
-$$\text{CV}(N_{est}) = \frac{\sqrt{\text{Var}(N_{est})}}{\mathbb{E}[N_{est}]}$$
-
-A well-calibrated survey achieves $|\text{Bias}| / N_{true} < 5\%$ and $\text{CV} < 20\%$.
+$$\epsilon = \frac{|\hat{N}_{corrected} - N^*|}{N^*}$$
 
 ---
 
@@ -135,227 +132,109 @@ A well-calibrated survey achieves $|\text{Bias}| / N_{true} < 5\%$ and $\text{CV
 ```python
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from matplotlib.patches import Circle
+import matplotlib.patches as mpatches
 
-# ── Key constants ─────────────────────────────────────────────────────────────
-AREA_W      = 500.0    # m — along-track (east-west) length
-AREA_H      = 300.0    # m — cross-track (north-south) width
-N_TRUE      = 40       # true animal count (expected Poisson mean)
-R_HALF      = 20.0     # m — half-power detection radius
-STRIP_W     = 2 * R_HALF           # m — optimal strip width for half-power model
-V_DRONE     = 10.0     # m/s — cruise speed
-DT          = 1.0      # s — simulation timestep
-N_MC        = 100      # Monte Carlo trials
+# Key constants
+AREA_SIZE    = 500.0      # m — reserve side length
+N_GROUPS     = 20         # number of animal clusters
+N_ANIMALS_RANGE = (1, 20) # animals per group
+SIGMA_GROUP  = 8.0        # m — intra-group spatial spread
+THETA_FOV    = 25.0       # degrees — camera half-angle FOV
+P_D0         = 0.95       # baseline detection probability
+ALPHA        = 0.04       # m^-1 — altitude decay
+BETA         = 0.08       # s/m — speed decay
+N_MONTE      = 50         # Monte Carlo trials per strategy
 
-# Water source locations and cluster spread
-WATER_SOURCES = [(150.0, 80.0), (350.0, 220.0)]
-SIGMA_CLUSTER = 60.0   # m — std dev of animal clustering around each source
+# Three operating strategies: (altitude m, speed m/s, label)
+STRATEGIES = [
+    (40.0, 12.0, "High-alt fast"),
+    (20.0,  6.0, "Mid-alt medium"),
+    ( 8.0,  2.0, "Low-alt slow"),
+]
 
-# ── Poisson animal placement ──────────────────────────────────────────────────
-def intensity(x, y):
-    """Non-uniform intensity lambda(x,y); un-normalised."""
-    val = 0.0
-    for (wx, wy) in WATER_SOURCES:
-        val += np.exp(-((x - wx)**2 + (y - wy)**2) / (2 * SIGMA_CLUSTER**2))
-    return val
+def strip_width(h):
+    return 2.0 * h * np.tan(np.radians(THETA_FOV))
 
-def place_animals(n_true, rng):
-    """
-    Rejection sampling from 2D Poisson process with intensity lambda(x,y).
-    Expected count = n_true; actual count ~ Poisson(n_true).
-    """
-    # Thinning: draw N ~ Poisson(n_true) from uniform, accept with P=lambda/lambda_max
-    n_candidates = rng.poisson(n_true * 4)   # oversample before thinning
-    xs = rng.uniform(0, AREA_W, n_candidates)
-    ys = rng.uniform(0, AREA_H, n_candidates)
-    lam = intensity(xs, ys)
-    lam_max = intensity(*WATER_SOURCES[0])    # approximate max at a water source
-    lam_max = max(lam_max, intensity(*WATER_SOURCES[1]))
-    accept = rng.random(n_candidates) < lam / lam_max
-    return xs[accept], ys[accept]
+def mission_duration(h, v):
+    w = strip_width(h)
+    n_passes = int(np.ceil(AREA_SIZE / w))
+    path_len = n_passes * AREA_SIZE + (n_passes - 1) * w
+    return path_len / v, n_passes, w
 
-# ── Lawnmower path ─────────────────────────────────────────────────────────────
-def build_lawnmower(strip_w=STRIP_W):
-    """Return list of (x, y) waypoints for boustrophedon scan of the reserve."""
-    n_strips = int(np.ceil(AREA_H / strip_w))
-    waypoints = []
-    for i in range(n_strips):
-        yc = (i + 0.5) * strip_w
-        if i % 2 == 0:
-            waypoints.append((0.0, yc))
-            waypoints.append((AREA_W, yc))
-        else:
-            waypoints.append((AREA_W, yc))
-            waypoints.append((0.0, yc))
-    return waypoints, n_strips
+def detection_prob(h, v, camouflage):
+    return P_D0 * np.exp(-ALPHA * h) * np.exp(-BETA * v) * (1.0 - camouflage)
 
-# ── Detection simulation ───────────────────────────────────────────────────────
-def simulate_survey(ax, ay, waypoints, rng):
-    """
-    Fly the lawnmower path; simulate detections for each animal.
-    Returns number of detections and list of (drone_x, drone_y) trajectory.
-    """
-    positions = []
-    detected = np.zeros(len(ax), dtype=bool)
+def generate_reserve(rng):
+    """Randomly place G animal groups with sizes and camouflage factors."""
+    centroids   = rng.uniform(20, AREA_SIZE - 20, size=(N_GROUPS, 2))
+    group_sizes = rng.integers(*N_ANIMALS_RANGE, size=N_GROUPS)
+    camouflage  = rng.uniform(0.0, 0.6, size=N_GROUPS)
+    return centroids, group_sizes, camouflage
 
-    pos = np.array(waypoints[0], dtype=float)
-    positions.append(pos.copy())
+def simulate_census(h, v, centroids, group_sizes, camouflage, rng):
+    """Run one lawnmower census; return raw detection count and per-group info."""
+    w = strip_width(h)
+    n_passes = int(np.ceil(AREA_SIZE / w))
+    strip_centres_y = np.array([w * (j + 0.5) for j in range(n_passes)])
 
-    for wp in waypoints[1:]:
-        target = np.array(wp, dtype=float)
-        direction = target - pos
-        dist = np.linalg.norm(direction)
-        if dist < 1e-6:
-            continue
-        unit = direction / dist
-        n_steps = max(1, int(np.ceil(dist / (V_DRONE * DT))))
-        step = dist / n_steps * unit
+    total_detected = 0
+    total_missed   = 0
 
-        for _ in range(n_steps):
-            pos = pos + step
-            positions.append(pos.copy())
-            # Detection check for all animals
-            dx = ax - pos[0]
-            dy = ay - pos[1]
-            r = np.sqrt(dx**2 + dy**2)
-            in_strip = r <= R_HALF
-            pd = np.exp(-(r**2) / (R_HALF**2))
-            hits = in_strip & ~detected & (rng.random(len(ax)) < pd)
-            detected |= hits
+    for g in range(N_GROUPS):
+        pd = detection_prob(h, v, camouflage[g])
+        # Sample individual positions for this group
+        positions = centroids[g] + rng.normal(0, SIGMA_GROUP, size=(group_sizes[g], 2))
+        positions = np.clip(positions, 0, AREA_SIZE)
 
-    return int(detected.sum()), np.array(positions)
+        seen_this_group = np.zeros(group_sizes[g], dtype=bool)
 
-# ── Distance-sampling estimator ────────────────────────────────────────────────
-MU = R_HALF * np.sqrt(np.pi) / 2.0      # effective strip half-width (m)
-W_EFF = 2 * MU                           # effective strip full-width (m)
+        for j, cy in enumerate(strip_centres_y):
+            y_lo = cy - w / 2.0
+            y_hi = cy + w / 2.0
+            in_strip = (positions[:, 1] >= y_lo) & (positions[:, 1] < y_hi)
+            for idx in np.where(in_strip)[0]:
+                if rng.random() < pd:
+                    total_detected += 1
+                    seen_this_group[idx] = True
 
-def population_estimate(n_det, n_strips):
-    """Distance-sampling correction: N_est = N_det * A_total / (n_strips * w_eff * H)."""
-    effective_area = n_strips * W_EFF * AREA_W
-    return n_det * (AREA_W * AREA_H) / effective_area
+        total_missed += np.sum(~seen_this_group)
 
-# ── Monte Carlo loop ───────────────────────────────────────────────────────────
-def run_monte_carlo(n_trials=N_MC, seed=0):
-    rng = np.random.default_rng(seed)
-    waypoints, n_strips = build_lawnmower()
-    n_est_list = []
-    n_det_list = []
-
-    for _ in range(n_trials):
-        ax, ay = place_animals(N_TRUE, rng)
-        n_det, _ = simulate_survey(ax, ay, waypoints, rng)
-        n_est = population_estimate(n_det, n_strips)
-        n_det_list.append(n_det)
-        n_est_list.append(n_est)
-
-    n_est_arr = np.array(n_est_list)
-    mean_est  = n_est_arr.mean()
-    bias      = mean_est - N_TRUE
-    std_est   = n_est_arr.std(ddof=1)
-    cv        = std_est / mean_est
-
-    print(f"N_true     : {N_TRUE}")
-    print(f"Mean N_det : {np.mean(n_det_list):.1f}")
-    print(f"Mean N_est : {mean_est:.1f}")
-    print(f"Bias       : {bias:+.2f}  ({100*bias/N_TRUE:+.1f}%)")
-    print(f"Std(N_est) : {std_est:.2f}")
-    print(f"CV(N_est)  : {cv*100:.1f}%")
-
-    return n_est_arr, n_det_list, waypoints, n_strips
-
-# ── Visualisation: single-trial animal map + detections ───────────────────────
-def plot_animal_map(ax_locs, ay_locs, detected_mask, waypoints, trajectory):
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.scatter(ax_locs[~detected_mask], ay_locs[~detected_mask],
-               c="steelblue", s=30, zorder=3, label="Missed animals")
-    ax.scatter(ax_locs[detected_mask], ay_locs[detected_mask],
-               c="red", s=50, marker="*", zorder=4, label="Detected animals")
-    traj = np.array(trajectory)
-    ax.plot(traj[:, 0], traj[:, 1], "k-", lw=0.6, alpha=0.5, label="Drone path")
-    for (wx, wy) in WATER_SOURCES:
-        ax.plot(wx, wy, "g^", ms=10, zorder=5)
-    ax.set_xlim(0, AREA_W)
-    ax.set_ylim(0, AREA_H)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_title("Wildlife Census — Single Survey (animal map + detections)")
-    ax.legend(loc="upper right", fontsize=8)
-    plt.tight_layout()
-    return fig
-
-# ── Visualisation: N_est distribution over MC trials ─────────────────────────
-def plot_mc_distribution(n_est_arr):
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.hist(n_est_arr, bins=20, color="steelblue", edgecolor="white", alpha=0.8)
-    ax.axvline(N_TRUE, color="green", lw=2, linestyle="--", label=f"N_true = {N_TRUE}")
-    ax.axvline(n_est_arr.mean(), color="red", lw=2, linestyle="-",
-               label=f"Mean N_est = {n_est_arr.mean():.1f}")
-    ax.set_xlabel("Population estimate N_est")
-    ax.set_ylabel("Frequency")
-    ax.set_title(f"Distance-Sampling Estimator Distribution ({N_MC} Monte Carlo trials)")
-    ax.legend()
-    plt.tight_layout()
-    return fig
-
-# ── Animation: drone survey ───────────────────────────────────────────────────
-def build_animation(trajectory, ax_locs, ay_locs, n_strips):
-    """Top-down animation of the drone sweeping the reserve."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.set_xlim(0, AREA_W)
-    ax.set_ylim(0, AREA_H)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.scatter(ax_locs, ay_locs, c="steelblue", s=25, zorder=3, label="Animals")
-    for (wx, wy) in WATER_SOURCES:
-        ax.plot(wx, wy, "g^", ms=10, zorder=5, label="Water source")
-    path_line, = ax.plot([], [], "k-", lw=0.8, alpha=0.5)
-    drone_pt,  = ax.plot([], [], "ro", ms=8, zorder=6, label="Drone")
-    footprint  = Circle((0, 0), R_HALF, color="red", fill=False, lw=1.2, alpha=0.6)
-    ax.add_patch(footprint)
-    title = ax.set_title("Wildlife Census — t = 0 s")
-    ax.legend(loc="upper right", fontsize=8)
-
-    step = max(1, len(trajectory) // 400)   # cap at ~400 frames
-    frames = trajectory[::step]
-
-    def init():
-        path_line.set_data([], [])
-        drone_pt.set_data([], [])
-        return path_line, drone_pt, footprint, title
-
-    def update(i):
-        fx, fy = frames[i]
-        path_line.set_data(frames[:i+1, 0], frames[:i+1, 1])
-        drone_pt.set_data([fx], [fy])
-        footprint.center = (fx, fy)
-        title.set_text(f"Wildlife Census — step {i*step}")
-        return path_line, drone_pt, footprint, title
-
-    ani = animation.FuncAnimation(fig, update, frames=len(frames),
-                                  init_func=init, blit=True, interval=50)
-    return fig, ani
+    return total_detected, total_missed
 
 def run_simulation():
-    n_est_arr, n_det_list, waypoints, n_strips = run_monte_carlo()
+    rng = np.random.default_rng(seed=42)
+    centroids, group_sizes, camouflage = generate_reserve(rng)
+    N_true = int(group_sizes.sum())
 
-    # Single-trial visual
-    rng_vis = np.random.default_rng(42)
-    ax_locs, ay_locs = place_animals(N_TRUE, rng_vis)
-    n_det_vis, traj_vis = simulate_survey(ax_locs, ay_locs, waypoints, rng_vis)
-    detected_mask = np.zeros(len(ax_locs), dtype=bool)
-    # Recompute which animals were detected for plotting
-    detected_mask_full = np.zeros(len(ax_locs), dtype=bool)
-    pos = np.array(waypoints[0], dtype=float)
-    rng_vis2 = np.random.default_rng(42)
-    ax_locs2, ay_locs2 = place_animals(N_TRUE, rng_vis2)
-    _, traj = simulate_survey(ax_locs2, ay_locs2, waypoints, np.random.default_rng(42))
+    results = {}
+    for (h, v, label) in STRATEGIES:
+        T_mission, n_passes, w = mission_duration(h, v)
+        pd_mean = detection_prob(h, v, float(np.mean(camouflage)))
 
-    fig1 = plot_animal_map(ax_locs, ay_locs, detected_mask, waypoints, traj_vis)
-    fig2 = plot_mc_distribution(n_est_arr)
-    fig3, ani = build_animation(traj_vis, ax_locs, ay_locs, n_strips)
+        counts_raw = []
+        counts_corr = []
+        misses = []
+        for _ in range(N_MONTE):
+            raw, missed = simulate_census(h, v, centroids, group_sizes, camouflage, rng)
+            corr = raw / pd_mean if pd_mean > 0 else raw
+            counts_raw.append(raw)
+            counts_corr.append(corr)
+            misses.append(missed)
 
-    return fig1, fig2, fig3, ani
+        results[label] = {
+            "h": h, "v": v,
+            "strip_width": w,
+            "n_passes": n_passes,
+            "T_mission": T_mission,
+            "pd_mean": pd_mean,
+            "raw_mean": np.mean(counts_raw),
+            "corr_mean": np.mean(counts_corr),
+            "corr_std": np.std(counts_corr),
+            "miss_mean": np.mean(misses),
+            "error": abs(np.mean(counts_corr) - N_true) / N_true,
+        }
+
+    return results, N_true, centroids, group_sizes, camouflage
 ```
 
 ---
@@ -364,70 +243,65 @@ def run_simulation():
 
 | Parameter | Value |
 |-----------|-------|
-| Reserve area | 500 × 300 m |
-| True population $N_{true}$ | 40 animals |
-| Half-power detection radius $r_{half}$ | 20 m |
-| Optimal strip width $d = 2\,r_{half}$ | 40 m |
-| Effective strip half-width $\mu = r_{half}\sqrt{\pi}/2$ | ≈ 17.72 m |
-| Effective strip width $w_{eff} = 2\mu$ | ≈ 35.45 m |
-| Number of strips $N_{strips}$ | $\lceil 300/40 \rceil = 8$ |
-| Total path length $L$ | $8 \times 500 + 7 \times 40 = 4280$ m |
-| Drone cruise speed $v$ | 10 m/s |
-| Simulation timestep $\Delta t$ | 1 s |
-| Water source 1 $(x_1, y_1)$ | (150, 80) m |
-| Water source 2 $(x_2, y_2)$ | (350, 220) m |
-| Cluster spread $\sigma_c$ | 60 m |
-| Monte Carlo trials $M$ | 100 |
-| Target CV threshold | < 20 % |
-| Target bias threshold | $< 5\%$ of $N_{true}$ |
+| Reserve area | 500 × 500 m |
+| Animal groups $G$ | 20 |
+| Animals per group $n_g$ | 1 – 20 (uniform random) |
+| Intra-group spread $\sigma_g$ | 8 m |
+| Camera half-angle $\theta_{FOV}$ | 25° |
+| Baseline detection $P_{d0}$ | 0.95 |
+| Altitude decay $\alpha$ | 0.04 m$^{-1}$ |
+| Speed decay $\beta$ | 0.08 s/m |
+| Camouflage factor $c_g$ | 0.0 – 0.6 (uniform random) |
+| High-alt fast $(h, v)$ | 40 m, 12 m/s |
+| Mid-alt medium $(h, v)$ | 20 m, 6 m/s |
+| Low-alt slow $(h, v)$ | 8 m, 2 m/s |
+| Strip width at 40 m / 20 m / 8 m | ~37 m / ~19 m / ~7 m |
+| Monte Carlo trials per strategy | 50 |
 
 ---
 
 ## Expected Output
 
-- **Animal map + detections plot**: 2D top-down view of the $500 \times 300$ m reserve; blue dots
-  for missed animals, red stars for detected animals; green triangles at water-source locations;
-  black lawnmower path overlaid; title reporting $N_{true}$, $N_{detected}$, and $N_{est}$ for
-  the single representative trial.
-- **$N_{est}$ distribution histogram**: frequency histogram of the population estimate over
-  $M = 100$ Monte Carlo trials; green dashed vertical line at $N_{true} = 40$; red solid
-  vertical line at $\mathbb{E}[N_{est}]$; title or legend reporting bias, $\sigma(N_{est})$, and
-  CV.
-- **Animation (drone survey)**: top-down view of the drone sweeping the reserve strip by strip;
-  red drone marker with sensor footprint circle; trail of path history; animal locations visible
-  as static blue dots; frame counter in title.
-- **Console metrics** (printed):
-  - $N_{true}$, mean $N_{detected}$, mean $N_{est}$
-  - Bias (absolute and as % of $N_{true}$)
-  - $\sigma(N_{est})$ and $\text{CV}(N_{est})$
+- **Reserve map**: 2D top-down scatter plot of the $500 \times 500$ m reserve showing all animal
+  group centroids sized by $n_g$ and colour-coded by camouflage factor; lawnmower strip boundaries
+  overlaid as dashed lines for the mid-altitude strategy.
+- **Detection probability surface**: 2D heatmap of $P_d(h, v, \bar{c})$ over an $h \in [5, 50]$
+  m vs. $v \in [1, 15]$ m/s grid, with the three operating points marked.
+- **Count distribution**: box-and-whisker plots of corrected count $\hat{N}_{corrected}$ across
+  Monte Carlo trials for each strategy; true count $N^*$ shown as a red dashed horizontal line.
+- **Miss vs. mission time scatter**: scatter plot with each strategy as a labelled point, x-axis =
+  $T_{mission}$ (s), y-axis = mean miss count; Pareto-front curve connecting the strategies.
+- **Strategy comparison table**: printed summary of strip width, number of passes, mission time,
+  mean $P_d$, mean raw count, mean corrected count, miss rate, and relative error $\epsilon$ for
+  all three strategies.
+- **Animation (GIF)**: top-down view of the drone executing the mid-altitude lawnmower scan,
+  animal groups revealed as they enter the camera footprint (filled circles = detected,
+  hollow circles = undetected so far).
 
 ---
 
 ## Extensions
 
-1. **Variable strip width optimisation**: sweep $d$ from $r_{half}$ to $4\,r_{half}$ and plot
-   CV$(N_{est})$ vs $d$; verify that $d = 2\,r_{half}$ (equivalently, $d = w_{eff}/\sqrt{\pi/2}$)
-   minimises CV for the half-power detection model.
-2. **Non-uniform density correction**: partition the reserve into sub-cells and estimate
-   $\lambda(x,y)$ from the spatial distribution of detections using kernel density estimation;
-   apply a spatially varying correction factor to reduce bias under strong clustering.
-3. **Multi-altitude comparison**: vary flight altitude $h \in \{20, 40, 80\}$ m and model
-   $r_{half}(h) = k\,h$ (sensor FOV scaling); show the trade-off between wider footprint (faster
-   coverage, higher CV) and narrower footprint (more strips, lower CV per strip).
-4. **Transect line observer model**: replace the drone-nadir sensor with a camera with a
-   cross-track detection function fit to real distance-sampling data (half-normal, hazard-rate);
-   compare estimator performance to the Gaussian roll-off baseline.
-5. **Movement during survey**: allow animals to perform a correlated random walk during the
-   flight; quantify the additional bias introduced when the survey assumption of stationary
-   targets is violated.
-6. **Multi-species simultaneous census**: deploy two drones with different sensor wavelengths
-   (thermal for nocturnal species, optical for diurnal); plan non-overlapping lawnmower bands
-   and combine per-species distance-sampling estimates into a joint population report.
+1. **Adaptive altitude control**: allow the drone to vary $h$ per strip based on a prior density
+   map of expected animal locations — descend over high-probability clusters, climb over sparse
+   terrain — and measure the improvement in $\epsilon$ against fixed-altitude baselines.
+2. **Multi-drone parallel sweeps**: deploy $N = 3$ drones on interleaved lawnmower lanes to
+   reduce $T_{mission}$; implement lane-assignment to minimise overlap while maintaining full
+   coverage and study the throughput vs. coordination overhead trade-off.
+3. **Moving animals**: introduce a random-walk drift $\mathbf{v}_{drift} \sim \mathcal{N}(\mathbf{0},
+   \sigma_v^2 \mathbf{I})$ per timestep; quantify how animal motion inflates double-counts and
+   degrades the strip-transect correction.
+4. **Camera sensor model with false positives**: add a false-alarm rate $P_{fa}$ (e.g., rocks or
+   shadows misclassified as animals); derive a likelihood-ratio test threshold that balances
+   $P_d$ and $P_{fa}$, and assess impact on population estimate bias.
+5. **RL altitude policy**: train a PPO agent to select $h_j$ for each lawnmower pass $j$ based
+   on a running partial count map; evaluate against the fixed-altitude oracle on reserves with
+   heterogeneous camouflage distributions.
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md), [S042 Missing Person Localization](S042_missing_person.md)
-- Follow-ups: [S058 Coral Reef Mapping](S058_coral_reef.md), [S059 Glacier Retreat Monitoring](S059_glacier_retreat.md)
-- Algorithmic cross-reference: [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md) (probabilistic detection and estimation), [S067 Spray Overlap Optimization](../../04_industrial_agriculture/S067_spray_overlap_optimization.md) (strip-width trade-off in coverage planning)
+- Prerequisites: [S041 Wildfire Boundary](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S058](S058_flood_mapping.md) (area coverage with sensor fusion), [S059](S059_oil_spill_detection.md) (contaminant census)
+- Algorithmic cross-reference: [S044 Wall Crack Inspection](S044_wall_crack.md) (sensor footprint geometry), [S042 Missing Person Localization](S042_missing_person.md) (probabilistic detection model)
