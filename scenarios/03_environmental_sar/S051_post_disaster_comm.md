@@ -1,6 +1,6 @@
 # S051 Post-Disaster Communication Network Restoration
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 

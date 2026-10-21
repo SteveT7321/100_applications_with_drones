@@ -80,7 +80,7 @@
 
 ---
 
-## Domain 3: Environmental & SAR — 10/20
+## Domain 3: Environmental & SAR — 11/20
 
 - [x] **S041** Wildfire Boundary Scan
 - [x] **S042** Missing Person Search
@@ -92,7 +92,7 @@
 - [x] **S048** Lawnmower Coverage
 - [x] **S049** Dynamic Zone Assignment
 - [x] **S050** Swarm SLAM
-- [ ] **S051** Post-Disaster Comm Network
+- [x] **S051** Post-Disaster Comm Network
 - [ ] **S052** Glacier Area Monitoring
 - [ ] **S053** Coral Reef 3D Mapping
 - [ ] **S054** Minefield Detection
@@ -161,7 +161,7 @@
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 9 | 20 |
+| Environmental & SAR | 11 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **49** | **100** |
+| **Total** | **51** | **100** |

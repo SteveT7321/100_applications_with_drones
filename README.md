@@ -93,10 +93,10 @@ drones/
 |--------|------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 10 | 20 |
+| Environmental & SAR | 11 | 20 |
 | Industrial & Agriculture | 0 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **50** | **100** |
+| **Total** | **51** | **100** |
 
 > **3D Upgrades**: 23 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020) and 5 in Logistics & Delivery (S022, S024, S027, S028, S029).
 
