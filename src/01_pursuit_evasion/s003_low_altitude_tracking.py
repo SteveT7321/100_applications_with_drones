@@ -6,8 +6,11 @@ Compares two cases: with vs. without terrain-aware altitude control.
 
 Key features:
   - Gaussian hill terrain model
-  - Ground effect thrust correction (CF2X propeller)
-  - Altitude safety constraint: z >= h_terrain + h_safe
+  - Altitude safety constraint: z >= h_terrain + h_safe (climb has priority
+    over horizontal speed when the 5 m/s limit is reached)
+  - Ground effect factor k_GE (CF2X propeller) evaluated along the flown path
+    as a DIAGNOSTIC only: the kinematic point-mass model has no thrust, so
+    k_GE does not enter the dynamics
   - Case comparison: terrain avoidance ON vs OFF (crash)
 
 Usage:
@@ -61,7 +64,8 @@ def ground_effect_factor(h_above_terrain):
     """
     Thrust correction for ground effect.
     k_GE(h) = 1 + 0.16*(R/h)² / (1 + (R/h)²)
-    Returns factor >= 1; effective max speed multiplied by k_GE.
+    Returns factor >= 1. Diagnostic only — logged along the trajectory,
+    not applied to the (velocity-commanded) point-mass dynamics.
     """
     ratio = PROP_RADIUS / max(h_above_terrain, 1e-4)
     return 1.0 + 0.16 * ratio**2 / (1.0 + ratio**2)
@@ -72,7 +76,9 @@ def ground_effect_factor(h_above_terrain):
 def run_simulation(use_terrain_avoidance):
     """
     Pure pursuit toward TARGET_POS from INIT_PURSUER.
-    If use_terrain_avoidance: next position is clamped to h_terrain + H_SAFE.
+    If use_terrain_avoidance: next position is lifted to h_terrain + H_SAFE;
+    if the lifted step would exceed PURSUER_SPEED, the vertical component is
+    kept and the horizontal component is shortened so that |v| = PURSUER_SPEED.
     Otherwise: drone only avoids z < 0 (flat ground), can hit the hill.
     """
     pursuer = DroneBase(INIT_PURSUER, max_speed=PURSUER_SPEED, dt=DT)
@@ -102,7 +108,7 @@ def run_simulation(use_terrain_avoidance):
             capture_time = step * DT
             break
 
-        # Log ground effect at current height
+        # Log ground effect at current height (diagnostic only)
         h_above = max(z - h_cur, 1e-4)
         k_ge_log.append(ground_effect_factor(h_above))
 
@@ -120,6 +126,14 @@ def run_simulation(use_terrain_avoidance):
         next_pos[2] = max(next_pos[2], 0.0)
 
         v_cmd = (next_pos - pursuer.pos) / DT
+        speed = np.linalg.norm(v_cmd)
+        if speed > PURSUER_SPEED:
+            # Climb has priority: keep vz, shrink horizontal speed
+            vz = np.clip(v_cmd[2], -PURSUER_SPEED, PURSUER_SPEED)
+            v_xy = v_cmd[:2]
+            v_xy_max = np.sqrt(max(PURSUER_SPEED**2 - vz**2, 0.0))
+            v_xy = v_xy * v_xy_max / (np.linalg.norm(v_xy) + 1e-12)
+            v_cmd = np.array([v_xy[0], v_xy[1], vz])
         pursuer.step(v_cmd)
 
     return (
@@ -200,16 +214,12 @@ def plot_altitude_time(results, out_dir):
         h_terrain = h_log
 
         ax.plot(times, z_drone, color=color, linewidth=1.8, label=f'Drone z ({label})')
-        ax.fill_between(times, 0, h_terrain, color=color, alpha=0.12)
-
-    # Show terrain height on a reference line-of-flight (x from -4 to 4, y=0)
-    x_sample = np.linspace(-4, 4, 300)
-    t_sample  = (x_sample - INIT_PURSUER[0]) / PURSUER_SPEED
-    h_sample  = terrain_height(x_sample, np.zeros_like(x_sample))
-    ax.fill_between(t_sample, 0, h_sample, color='saddlebrown', alpha=0.20,
-                    label='Terrain profile (y = 0)')
-    ax.plot(t_sample, h_sample + H_SAFE, 'k--', linewidth=1,
-            alpha=0.5, label=f'Safety floor (terrain + {H_SAFE} m)')
+        ax.fill_between(times, 0, h_terrain, color=color, alpha=0.15,
+                        label=f'Terrain under drone ({label})')
+        if label == 'With avoidance':
+            # Safety floor evaluated at the drone's actual (x, y) at each time
+            ax.plot(times, h_terrain + H_SAFE, 'k--', linewidth=1, alpha=0.6,
+                    label=f'Safety floor under drone (terrain + {H_SAFE} m)')
 
     ax.axhline(0.5, color='gray', linestyle=':', linewidth=1, label='Start/Target altitude (0.5 m)')
     ax.set_xlabel('Time (s)')
@@ -229,7 +239,7 @@ def plot_altitude_time(results, out_dir):
 
 
 def plot_ground_effect(results, out_dir):
-    """Ground effect factor k_GE along the terrain-avoidance trajectory."""
+    """Ground effect factor k_GE along the terrain-avoidance trajectory (diagnostic)."""
     traj, captured, cap_t, crashed, crash_t, k_ge, h_log = results[0]  # avoidance case
     n = len(k_ge)
     times = np.arange(n) * DT
@@ -242,7 +252,7 @@ def plot_ground_effect(results, out_dir):
 
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Ground Effect Factor $k_{GE}$')
-    ax.set_title('S003 Low-Altitude Tracking — Ground Effect Factor\n'
+    ax.set_title('S003 Low-Altitude Tracking — Ground Effect Factor (diagnostic, not applied)\n'
                  f'(propeller radius R = {PROP_RADIUS} m, CF2X model)')
     ax.set_xlim(0, times[-1])
     ax.legend(fontsize=8)
@@ -323,7 +333,18 @@ if __name__ == '__main__':
             status = 'not captured (timeout)'
 
         print(f'[{label:>28}]  {status}')
+        clr = traj[:, 2] - terrain_height(traj[:, 0], traj[:, 1])
+        path_len = np.sum(np.linalg.norm(np.diff(traj, axis=0), axis=1))
+        print(f'{"":>32}path length {path_len:.3f} m, peak z {traj[:, 2].max():.3f} m, '
+              f'min clearance above terrain {clr.min():.4f} m, '
+              f'max k_GE {k_ge.max():.4f}')
         results.append((traj, captured, cap_t, crashed, crash_t, k_ge, h_log))
+
+    d_straight = np.linalg.norm(TARGET_POS - INIT_PURSUER) - CAPTURE_R
+    print(f'Straight-line path to capture: {d_straight:.3f} m '
+          f'({d_straight / PURSUER_SPEED:.3f} s at {PURSUER_SPEED} m/s)')
+    x_act = np.sqrt(HILL_SIGMA2 * np.log(HILL_H / (INIT_PURSUER[2] - H_SAFE)))
+    print(f'Safety floor rises above start altitude for |x| < {x_act:.3f} m')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories_3d(results, out_dir)

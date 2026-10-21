@@ -23,7 +23,7 @@ $$k_{GE}(h) = 1 + \frac{0.16 \cdot (R/h)^2}{1 + (R/h)^2}$$
 
 where $R$ is the propeller radius (approximately 0.05 m).
 
-When $h < 0.5$ m, thrust increases by approximately 10~20%.
+With $R = 0.05$ m the effect is small at the flight altitudes considered here: $k_{GE}(0.5\text{ m}) = 1.0016$ (+0.16%), $k_{GE}(0.1\text{ m}) = 1.032$ (+3.2%), $k_{GE}(R) = 1.08$ (+8%), approaching the +16% upper bound only as $h \to 0$. *(Corrected: an earlier version said "+10~20% for h < 0.5 m", which the formula does not give.)*
 
 ### Altitude Safety Constraint
 
