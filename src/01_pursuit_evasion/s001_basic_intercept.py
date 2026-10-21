@@ -161,6 +161,12 @@ def save_animation(traj, out_dir):
 if __name__ == '__main__':
     traj, captured, capture_time = run_simulation()
 
+    d0 = np.linalg.norm(TARGET_POS - INIT_POS)
+    speeds = np.linalg.norm(np.diff(traj, axis=0), axis=1) / DT
+    t_sat = np.sum(speeds > MAX_SPEED - 1e-6) * DT
+    print(f'Initial distance: {d0:.3f} m')
+    print(f'Straight-line lower bound at v_max: {(d0 - CAPTURE_R) / MAX_SPEED:.2f} s')
+    print(f'Time flown at v_max (saturated): {t_sat:.2f} s')
     if captured:
         final_dist = np.linalg.norm(traj[-1] - TARGET_POS)
         print(f'Captured! Time: {capture_time:.2f}s, Distance: {final_dist:.3f}m')
