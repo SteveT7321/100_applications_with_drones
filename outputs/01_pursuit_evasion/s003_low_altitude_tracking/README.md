@@ -119,14 +119,14 @@ python src/01_pursuit_evasion/s003_low_altitude_tracking.py
 1. Add a moving target that also avoids terrain (full low-altitude chase)
 2. Multiple hills → path planning with potential fields
 3. Use sensor-noise altitude measurement (ultrasonic altimeter model)
-4. Urban canyon pursuit: narrow corridors instead of open hills → [S004](../../scenarios/01_pursuit_evasion/S004_3d_obstacle_avoidance.md)
+4. Urban canyon pursuit: narrow corridors instead of open hills → [S004](../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
 
 ---
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Next: [S004](../../scenarios/01_pursuit_evasion/S004_3d_obstacle_avoidance.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Next: [S004](../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
 
 ## References
 

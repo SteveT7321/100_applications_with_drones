@@ -99,5 +99,5 @@ python src/01_pursuit_evasion/s013_pincer_movement.py
 
 ## Related Scenarios
 
-- Prerequisites: [S011](../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S012](../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
-- Follow-ups: [S014](../../scenarios/01_pursuit_evasion/S014_decoy_lure.md), [S017](../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)
+- Prerequisites: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
+- Follow-ups: [S014](../../../scenarios/01_pursuit_evasion/S014_decoy_lure.md), [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)

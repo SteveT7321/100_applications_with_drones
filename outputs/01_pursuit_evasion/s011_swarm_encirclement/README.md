@@ -98,5 +98,5 @@ python src/01_pursuit_evasion/s011_swarm_encirclement.py
 
 ## Related Scenarios
 
-- Prerequisites: [S010](../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md)
-- Follow-ups: [S012](../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md), [S013](../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Prerequisites: [S010](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md)
+- Follow-ups: [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)

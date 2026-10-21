@@ -111,6 +111,6 @@ python src/02_logistics_delivery/s036_last_mile_relay.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S027](../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md)
-- Follow-ups: [S037](../../scenarios/02_logistics_delivery/S037_reverse_logistics.md), [S039](../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md)
-- Algorithmic cross-reference: [S027](../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (aerial relay), [S032](../../scenarios/02_logistics_delivery/S032_charging_queue.md) (battery management)
+- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md)
+- Follow-ups: [S037](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md), [S039](../../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md)
+- Algorithmic cross-reference: [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (aerial relay), [S032](../../../scenarios/02_logistics_delivery/S032_charging_queue.md) (battery management)

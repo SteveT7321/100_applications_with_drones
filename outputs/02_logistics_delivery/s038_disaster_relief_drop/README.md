@@ -115,6 +115,6 @@ python src/02_logistics_delivery/s038_disaster_relief_drop.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S034](../../scenarios/02_logistics_delivery/S034_weather_rerouting.md)
-- Follow-ups: [S039](../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md), [S040](../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S037](../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW), [S033](../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (dynamic insertion)
+- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md)
+- Follow-ups: [S039](../../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S037](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW), [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (dynamic insertion)

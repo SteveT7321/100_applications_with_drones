@@ -134,5 +134,5 @@ python src/01_pursuit_evasion/s017_swarm_vs_swarm.py
 
 ## Related Scenarios
 
-- Prerequisites: [S011](../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013](../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
-- Follow-ups: [S018](../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md), [S019](../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)
+- Prerequisites: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Follow-ups: [S018](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md), [S019](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)

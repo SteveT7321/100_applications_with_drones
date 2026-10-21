@@ -132,6 +132,6 @@ The Gauss-Newton solver consistently outperforms linear least squares at high no
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](../../scenarios/03_environmental_sar/S041_wildfire_boundary_scan.md), [S042 Missing Person Search](../../scenarios/03_environmental_sar/S042_missing_person.md)
-- Follow-ups: [S047 Signal Relay Enhancement](../../scenarios/03_environmental_sar/S047_signal_relay.md), [S050 Swarm SLAM](../../scenarios/03_environmental_sar/S050_slam.md)
-- Algorithmic cross-reference: [S007 Blind Pursuit under Jamming](../../scenarios/01_pursuit_evasion/S007_blind_pursuit_jamming.md) (noisy state estimation), [S008 Stochastic Pursuit](../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md) (Kalman filtering)
+- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S042 Missing Person Search](../../../scenarios/03_environmental_sar/S042_missing_person.md)
+- Follow-ups: [S047 Signal Relay Enhancement](../../../scenarios/03_environmental_sar/S047_signal_relay.md), [S050 Swarm SLAM](../../../scenarios/03_environmental_sar/S050_slam.md)
+- Algorithmic cross-reference: [S007 Blind Pursuit under Jamming](../../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md) (noisy state estimation), [S008 Stochastic Pursuit](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md) (Kalman filtering)

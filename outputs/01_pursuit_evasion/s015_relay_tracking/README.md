@@ -109,5 +109,5 @@ python src/01_pursuit_evasion/s015_relay_tracking.py
 
 ## Related Scenarios
 
-- Prerequisites: [S008](../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md), [S012](../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
-- Follow-ups: [S016](../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
+- Prerequisites: [S008](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md), [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
+- Follow-ups: [S016](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)

@@ -114,5 +114,5 @@ python src/01_pursuit_evasion/s010_asymmetric_speed.py
 
 ## Related Scenarios
 
-- Prerequisites: [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009](../../scenarios/01_pursuit_evasion/S009_differential_game.md)
-- Follow-ups: [S011](../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013](../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Prerequisites: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
+- Follow-ups: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)

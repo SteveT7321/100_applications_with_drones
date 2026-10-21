@@ -108,6 +108,6 @@ python src/02_logistics_delivery/s033_online_order_insertion.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S034](../../scenarios/02_logistics_delivery/S034_weather_rerouting.md), [S040](../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S030](../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) (multi-depot routing), [S037](../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW)
+- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S030](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) (multi-depot routing), [S037](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW)

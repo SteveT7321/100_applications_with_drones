@@ -113,5 +113,5 @@ python src/01_pursuit_evasion/s018_multi_target_intercept.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S011](../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
-- Follow-ups: [S019](../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
+- Follow-ups: [S019](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)

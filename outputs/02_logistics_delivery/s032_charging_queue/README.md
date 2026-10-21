@@ -143,6 +143,6 @@ python src/02_logistics_delivery/s032_charging_queue.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S033](../../scenarios/02_logistics_delivery/S033_online_order_insertion.md), [S040](../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- See also: [S027](../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (airborne battery replenishment analogue)
+- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- See also: [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (airborne battery replenishment analogue)

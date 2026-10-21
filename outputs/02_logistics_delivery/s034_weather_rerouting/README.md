@@ -119,6 +119,6 @@ python src/02_logistics_delivery/s034_weather_rerouting.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022](../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
-- Follow-ups: [S035](../../scenarios/02_logistics_delivery/S035_utm_simulation.md)
-- Algorithmic cross-reference: [S022](../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (obstacle avoidance), [S031](../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) (airspace separation)
+- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
+- Follow-ups: [S035](../../../scenarios/02_logistics_delivery/S035_utm_simulation.md)
+- Algorithmic cross-reference: [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (obstacle avoidance), [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) (airspace separation)

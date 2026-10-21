@@ -21,6 +21,8 @@ Usage:
 import sys, os
 os.environ.setdefault('KMP_DUPLICATE_LIB_OK', 'TRUE')   # avoid libomp/libiomp conflict on Windows
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401

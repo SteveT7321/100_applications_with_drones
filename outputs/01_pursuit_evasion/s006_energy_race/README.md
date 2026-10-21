@@ -122,5 +122,5 @@ python src/01_pursuit_evasion/s006_energy_race.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
-- Follow-ups: [S010](../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S012](../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
+- Follow-ups: [S010](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)

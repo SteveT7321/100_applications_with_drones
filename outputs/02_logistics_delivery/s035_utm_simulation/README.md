@@ -111,6 +111,6 @@ python src/02_logistics_delivery/s035_utm_simulation.py
 
 ## Related Scenarios
 
-- Prerequisites: [S031](../../scenarios/02_logistics_delivery/S031_path_deconfliction.md), [S029](../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S036](../../scenarios/02_logistics_delivery/S036_last_mile_relay.md), [S040](../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S031](../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) (CPA conflict detection), [S034](../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) (dynamic rerouting)
+- Prerequisites: [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S036](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) (CPA conflict detection), [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) (dynamic rerouting)

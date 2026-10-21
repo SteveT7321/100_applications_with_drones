@@ -125,6 +125,6 @@ The greedy strategy directs all drones toward high-probability zones first, achi
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Area Coverage Sweep](../../scenarios/03_environmental_sar/S041_area_coverage_sweep.md)
-- Follow-ups: [S043 Confined Space Exploration](../../scenarios/03_environmental_sar/S043_confined_space.md), [S049 Dynamic Zone Assignment](../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
-- Algorithmic cross-reference: [S013 Particle Filter Intercept](../../scenarios/01_pursuit_evasion/S013_particle_filter_intercept.md) (particle filter state estimation)
+- Prerequisites: [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Follow-ups: [S043 Confined Space Exploration](../../../scenarios/03_environmental_sar/S043_confined_space.md), [S049 Dynamic Zone Assignment](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
+- Algorithmic cross-reference: [S045 Chemical Plume Tracing](../../../scenarios/03_environmental_sar/S045_plume_tracing.md) (particle filter source estimation)

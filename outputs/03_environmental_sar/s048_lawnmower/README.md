@@ -133,6 +133,6 @@ The optimal configuration ($d = 10$ m, tangent circles) achieves near-complete c
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](../../scenarios/03_environmental_sar/S041_wildfire_boundary_scan.md), [S042 Missing Person Search](../../scenarios/03_environmental_sar/S042_missing_person.md)
-- Follow-ups: [S049 Dynamic Zone Assignment](../../scenarios/03_environmental_sar/S049_dynamic_zone.md) (multi-drone parallel coverage), [S050 Swarm SLAM](../../scenarios/03_environmental_sar/S050_slam.md) (simultaneous mapping)
-- Algorithmic cross-reference: [S032 Charging Queue](../../scenarios/02_logistics_delivery/S032_charging_queue.md) (battery-constrained multi-pass), [S067 Spray Overlap Optimization](../../scenarios/04_industrial_agriculture/S067_spray_overlap_optimization.md) (same strip-width trade-off in agriculture)
+- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S042 Missing Person Search](../../../scenarios/03_environmental_sar/S042_missing_person.md)
+- Follow-ups: [S049 Dynamic Zone Assignment](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md) (multi-drone parallel coverage), [S050 Swarm SLAM](../../../scenarios/03_environmental_sar/S050_slam.md) (simultaneous mapping)
+- Algorithmic cross-reference: [S032 Charging Queue](../../../scenarios/02_logistics_delivery/S032_charging_queue.md) (battery-constrained multi-pass), [S067 Spray Overlap Optimization](../../../scenarios/04_industrial_agriculture/S067_spray_overlap.md) (same strip-width trade-off in agriculture)

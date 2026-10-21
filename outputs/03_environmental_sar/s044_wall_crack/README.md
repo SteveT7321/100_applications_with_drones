@@ -94,6 +94,6 @@ $$P_{det}(w_i, r) = \Phi\!\left(\frac{w_i - w_{min}(r)}{\sigma_{noise}}\right), 
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](../../scenarios/03_environmental_sar/S041_wildfire_boundary_scan.md), [S048 Lawnmower Coverage](../../scenarios/03_environmental_sar/S048_lawnmower_coverage.md)
-- Follow-ups: [S061 Power Line Inspection](../../scenarios/04_industrial_agriculture/S061_power_line_inspection.md), [S065 Building 3D Scan Path](../../scenarios/04_industrial_agriculture/S065_building_3d_scan_path.md)
-- Cross-reference: [S043 Confined Space Exploration](../../scenarios/03_environmental_sar/S043_confined_space_exploration.md)
+- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Follow-ups: [S061 Power Line Inspection](../../../scenarios/04_industrial_agriculture/S061_power_line.md), [S065 Building 3D Scan Path](../../../scenarios/04_industrial_agriculture/S065_3d_scan_path.md)
+- Cross-reference: [S043 Confined Space Exploration](../../../scenarios/03_environmental_sar/S043_confined_space.md)

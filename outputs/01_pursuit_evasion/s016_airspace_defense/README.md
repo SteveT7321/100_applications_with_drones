@@ -122,5 +122,5 @@ python src/01_pursuit_evasion/s016_airspace_defense.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S005](../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
-- Follow-ups: [S017](../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md), [S018](../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S005](../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
+- Follow-ups: [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md), [S018](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md)

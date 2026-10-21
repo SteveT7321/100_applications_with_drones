@@ -106,5 +106,5 @@ python src/01_pursuit_evasion/s007_jamming_blind_pursuit.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Follow-up: [S008](../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Follow-up: [S008](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md)

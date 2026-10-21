@@ -134,6 +134,6 @@ The distributed swarm strategy achieves significantly higher coverage than isola
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Area Coverage Sweep](../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S046 Trilateration Localisation](../../scenarios/03_environmental_sar/S046_trilateration.md), [S049 Dynamic Zone Search](../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
-- Follow-ups: [S051 Post-Disaster Communication Restoration](../../scenarios/03_environmental_sar/S051_post_disaster_comm.md)
-- Algorithmic cross-reference: [S013 Particle Filter Intercept](../../scenarios/01_pursuit_evasion/S013_particle_filter_intercept.md) (probabilistic state estimation), [S042 Missing Person Localisation](../../scenarios/03_environmental_sar/S042_missing_person.md) (Bayesian belief maps), [S047 Signal Relay](../../scenarios/03_environmental_sar/S047_signal_relay.md) (inter-drone communication topology)
+- Prerequisites: [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S046 Trilateration Localisation](../../../scenarios/03_environmental_sar/S046_trilateration.md), [S049 Dynamic Zone Search](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
+- Follow-ups: [S051 Post-Disaster Communication Restoration](../../../scenarios/03_environmental_sar/S051_post_disaster_comm.md)
+- Algorithmic cross-reference: [S008 Stochastic Pursuit](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md) (Kalman-filter state estimation), [S042 Missing Person Localisation](../../../scenarios/03_environmental_sar/S042_missing_person.md) (Bayesian belief maps), [S047 Signal Relay](../../../scenarios/03_environmental_sar/S047_signal_relay.md) (inter-drone communication topology)

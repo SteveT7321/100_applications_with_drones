@@ -128,5 +128,5 @@ python src/01_pursuit_evasion/s005_stealth_approach.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Follow-ups: [S006](../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S016](../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Follow-ups: [S006](../../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S016](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)

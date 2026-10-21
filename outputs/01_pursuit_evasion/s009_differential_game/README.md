@@ -113,5 +113,5 @@ python src/01_pursuit_evasion/s009_differential_game.py
 
 ## Related Scenarios
 
-- Prerequisites: [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Follow-ups: [S010](../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S020](../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)
+- Prerequisites: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Follow-ups: [S010](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S020](../../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)

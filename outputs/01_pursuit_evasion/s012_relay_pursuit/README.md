@@ -101,5 +101,5 @@ python src/01_pursuit_evasion/s012_relay_pursuit.py
 
 ## Related Scenarios
 
-- Prerequisites: [S006](../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S011](../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
-- Follow-ups: [S013](../../scenarios/01_pursuit_evasion/S013_pincer_movement.md), [S017](../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)
+- Prerequisites: [S006](../../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
+- Follow-ups: [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md), [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)

@@ -112,5 +112,5 @@ python src/01_pursuit_evasion/s020_pursuit_evasion_game.py
 
 ## Related Scenarios
 
-- Prerequisites: [S009](../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S016](../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
-- This is the capstone of Domain 1 — next domain: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md)
+- Prerequisites: [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S016](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
+- This is the capstone of Domain 1 — next domain: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md)

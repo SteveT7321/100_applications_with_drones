@@ -119,6 +119,6 @@ python src/02_logistics_delivery/s040_fleet_load_balancing.py
 
 ## Related Scenarios
 
-- Prerequisites: [S029](../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md), [S032](../../scenarios/02_logistics_delivery/S032_charging_queue.md)
+- Prerequisites: [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md), [S032](../../../scenarios/02_logistics_delivery/S032_charging_queue.md)
 - Follow-ups: Domain 3 (Environmental & SAR)
-- Algorithmic cross-reference: [S033](../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (online task insertion), [S035](../../scenarios/02_logistics_delivery/S035_utm_simulation.md) (UTM coordination)
+- Algorithmic cross-reference: [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (online task insertion), [S035](../../../scenarios/02_logistics_delivery/S035_utm_simulation.md) (UTM coordination)

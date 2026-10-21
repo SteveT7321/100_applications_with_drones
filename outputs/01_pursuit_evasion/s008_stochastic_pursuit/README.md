@@ -111,5 +111,5 @@ python src/01_pursuit_evasion/s008_stochastic_pursuit.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S007](../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md)
-- Follow-ups: [S009](../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S019](../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S007](../../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md)
+- Follow-ups: [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S019](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)

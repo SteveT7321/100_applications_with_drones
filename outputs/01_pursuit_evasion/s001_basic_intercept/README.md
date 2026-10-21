@@ -102,9 +102,9 @@ python src/01_pursuit_evasion/s001_basic_intercept.py
 ## Related Scenarios
 
 - Prerequisites: none (entry-level scenario)
-- Next: [S002](../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009](../../scenarios/01_pursuit_evasion/S009_differential_game.md)
+- Next: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
 
 ## References
 
 - Shneydor, N.A. (1998). *Missile Guidance and Pursuit*. Horwood.
-- [MATH_FOUNDATIONS.md §4.1](../../MATH_FOUNDATIONS.md)
+- [MATH_FOUNDATIONS.md §4.1](../../../MATH_FOUNDATIONS.md)

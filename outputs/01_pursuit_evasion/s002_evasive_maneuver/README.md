@@ -110,7 +110,7 @@ python src/01_pursuit_evasion/s002_evasive_maneuver.py
 ## Extensions
 
 1. Equal-speed case ($v_P = v_E$) — can perpendicular escape prevent capture indefinitely?
-2. Train evasion strategy with RL → [S020](../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)
+2. Train evasion strategy with RL → [S020](../../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)
 3. Replace pure pursuit with PNG and compare optimal evasion strategies
 4. 3D evasion — allow z-axis maneuvers
 
@@ -118,8 +118,8 @@ python src/01_pursuit_evasion/s002_evasive_maneuver.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
-- Next: [S003](../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md), [S009](../../scenarios/01_pursuit_evasion/S009_differential_game.md)
+- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
+- Next: [S003](../../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md), [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
 
 ## References
 

@@ -132,6 +132,6 @@ python src/03_environmental_sar/s041_wildfire_boundary.py
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Lawnmower Coverage](../../scenarios/03_environmental_sar/S048_lawnmower.md) (basic coverage planning before dynamic tracking)
-- Follow-ups: [S049 Dynamic Zone Search](../../scenarios/03_environmental_sar/S049_dynamic_zone.md), [S055 Oil Spill Tracking](../../scenarios/03_environmental_sar/S055_oil_spill.md)
-- Algorithmic cross-reference: [S045 Chemical Plume Tracing](../../scenarios/03_environmental_sar/S045_plume_tracing.md), [S042 Missing Person Search](../../scenarios/03_environmental_sar/S042_missing_person.md)
+- Prerequisites: [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md) (basic coverage planning before dynamic tracking)
+- Follow-ups: [S049 Dynamic Zone Search](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md), [S055 Oil Spill Tracking](../../../scenarios/03_environmental_sar/S055_oil_spill.md)
+- Algorithmic cross-reference: [S045 Chemical Plume Tracing](../../../scenarios/03_environmental_sar/S045_plume_tracing.md), [S042 Missing Person Search](../../../scenarios/03_environmental_sar/S042_missing_person.md)
