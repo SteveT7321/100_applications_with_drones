@@ -14,9 +14,11 @@
 
 ## Mathematical Model Summary
 
-**Dryden wind model** (low-frequency gust component):
+**Wind model**: mean crosswind plus a first-order Gauss-Markov gust (discrete form):
 
-$$W(s) = \sigma \cdot \sqrt{\frac{2L}{\pi V}} \cdot \frac{1}{1 + \frac{L}{\pi V} s}$$
+$$\mathbf{w}_{g,k+1} = \alpha\,\mathbf{w}_{g,k} + \sqrt{1-\alpha^2}\,\sigma_g\,\boldsymbol{\eta}_k, \quad \alpha = e^{-\Delta t/\tau_g}, \quad \boldsymbol{\eta}_k \sim \mathcal{N}(0, I)$$
+
+$$\mathbf{w} = \bar{\mathbf{w}} + \mathbf{w}_g$$
 
 **Crab-angle feedforward**: correct heading to cancel wind drift
 
@@ -32,12 +34,15 @@ $$u_{ct} = K_p \cdot e_{ct} + K_i \int e_{ct}\, dt + K_d \dot{e}_{ct}$$
 
 | Parameter | Value |
 |-----------|-------|
-| Start position | (0, 0, 2) m |
-| Goal position | (20, 0, 2) m |
-| Wind speed | 3.0 m/s (y-direction) |
+| Start position | (0, 0, 2.5) m |
+| Goal position | (20, 0, 2.5) m |
+| Mean crosswind | 2.5 m/s (+y) |
+| Gust σ / correlation time | 0.8 m/s / 1.5 s (Gauss-Markov) |
 | Drone max speed | 5.0 m/s |
-| Control frequency | 50 Hz |
-| PID gains | Kp=2.0, Ki=0.1, Kd=0.3 |
+| Simulation / control rate | 48 Hz |
+| PID gains | Kp=1.2, Ki=0.05, Kd=0.3 |
+| Arrival radius | 0.3 m |
+| Random seed | 42 |
 
 ---
 
@@ -82,7 +87,7 @@ Final lateral miss comparison across strategies:
 ## Extensions
 
 1. Combine crab-angle feedforward + PID cross-track for best-of-both performance
-2. Add time-varying wind (Dryden turbulence model) and compare disturbance rejection
+2. Replace the Gauss-Markov gust with a Dryden turbulence model and compare disturbance rejection
 3. Implement Extended Kalman Filter wind estimation for unknown wind scenarios
 
 ---

@@ -20,8 +20,10 @@ Each scenario includes a mathematical model, Python implementation, and 3D visua
 | NumPy | 1.26 | Numerical computation |
 | SciPy | 1.14.1 | Optimization, interpolation |
 | Matplotlib | 3.10 | 3D trajectory visualization |
-| gym-pybullet-drones | 2.0 | PyBullet physics interface (advanced scenarios) |
+| gym-pybullet-drones | 2.0 | Installed in the env as a reference; not used by any scenario yet |
 | conda env | `drones` | Environment name |
+
+> **Physics model**: most scenarios use a NumPy kinematic point-mass model (`src/base/drone_base.py`). Hardware-oriented scenarios (S082, S084, S090, S091) use the 6-DOF rigid-body + motor model in `src/base/rigid_body_drone.py`. No scenario has been validated against real flight data yet.
 
 ---
 
@@ -96,7 +98,7 @@ drones/
 | Special Ops & Entertainment | 0 | 20 |
 | **Total** | **50** | **100** |
 
-> **3D Upgrades**: 18 true-3D variants of S002–S020 are available under `src/01_pursuit_evasion/3d/` and `outputs/01_pursuit_evasion/3d/`.
+> **3D Upgrades**: 23 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020) and 5 in Logistics & Delivery (S022, S024, S027, S028, S029).
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 

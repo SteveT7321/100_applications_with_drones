@@ -1,6 +1,8 @@
 # Drone Model Reference
 
 > Drone models and physical parameters provided by gym-pybullet-drones
+>
+> **Status (2026-10)**: the scenarios in this repo do not call gym-pybullet-drones yet; they use NumPy models (see `CLAUDE.md`). This page is a reference for future PyBullet-based work.
 
 ## Available Drone Models
 
@@ -130,6 +132,8 @@ obs, reward, terminated, truncated, info = env.step(action)
 
 ## Reference Documents
 
-- Model parameter source: `lib/gym-pybullet-drones/gym_pybullet_drones/assets/` (`.urdf` files)
-- PID controller: `lib/gym-pybullet-drones/gym_pybullet_drones/control/DSLPIDControl.py`
-- Base environment: `lib/gym-pybullet-drones/gym_pybullet_drones/envs/BaseAviary.py`
+Paths are inside the installed `gym_pybullet_drones` package (`pip show gym-pybullet-drones` shows its location).
+
+- Model parameter source: `gym_pybullet_drones/assets/` (`.urdf` files)
+- PID controller: `gym_pybullet_drones/control/DSLPIDControl.py`
+- Base environment: `gym_pybullet_drones/envs/BaseAviary.py`

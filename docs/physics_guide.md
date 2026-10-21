@@ -1,6 +1,8 @@
 # PyBullet Physics Engine Guide
 
 > Physics modes, parameter tuning, and common configuration notes for gym-pybullet-drones
+>
+> **Status (2026-10)**: the scenarios in this repo do not call gym-pybullet-drones yet; they use NumPy models (see `CLAUDE.md`). This page is a reference for future PyBullet-based work.
 
 ## Physics Simulation Frequency
 

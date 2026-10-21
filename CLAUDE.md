@@ -4,7 +4,8 @@
 
 **主題**：無人機模擬應用 100 選
 **目的**：系統性研究無人機在5大領域的模擬應用
-**技術棧**：gym-pybullet-drones + Python 3.10 + Matplotlib 3D
+**技術棧**：Python 3.10 + NumPy + Matplotlib 3D
+**物理模型**：大部分場景是 NumPy 運動學點質量模型（`src/base/drone_base.py`）；硬體相關場景（S082、S084、S090、S091）用 `src/base/rigid_body_drone.py` 的 6-DOF 剛體 + 馬達模型。gym-pybullet-drones 已裝在 `drones` 環境，但目前沒有場景使用。
 **conda 環境**：`drones`
 
 ## 執行所有 Python 時

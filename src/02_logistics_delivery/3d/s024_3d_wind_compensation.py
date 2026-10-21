@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 # ── Output directory ──────────────────────────────────────────────────────────
 SCRIPT_DIR   = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
-OUT_DIR      = os.path.join(PROJECT_ROOT, 'outputs', '02_logistics_delivery',
+OUT_DIR      = os.path.join(PROJECT_ROOT, 'outputs', '02_logistics_delivery', '3d',
                              's024_3d_wind_compensation')
 os.makedirs(OUT_DIR, exist_ok=True)
 
