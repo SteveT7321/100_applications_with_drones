@@ -15,6 +15,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -211,7 +212,7 @@ def plot_distance_time(results, out_dir):
 
 
 def save_animation(results, out_dir):
-    """2×2 subplot animation — all 4 strategies simultaneously, ~12 fps."""
+    """1×4 subplot animation (one panel per strategy, side by side), ~12 fps."""
     step = 4
     n_frames = max(
         min(len(p[::step]), len(e[::step]))
@@ -282,8 +283,6 @@ def save_animation(results, out_dir):
 # ── Main ───────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    import matplotlib.animation as animation
-
     strategies = [
         ('Straight',      straight_escape),
         ('Perpendicular', perpendicular_escape),
@@ -296,7 +295,18 @@ if __name__ == '__main__':
         p_traj, e_traj, captured, cap_time = run_simulation(fn)
         status = f'captured at {cap_time:.2f}s' if captured else 'escaped (not captured)'
         print(f'[{name:>14}] {status}')
+        if captured:
+            n = len(e_traj)
+            d = np.linalg.norm(p_traj[:n] - e_traj[:n], axis=1)
+            closing = (d[0] - d[-1]) / cap_time
+            print(f'{"":>17}mean closing speed {closing:.2f} m/s')
         results.append((name, p_traj, e_traj, captured, cap_time))
+
+    r0 = np.linalg.norm(INIT_EVADER - INIT_PURSUER)
+    print(f'Analytical straight-escape time (r0 - r_cap)/(vP - vE): '
+          f'{(r0 - CAPTURE_R) / (PURSUER_SPEED - EVADER_SPEED):.2f} s')
+    print(f'Analytical perpendicular-escape time (r0 - r_cap)/vP:   '
+          f'{(r0 - CAPTURE_R) / PURSUER_SPEED:.2f} s')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories(results, out_dir)
