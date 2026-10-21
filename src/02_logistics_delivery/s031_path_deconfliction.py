@@ -1,19 +1,26 @@
 """
 S031 Path De-confliction
 ========================
-A fleet of 8 delivery drones departs simultaneously from a shared depot and flies
-pre-planned straight-line routes to distinct delivery waypoints within a 500x500 m urban
-airspace. Because routes are generated independently, pairs of routes may cross or come
-dangerously close in both space and time. This simulation implements three de-confliction
-strategies (priority-based speed adjustment, horizontal waypoint insertion, altitude layer
-assignment) and compares conflict counts, total added flight distance, and maximum arrival delay.
+Eight delivery drones fly straight-line routes across a 500 x 500 m urban airspace. They
+launch from four edge hubs (two drones per hub, second wave 3 s later) toward random
+delivery points on the opposite side (rng seed 7), so routes cross near the centre at
+nearly the same time and genuine conflicts occur.
+
+Strategies compared (plus an unresolved baseline):
+  0. none      - no de-confliction (reference: how many conflicts the traffic contains)
+  1. speed     - priority-based speed adjustment (lower-priority drone slows while the
+                 conflict is predicted, resumes v once it clears)
+  2. waypoint  - lateral avoidance waypoint inserted for the lower-priority drone
+  3. altitude  - each drone pre-assigned its own altitude layer (dz >= d_sep)
+
+Separation metrics only count airborne drones (launched and not yet arrived), so
+co-location on the ground at a hub is never counted as a loss of separation.
 
 Usage:
     conda activate drones
     python src/02_logistics_delivery/s031_path_deconfliction.py
 """
 
-import sys
 import os
 import numpy as np
 import matplotlib
@@ -22,548 +29,517 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
 # ── Parameters ─────────────────────────────────────────────────────────────────
-N_DRONES   = 8          # number of drones
-V_DRONE    = 12.0       # m/s cruise speed (nominal)
-V_MIN      = 4.0        # m/s minimum speed for strategy 1
-D_SEP      = 5.0        # m minimum separation threshold
-D_MARGIN   = 2.0        # m extra clearance above D_SEP
-T_HORIZON  = 30.0       # s conflict look-ahead window
-DT         = 0.1        # s simulation timestep
-Z_NOM      = 20.0       # m nominal cruise altitude
-Z_BASE     = 18.0       # m base altitude for layer assignment (strategy 3)
-DZ_LAYER   = 2.0        # m altitude layer spacing (strategy 3)
-ARENA      = 500.0      # m side of delivery area
-DEPOT      = np.array([250.0, 250.0, Z_NOM])
-SEED       = 7
+N_DRONES    = 8          # number of drones
+V_DRONE     = 12.0       # m/s cruise speed (nominal)
+V_MIN       = 4.0        # m/s minimum speed for strategy 1
+V_STEP      = 0.25       # m/s resolution of the speed scan (strategy 1)
+D_SEP       = 5.0        # m minimum separation threshold
+D_MARGIN    = 2.0        # m extra clearance above D_SEP
+T_HORIZON   = 30.0       # s conflict look-ahead window
+DT          = 0.1        # s simulation timestep
+T_MAX       = 200.0      # s simulation cap
+Z_NOM       = 20.0       # m nominal cruise / hand-over altitude
+DZ_LAYER    = D_SEP + D_MARGIN   # m altitude layer spacing (strategy 3) = 7 m >= d_sep
+Z_BASE      = Z_NOM      # m lowest layer (strategy 3) -> layers 20, 27, ..., 69 m
+ARENA       = 500.0      # m side of delivery area
+HUB_INSET   = 20.0       # m distance of hubs / goal line from the arena edge
+GOAL_SPREAD = 40.0       # m goals uniform within +/- this along the opposite edge
+T_STAGGER   = 3.0        # s launch delay of the second wave at each hub
+SEED        = 7
+
+STRATEGIES = ['none', 'speed', 'waypoint', 'altitude']
+LABELS = {'none': 'No de-confliction', 'speed': 'Speed adjustment',
+          'waypoint': 'Waypoint insertion', 'altitude': 'Altitude layers'}
+STRAT_COLORS = {'none': 'tab:gray', 'speed': 'tab:blue',
+                'waypoint': 'tab:orange', 'altitude': 'tab:green'}
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '02_logistics_delivery', 's031_path_deconfliction',
 )
 
-RNG = np.random.default_rng(SEED)
 
-# Pre-defined goals that guarantee crossing routes when flying from shared depot.
-# Pairs (0,4), (1,5), (2,6), (3,7) fly in nearly opposite directions so that
-# adjacent drones have similar headings and tend to converge in mid-flight.
-_FIXED_GOALS_XY = np.array([
-    [450, 450],  # D1 NE
-    [50,  450],  # D2 NW
-    [50,  50],   # D3 SW
-    [450, 50],   # D4 SE
-    [60,  60],   # D5 toward SW — nearly opposite to D1, paths cross
-    [440, 60],   # D6 toward SE — nearly opposite to D2, paths cross
-    [440, 440],  # D7 toward NE — nearly opposite to D3, paths cross
-    [60,  440],  # D8 toward NW — nearly opposite to D4, paths cross
-], dtype=float)
+# ── Traffic ────────────────────────────────────────────────────────────────────
+
+def make_traffic(seed=SEED):
+    """Origins (4 edge hubs, 2 drones each), random goals on the opposite edge, launch times."""
+    rng = np.random.default_rng(seed)
+    lo, hi, mid = HUB_INSET, ARENA - HUB_INSET, ARENA / 2
+    hubs = np.array([[lo, mid], [hi, mid], [mid, lo], [mid, hi]])        # W, E, S, N
+    tangents = np.array([[0, 1], [0, 1], [1, 0], [1, 0]], dtype=float)
+    opposite = [1, 0, 3, 2]
+    origins = np.zeros((N_DRONES, 3))
+    goals = np.zeros((N_DRONES, 3))
+    launch = np.zeros(N_DRONES)
+    offsets = rng.uniform(-GOAL_SPREAD, GOAL_SPREAD, N_DRONES)
+    for k in range(N_DRONES):
+        h = k % 4
+        g = opposite[h]
+        origins[k] = [*hubs[h], Z_NOM]
+        goals[k] = [*(hubs[g] + offsets[k] * tangents[g]), Z_NOM]
+        launch[k] = 0.0 if k < 4 else T_STAGGER
+    return origins, goals, launch
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-def make_goals(seed=SEED):
-    """Return fixed goal positions that guarantee intersecting routes from the depot."""
-    return np.c_[_FIXED_GOALS_XY, np.full(N_DRONES, Z_NOM)]
-
+# ── Geometry helpers ───────────────────────────────────────────────────────────
 
 def cpa(pos_i, vel_i, pos_j, vel_j):
-    """Return (t_cpa, d_cpa) for two drones with constant velocities."""
+    """Return (t_cpa, d_cpa) for two drones with constant velocities (t clamped >= 0)."""
     dp = pos_i - pos_j
     dv = vel_i - vel_j
     dv2 = dv @ dv
     if dv2 < 1e-12:
         return 0.0, float(np.linalg.norm(dp))
-    t = -dp @ dv / dv2
-    t = max(t, 0.0)
-    d = float(np.linalg.norm(dp + dv * t))
-    return t, d
+    t = max(-(dp @ dv) / dv2, 0.0)
+    return t, float(np.linalg.norm(dp + dv * t))
 
 
-def detect_conflicts(positions, velocities, t_horizon, d_sep):
-    """Return list of (i, j, t_cpa, d_cpa) conflict tuples."""
-    conflicts = []
-    for i, j in combinations(range(len(positions)), 2):
-        t_c, d_c = cpa(positions[i], velocities[i], positions[j], velocities[j])
-        if d_c < d_sep and 0 < t_c <= t_horizon:
-            conflicts.append((i, j, t_c, d_c))
-    return conflicts
+def detect_conflicts(positions, velocities, active, t_horizon, d_sep):
+    """List of (i, j, t_cpa, d_cpa) for airborne pairs with a predicted conflict."""
+    idx = np.flatnonzero(active)
+    out = []
+    for a, b in combinations(idx, 2):
+        t_c, d_c = cpa(positions[a], velocities[a], positions[b], velocities[b])
+        if d_c < d_sep and 0.0 < t_c <= t_horizon:
+            out.append((int(a), int(b), t_c, d_c))
+    return out
 
 
-def resolve_speed(pos_i, vel_i, vel_j, pos_j, goal_i, origin_i, d_sep, d_margin, v_min):
-    """Bisection search for reduced speed that clears the conflict."""
-    unit_i = (goal_i - origin_i)
-    norm_u = np.linalg.norm(unit_i)
-    if norm_u < 1e-9:
-        return vel_i
-    unit_i = unit_i / norm_u
-    lo, hi = v_min, float(np.linalg.norm(vel_i))
-    for _ in range(40):
-        mid = 0.5 * (lo + hi)
-        new_vel = mid * unit_i
-        _, d_c = cpa(pos_i, new_vel, pos_j, vel_j)
-        if d_c >= d_sep + d_margin:
-            lo = mid
-        else:
-            hi = mid
-    return lo * unit_i
+def resolve_speed(pos_y, unit_y, pos_o, vel_o, v_now):
+    """Highest speed in [V_MIN, v_now] (descending scan) whose CPA clears d_sep + margin.
+
+    d_CPA(v') is not monotonic in v' (slowing the drone that passes first can make the
+    encounter worse before it gets better), so a scan is used instead of bisection.
+    Returns V_MIN if no speed in the range clears the conflict.
+    """
+    for v in np.arange(v_now, V_MIN - 1e-9, -V_STEP):
+        t_c, d_c = cpa(pos_y, v * unit_y, pos_o, vel_o)
+        if d_c >= D_SEP + D_MARGIN or t_c > T_HORIZON or t_c <= 0.0:
+            return float(v)
+    return V_MIN
 
 
-def avoidance_waypoint(pos_i, pos_j, vel_i, vel_j, d_sep, d_margin):
-    """Compute lateral avoidance waypoint for drone i."""
-    t_c, _ = cpa(pos_i, vel_i, pos_j, vel_j)
-    mid = 0.5 * (pos_i + vel_i * t_c + pos_j + vel_j * t_c)
-    dv = vel_i - vel_j
-    # perpendicular in horizontal plane
-    perp = np.array([-dv[1], dv[0], 0.0])
-    norm = np.linalg.norm(perp)
-    if norm < 1e-9:
-        perp = np.array([1.0, 0.0, 0.0])
-    else:
-        perp /= norm
-    return mid + (d_sep + d_margin) * perp
+def avoidance_waypoint(pos_y, vel_y, pos_o, vel_o):
+    """Lateral avoidance waypoint for yielding drone y: CPA midpoint + rho * n (horizontal)."""
+    t_c, _ = cpa(pos_y, vel_y, pos_o, vel_o)
+    py, po = pos_y + vel_y * t_c, pos_o + vel_o * t_c
+    mid = 0.5 * (py + po)
+    dv = vel_y - vel_o
+    n = np.array([-dv[1], dv[0], 0.0])
+    if np.linalg.norm(n) < 1e-9:
+        n = np.array([1.0, 0.0, 0.0])
+    n /= np.linalg.norm(n)
+    rel = (py - po) * np.array([1.0, 1.0, 0.0])
+    if rel @ n < 0:                       # push y further to the side it already passes on
+        n = -n
+    wp = mid + (D_SEP + D_MARGIN) * n
+    wp[2] = pos_y[2]
+    return wp
 
 
 def assign_altitude_layers(n, z_base, dz):
-    """Pre-assign unique altitude layers."""
-    return np.array([z_base + i * dz for i in range(n)])
-
-
-def min_pairwise_separation(positions):
-    """Minimum Euclidean distance among all drone pairs."""
-    n = len(positions)
-    min_d = np.inf
-    for i, j in combinations(range(n), 2):
-        d = np.linalg.norm(positions[i] - positions[j])
-        if d < min_d:
-            min_d = d
-    return min_d
+    """Unique altitude layer per drone: z_k = z_base + k * dz."""
+    return z_base + dz * np.arange(n)
 
 
 # ── Simulation ─────────────────────────────────────────────────────────────────
 
 def run_simulation(strategy):
     """
-    Run the full simulation for one de-confliction strategy.
+    Run one strategy ('none' | 'speed' | 'waypoint' | 'altitude').
 
-    strategy: 'speed' | 'waypoint' | 'altitude'
-
-    Returns:
-        history         : list of (N,3) position arrays per timestep
-        arrival_times   : array of actual arrival times per drone
-        nominal_times   : array of nominal flight times per drone
-        added_dist_per_drone : array of added flight distances (strategy 2)
-        sep_history     : list of min pairwise separations per timestep
-        total_conflicts : int, total conflict detection events logged
-        goals           : (N,3) goal positions used
-        origins         : (N,3) origin positions used
+    Returns a dict with trajectories, per-step airborne masks, speeds, separation
+    history, conflict/LoS events and per-drone metrics.
     """
-    goals = make_goals(SEED)
+    origins, goals, launch = make_traffic(SEED)
+    nominal_len = np.linalg.norm(goals - origins, axis=1)
+    nominal_arrival = launch + nominal_len / V_DRONE
 
+    # Waypoint queues (list of 3D points still to be visited)
     if strategy == 'altitude':
-        z_layers = assign_altitude_layers(N_DRONES, Z_BASE, DZ_LAYER)
-        goals = goals.copy()
-        goals[:, 2] = z_layers
+        layers = assign_altitude_layers(N_DRONES, Z_BASE, DZ_LAYER)
+        queues = []
+        for k in range(N_DRONES):
+            q = []
+            if layers[k] > Z_NOM + 1e-9:
+                q.append(np.array([origins[k, 0], origins[k, 1], layers[k]]))
+                q.append(np.array([goals[k, 0], goals[k, 1], layers[k]]))
+            q.append(goals[k].copy())
+            queues.append(q)
+    else:
+        layers = np.full(N_DRONES, Z_NOM)
+        queues = [[goals[k].copy()] for k in range(N_DRONES)]
+    has_avoid_wp = np.zeros(N_DRONES, dtype=bool)
 
-    origins = np.tile(DEPOT, (N_DRONES, 1)).astype(float)
-    if strategy == 'altitude':
-        origins[:, 2] = goals[:, 2]
+    pos = origins.copy()
+    arrived = np.zeros(N_DRONES, dtype=bool)
+    arrival = np.full(N_DRONES, np.nan)
+    path_len = np.zeros(N_DRONES)
+    n_wp_inserted = 0
 
-    positions    = origins.copy()
-    nominal_dists = np.linalg.norm(goals - origins, axis=1)
-    nominal_times = nominal_dists / V_DRONE
-
-    speeds           = np.full(N_DRONES, V_DRONE)
-    extra_waypoints  = [None] * N_DRONES
-    arrived          = np.zeros(N_DRONES, dtype=bool)
-    arrival_times    = np.full(N_DRONES, np.nan)
-    added_dist_wp    = np.zeros(N_DRONES)  # strategy 2 detour distances
-
-    history       = [positions.copy()]
-    sep_history   = [min_pairwise_separation(positions)]
-    total_conflicts = 0
+    hist_pos, hist_active, hist_speed, hist_sep, times = [], [], [], [], []
+    # An "event" is a distinct drone pair: counted the first time it is flagged, so a
+    # conflict that stays predicted over many timesteps (or flickers) counts once.
+    flagged_seen, los_seen = set(), set()
+    conflict_events, los_events = [], []          # (t, i, j, x, y)
     t = 0.0
 
-    while not np.all(arrived) and t < 400.0:
-        # Determine current target for each drone
-        targets = np.array([
-            extra_waypoints[k] if extra_waypoints[k] is not None else goals[k]
-            for k in range(N_DRONES)
-        ])
-        directions = targets - positions
-        distances  = np.linalg.norm(directions, axis=1, keepdims=True)
-        safe_dist  = np.where(distances > 1e-6, distances, 1.0)
-        unit_dirs  = directions / safe_dist
-        velocities = speeds[:, None] * unit_dirs
+    while not arrived.all() and t < T_MAX:
+        active = (launch <= t + 1e-9) & ~arrived
+        targets = np.array([queues[k][0] if queues[k] else goals[k] for k in range(N_DRONES)])
+        d = targets - pos
+        dist = np.linalg.norm(d, axis=1)
+        unit = np.where(dist[:, None] > 1e-9, d / np.maximum(dist, 1e-9)[:, None], 0.0)
+        speed = np.where(active, V_DRONE, 0.0)
+        vel = speed[:, None] * unit
 
-        # Conflict detection and resolution (not needed for altitude strategy)
-        if strategy != 'altitude':
-            conflicts = detect_conflicts(positions, velocities, T_HORIZON, D_SEP)
-            total_conflicts += len(conflicts)
-            for (i, j, t_c, d_c) in conflicts:
-                if strategy == 'speed':
-                    new_vel = resolve_speed(
-                        positions[i], velocities[i], velocities[j], positions[j],
-                        goals[i], origins[i], D_SEP, D_MARGIN, V_MIN
-                    )
-                    velocities[i] = new_vel
-                    speeds[i] = float(np.linalg.norm(new_vel))
-                elif strategy == 'waypoint' and extra_waypoints[i] is None:
-                    wp = avoidance_waypoint(
-                        positions[i], positions[j],
-                        velocities[i], velocities[j],
-                        D_SEP, D_MARGIN
-                    )
-                    # Record added distance before inserting waypoint
-                    orig_dist = np.linalg.norm(goals[i] - positions[i])
-                    detour = (np.linalg.norm(wp - positions[i])
-                              + np.linalg.norm(goals[i] - wp))
-                    added_dist_wp[i] += max(0.0, detour - orig_dist)
-                    extra_waypoints[i] = wp
+        # Conflict detection (all strategies; resolution only for speed / waypoint)
+        conflicts = detect_conflicts(pos, vel, active, T_HORIZON, D_SEP)
+        flagged = {(i, j) for i, j, _, _ in conflicts}
+        for (i, j) in sorted(flagged - flagged_seen):
+            m = 0.5 * (pos[i] + pos[j])
+            conflict_events.append((t, i, j, m[0], m[1]))
+        flagged_seen |= flagged
 
-        # Advance positions
-        for k in range(N_DRONES):
-            if arrived[k]:
-                continue
-            step_vec = velocities[k] * DT
-            target_k = extra_waypoints[k] if extra_waypoints[k] is not None else goals[k]
-            dist_to_target = np.linalg.norm(target_k - positions[k])
-            step_size = np.linalg.norm(step_vec)
+        if strategy == 'speed':
+            # lower index = higher priority -> the larger index yields
+            for i, j, _, _ in sorted(conflicts, key=lambda c: (c[1], c[0])):
+                y, o = j, i
+                v_new = resolve_speed(pos[y], unit[y], pos[o], vel[o], speed[y])
+                if v_new < speed[y]:
+                    speed[y] = v_new
+                    vel[y] = v_new * unit[y]
+        elif strategy == 'waypoint':
+            for i, j, _, _ in sorted(conflicts, key=lambda c: (c[1], c[0])):
+                y, o = j, i
+                if has_avoid_wp[y]:
+                    continue
+                wp = avoidance_waypoint(pos[y], vel[y], pos[o], vel[o])
+                queues[y].insert(0, wp)
+                has_avoid_wp[y] = True
+                n_wp_inserted += 1
+                dy = wp - pos[y]
+                unit[y] = dy / max(np.linalg.norm(dy), 1e-9)
+                vel[y] = speed[y] * unit[y]
 
-            if dist_to_target <= step_size:
-                if extra_waypoints[k] is not None:
-                    positions[k] = extra_waypoints[k].copy()
-                    extra_waypoints[k] = None
-                    speeds[k] = V_DRONE  # resume nominal speed
+        # Separation bookkeeping (airborne pairs only)
+        idx = np.flatnonzero(active)
+        min_sep = np.nan
+        los_now = set()
+        for a, b in combinations(idx, 2):
+            s = float(np.linalg.norm(pos[a] - pos[b]))
+            min_sep = s if np.isnan(min_sep) else min(min_sep, s)
+            if s < D_SEP:
+                los_now.add((int(a), int(b)))
+        for (a, b) in sorted(los_now - los_seen):
+            m = 0.5 * (pos[a] + pos[b])
+            los_events.append((t, a, b, m[0], m[1]))
+        los_seen |= los_now
+
+        times.append(t)
+        hist_pos.append(pos.copy())
+        hist_active.append(active.copy())
+        hist_speed.append(speed.copy())
+        hist_sep.append(min_sep)
+
+        # Advance with an exact distance budget (carry-over through waypoints)
+        for k in np.flatnonzero(active):
+            budget = speed[k] * DT
+            used = 0.0
+            while budget > 1e-12:
+                tgt = queues[k][0]
+                seg = float(np.linalg.norm(tgt - pos[k]))
+                if seg <= budget:
+                    pos[k] = tgt.copy()
+                    budget -= seg
+                    used += seg
+                    path_len[k] += seg
+                    queues[k].pop(0)
+                    if not queues[k]:
+                        arrived[k] = True
+                        arrival[k] = t + used / speed[k]
+                        break
+                    if strategy == 'waypoint' and has_avoid_wp[k] and len(queues[k]) == 1:
+                        has_avoid_wp[k] = False      # avoidance waypoint reached
                 else:
-                    positions[k] = goals[k].copy()
-                    arrived[k] = True
-                    arrival_times[k] = t
-            else:
-                positions[k] += step_vec
+                    pos[k] += budget * (tgt - pos[k]) / seg
+                    path_len[k] += budget
+                    used += budget
+                    budget = 0.0
+        t = round(t + DT, 10)
 
-        history.append(positions.copy())
-        sep_history.append(min_pairwise_separation(positions))
-        t += DT
+    # final frame
+    times.append(t)
+    hist_pos.append(pos.copy())
+    hist_active.append(np.zeros(N_DRONES, dtype=bool))
+    hist_speed.append(np.zeros(N_DRONES))
+    hist_sep.append(np.nan)
 
-    return (history, arrival_times, nominal_times,
-            added_dist_wp, sep_history, total_conflicts,
-            goals, origins)
+    delays = np.round(arrival - nominal_arrival, 6) + 0.0     # strip float noise (-0.0)
+    added = np.round(path_len - nominal_len, 6) + 0.0
+    return {
+        'strategy': strategy, 'origins': origins, 'goals': goals, 'launch': launch,
+        'layers': layers, 'times': np.array(times), 'pos': np.array(hist_pos),
+        'active': np.array(hist_active), 'speed': np.array(hist_speed),
+        'sep': np.array(hist_sep), 'conflict_events': conflict_events,
+        'los_events': los_events, 'arrival': arrival, 'delays': delays,
+        'added_dist': added, 'nominal_len': nominal_len,
+        'n_wp_inserted': n_wp_inserted, 'all_arrived': bool(arrived.all()),
+    }
+
+
+def summarise(res):
+    los_pairs = sorted({(i + 1, j + 1) for _, i, j, _, _ in res['los_events']})
+    return {
+        'strategy': res['strategy'],
+        'n_conflicts': len(res['conflict_events']),
+        'n_los': len(res['los_events']),
+        'los_pairs': los_pairs,
+        'min_sep': float(np.nanmin(res['sep'])),
+        'added_dist': float(np.sum(res['added_dist'])),
+        'total_delay': float(np.sum(res['delays'])),
+        'max_delay': float(np.max(res['delays'])),
+        'n_wp': res['n_wp_inserted'],
+        'min_speed': float(np.min(np.where(res['active'], res['speed'], np.inf))),
+    }
 
 
 # ── Plots ──────────────────────────────────────────────────────────────────────
 
-def plot_trajectories_2d(results_all, out_dir):
-    """Top-down 2D trajectory map for all three strategies side by side."""
-    strategies  = ['speed', 'waypoint', 'altitude']
-    titles      = ['Strategy 1: Speed Adjustment',
-                   'Strategy 2: Waypoint Insertion',
-                   'Strategy 3: Altitude Layers']
-    colors = plt.cm.tab10(np.linspace(0, 0.9, N_DRONES))
+DRONE_COLORS = plt.cm.tab10(np.linspace(0, 0.9, N_DRONES))
 
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    fig.suptitle('Path De-confliction — Top-Down Trajectory Comparison', fontsize=14, y=1.01)
 
-    for ax, strat, title, res in zip(axes, strategies, titles, results_all):
-        history, _, _, _, sep_history, _, goals, origins = res
-        traj = np.array(history)  # (T, N, 3)
-
+def plot_trajectories_2d(results, out_dir):
+    """Top-down flown paths per strategy; red circles = loss-of-separation locations."""
+    fig, axes = plt.subplots(1, 4, figsize=(22, 6))
+    fig.suptitle('Path De-confliction - Top-Down Flown Paths '
+                 '(red circle = loss of separation < d_sep)', fontsize=13)
+    for ax, res in zip(axes, results):
+        P, A = res['pos'], res['active']
         for k in range(N_DRONES):
-            xs = traj[:, k, 0]
-            ys = traj[:, k, 1]
-            ax.plot(xs, ys, color=colors[k], lw=1.2, alpha=0.8)
-            ax.plot(origins[k, 0], origins[k, 1], 'o', color=colors[k], ms=5)
-            ax.plot(goals[k, 0], goals[k, 1], '*', color=colors[k], ms=8)
-
-        # Mark depot
-        ax.plot(DEPOT[0], DEPOT[1], 'ks', ms=10, zorder=5, label='Depot')
-
-        ax.set_xlim(0, ARENA)
-        ax.set_ylim(0, ARENA)
-        ax.set_aspect('equal')
-        ax.set_title(title, fontsize=11)
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-        ax.legend(loc='upper right', fontsize=7)
-
+            m = A[:, k]
+            ax.plot([res['origins'][k, 0], res['goals'][k, 0]],
+                    [res['origins'][k, 1], res['goals'][k, 1]],
+                    color='lightgrey', lw=0.8, ls='--', zorder=1)
+            ax.plot(P[m, k, 0], P[m, k, 1], color=DRONE_COLORS[k], lw=1.4, zorder=2,
+                    label=f'D{k+1}')
+            ax.plot(res['origins'][k, 0], res['origins'][k, 1], 'ks', ms=6, zorder=3)
+            ax.plot(res['goals'][k, 0], res['goals'][k, 1], '*', color=DRONE_COLORS[k],
+                    ms=10, zorder=3)
+        for (_, i, j, x, y) in res['los_events']:
+            ax.add_patch(plt.Circle((x, y), 12, fill=False, color='red', lw=2, zorder=4))
+        s = summarise(res)
+        ax.set_title(f"{LABELS[res['strategy']]}\nconflicts={s['n_conflicts']}, "
+                     f"LoS={s['n_los']}", fontsize=11)
+        ax.set_xlim(0, ARENA); ax.set_ylim(0, ARENA); ax.set_aspect('equal')
+        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
+    axes[0].legend(loc='upper left', fontsize=7, ncol=2)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectories_2d.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
+    plt.savefig(path, dpi=130, bbox_inches='tight'); plt.close()
     print(f'Saved: {path}')
 
 
-def plot_3d_altitude_layers(results_all, out_dir):
-    """3D trajectory plot for strategy 3 (altitude layers) showing vertical separation."""
-    _, _, _, _, _, _, goals_s3, origins_s3 = results_all[2]
-    history_s3 = results_all[2][0]
-    traj = np.array(history_s3)  # (T, N, 3)
-    colors = plt.cm.tab10(np.linspace(0, 0.9, N_DRONES))
-
+def plot_3d_altitude_layers(results, out_dir):
+    """3D flown paths for the altitude-layer strategy."""
+    res = results[STRATEGIES.index('altitude')]
+    P, A = res['pos'], res['active']
     fig = plt.figure(figsize=(10, 8))
     ax = fig.add_subplot(111, projection='3d')
-
     for k in range(N_DRONES):
-        xs = traj[:, k, 0]
-        ys = traj[:, k, 1]
-        zs = traj[:, k, 2]
-        ax.plot(xs, ys, zs, color=colors[k], lw=1.5, label=f'D{k+1} z={goals_s3[k,2]:.0f}m')
-        ax.scatter(origins_s3[k, 0], origins_s3[k, 1], origins_s3[k, 2],
-                   c=[colors[k]], marker='o', s=40)
-        ax.scatter(goals_s3[k, 0], goals_s3[k, 1], goals_s3[k, 2],
-                   c=[colors[k]], marker='*', s=80)
-
-    ax.set_xlim(0, ARENA)
-    ax.set_ylim(0, ARENA)
-    ax.set_zlim(15, 36)
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z (m)')
-    ax.set_title('Strategy 3: Altitude Layer Assignment — 3D Trajectories', fontsize=12)
+        m = A[:, k]
+        ax.plot(P[m, k, 0], P[m, k, 1], P[m, k, 2], color=DRONE_COLORS[k], lw=1.6,
+                label=f"D{k+1} layer {res['layers'][k]:.0f} m")
+        ax.scatter(*res['origins'][k], c='k', marker='s', s=25)
+        ax.scatter(*res['goals'][k], c=[DRONE_COLORS[k]], marker='*', s=80)
+    ax.set_xlim(0, ARENA); ax.set_ylim(0, ARENA); ax.set_zlim(0, 75)
+    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.set_zlabel('Z (m)')
+    ax.set_title(f'Altitude Layers (dz = {DZ_LAYER:.0f} m) - 3D Flown Paths', fontsize=12)
     ax.legend(loc='upper left', fontsize=7, ncol=2)
-
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectories_3d_altitude.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
+    plt.savefig(path, dpi=130, bbox_inches='tight'); plt.close()
     print(f'Saved: {path}')
 
 
-def plot_separation_timeseries(results_all, out_dir):
-    """Minimum pairwise separation vs time for each strategy."""
-    strategies = ['speed', 'waypoint', 'altitude']
-    labels     = ['Speed Adjustment', 'Waypoint Insertion', 'Altitude Layers']
-    linestyles = ['-', '--', '-.']
-    colors     = ['tab:blue', 'tab:orange', 'tab:green']
-
+def plot_separation_timeseries(results, out_dir):
+    """Minimum airborne pairwise separation vs time."""
     fig, ax = plt.subplots(figsize=(12, 5))
-
-    for (strat, label, ls, col, res) in zip(strategies, labels, linestyles, colors, results_all):
-        sep = np.array(res[4])
-        times = np.arange(len(sep)) * DT
-        ax.plot(times, sep, lw=1.5, ls=ls, color=col, label=label)
-
+    for res, ls in zip(results, [':', '-', '--', '-.']):
+        ax.plot(res['times'], res['sep'], lw=1.5, ls=ls,
+                color=STRAT_COLORS[res['strategy']], label=LABELS[res['strategy']])
     ax.axhline(D_SEP, color='red', ls=':', lw=2, label=f'd_sep = {D_SEP} m')
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Min pairwise separation (m)')
-    ax.set_title('Minimum Pairwise Separation vs Time — All Strategies')
-    ax.legend()
-    ax.set_xlim(left=0)
-    ax.set_ylim(bottom=0)
-
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Min airborne pairwise separation (m)')
+    ax.set_title('Minimum Pairwise Separation vs Time (airborne drones only)')
+    ax.set_ylim(0, 60); ax.set_xlim(left=0)
+    ax.legend(); ax.grid(alpha=0.3)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'separation_timeseries.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
+    plt.savefig(path, dpi=130); plt.close()
     print(f'Saved: {path}')
 
 
-def plot_strategy_comparison(metrics, out_dir):
-    """Bar chart comparing added flight distance and max arrival delay per strategy."""
-    labels       = ['Speed\nAdjustment', 'Waypoint\nInsertion', 'Altitude\nLayers']
-    added_dist   = [m['added_dist']  for m in metrics]
-    max_delay    = [m['max_delay']   for m in metrics]
-    n_conflicts  = [m['n_conflicts'] for m in metrics]
-
-    x = np.arange(3)
-    width = 0.3
-
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
+def plot_strategy_comparison(summaries, out_dir):
+    """Bars: conflict events, LoS events, added distance, max delay."""
+    names = [LABELS[s['strategy']].replace(' ', '\n', 1) for s in summaries]
+    cols = [STRAT_COLORS[s['strategy']] for s in summaries]
+    panels = [('n_conflicts', 'Predicted conflict events', '{:.0f}'),
+              ('n_los', 'Loss-of-separation events (< d_sep)', '{:.0f}'),
+              ('added_dist', 'Total added flight distance (m)', '{:.1f}'),
+              ('max_delay', 'Max arrival delay (s)', '{:.2f}')]
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
     fig.suptitle('Strategy Comparison', fontsize=13)
-
-    # Added distance
-    axes[0].bar(x, added_dist, width=0.5, color=['tab:blue', 'tab:orange', 'tab:green'])
-    axes[0].set_xticks(x); axes[0].set_xticklabels(labels)
-    axes[0].set_ylabel('Added flight distance (m)')
-    axes[0].set_title('Total Added Flight Distance')
-    for i, v in enumerate(added_dist):
-        axes[0].text(i, v + 0.5, f'{v:.1f}', ha='center', va='bottom', fontsize=9)
-
-    # Max delay
-    axes[1].bar(x, max_delay, width=0.5, color=['tab:blue', 'tab:orange', 'tab:green'])
-    axes[1].set_xticks(x); axes[1].set_xticklabels(labels)
-    axes[1].set_ylabel('Max arrival delay (s)')
-    axes[1].set_title('Maximum Arrival Delay')
-    for i, v in enumerate(max_delay):
-        axes[1].text(i, v + 0.1, f'{v:.2f}', ha='center', va='bottom', fontsize=9)
-
-    # Conflict count
-    axes[2].bar(x, n_conflicts, width=0.5, color=['tab:blue', 'tab:orange', 'tab:green'])
-    axes[2].set_xticks(x); axes[2].set_xticklabels(labels)
-    axes[2].set_ylabel('Conflict events detected')
-    axes[2].set_title('Conflict Detection Events')
-    for i, v in enumerate(n_conflicts):
-        axes[2].text(i, v + 0.3, str(v), ha='center', va='bottom', fontsize=9)
-
+    x = np.arange(len(summaries))
+    for ax, (key, title, fmt) in zip(axes, panels):
+        vals = [s[key] for s in summaries]
+        ax.bar(x, vals, color=cols, width=0.6)
+        ax.set_xticks(x); ax.set_xticklabels(names, fontsize=9)
+        ax.set_title(title, fontsize=11)
+        top = max(max(vals), 1e-6)
+        for xi, v in zip(x, vals):
+            ax.text(xi, v + 0.02 * top, fmt.format(v), ha='center', va='bottom', fontsize=9)
+        ax.set_ylim(0, top * 1.18)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'strategy_comparison.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
+    plt.savefig(path, dpi=130); plt.close()
     print(f'Saved: {path}')
 
 
-def plot_altitude_timeseries(results_all, out_dir):
-    """Altitude time series for strategy 3 showing constant layer assignment."""
-    traj = np.array(results_all[2][0])  # (T, N, 3)
-    colors = plt.cm.tab10(np.linspace(0, 0.9, N_DRONES))
-    goals_s3 = results_all[2][6]
-
-    fig, ax = plt.subplots(figsize=(12, 5))
-    times = np.arange(len(traj)) * DT
-
+def plot_speed_profiles(results, out_dir):
+    """Commanded speed of each drone under the speed-adjustment strategy."""
+    res = results[STRATEGIES.index('speed')]
+    fig, ax = plt.subplots(figsize=(12, 4.5))
     for k in range(N_DRONES):
-        zs = traj[:, k, 2]
-        ax.plot(times, zs, color=colors[k], lw=1.5, label=f'D{k+1} (z={goals_s3[k,2]:.0f}m)')
-
-    ax.axhline(Z_NOM, color='black', ls=':', lw=1.5, label=f'z_nom = {Z_NOM} m')
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Altitude (m)')
-    ax.set_title('Strategy 3: Altitude Time Series — Each Drone Holds Its Layer')
-    ax.legend(fontsize=8, ncol=2)
-    ax.set_xlim(left=0)
-
+        sp = np.where(res['active'][:, k], res['speed'][:, k], np.nan)
+        ax.plot(res['times'], sp, color=DRONE_COLORS[k], lw=1.5, label=f'D{k+1}')
+    ax.axhline(V_MIN, color='k', ls=':', lw=1, label=f'v_min = {V_MIN} m/s')
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Speed (m/s)')
+    ax.set_title('Speed Adjustment Strategy - Commanded Speed per Drone')
+    ax.set_ylim(0, V_DRONE + 1); ax.legend(fontsize=8, ncol=5); ax.grid(alpha=0.3)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, 'speed_profiles.png')
+    plt.savefig(path, dpi=130); plt.close()
+    print(f'Saved: {path}')
+
+
+def plot_altitude_timeseries(results, out_dir):
+    """Altitude vs time for the altitude-layer strategy (airborne only)."""
+    res = results[STRATEGIES.index('altitude')]
+    fig, ax = plt.subplots(figsize=(12, 5))
+    for k in range(N_DRONES):
+        z = np.where(res['active'][:, k], res['pos'][:, k, 2], np.nan)
+        ax.plot(res['times'], z, color=DRONE_COLORS[k], lw=1.5,
+                label=f"D{k+1} ({res['layers'][k]:.0f} m)")
+    ax.axhline(Z_NOM, color='black', ls=':', lw=1.2, label=f'z_nom = {Z_NOM} m')
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Altitude (m)')
+    ax.set_title('Altitude Layers - climb at hub, cruise on layer, descend at goal')
+    ax.legend(fontsize=8, ncol=3); ax.set_xlim(left=0); ax.grid(alpha=0.3)
+    plt.tight_layout()
     path = os.path.join(out_dir, 'altitude_timeseries.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
+    plt.savefig(path, dpi=130); plt.close()
     print(f'Saved: {path}')
 
 
-def save_animation(results_all, out_dir):
-    """Animated top-down view of all three strategies simultaneously."""
+def save_animation(results, out_dir):
+    """Animated top-down view of all four runs (<= ~150 frames)."""
     import matplotlib.animation as animation
+    n_steps = max(len(r['times']) for r in results)
+    stride = max(1, int(np.ceil(n_steps / 150)))
+    frames = list(range(0, n_steps, stride))
 
-    strategies = ['speed', 'waypoint', 'altitude']
-    titles     = ['Speed Adjustment', 'Waypoint Insertion', 'Altitude Layers']
-    colors     = plt.cm.tab10(np.linspace(0, 0.9, N_DRONES))
-
-    # Find minimum trajectory length across strategies
-    min_len = min(len(res[0]) for res in results_all)
-    # Decimate for animation performance
-    step = max(1, min_len // 200)
-    frames = range(0, min_len, step)
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle('Path De-confliction Animation', fontsize=12)
-
-    # Pre-build trajectory arrays
-    trajs = [np.array(res[0]) for res in results_all]
-    goals_list   = [res[6] for res in results_all]
-    origins_list = [res[7] for res in results_all]
-
-    # Static elements
-    drone_dots = []
-    for ax_i, (ax, traj, goals, origins, title) in enumerate(
-            zip(axes, trajs, goals_list, origins_list, titles)):
-        ax.set_xlim(0, ARENA); ax.set_ylim(0, ARENA)
-        ax.set_aspect('equal')
-        ax.set_title(title, fontsize=10)
-        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
-        ax.plot(DEPOT[0], DEPOT[1], 'ks', ms=8, zorder=5)
+    fig, axes = plt.subplots(1, 4, figsize=(18, 5))
+    artists = []
+    for ax, res in zip(axes, results):
+        ax.set_xlim(0, ARENA); ax.set_ylim(0, ARENA); ax.set_aspect('equal')
+        ax.set_title(LABELS[res['strategy']], fontsize=10)
+        ax.set_xticks([]); ax.set_yticks([])
         for k in range(N_DRONES):
-            ax.plot(goals[k, 0], goals[k, 1], '*', color=colors[k], ms=8)
-            # Plot full nominal straight-line path in light grey
-            ax.plot([origins[k, 0], goals[k, 0]],
-                    [origins[k, 1], goals[k, 1]],
-                    color='grey', lw=0.5, alpha=0.4)
-        dots = [ax.plot([], [], 'o', color=colors[k], ms=6)[0]
-                for k in range(N_DRONES)]
-        trails = [ax.plot([], [], '-', color=colors[k], lw=1, alpha=0.6)[0]
-                  for k in range(N_DRONES)]
-        drone_dots.append((dots, trails))
+            ax.plot([res['origins'][k, 0], res['goals'][k, 0]],
+                    [res['origins'][k, 1], res['goals'][k, 1]],
+                    color='lightgrey', lw=0.6, ls='--')
+            ax.plot(res['goals'][k, 0], res['goals'][k, 1], '*', color=DRONE_COLORS[k], ms=7)
+        dots = [ax.plot([], [], 'o', color=DRONE_COLORS[k], ms=5)[0] for k in range(N_DRONES)]
+        trails = [ax.plot([], [], '-', color=DRONE_COLORS[k], lw=1)[0] for k in range(N_DRONES)]
+        ring = ax.plot([], [], 'o', mfc='none', mec='red', ms=14, mew=2)[0]
+        artists.append((dots, trails, ring))
+    ttl = fig.suptitle('')
 
-    time_text = fig.text(0.5, 0.97, '', ha='center', fontsize=10)
-
-    def init():
-        for (dots, trails) in drone_dots:
-            for d, tr in zip(dots, trails):
-                d.set_data([], [])
-                tr.set_data([], [])
-        time_text.set_text('')
-        return [item for pair in drone_dots for sub in pair for item in sub] + [time_text]
-
-    def update(frame_idx):
-        frame = list(frames)[frame_idx]
-        t_val = frame * DT
-        time_text.set_text(f't = {t_val:.1f} s')
-        for si, (traj, (dots, trails)) in enumerate(zip(trajs, drone_dots)):
-            f = min(frame, len(traj) - 1)
-            trail_start = max(0, f - 50)
+    def update(fi):
+        f_glob = frames[fi]
+        ttl.set_text(f'Path De-confliction   t = {f_glob * DT:.1f} s')
+        out = [ttl]
+        for res, (dots, trails, ring) in zip(results, artists):
+            f = min(f_glob, len(res['times']) - 1)
+            P, A = res['pos'], res['active']
             for k in range(N_DRONES):
-                dots[k].set_data([traj[f, k, 0]], [traj[f, k, 1]])
-                trails[k].set_data(traj[trail_start:f+1, k, 0],
-                                   traj[trail_start:f+1, k, 1])
-        return [item for pair in drone_dots for sub in pair for item in sub] + [time_text]
+                m = A[:f + 1, k]
+                tr = P[:f + 1, k][m]
+                trails[k].set_data(tr[:, 0], tr[:, 1])
+                if A[f, k]:
+                    dots[k].set_data([P[f, k, 0]], [P[f, k, 1]])
+                else:
+                    dots[k].set_data([], [])
+            rx, ry = [], []
+            idx = np.flatnonzero(A[f])
+            for a, b in combinations(idx, 2):
+                if np.linalg.norm(P[f, a] - P[f, b]) < D_SEP:
+                    rx.append(0.5 * (P[f, a, 0] + P[f, b, 0]))
+                    ry.append(0.5 * (P[f, a, 1] + P[f, b, 1]))
+            ring.set_data(rx, ry)
+            out += dots + trails + [ring]
+        return out
 
-    n_frames = len(list(frames))
-    ani = animation.FuncAnimation(fig, update, frames=n_frames,
-                                  init_func=init, blit=True, interval=50)
-
-    os.makedirs(out_dir, exist_ok=True)
+    ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=50, blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
+    ani.save(path, writer='pillow', fps=20, dpi=80)
     plt.close()
-    print(f'Saved: {path}')
+    print(f'Saved: {path}  ({len(frames)} frames)')
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    strategies = ['speed', 'waypoint', 'altitude']
-    results_all = []
-    metrics     = []
-
-    for strat in strategies:
-        print(f'\nRunning strategy: {strat} ...')
-        res = run_simulation(strat)
-        (history, arrival_times, nominal_times,
-         added_dist_wp, sep_history, total_conflicts, goals, origins) = res
-        results_all.append(res)
-
-        # Compute metrics
-        delays = arrival_times - nominal_times
-        valid  = ~np.isnan(delays)
-
-        if strat == 'speed':
-            # Added distance for speed strategy: delay * V_DRONE (approx extra path)
-            added_dist = float(np.nansum(delays[valid]) * V_DRONE) if valid.any() else 0.0
-        elif strat == 'waypoint':
-            added_dist = float(np.sum(added_dist_wp))
-        else:  # altitude
-            added_dist = 0.0  # horizontal paths unchanged
-
-        max_delay = float(np.nanmax(delays[valid])) if valid.any() else 0.0
-
-        m = {
-            'strategy':    strat,
-            'added_dist':  added_dist,
-            'max_delay':   max_delay,
-            'n_conflicts': total_conflicts,
-        }
-        metrics.append(m)
-
-        print(f'  Conflict events detected : {total_conflicts}')
-        print(f'  Total added flight dist  : {added_dist:.1f} m')
-        print(f'  Max arrival delay        : {max_delay:.2f} s')
-        min_sep = min(sep_history)
-        print(f'  Min pairwise separation  : {min_sep:.2f} m')
-
     out_dir = os.path.normpath(OUTPUT_DIR)
-    plot_trajectories_2d(results_all, out_dir)
-    plot_3d_altitude_layers(results_all, out_dir)
-    plot_separation_timeseries(results_all, out_dir)
-    plot_strategy_comparison(metrics, out_dir)
-    plot_altitude_timeseries(results_all, out_dir)
-    save_animation(results_all, out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+
+    origins, goals, launch = make_traffic(SEED)
+    print('Traffic (seed 7):')
+    for k in range(N_DRONES):
+        print(f'  D{k+1}: ({origins[k,0]:5.1f},{origins[k,1]:5.1f}) -> '
+              f'({goals[k,0]:5.1f},{goals[k,1]:5.1f})  launch {launch[k]:.1f} s  '
+              f'L = {np.linalg.norm(goals[k]-origins[k]):.1f} m')
+
+    results, summaries = [], []
+    for strat in STRATEGIES:
+        res = run_simulation(strat)
+        s = summarise(res)
+        results.append(res); summaries.append(s)
+        print(f'\nStrategy: {strat}')
+        print(f'  All drones arrived       : {res["all_arrived"]}')
+        print(f'  Predicted conflict events: {s["n_conflicts"]}')
+        print(f'  LoS events (< {D_SEP} m)    : {s["n_los"]}  pairs {s["los_pairs"]}')
+        print(f'  Min airborne separation  : {s["min_sep"]:.2f} m')
+        print(f'  Total added flight dist  : {s["added_dist"]:.1f} m')
+        print(f'  Total / max arrival delay: {s["total_delay"]:.2f} s / {s["max_delay"]:.2f} s')
+        if strat == 'speed':
+            print(f'  Lowest commanded speed   : {s["min_speed"]:.2f} m/s')
+        if strat == 'waypoint':
+            print(f'  Avoidance waypoints      : {s["n_wp"]}')
+        if strat == 'none':
+            for (tt, i, j, x, y) in res['conflict_events']:
+                print(f'    conflict D{i+1}-D{j+1} first flagged t={tt:.1f} s')
+
+    plot_trajectories_2d(results, out_dir)
+    plot_3d_altitude_layers(results, out_dir)
+    plot_separation_timeseries(results, out_dir)
+    plot_strategy_comparison(summaries, out_dir)
+    plot_speed_profiles(results, out_dir)
+    plot_altitude_timeseries(results, out_dir)
+    save_animation(results, out_dir)
 
     print('\n=== Summary ===')
-    for m in metrics:
-        print(f"  {m['strategy']:10s}: conflicts={m['n_conflicts']:4d}  "
-              f"added_dist={m['added_dist']:7.1f} m  "
-              f"max_delay={m['max_delay']:.2f} s")
+    for s in summaries:
+        print(f"  {s['strategy']:9s}: conflicts={s['n_conflicts']:2d}  LoS={s['n_los']:2d}  "
+              f"min_sep={s['min_sep']:6.2f} m  added_dist={s['added_dist']:6.1f} m  "
+              f"total_delay={s['total_delay']:6.2f} s  max_delay={s['max_delay']:5.2f} s")

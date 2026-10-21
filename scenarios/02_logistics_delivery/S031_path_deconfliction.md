@@ -115,7 +115,9 @@ Each drone $i$ is pre-assigned a unique altitude layer before departure:
 
 $$z_i = z_{base} + (i - 1) \cdot \Delta z, \qquad i = 1, \ldots, N$$
 
-with $z_{base} = 18$ m and $\Delta z = 2$ m, giving a layer range of $[18, 32]$ m for $N = 8$.
+with $z_{base} = 20$ m and $\Delta z = d_{sep} + \delta_{margin} = 7$ m, giving a layer range of
+$[20, 69]$ m for $N = 8$. (An earlier version used $\Delta z = 2$ m, which contradicts the
+$\Delta z \geq d_{sep}$ requirement below.)
 
 Vertical separation between any two drones is guaranteed as long as $\Delta z \geq d_{sep}$. No
 horizontal manoeuvres are required, so the horizontal paths are unchanged. The only cost is the
@@ -154,7 +156,7 @@ D_MARGIN    = 2.0       # m extra clearance added on top of D_SEP
 T_HORIZON   = 30.0      # s conflict look-ahead window
 DT          = 0.1       # s simulation timestep
 Z_NOM       = 20.0      # m nominal cruise altitude
-DZ_LAYER    = 2.0       # m altitude layer spacing (strategy 3)
+DZ_LAYER    = 7.0       # m altitude layer spacing (strategy 3), >= D_SEP
 ARENA       = 500.0     # m half-width of delivery area
 DEPOT       = np.array([250.0, 250.0, Z_NOM])
 
@@ -229,7 +231,7 @@ def simulate(strategy, seed=7):
 
     # Altitude layer pre-assignment
     if strategy == 'altitude':
-        z_layers = assign_altitude_layers(N_DRONES, Z_NOM - 2.0, DZ_LAYER)
+        z_layers = assign_altitude_layers(N_DRONES, Z_NOM, DZ_LAYER)
         goals[:, 2] = z_layers
 
     origins = np.tile(DEPOT, (N_DRONES, 1)).astype(float)
@@ -315,8 +317,8 @@ def simulate(strategy, seed=7):
 | Clearance margin $\delta_{margin}$ | 2.0 m |
 | Look-ahead window $T_{horizon}$ | 30 s |
 | Nominal cruise altitude $z_{nom}$ | 20.0 m |
-| Altitude layer spacing $\Delta z$ | 2.0 m |
-| Altitude layer range | 18 – 32 m |
+| Altitude layer spacing $\Delta z$ | 7.0 m (= d_sep + margin) |
+| Altitude layer range | 20 – 69 m |
 | Airspace arena | $500 \times 500$ m |
 | All drones depart from | depot at (250, 250) m |
 | Goals | 8 random points in $[20, 480]^2$ m |
