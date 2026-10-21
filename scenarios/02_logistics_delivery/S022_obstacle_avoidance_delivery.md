@@ -154,7 +154,7 @@ python src/02_logistics_delivery/s022_obstacle_avoidance_delivery.py
 |-----------|-------|
 | Start position | (0, 0, 2) m |
 | Goal position | (18, 12, 2) m |
-| Straight-line distance | ~21.5 m |
+| Straight-line distance | 21.63 m |
 | Cruise speed | 3.0 m/s |
 | RRT* max iterations | 2 000 |
 | Step size $\eta$ | 1.0 m |

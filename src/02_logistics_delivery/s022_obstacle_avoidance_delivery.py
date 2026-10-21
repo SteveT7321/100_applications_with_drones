@@ -14,7 +14,6 @@ Outputs (saved to outputs/02_logistics_delivery/s022_obstacle_avoidance_delivery
 import sys
 import os
 import time
-import random
 import math
 
 import numpy as np
@@ -53,7 +52,9 @@ GOAL  = np.array([18.0, 12.0, 2.0])
 
 BOUNDS = np.array([[-1.0, 20.0],   # x
                    [-1.0, 14.0],   # y
-                   [ 0.5,  5.0]])  # z
+                   [ 1.0,  5.0]])  # z  (card: flight altitude range 1.0-5.0 m)
+GOAL_BIAS      = 0.10    # probability of sampling the goal directly
+GOAL_CONNECT   = 1.5 * STEP_SIZE   # try a goal connection from nodes this close
 
 # Obstacle layout: (cx, cy, radius, height)
 OBSTACLES = [
@@ -66,8 +67,6 @@ OBSTACLES = [
 ]
 
 RANDOM_SEED = 42
-random.seed(RANDOM_SEED)
-np.random.seed(RANDOM_SEED)
 
 
 # ── Collision Checking ─────────────────────────────────────────────────────────
@@ -128,38 +127,47 @@ def point_collision_free(q, obstacles=OBSTACLES, drone_r=DRONE_RADIUS):
 # ── RRT* ───────────────────────────────────────────────────────────────────────
 
 class Node:
-    __slots__ = ("pos", "parent", "cost")
+    __slots__ = ("pos", "parent", "cost", "children")
 
     def __init__(self, pos, parent=None, cost=0.0):
         self.pos = np.asarray(pos, dtype=float)
         self.parent = parent
         self.cost = cost
+        self.children = []
 
 
 class RRTStar:
-    def __init__(self, start, goal, obstacles, bounds,
-                 step=STEP_SIZE, gamma=GAMMA_RRT):
+    def __init__(self, start, goal, obstacles, bounds, rng,
+                 step=STEP_SIZE, gamma=GAMMA_RRT, max_nodes=MAX_ITER + 1):
         self.start = Node(start, cost=0.0)
-        self.goal  = Node(goal)
+        self.goal_pos = np.asarray(goal, dtype=float)
         self.obstacles = obstacles
         self.bounds = bounds
+        self.rng   = rng
         self.step  = step
         self.gamma = gamma
         self.nodes = [self.start]
-        self.best_goal_node = None
-        self.cost_history = []   # (iter, best_cost)
+        self._pos  = np.zeros((max_nodes, 3))      # vectorised node positions
+        self._pos[0] = self.start.pos
+        self.goal_parents = []    # tree nodes with a collision-free edge to the goal
+        self.cost_history = []    # best goal cost after every iteration (inf = none yet)
+        self.first_solution_iter = None
+        self.n_accepted = 0
 
+    # -- primitives ---------------------------------------------------------
     def _sample(self):
-        # Bias 10 % toward goal
-        if random.random() < 0.10:
-            return self.goal.pos.copy()
+        if self.rng.random() < GOAL_BIAS:
+            return self.goal_pos.copy()
         lo = self.bounds[:, 0]
         hi = self.bounds[:, 1]
-        return np.array([random.uniform(lo[i], hi[i]) for i in range(3)])
+        return self.rng.uniform(lo, hi)
+
+    def _dists(self, q):
+        n = len(self.nodes)
+        return np.linalg.norm(self._pos[:n] - q, axis=1)
 
     def _nearest(self, q):
-        dists = [np.linalg.norm(n.pos - q) for n in self.nodes]
-        return self.nodes[int(np.argmin(dists))]
+        return self.nodes[int(np.argmin(self._dists(q)))]
 
     def _steer(self, q_near, q_rand):
         diff = q_rand - q_near.pos
@@ -168,91 +176,117 @@ class RRTStar:
             return q_near.pos.copy()
         return q_near.pos + (diff / d) * min(d, self.step)
 
-    def _near_radius(self):
+    def near_radius(self):
+        """Card: r_n = min(gamma * (log n / n)^(1/d), eta), d = 3."""
         n = max(len(self.nodes), 2)
         r = self.gamma * (math.log(n) / n) ** (1.0 / 3.0)
-        return min(r, self.step * 3.0)
+        return min(r, self.step)
 
     def _near_nodes(self, q_new):
-        r = self._near_radius()
-        return [nd for nd in self.nodes
-                if np.linalg.norm(nd.pos - q_new) <= r]
+        r = self.near_radius()
+        idx = np.nonzero(self._dists(q_new) <= r)[0]
+        return [self.nodes[i] for i in idx]
 
     def _choose_parent(self, q_new, near_nodes):
         q_min = None
         c_min = float("inf")
         for nd in near_nodes:
-            if segment_collision_free(nd.pos, q_new, self.obstacles):
-                c = nd.cost + np.linalg.norm(nd.pos - q_new)
-                if c < c_min:
-                    c_min = c
-                    q_min = nd
+            c = nd.cost + np.linalg.norm(nd.pos - q_new)
+            if c < c_min and segment_collision_free(nd.pos, q_new, self.obstacles):
+                c_min = c
+                q_min = nd
         return q_min, c_min
+
+    @staticmethod
+    def _propagate_cost(node):
+        """After re-parenting, push the cost change down the subtree."""
+        stack = [node]
+        while stack:
+            nd = stack.pop()
+            for ch in nd.children:
+                ch.cost = nd.cost + np.linalg.norm(ch.pos - nd.pos)
+                stack.append(ch)
+
+    def _set_parent(self, node, parent, cost):
+        if node.parent is not None:
+            node.parent.children.remove(node)
+        node.parent = parent
+        node.cost = cost
+        parent.children.append(node)
 
     def _rewire(self, new_node, near_nodes):
         for nd in near_nodes:
-            if nd is new_node.parent:
+            if nd is new_node.parent or nd is new_node:
                 continue
             new_cost = new_node.cost + np.linalg.norm(new_node.pos - nd.pos)
-            if new_cost < nd.cost:
+            if new_cost < nd.cost - 1e-12:
                 if segment_collision_free(new_node.pos, nd.pos, self.obstacles):
-                    nd.parent = new_node
-                    nd.cost   = new_cost
+                    self._set_parent(nd, new_node, new_cost)
+                    self._propagate_cost(nd)
 
-    def _extract_path(self, goal_node):
-        path = []
-        nd = goal_node
+    def best_goal(self):
+        """(best total cost, parent node) over all goal-connected tree nodes."""
+        best_c, best_nd = float("inf"), None
+        for nd in self.goal_parents:
+            c = nd.cost + np.linalg.norm(nd.pos - self.goal_pos)
+            if c < best_c:
+                best_c, best_nd = c, nd
+        return best_c, best_nd
+
+    def _extract_path(self, goal_parent):
+        path = [self.goal_pos.copy()]
+        nd = goal_parent
         while nd is not None:
             path.append(nd.pos.copy())
             nd = nd.parent
         path.reverse()
         return path
 
+    # -- one iteration -------------------------------------------------------
+    def _iterate(self):
+        q_rand = self._sample()
+        q_near = self._nearest(q_rand)
+        q_new_pos = self._steer(q_near, q_rand)
+
+        if not point_in_bounds(q_new_pos, self.bounds):
+            return
+        if not point_collision_free(q_new_pos, self.obstacles):
+            return
+        if not segment_collision_free(q_near.pos, q_new_pos, self.obstacles):
+            return
+
+        near_nodes = self._near_nodes(q_new_pos)
+        q_min, c_min = self._choose_parent(q_new_pos, near_nodes)
+        if q_min is None:
+            # q_near is always collision-free-connected (checked above)
+            q_min = q_near
+            c_min = q_near.cost + np.linalg.norm(q_near.pos - q_new_pos)
+
+        new_node = Node(q_new_pos)
+        self._set_parent(new_node, q_min, c_min)
+        self._pos[len(self.nodes)] = q_new_pos
+        self.nodes.append(new_node)
+        self.n_accepted += 1
+        self._rewire(new_node, near_nodes)
+
+        # Goal connection
+        d_to_goal = np.linalg.norm(new_node.pos - self.goal_pos)
+        if d_to_goal < GOAL_CONNECT and \
+                segment_collision_free(new_node.pos, self.goal_pos, self.obstacles):
+            self.goal_parents.append(new_node)
+
     def plan(self, max_iter=MAX_ITER):
-        goal_threshold = self.step * 1.5
-
         for i in range(max_iter):
-            q_rand = self._sample()
-            q_near = self._nearest(q_rand)
-            q_new_pos = self._steer(q_near, q_rand)
+            self._iterate()
+            best_c, _ = self.best_goal()
+            if self.first_solution_iter is None and np.isfinite(best_c):
+                self.first_solution_iter = i + 1
+            self.cost_history.append(best_c)
 
-            if not point_in_bounds(q_new_pos, self.bounds):
-                continue
-            if not point_collision_free(q_new_pos, self.obstacles):
-                continue
-            if not segment_collision_free(q_near.pos, q_new_pos, self.obstacles):
-                continue
-
-            near_nodes = self._near_nodes(q_new_pos)
-            q_min, c_min = self._choose_parent(q_new_pos, near_nodes)
-            if q_min is None:
-                # Fall back to nearest
-                if segment_collision_free(q_near.pos, q_new_pos, self.obstacles):
-                    q_min = q_near
-                    c_min = q_near.cost + np.linalg.norm(q_near.pos - q_new_pos)
-                else:
-                    continue
-
-            new_node = Node(q_new_pos, parent=q_min, cost=c_min)
-            self.nodes.append(new_node)
-            self._rewire(new_node, near_nodes)
-
-            # Check if we can reach goal
-            d_to_goal = np.linalg.norm(new_node.pos - self.goal.pos)
-            if d_to_goal < goal_threshold:
-                if segment_collision_free(new_node.pos, self.goal.pos, self.obstacles):
-                    goal_cost = new_node.cost + d_to_goal
-                    if self.best_goal_node is None or goal_cost < self.best_goal_node.cost:
-                        goal_nd = Node(self.goal.pos, parent=new_node, cost=goal_cost)
-                        self.best_goal_node = goal_nd
-
-            # Track best cost
-            best = self.best_goal_node.cost if self.best_goal_node else float("inf")
-            self.cost_history.append(best)
-
-        if self.best_goal_node is None:
+        best_c, best_nd = self.best_goal()
+        if best_nd is None:
             return None
-        return self._extract_path(self.best_goal_node)
+        return self._extract_path(best_nd)
 
 
 # ── Path Post-processing ───────────────────────────────────────────────────────
@@ -311,8 +345,8 @@ def run_tracker(waypoints, cruise=CRUISE_SPEED, max_speed=MAX_SPEED,
         cl = _min_clearance(drone.pos, obstacles)
         clearances.append(cl)
 
-        # Tracking error vs reference
-        ref_idx = min(step_count, len(ref_pts) - 1)
+        # Tracking error vs time-indexed constant-speed reference
+        ref_idx = min(step_count + 1, len(ref_pts) - 1)
         err = np.linalg.norm(drone.pos - ref_pts[ref_idx])
         track_errors.append(err)
 
@@ -331,10 +365,21 @@ def _interpolate_reference(waypoints, dt, speed):
         seg_len = np.linalg.norm(seg)
         if seg_len < 1e-9:
             continue
-        n_steps = max(1, int(seg_len / (speed * dt)))
+        n_steps = max(1, int(round(seg_len / (speed * dt))))
         for j in range(1, n_steps + 1):
             pts.append(np.array(waypoints[k-1]) + seg * (j / n_steps))
     return pts
+
+
+def _dist_to_polyline(p, path):
+    """3D distance from point p to the planned waypoint polyline (cross-track)."""
+    best = float("inf")
+    for k in range(len(path) - 1):
+        a = np.asarray(path[k]); b = np.asarray(path[k + 1])
+        ab = b - a
+        t = np.clip(np.dot(p - a, ab) / max(np.dot(ab, ab), 1e-12), 0.0, 1.0)
+        best = min(best, float(np.linalg.norm(p - (a + t * ab))))
+    return best
 
 
 def _min_clearance(pos, obstacles):
@@ -367,7 +412,7 @@ def _draw_cylinder(ax, cx, cy, r, h, color="grey", alpha=0.25, n=30):
 
 
 def plot_trajectory_3d(rrt_path, straight_path, drone_traj,
-                       tree_nodes, obstacles, start, goal, out_dir):
+                       tree_nodes, obstacles, start, goal, out_dir, rng):
     """Plot 1: 3D scene overview."""
     fig = plt.figure(figsize=(14, 9))
     ax = fig.add_subplot(111, projection="3d")
@@ -378,7 +423,7 @@ def plot_trajectory_3d(rrt_path, straight_path, drone_traj,
 
     # Draw RRT* tree (sample of nodes)
     tree_arr = np.array([n.pos for n in tree_nodes])
-    sample_idx = np.random.choice(len(tree_arr),
+    sample_idx = rng.choice(len(tree_arr),
                                   size=min(500, len(tree_arr)), replace=False)
     ax.scatter(tree_arr[sample_idx, 0], tree_arr[sample_idx, 1],
                tree_arr[sample_idx, 2],
@@ -415,17 +460,22 @@ def plot_trajectory_3d(rrt_path, straight_path, drone_traj,
     print(f"  Saved: {path}")
 
 
-def plot_metrics(cost_history, clearances, track_errors, drone_radius, out_dir):
+def plot_metrics(cost_history, clearances, track_errors, drone_radius, out_dir,
+                 first_iter=None, cross_track=None):
     """Plot 2: convergence curve, clearance over time, tracking error."""
     fig, axes = plt.subplots(3, 1, figsize=(10, 11))
 
     # --- convergence ---
     ax = axes[0]
     finite_mask = np.isfinite(cost_history)
-    iters = np.arange(len(cost_history))
+    iters = np.arange(1, len(cost_history) + 1)
     if finite_mask.any():
         ax.plot(iters[finite_mask], np.array(cost_history)[finite_mask],
-                color="steelblue", lw=1.5)
+                color="steelblue", lw=1.5, label="Best raw-tree path length")
+    if first_iter is not None:
+        ax.axvline(first_iter, color="grey", ls=":", lw=1.2,
+                   label=f"First solution (iter {first_iter})")
+        ax.legend(fontsize=8)
     ax.set_xlabel("RRT* Iteration")
     ax.set_ylabel("Best Path Length (m)")
     ax.set_title("RRT* Cost Convergence")
@@ -446,11 +496,16 @@ def plot_metrics(cost_history, clearances, track_errors, drone_radius, out_dir):
     # --- tracking error ---
     ax = axes[2]
     t_te = np.arange(len(track_errors)) / CTRL_FREQ
-    ax.plot(t_te, track_errors, color="purple", lw=1.2)
+    ax.plot(t_te, track_errors, color="purple", lw=1.2,
+            label="|p(t) - p_ref(t)| (time-indexed, card metric)")
+    if cross_track is not None:
+        ax.plot(np.arange(len(cross_track)) / CTRL_FREQ, cross_track,
+                color="teal", lw=1.2, label="Distance to planned polyline")
     ax.axhline(0.1, color="red", ls="--", lw=1.5, label="0.1 m threshold")
     ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Tracking RMSE (m)")
-    ax.set_title("Waypoint Tracking Error")
+    ax.set_ylabel("Instantaneous tracking error (m)")
+    ax.set_title("Tracking Error vs Constant-Speed Reference "
+                 "(kinematic follower: only corner-cutting at r_wp)")
     ax.legend(fontsize=8)
     ax.grid(True, alpha=0.4)
 
@@ -502,7 +557,7 @@ def save_animation(rrt_path, drone_traj, obstacles, start, goal, out_dir):
     trail_3d,      = ax_3d.plot([], [], [], "b-", lw=1.2, alpha=0.6)
 
     # Sub-sample trajectory for animation
-    n_frames = min(180, len(traj))
+    n_frames = min(150, len(traj))
     frame_idx = np.linspace(0, len(traj) - 1, n_frames, dtype=int)
 
     def init():
@@ -549,18 +604,26 @@ def run_simulation():
 
     # ── RRT* planning ─────────────────────────────────────────────────────────
     print("\n[Step 1] Running RRT* planner …")
+    rng = np.random.default_rng(RANDOM_SEED)
     t0 = time.perf_counter()
-    planner = RRTStar(START, GOAL, OBSTACLES, BOUNDS)
+    planner = RRTStar(START, GOAL, OBSTACLES, BOUNDS, rng)
     raw_path = planner.plan(max_iter=MAX_ITER)
     planning_time = time.perf_counter() - t0
+    raw_len = path_length(raw_path) if raw_path is not None else float("nan")
 
     if raw_path is None:
         print("  ERROR: RRT* failed to find a path. Increase MAX_ITER.")
         sys.exit(1)
 
-    print(f"  Planning time : {planning_time:.2f} s")
+    print(f"  Iterations    : {MAX_ITER}  (accepted nodes: {planner.n_accepted})")
+    print(f"  First solution: iteration {planner.first_solution_iter}, "
+          f"cost {planner.cost_history[planner.first_solution_iter - 1]:.2f} m")
+    print(f"  Final near radius r_n : {planner.near_radius():.3f} m")
     print(f"  RRT* nodes    : {len(planner.nodes)}")
     print(f"  Raw waypoints : {len(raw_path)}")
+    print(f"  Raw path length       : {raw_len:.2f} m")
+    print(f"  (wall-clock planning time, machine-dependent, not printed "
+          f"so the console output is reproducible)")
 
     # ── Post-processing ────────────────────────────────────────────────────────
     print("\n[Step 2] Shortcutting path …")
@@ -591,24 +654,33 @@ def run_simulation():
     # Metrics
     min_clearance = float(np.min(clearances)) if len(clearances) > 0 else 0.0
     track_rmse    = float(np.sqrt(np.mean(track_errors**2))) if len(track_errors) > 0 else 0.0
-    flight_time   = len(drone_traj) * DT
+    track_max     = float(np.max(track_errors)) if len(track_errors) > 0 else 0.0
+    flight_time   = (len(drone_traj) - 1) * DT
+    final_err     = float(np.linalg.norm(drone_traj[-1] - GOAL))
+    cross_track   = np.array([_dist_to_polyline(p, short_path) for p in drone_traj[1:]])
+    xt_max        = float(np.max(cross_track))
 
     print(f"  Flight simulation steps  : {len(drone_traj)}")
-    print(f"  Approx. flight time      : {flight_time:.1f} s")
+    print(f"  Flight time              : {flight_time:.2f} s")
+    print(f"  Final distance to goal   : {final_err:.3f} m  (r_wp = {WP_THRESHOLD} m)")
     print(f"  Min clearance to obs.    : {min_clearance:.3f} m  (drone r = {DRONE_RADIUS} m)")
-    print(f"  Tracking RMSE            : {track_rmse:.4f} m")
+    print(f"  Tracking RMSE            : {track_rmse:.4f} m  (max {track_max:.4f} m, "
+          f"final {track_errors[-1]:.4f} m)")
+    print(f"  Max dist. to planned path: {xt_max:.4f} m  (corner cutting)")
 
     # Summary
     print("\n" + "=" * 60)
     print("SUMMARY METRICS")
     print("=" * 60)
     print(f"  Straight-line distance   : {straight_line_dist:.2f} m")
-    print(f"  RRT* path length         : {rrt_len:.2f} m")
+    print(f"  RRT* raw path length     : {raw_len:.2f} m")
+    print(f"  RRT* path length (short) : {rrt_len:.2f} m")
     print(f"  Detour ratio ρ           : {detour:.3f}")
-    print(f"  Planning time            : {planning_time:.2f} s")
+    print(f"  RRT* iterations          : {MAX_ITER} (first solution @ {planner.first_solution_iter})")
     print(f"  Min obstacle clearance   : {min_clearance:.3f} m")
     tracking_ok = "OK < 0.1 m" if track_rmse < 0.1 else "FAIL > 0.1 m"
     print(f"  Tracking RMSE            : {track_rmse:.4f} m  ({tracking_ok})")
+    print(f"  Max dist. to planned path: {xt_max:.4f} m")
     print(f"  Straight-line free       : {straight_free}")
     print(f"  RRT* path free           : {all_free}")
     print("=" * 60)
@@ -616,9 +688,11 @@ def run_simulation():
     # ── Plots ──────────────────────────────────────────────────────────────────
     print("\n[Step 5] Generating plots …")
     plot_trajectory_3d(short_path, straight_path, drone_traj,
-                       planner.nodes, OBSTACLES, START, GOAL, OUTPUT_DIR)
+                       planner.nodes, OBSTACLES, START, GOAL, OUTPUT_DIR,
+                       np.random.default_rng(RANDOM_SEED + 1))
     plot_metrics(planner.cost_history, clearances, track_errors,
-                 DRONE_RADIUS, OUTPUT_DIR)
+                 DRONE_RADIUS, OUTPUT_DIR, planner.first_solution_iter,
+                 cross_track)
     save_animation(short_path, drone_traj, OBSTACLES, START, GOAL, OUTPUT_DIR)
 
     print("\nAll outputs saved to:")
@@ -628,9 +702,12 @@ def run_simulation():
         "straight_line_dist": straight_line_dist,
         "rrt_path_length": rrt_len,
         "detour_ratio": detour,
-        "planning_time_s": planning_time,
+        "planning_time_s": planning_time,   # wall-clock, machine-dependent
+        "first_solution_iter": planner.first_solution_iter,
+        "raw_path_length": raw_len,
         "min_clearance_m": min_clearance,
         "tracking_rmse_m": track_rmse,
+        "max_cross_track_m": xt_max,
         "rrt_nodes": len(planner.nodes),
         "waypoints": len(short_path),
         "flight_time_s": flight_time,
