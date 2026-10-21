@@ -49,6 +49,11 @@ $$E = \int_0^{T_{mission}} \left( P_{hover} + k_{drag} \cdot v(t)^2 \right) dt$$
 | Control frequency | 48 Hz | dt = 1/48 s |
 | Hover power | 30 W | |
 | Drag power coefficient | 0.6 W·s²/m² | |
+| Max mission time | 60 s | Safety cut-off (not reached) |
+
+### Deviations from the scenario card
+
+None in method or parameters — the code implements the card's FSM, constants and energy model exactly. Two reporting details are added: the simulated phase durations are measured from the logged switch step (not assumed equal to the analytical $T_1^*$, $T_2^*$), and energy is integrated with the trapezoidal rule over the logged power samples rather than with the card's closed-form approximation.
 
 ---
 
@@ -56,14 +61,19 @@ $$E = \int_0^{T_{mission}} \left( P_{hover} + k_{drag} \cdot v(t)^2 \right) dt$$
 
 | Metric | Predicted | Simulated |
 |--------|-----------|-----------|
-| Cruise time $T_1$ | 1.581 s | ~1.581 s |
-| Descent time $T_2$ | 1.333 s | ~1.333 s |
+| Cruise time $T_1$ (time of Cruise→Descent switch) | 1.581 s | **1.562 s** |
+| Descent time $T_2$ | 1.333 s | **1.354 s** |
 | Total mission time | 2.914 s | **2.917 s** |
 | Landing error | — | **9.83 cm** < 20 cm ✅ |
 | Energy consumed | — | **112.55 J** |
 | Landing success | — | **Yes** ✅ |
 
-Simulation matches analytical prediction to within 0.1 % — validating the time-optimal bang-bang cruise and maximum-rate descent strategy.
+The total mission time matches the analytical prediction to within 0.1 %. The two phases individually differ slightly, for discretisation reasons:
+
+- **Cruise ends early (1.562 s vs 1.581 s)**: the FSM switches to descent as soon as the horizontal distance is below $\epsilon_{align} = 0.10$ m, i.e. the drone stops about 0.1 m short of the pad (≈ 0.02 s at 5 m/s).
+- **Descent is slightly longer (1.354 s vs 1.333 s)**: the switch step and the touchdown step each output zero velocity (2 × 1/48 s), while the 5 cm touchdown tolerance saves one 1/48 s step (touchdown at z = 0.031 m).
+
+The 9.83 cm landing error is therefore mostly the horizontal residual left by the 0.10 m alignment threshold (≈ 9.3 cm horizontal, 3.1 cm vertical). Energy sanity check: $30 \times 2.917 + 0.6 \times 5^2 \times 1.562 + 0.6 \times 1.5^2 \times 1.354 \approx 112.7$ J, consistent with the trapezoidal-integrated 112.55 J.
 
 ---
 
@@ -77,11 +87,13 @@ Depot (blue square) → cruise segment (red solid at z = 2 m) → descent segmen
 
 ### Telemetry (Altitude / Speed / Power vs Time)
 
-Altitude holds at 2 m during cruise then drops linearly; speed is constant at 5 m/s during cruise and 1.5 m/s during descent; power is highest during cruise due to drag:
+Altitude holds at 2 m during cruise then drops linearly; speed is constant at 5 m/s during cruise and 1.5 m/s during descent; power is highest during cruise due to drag (45 W vs ≈ 31.4 W in descent). The orange dashed line marks the **simulated** Cruise→Descent switch (1.562 s); the black dotted line marks the analytical $T_1^*$ (1.581 s) for comparison:
 
 ![Telemetry](telemetry.png)
 
 ### Animation
+
+141 frames (every simulation step, 48 Hz source) played at 15 fps:
 
 ![Animation](animation.gif)
 

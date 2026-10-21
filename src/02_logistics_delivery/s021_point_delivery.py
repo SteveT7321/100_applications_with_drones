@@ -119,9 +119,16 @@ def run_simulation():
     # Mission metrics
     T_mission  = times[-1]
     landing_err = np.linalg.norm(positions[-1] - GOAL)
-    energy = np.trapz(powers, times)
+    energy = np.trapezoid(powers, times)
+
+    # Simulated phase-switch time = first logged step in DESCENT phase
+    i_switch = phases_log.index("DESCENT")
+    T1_sim   = times[i_switch]
+    T2_sim   = T_mission - T1_sim
 
     print(f"[S021] Simulation results:")
+    print(f"  Cruise time    = {T1_sim:.3f} s  (predicted {T1_star:.3f} s)")
+    print(f"  Descent time   = {T2_sim:.3f} s  (predicted {T2_star:.3f} s)")
     print(f"  Mission time   = {T_mission:.3f} s  (predicted {T_pred:.3f} s)")
     print(f"  Landing error  = {landing_err:.4f} m  (limit {R_LAND} m)")
     print(f"  Energy used    = {energy:.2f} J")
@@ -135,6 +142,8 @@ def run_simulation():
         "phases_log": phases_log,
         "T_mission": T_mission,
         "T1_star": T1_star,
+        "T1_sim": T1_sim,
+        "T2_sim": T2_sim,
         "T2_star": T2_star,
         "T_pred": T_pred,
         "landing_err": landing_err,
@@ -204,7 +213,8 @@ def plot_telemetry(data: dict):
     vel = data["velocities"]
     pwr = data["powers"]
 
-    T1 = data["T1_star"]  # approximate cruise end time
+    T1  = data["T1_sim"]   # simulated Cruise→Descent switch time
+    T1a = data["T1_star"]  # analytical T1*
 
     fig, axes = plt.subplots(3, 1, figsize=(9, 9), sharex=True)
     fig.suptitle("S021 Point Delivery — Telemetry", fontsize=13, fontweight="bold")
@@ -214,7 +224,10 @@ def plot_telemetry(data: dict):
     ax.plot(t, pos[:, 2], color="steelblue", linewidth=2)
     ax.axhline(Z_CRUISE, color="gray", linestyle=":", linewidth=1, label=f"Cruise alt {Z_CRUISE} m")
     ax.axhline(GOAL[2],  color="limegreen", linestyle="--", linewidth=1, label="Ground (0 m)")
-    ax.axvline(T1, color="orange", linestyle="--", linewidth=1, label=f"Cruise→Descent @ {T1:.2f}s")
+    ax.axvline(T1, color="orange", linestyle="--", linewidth=1,
+               label=f"Cruise→Descent (simulated) @ {T1:.3f}s")
+    ax.axvline(T1a, color="black", linestyle=":", linewidth=1,
+               label=f"Analytical T1* = {T1a:.3f}s")
     ax.scatter(t[-1], pos[-1, 2], color="crimson", s=80, zorder=5, label="Touchdown")
     ax.set_ylabel("Altitude (m)")
     ax.set_ylim(-0.1, Z_CRUISE + 0.5)
@@ -227,6 +240,7 @@ def plot_telemetry(data: dict):
     ax.axhline(V_MAX,   color="gray", linestyle=":", linewidth=1, label=f"v_max = {V_MAX} m/s")
     ax.axhline(V_Z_MAX, color="salmon", linestyle=":", linewidth=1, label=f"v_z_max = {V_Z_MAX} m/s")
     ax.axvline(T1, color="orange", linestyle="--", linewidth=1)
+    ax.axvline(T1a, color="black", linestyle=":", linewidth=1)
     ax.set_ylabel("Speed (m/s)")
     ax.set_ylim(-0.1, V_MAX + 0.5)
     ax.legend(fontsize=7, loc="upper right")
@@ -237,6 +251,7 @@ def plot_telemetry(data: dict):
     ax.plot(t, pwr, color="darkorchid", linewidth=2)
     ax.axhline(P_HOVER, color="gray", linestyle=":", linewidth=1, label=f"P_hover = {P_HOVER} W")
     ax.axvline(T1, color="orange", linestyle="--", linewidth=1)
+    ax.axvline(T1a, color="black", linestyle=":", linewidth=1)
     ax.fill_between(t, pwr, P_HOVER, alpha=0.15, color="darkorchid", label="Extra drag power")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Power (W)")
