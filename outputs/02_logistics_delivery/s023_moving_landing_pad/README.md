@@ -99,7 +99,7 @@ Why Phase 2 is shorter than the ideal tanh profile — the script simulates the 
 
 | Vertical channel | Time to touchdown |
 |------------------|-------------------|
-| Ideal first-order profile $\dot z = -v_{land}	anh(z/z_{flare})$ | 10.97 s |
+| Ideal first-order profile $\dot z = -v_{land}\tanh(z/z_{flare})$ | 10.97 s |
 | Rate loop ($K_{\dot z} = 2$), entering from rest | 9.24 s |
 | Rate loop, entering on the tanh profile (−0.986 m/s) | 8.76 s |
 | Rate loop, entering at the actual −1.319 m/s | 8.58 s |
