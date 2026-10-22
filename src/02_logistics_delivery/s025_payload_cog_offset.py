@@ -5,17 +5,25 @@ A delivery drone carries a payload whose centre-of-gravity (CoG) is not at
 the geometric centre of the airframe.  The offset produces a constant roll /
 pitch torque disturbance.  Three control strategies are compared:
 
-  1. No compensation  — drone flies with raw PD attitude controller, offset
-                        causes sustained tilt and lateral drift.
-  2. Static feed-forward — pilot manually trims the reference attitude to
-                           counteract the known offset (perfect knowledge).
-  3. Integral (I-term) compensation — a PID attitude controller winds up an
-                                      integrator that cancels the offset torque
-                                      automatically without prior knowledge.
+  1. No compensation  — PD attitude controller; the offset torque leaves a
+                        steady attitude-tracking error tau/KP, which the outer
+                        position loop can only cancel by holding a steady
+                        position offset (waypoints are never captured).
+  2. Static feed-forward — the reference attitude is trimmed by -tau/KP (perfect
+                           knowledge of the offset torque), which through the
+                           KP term is equivalent to a feed-forward torque -tau.
+  3. PID (integral) — PD + integral term on the attitude error; the integrator
+                      learns the offset torque without prior knowledge.
 
-The drone is modelled as a 6-DoF rigid body (position + Euler angles) with
-linearised dynamics around hover.  The payload CoG offset is (dx, dy) = (+0.12, +0.08) m
-relative to the airframe centre, producing roll and pitch disturbance torques.
+The drone is modelled with linearised rigid-body attitude dynamics around hover
+(roll/pitch/yaw, Euler integration) and small-angle translational dynamics.
+The payload CoG sits at r = (x, y) = (+0.08, +0.12) m from the airframe centre,
+producing a roll disturbance torque (from the y offset) and a pitch disturbance
+torque (from the x offset).
+
+Sign convention used by this model: +roll tilts the thrust toward +y and
++pitch tilts it toward -x (a_y = +g*phi, a_x = -g*theta). With that convention
+the payload side dips: tau_roll = +m_p g r_y, tau_pitch = -m_p g r_x.
 
 Usage:
     conda activate drones
@@ -46,13 +54,13 @@ Ixx = 0.015
 Iyy = 0.015
 Izz = 0.025
 
-# Payload CoG offset relative to drone geometric centre
-COG_DX = +0.12   # m  (positive → right / +Y axis on drone body)
-COG_DY = +0.08   # m  (positive → forward / +X axis on drone body)
+# Payload CoG offset relative to drone geometric centre (body axes)
+COG_Y = +0.12   # m  lateral offset (+y)  -> roll torque
+COG_X = +0.08   # m  forward offset (+x)  -> pitch torque
 
 # Disturbance torques caused by CoG offset at hover (τ = m_payload × g × offset)
-TAU_DIST_ROLL  =  PAYLOAD_MASS * G * COG_DX   # roll  (about x)  [N·m]
-TAU_DIST_PITCH = -PAYLOAD_MASS * G * COG_DY   # pitch (about y)  [N·m]
+TAU_DIST_ROLL  =  PAYLOAD_MASS * G * COG_Y    # roll  (about x)  [N·m] = +0.942
+TAU_DIST_PITCH = -PAYLOAD_MASS * G * COG_X    # pitch (about y)  [N·m] = -0.628
 
 # ── Control parameters ────────────────────────────────────────────────────────
 DT       = 1 / 200          # 200 Hz control loop (smaller dt for stability)
@@ -70,6 +78,15 @@ KI_ATT = 2.0    # only active in PID mode
 
 # Integral anti-windup limit (rad·s)
 I_LIMIT = 0.5
+
+TAU_CMD_MAX = 5.0   # N·m   torque command saturation
+OMEGA_MAX   = 10.0  # rad/s angular-rate clamp
+V_LIMIT     = 8.0   # m/s   speed clamp
+
+# Steady-state attitude-tracking error of the PD loop under the offset torque:
+#   KP_ATT*(ref - angle) + tau = 0  ->  angle - ref = tau / KP_ATT   [rad]
+SS_ERR_ROLL  = TAU_DIST_ROLL  / KP_ATT
+SS_ERR_PITCH = TAU_DIST_PITCH / KP_ATT
 
 # ── Scenario: waypoint mission ────────────────────────────────────────────────
 WAYPOINTS = np.array([
@@ -129,7 +146,7 @@ class DroneRigidBody:
                           tau_total[2] / Izz])
         self.omega += alpha * dt
         # Clamp angular rate (physical limit ~10 rad/s)
-        self.omega = np.clip(self.omega, -10.0, 10.0)
+        self.omega = np.clip(self.omega, -OMEGA_MAX, OMEGA_MAX)
         # Euler-angle kinematics (small-angle approximation good near hover)
         self.euler += self.omega * dt
         # clamp tilt for numerical stability
@@ -152,8 +169,8 @@ class DroneRigidBody:
         self.vel += np.array([ax, ay, az]) * dt
         # Clamp velocity (physical speed limit ~8 m/s)
         spd = np.linalg.norm(self.vel)
-        if spd > 8.0:
-            self.vel = self.vel / spd * 8.0
+        if spd > V_LIMIT:
+            self.vel = self.vel / spd * V_LIMIT
         self.pos += self.vel * dt
 
         self._t += dt
@@ -182,7 +199,7 @@ def compute_attitude_command(drone, euler_ref, dt, use_integral=False):
     else:
         tau = KP_ATT * err + KD_ATT * (-drone.omega)
     # Clamp torque to reasonable range
-    tau = np.clip(tau, -5.0, 5.0)
+    tau = np.clip(tau, -TAU_CMD_MAX, TAU_CMD_MAX)
     return tau
 
 
@@ -196,17 +213,19 @@ def run_simulation(mode='no_comp'):
     drone = DroneRigidBody(init_pos=WAYPOINTS[0])
     tau_dist = np.array([TAU_DIST_ROLL, TAU_DIST_PITCH, 0.0])
 
-    # Pre-compute static trim angle (used in feedfwd mode)
-    # At equilibrium with PD only: KP_ATT*(phi_ref - phi_eq) + tau_dist = 0
-    #   => phi_eq = phi_ref + tau_dist/(Ixx*KP_ATT)  [for zero ref: phi_eq = tau_dist/(Ixx*KP_ATT)]
-    # Feed-forward offsets the ref by the negative of the equilibrium offset:
-    trim_roll  = -(TAU_DIST_ROLL  / Ixx) / KP_ATT
-    trim_pitch = -(TAU_DIST_PITCH / Iyy) / KP_ATT
+    # Pre-compute static trim angle (used in feedfwd mode).
+    # tau_cmd = KP_ATT*err + ... is a torque [N·m], so at equilibrium with PD only:
+    #   KP_ATT*(ref - angle) + tau_dist = 0  ->  angle - ref = tau_dist/KP_ATT  [rad]
+    # Trimming the reference by -tau_dist/KP_ATT makes the KP term supply -tau_dist.
+    trim_roll  = -TAU_DIST_ROLL  / KP_ATT     # = -0.118 rad
+    trim_pitch = -TAU_DIST_PITCH / KP_ATT     # = +0.0785 rad
 
-    wpt_idx = 0
+    # WAYPOINTS[0] is the start position: the mission targets are WAYPOINTS[1:]
+    wpt_idx = 1
     max_steps = int(MAX_TIME / DT)
     use_integral = (mode == 'pid')
     waypoint_times = []
+    ref_hist = [np.zeros(3)]
 
     for step in range(max_steps):
         target = WAYPOINTS[wpt_idx]
@@ -228,6 +247,9 @@ def run_simulation(mode='no_comp'):
         phi_ref   =  ay_d * TOTAL_MASS / thrust
         theta_ref = np.clip(theta_ref, -MAX_TILT, MAX_TILT)
         phi_ref   = np.clip(phi_ref,   -MAX_TILT, MAX_TILT)
+        # Attitude requested by the position loop (logged before any trim, so the
+        # tracking error angle - ref_desired is comparable across modes)
+        ref_desired = np.array([phi_ref, theta_ref, 0.0])
 
         # Apply trim in feed-forward mode
         if mode == 'feedfwd':
@@ -242,16 +264,17 @@ def run_simulation(mode='no_comp'):
 
         # ── Plant step ────────────────────────────────────────────────────
         drone.step(tau_cmd, thrust, DT, tau_disturbance=tau_dist)
+        ref_hist.append(ref_desired)
 
         # ── Waypoint advance ──────────────────────────────────────────────
         if np.linalg.norm(drone.pos - target) < WAYPOINT_REACH_R:
-            waypoint_times.append(step * DT)
+            waypoint_times.append(drone._t)
             wpt_idx += 1
             if wpt_idx >= len(WAYPOINTS):
                 break
 
     pos_hist, euler_hist, time_hist = drone.get_trajectories()
-    return pos_hist, euler_hist, time_hist, waypoint_times
+    return pos_hist, euler_hist, time_hist, waypoint_times, np.array(ref_hist)
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -267,7 +290,7 @@ def plot_trajectories_3d(results, out_dir):
     fig = plt.figure(figsize=(9, 7))
     ax = fig.add_subplot(111, projection='3d')
 
-    for mode, (pos, euler, time, wt) in results.items():
+    for mode, (pos, euler, time, wt, ref) in results.items():
         st = MODE_STYLE[mode]
         ax.plot(pos[:, 0], pos[:, 1], pos[:, 2],
                 color=st['color'], linewidth=1.6, linestyle=st['ls'],
@@ -277,13 +300,14 @@ def plot_trajectories_3d(results, out_dir):
     for i, wp in enumerate(WAYPOINTS):
         ax.scatter(*wp, color='gold', s=120, marker='*', zorder=6,
                    label='Waypoint' if i == 0 else '')
-        ax.text(wp[0]+0.1, wp[1]+0.1, wp[2]+0.1, f'WP{i+1}', fontsize=8)
+        ax.text(wp[0]+0.1, wp[1]+0.1, wp[2]+0.1,
+                'Start' if i == 0 else f'WP{i}', fontsize=8)
 
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')
     ax.set_zlabel('Z (m)')
     ax.set_title('S025 Payload CoG Offset — 3D Trajectories\n'
-                 f'CoG offset: dx={COG_DX:+.2f} m, dy={COG_DY:+.2f} m  '
+                 f'CoG offset: x={COG_X:+.2f} m, y={COG_Y:+.2f} m  '
                  f'| τ_roll={TAU_DIST_ROLL:.3f} N·m, τ_pitch={TAU_DIST_PITCH:.3f} N·m')
     ax.legend(loc='upper left', fontsize=9)
 
@@ -303,9 +327,7 @@ def plot_attitude_and_position_error(results, out_dir):
     ax_xe,   ax_ye     = axes[1]
     ax_ze,   ax_dist   = axes[2]
 
-    ideal_traj = np.array([[0, 0, 2], [4, 0, 2], [4, 4, 2], [4, 4, 0.3]])
-
-    for mode, (pos, euler, time, wt) in results.items():
+    for mode, (pos, euler, time, wt, ref) in results.items():
         st   = MODE_STYLE[mode]
         roll_deg  = np.rad2deg(euler[:, 0])
         pitch_deg = np.rad2deg(euler[:, 1])
@@ -319,23 +341,16 @@ def plot_attitude_and_position_error(results, out_dir):
         ax_ye.plot(time, pos[:, 1], color=st['color'], lw=1.4, ls=st['ls'])
         ax_ze.plot(time, pos[:, 2], color=st['color'], lw=1.4, ls=st['ls'])
 
-        # distance from ideal straight line between waypoints (simplified: dist from wpts)
-        lateral_err = np.sqrt((pos[:, 0] - pos[:, 0])**2 +
-                              (pos[:, 1] - pos[:, 1])**2)  # placeholder
-        # Actual lateral deviation: compute distance from x=0 plane on leg 1
-        # For simplicity: show total speed (magnitude of vel would need vel_hist)
-        # Instead show total deviation from final waypoint
         final_wp = WAYPOINTS[-1]
         dist_to_final = np.linalg.norm(pos - final_wp, axis=1)
         ax_dist.plot(time, dist_to_final, color=st['color'], lw=1.4, ls=st['ls'])
 
-    # Disturbance equilibrium angles
-    eq_roll  = np.rad2deg(-TAU_DIST_ROLL  / (Ixx * KP_ATT))
-    eq_pitch = np.rad2deg(-TAU_DIST_PITCH / (Iyy * KP_ATT))
-    ax_roll.axhline(eq_roll, color='gray', ls=':', lw=1,
-                    label=f'Equilibrium {eq_roll:.1f}°')
-    ax_pitch.axhline(eq_pitch, color='gray', ls=':', lw=1,
-                     label=f'Equilibrium {eq_pitch:.1f}°')
+    ax_xe.axhline(4.0, color='gray', ls=':', lw=1)
+    ax_ye.axhline(0.0, color='gray', ls=':', lw=1)
+    ax_ye.axhline(4.0, color='gray', ls=':', lw=1)
+    ax_dist.axhline(WAYPOINT_REACH_R, color='gray', ls=':', lw=1,
+                    label=f'Capture radius {WAYPOINT_REACH_R} m')
+    ax_dist.legend(fontsize=8)
 
     ax_roll.set_ylabel('Roll φ (deg)')
     ax_roll.legend(fontsize=8)
@@ -373,39 +388,37 @@ def plot_attitude_and_position_error(results, out_dir):
 
 
 def plot_roll_pitch_comparison(results, out_dir):
-    """Separate detailed roll/pitch plot with equilibrium annotations."""
+    """Attitude-tracking error (angle - reference) with the PD steady-state value."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-    fig.suptitle('S025 — Roll & Pitch Angle Comparison\n'
-                 f'CoG offset  dx={COG_DX:+.3f} m  dy={COG_DY:+.3f} m  '
+    fig.suptitle('S025 — Attitude Tracking Error (angle − position-loop reference, before trim)\n'
+                 f'CoG offset  x={COG_X:+.3f} m  y={COG_Y:+.3f} m  '
                  f'(τ_roll={TAU_DIST_ROLL:.3f} N·m, τ_pitch={TAU_DIST_PITCH:.3f} N·m)',
                  fontsize=11)
 
-    for mode, (pos, euler, time, wt) in results.items():
+    for mode, (pos, euler, time, wt, ref) in results.items():
         st = MODE_STYLE[mode]
-        ax1.plot(time, np.rad2deg(euler[:, 0]),
+        ax1.plot(time, np.rad2deg(euler[:, 0] - ref[:, 0]),
                  color=st['color'], lw=1.8, ls=st['ls'], label=st['label'])
-        ax2.plot(time, np.rad2deg(euler[:, 1]),
+        ax2.plot(time, np.rad2deg(euler[:, 1] - ref[:, 1]),
                  color=st['color'], lw=1.8, ls=st['ls'], label=st['label'])
 
-    # Steady-state tilt for no-compensation case
-    ss_roll  = np.rad2deg(TAU_DIST_ROLL  / (KP_ATT * Ixx))
-    ss_pitch = np.rad2deg(TAU_DIST_PITCH / (KP_ATT * Iyy))
-
-    ax1.axhline(ss_roll, color='tomato', ls=':', lw=1.2,
-                label=f'SS tilt (no comp): {ss_roll:.1f}°')
+    ss_roll  = np.rad2deg(SS_ERR_ROLL)
+    ss_pitch = np.rad2deg(SS_ERR_PITCH)
+    ax1.axhline(ss_roll, color='gray', ls=':', lw=1.2,
+                label=f'PD steady state τ/K_P = {ss_roll:.2f}°')
     ax1.axhline(0, color='k', lw=0.8, alpha=0.4)
     ax1.set_xlabel('Time (s)')
-    ax1.set_ylabel('Roll φ (deg)')
-    ax1.set_title('Roll angle φ')
+    ax1.set_ylabel('φ − φ_ref (deg)')
+    ax1.set_title('Roll tracking error')
     ax1.legend(fontsize=9)
     ax1.grid(True, alpha=0.3)
 
-    ax2.axhline(ss_pitch, color='tomato', ls=':', lw=1.2,
-                label=f'SS tilt (no comp): {ss_pitch:.1f}°')
+    ax2.axhline(ss_pitch, color='gray', ls=':', lw=1.2,
+                label=f'PD steady state τ/K_P = {ss_pitch:.2f}°')
     ax2.axhline(0, color='k', lw=0.8, alpha=0.4)
     ax2.set_xlabel('Time (s)')
-    ax2.set_ylabel('Pitch θ (deg)')
-    ax2.set_title('Pitch angle θ')
+    ax2.set_ylabel('θ − θ_ref (deg)')
+    ax2.set_title('Pitch tracking error')
     ax2.legend(fontsize=9)
     ax2.grid(True, alpha=0.3)
 
@@ -418,7 +431,9 @@ def plot_roll_pitch_comparison(results, out_dir):
 
 def save_animation(results, out_dir):
     """Top-down (XY) view animation showing trajectory deviation per mode."""
-    STEP  = 5    # sample every 5 control steps (~20 fps effective)
+    # <= 150 frames over the longest run
+    max_len = max(len(r[0]) for r in results.values())
+    STEP  = max(1, int(np.ceil(max_len / 150)))
 
     fig, ax = plt.subplots(figsize=(7, 7))
     ax.set_aspect('equal')
@@ -429,7 +444,7 @@ def save_animation(results, out_dir):
     for i, wp in enumerate(WAYPOINTS):
         ax.scatter(wp[0], wp[1], s=100, color='gold', marker='*', zorder=5,
                    label='Waypoints' if i == 0 else '')
-        ax.text(wp[0]+0.12, wp[1]+0.12, f'WP{i+1}', fontsize=8)
+        ax.text(wp[0]+0.12, wp[1]+0.12, 'Start' if i == 0 else f'WP{i}', fontsize=8)
 
     ax.set_xlim(-1, 5.5)
     ax.set_ylim(-1, 5.5)
@@ -439,7 +454,7 @@ def save_animation(results, out_dir):
     ax.grid(True, alpha=0.25)
 
     lines, dots, labels_done = {}, {}, set()
-    for mode, (pos, euler, time, wt) in results.items():
+    for mode, (pos, euler, time, wt, ref) in results.items():
         st = MODE_STYLE[mode]
         ln, = ax.plot([], [], color=st['color'], lw=1.6,
                       ls=st['ls'], label=st['label'])
@@ -452,7 +467,7 @@ def save_animation(results, out_dir):
     # Find the maximum number of frames across all modes
     max_frames = max(
         len(range(0, len(pos), STEP))
-        for _, (pos, euler, time, wt) in results.items()
+        for _, (pos, euler, time, wt, ref) in results.items()
     )
 
     def update(fi):
@@ -480,23 +495,44 @@ def save_animation(results, out_dir):
 
 if __name__ == '__main__':
     print('=== S025 Payload CoG Offset Simulation ===')
-    print(f'Total mass        : {TOTAL_MASS:.2f} kg')
-    print(f'CoG offset        : dx={COG_DX:+.3f} m, dy={COG_DY:+.3f} m')
+    print(f'Total mass        : {TOTAL_MASS:.2f} kg (payload {PAYLOAD_MASS:.2f} kg)')
+    print(f'CoG offset        : x={COG_X:+.3f} m, y={COG_Y:+.3f} m')
     print(f'Disturbance torque: τ_roll={TAU_DIST_ROLL:.3f} N·m, '
           f'τ_pitch={TAU_DIST_PITCH:.3f} N·m')
+    print(f'PD steady attitude error τ/K_P: roll={np.rad2deg(SS_ERR_ROLL):+.2f}°, '
+          f'pitch={np.rad2deg(SS_ERR_PITCH):+.2f}°')
+    # Predicted hover position offset of the uncompensated PD loop: the position
+    # loop must command ref = -ss_err so the actual tilt is zero (small-angle)
+    off_y = G * SS_ERR_ROLL / KP_POS          # phi_ref = a_y/g = KP_POS*e_y/g
+    off_x = -G * SS_ERR_PITCH / KP_POS        # theta_ref = -a_x/g
+    print(f'Predicted no-comp hover offset from target: dx={off_x:+.3f} m, dy={off_y:+.3f} m')
     print()
 
+    n_targets = len(WAYPOINTS) - 1
     results = {}
     for mode in ('no_comp', 'feedfwd', 'pid'):
-        pos, euler, time, wt = run_simulation(mode)
-        results[mode] = (pos, euler, time, wt)
+        pos, euler, time, wt, ref = run_simulation(mode)
+        results[mode] = (pos, euler, time, wt, ref)
         final_pos = pos[-1]
-        final_target = WAYPOINTS[min(len(wt), len(WAYPOINTS)-1)]
-        ss_roll  = np.rad2deg(euler[-1, 0])
-        ss_pitch = np.rad2deg(euler[-1, 1])
-        print(f'[{mode:8s}]  Waypoints reached: {len(wt)}/{len(WAYPOINTS)}  '
-              f'Final pos: ({final_pos[0]:.2f}, {final_pos[1]:.2f}, {final_pos[2]:.2f})  '
-              f'Final roll={ss_roll:.2f}° pitch={ss_pitch:.2f}°')
+        err_r = np.rad2deg(euler[:, 0] - ref[:, 0])
+        err_p = np.rad2deg(euler[:, 1] - ref[:, 1])
+        last_target = WAYPOINTS[min(len(wt) + 1, n_targets)]
+        done = (f'mission time={wt[-1]:.2f}s' if len(wt) == n_targets
+                else f'timeout {MAX_TIME:.0f}s')
+        print(f'[{mode:8s}]  Waypoints reached: {len(wt)}/{n_targets}  {done}')
+        print(f'            WP capture times: '
+              + (', '.join(f'{x:.2f}s' for x in wt) if wt else 'none'))
+        print(f'            Final pos: ({final_pos[0]:.3f}, {final_pos[1]:.3f}, '
+              f'{final_pos[2]:.3f})  dist to current target='
+              f'{np.linalg.norm(final_pos - last_target):.3f} m')
+        print(f'            Attitude tracking error: final roll={err_r[-1]:+.2f}° '
+              f'pitch={err_p[-1]:+.2f}°  |  peak |roll|={np.abs(err_r).max():.2f}° '
+              f'|pitch|={np.abs(err_p).max():.2f}°')
+        n_leg1 = int(round(wt[0] / DT)) + 1 if wt else len(pos)
+        print(f'            Leg 1 (start→WP1) max |y| deviation: '
+              f'{np.abs(pos[:n_leg1, 1]).max():.3f} m')
+        print(f'            Final attitude: roll={np.rad2deg(euler[-1, 0]):+.2f}° '
+              f'pitch={np.rad2deg(euler[-1, 1]):+.2f}°')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out_dir, exist_ok=True)
