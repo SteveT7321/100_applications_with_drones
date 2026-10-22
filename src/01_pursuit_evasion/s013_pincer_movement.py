@@ -1,11 +1,18 @@
 """
 S013 Pincer Movement
 =====================
-Two pursuers approach the evader from opposite directions (~180° apart),
-narrowing its escape cone.  Evader escapes away from the centroid of pursuers.
+Two pursuers approach the evader from opposite sides (pincer slots at
+phi = 0 deg and 180 deg around the evader, card) with a shrinking offset
+R(t) = max(R0 - V_SHRINK*t, R_MIN).  Once R reaches R_MIN the two pursuers
+close the pincer by flying straight at the evader (terminal phase).
 
-Comparison: coordinated pincer (±y flank, shrinking offset) vs two independent
-pure-pursuit drones (both head straight for evader).
+Evader (card): flies perpendicular to the direction from the pursuers'
+centroid,  v_E = V_E * Rot90 * (p_E - p_bar)/|p_E - p_bar|.
+A second evader ("flee"): flies straight away from the centroid.
+Both evaders react to the pursuers' current positions every step.
+
+Comparison: coordinated pincer vs two independent pure-pursuit drones,
+same speeds and start positions, against both evaders.
 
 Usage:
     conda activate drones
@@ -17,26 +24,28 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.base.drone_base import DroneBase
 
-# ── Parameters ───────────────────────────────────────────────
-V_PURSUER  = 5.0
-V_EVADER   = 3.5
-R0         = 4.0    # initial offset radius for pincer targets
-R_MIN      = 0.05   # must be < CAPTURE_R so pursuer can reach evader
-V_SHRINK   = 0.5    # m/s — offset shrink rate
-CAPTURE_R  = 0.15
+# ── Parameters (card values) ─────────────────────────────────
+V_PURSUER  = 5.0     # m/s
+V_EVADER   = 3.5     # m/s
+R0         = 3.0     # m   initial pincer offset radius
+R_MIN      = 0.5     # m   minimum offset; then terminal phase (direct closing)
+V_SHRINK   = 0.3     # m/s offset shrink rate
+PHI        = (0.0, np.pi)   # pincer slot angles for P1, P2
+CAPTURE_R  = 0.15    # m
 DT         = 1 / 48
 MAX_TIME   = 20.0
 
-# Pursuers start ahead of the evader, flanking from ±y
-# Evader will run in +x; pursuers intercept from both y-sides
-INIT_P1    = np.array([ 6.0, -4.0, 2.0])   # ahead and below evader
-INIT_P2    = np.array([ 6.0,  4.0, 2.0])   # ahead and above evader
-INIT_E     = np.array([ 0.0,  0.0, 2.0])
+INIT_P1    = np.array([-4.0, -2.0, 2.0])
+INIT_P2    = np.array([-4.0,  2.0, 2.0])
+INIT_E     = np.array([ 2.0,  0.0, 2.0])
+
+STRATEGIES = ['pincer', 'independent']
+SWEEP_SHRINK = [0.3, 0.6, 1.0, 2.0]   # m/s pincer shrink-rate sensitivity
+EVADERS    = ['perpendicular', 'flee']
 
 P_COLORS   = ['red', 'darkorange']
 
@@ -57,14 +66,24 @@ def pincer_angle(p1, p2, pe):
     return np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
 
 
-def evader_escape(p1, p2, pe):
-    """Escape in +x (away from pursuers' initial flanking positions)."""
-    return V_EVADER * np.array([1.0, 0.0, 0.0])
+def evader_velocity(p1, p2, pe, mode, prev_dir):
+    """Card evader: perpendicular (+90 deg) to the centroid->evader direction.
+    'flee': straight away from the centroid.  If the centroid coincides with
+    the evader the previous direction is kept."""
+    c = 0.5 * (p1 + p2)
+    d = (pe - c)[:2]
+    n = np.linalg.norm(d)
+    if n < 1e-6:
+        u = prev_dir
+    else:
+        d = d / n
+        u = np.array([-d[1], d[0]]) if mode == 'perpendicular' else d
+    return V_EVADER * np.array([u[0], u[1], 0.0]), u
 
 
 # ── Simulation ────────────────────────────────────────────────
 
-def run_simulation(coordinated=True):
+def run_simulation(strategy='pincer', evader_mode='perpendicular', v_shrink=V_SHRINK):
     p1 = DroneBase(INIT_P1.copy(), max_speed=V_PURSUER, dt=DT)
     p2 = DroneBase(INIT_P2.copy(), max_speed=V_PURSUER, dt=DT)
     ev = DroneBase(INIT_E.copy(),  max_speed=V_EVADER,  dt=DT)
@@ -72,35 +91,34 @@ def run_simulation(coordinated=True):
     p1_traj = [p1.pos.copy()]; p2_traj = [p2.pos.copy()]
     e_traj  = [ev.pos.copy()]
     angle_log = [pincer_angle(p1.pos, p2.pos, ev.pos)]
-    dist_log  = [[np.linalg.norm(p1.pos - ev.pos)],
-                 [np.linalg.norm(p2.pos - ev.pos)]]
+    dist_log  = [[np.linalg.norm(p1.pos - ev.pos)], [np.linalg.norm(p2.pos - ev.pos)]]
     time_log  = [0.0]
+    prev_dir  = np.array([1.0, 0.0])
 
     captured = False; cap_time = None; cap_who = None
 
-    for step in range(1, int(MAX_TIME / DT) + 1):
+    for step in range(1, int(round(MAX_TIME / DT)) + 1):
         t = step * DT
 
-        if coordinated:
-            R_cur  = max(R0 - V_SHRINK * t, R_MIN)
-            # Pincer from ±y: flank positions above/below evader
-            tgt1   = ev.pos + R_cur * np.array([0.0, -1.0, 0.0])
-            tgt2   = ev.pos + R_cur * np.array([0.0,  1.0, 0.0])
-        else:
-            tgt1 = ev.pos
-            tgt2 = ev.pos
+        if strategy == 'pincer' and R0 - v_shrink * t > R_MIN:
+            R_cur = max(R0 - v_shrink * t, R_MIN)
+            tgts = [ev.pos + R_cur * np.array([np.cos(ph), np.sin(ph), 0.0]) for ph in PHI]
+        else:   # independent pure pursuit, or pincer terminal phase
+            tgts = [ev.pos, ev.pos]
 
-        for pursuer, tgt in [(p1, tgt1), (p2, tgt2)]:
+        for pursuer, tgt in zip((p1, p2), tgts):
             d = tgt - pursuer.pos
             n = np.linalg.norm(d)
-            pursuer.step(V_PURSUER * d / n if n > 1e-8 else np.zeros(3))
+            # saturated go-to-target (same controller for both strategies):
+            # stop on the target if reachable this step -> no slot chattering
+            pursuer.step(d / n * min(V_PURSUER, n / DT) if n > 1e-8 else np.zeros(3))
 
-        e_vel = evader_escape(p1.pos, p2.pos, ev.pos)
+        e_vel, prev_dir = evader_velocity(p1.pos, p2.pos, ev.pos, evader_mode, prev_dir)
         ev.step(e_vel)
 
-        for i, (pursuer, cap_i) in enumerate([(p1, 0), (p2, 1)]):
+        for i, pursuer in enumerate((p1, p2)):
             if np.linalg.norm(pursuer.pos - ev.pos) < CAPTURE_R:
-                captured = True; cap_time = t; cap_who = cap_i
+                captured = True; cap_time = t; cap_who = i
                 break
 
         p1_traj.append(p1.pos.copy()); p2_traj.append(p2.pos.copy())
@@ -113,79 +131,84 @@ def run_simulation(coordinated=True):
         if captured:
             break
 
-    return (
-        np.array(p1_traj), np.array(p2_traj), np.array(e_traj),
-        np.array(angle_log), [np.array(d) for d in dist_log],
-        np.array(time_log), captured, cap_time, cap_who,
+    angle_log = np.array(angle_log); time_log = np.array(time_log)
+    above = np.where(angle_log >= 170.0)[0]
+    return dict(
+        strategy=strategy, evader=evader_mode,
+        p1=np.array(p1_traj), p2=np.array(p2_traj), e=np.array(e_traj),
+        angle=angle_log, dist=[np.array(d) for d in dist_log], times=time_log,
+        captured=captured, cap_time=cap_time, cap_who=cap_who,
+        t170=float(time_log[above[0]]) if len(above) else None,
     )
 
 
 # ── Plots ─────────────────────────────────────────────────────
 
-def plot_trajectories_2d(results, out_dir):
-    labels = ['Coordinated Pincer', 'Independent Pure Pursuit']
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+def _key(r):
+    return f"{r['strategy']} vs {r['evader']} evader"
 
-    for ax, (p1_t, p2_t, e_t, angle_log, dist_log, times, captured, cap_t, cap_who), label \
-            in zip(axes, results, labels):
-        ax.plot(p1_t[:, 0], p1_t[:, 1], color=P_COLORS[0], linewidth=1.8, label='Pursuer 1')
-        ax.plot(p2_t[:, 0], p2_t[:, 1], color=P_COLORS[1], linewidth=1.8, label='Pursuer 2')
-        ax.plot(e_t[:, 0],  e_t[:, 1],  color='royalblue', linewidth=1.8, label='Evader')
-        ax.scatter(*p1_t[0, :2], color=P_COLORS[0], s=70, zorder=5)
-        ax.scatter(*p2_t[0, :2], color=P_COLORS[1], s=70, zorder=5)
-        ax.scatter(*e_t[0, :2],  color='blue',       s=70, zorder=5)
-        if captured:
-            traj = p1_t if cap_who == 0 else p2_t
-            ax.scatter(*traj[-1, :2], color='black', s=140, marker='X', zorder=7,
-                       label=f'Captured P{cap_who+1} @ {cap_t:.2f}s')
-            status = f'Captured {cap_t:.2f}s'
+
+def plot_trajectories_2d(results, out_dir):
+    fig, axes = plt.subplots(2, 2, figsize=(13, 11))
+    for ax, r in zip(axes.flat, results):
+        ax.plot(r['p1'][:, 0], r['p1'][:, 1], color=P_COLORS[0], linewidth=1.6, label='Pursuer 1')
+        ax.plot(r['p2'][:, 0], r['p2'][:, 1], color=P_COLORS[1], linewidth=1.6, label='Pursuer 2')
+        ax.plot(r['e'][:, 0], r['e'][:, 1], color='royalblue', linewidth=1.8, label='Evader')
+        for tr, c in ((r['p1'], P_COLORS[0]), (r['p2'], P_COLORS[1]), (r['e'], 'blue')):
+            ax.scatter(*tr[0, :2], color=c, s=60, zorder=5)
+        if r['captured']:
+            tr = r['p1'] if r['cap_who'] == 0 else r['p2']
+            ax.scatter(*tr[-1, :2], color='black', s=140, marker='X', zorder=7,
+                       label=f"Captured by P{r['cap_who']+1} @ {r['cap_time']:.2f}s")
+            status = f"Captured {r['cap_time']:.2f}s"
         else:
             status = 'Timeout'
-        ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+        ax.set_aspect('equal', adjustable='datalim'); ax.grid(True, alpha=0.3)
         ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
-        ax.set_title(f'{label}\n{status}', fontsize=9)
-        ax.legend(fontsize=7, loc='upper right')
-
+        ax.set_title(f'{_key(r)}\n{status}', fontsize=9)
+        ax.legend(fontsize=7, loc='best')
     fig.suptitle('S013 Pincer Movement — Top-Down Trajectories', fontsize=11)
     plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectories_2d.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
+    plt.savefig(path, dpi=130, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
 def plot_pincer_angle(results, out_dir):
-    labels = ['Coordinated Pincer', 'Independent']
-    colors = ['steelblue', 'darkorange']
+    styles = {('pincer', 'perpendicular'): ('steelblue', '-'),
+              ('independent', 'perpendicular'): ('darkorange', '-'),
+              ('pincer', 'flee'): ('steelblue', '--'),
+              ('independent', 'flee'): ('darkorange', '--')}
     fig, ax = plt.subplots(figsize=(11, 5))
-    for (p1_t, p2_t, e_t, angle_log, dist_log, times, captured, cap_t, _), label, color \
-            in zip(results, labels, colors):
-        ax.plot(times, angle_log, color=color, linewidth=1.8, label=label)
-        if captured:
-            ax.axvline(cap_t, color=color, linestyle='--', linewidth=1.0, alpha=0.7)
-    ax.axhline(180, color='grey', linestyle=':', linewidth=1.0, alpha=0.7,
-               label='Ideal pincer (180°)')
+    for r in results:
+        c, ls = styles[(r['strategy'], r['evader'])]
+        ax.plot(r['times'], r['angle'], color=c, linestyle=ls, linewidth=1.6, label=_key(r))
+        if r['captured']:
+            ax.scatter(r['cap_time'], r['angle'][-1], color=c, marker='X', s=60, zorder=5)
+    ax.axhline(180, color='grey', linestyle=':', linewidth=1.0, label='Ideal pincer (180°)')
+    t_term = (R0 - R_MIN) / V_SHRINK
+    ax.axvline(t_term, color='green', linestyle=':', linewidth=1.0,
+               label=f'Pincer R reaches R_min ({t_term:.2f}s)')
     ax.set_xlabel('Time (s)'); ax.set_ylabel('Pincer Angle (°)')
-    ax.set_title('S013 Pincer Movement — Pincer Angle vs Time')
-    ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
+    ax.set_title('S013 Pincer Movement — Pincer Angle vs Time (X = capture)')
+    ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
     plt.tight_layout()
     path = os.path.join(out_dir, 'pincer_angle.png')
     plt.savefig(path, dpi=150); plt.close(); print(f'Saved: {path}')
 
 
 def plot_distances(results, out_dir):
-    labels = ['Coordinated Pincer', 'Independent']
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5), sharey=True)
-    for ax, (p1_t, p2_t, e_t, angle_log, dist_log, times, captured, cap_t, _), label \
-            in zip(axes, results, labels):
-        ax.plot(times, dist_log[0], color=P_COLORS[0], linewidth=1.8, label='Pursuer 1')
-        ax.plot(times, dist_log[1], color=P_COLORS[1], linewidth=1.8, label='Pursuer 2')
+    fig, axes = plt.subplots(2, 2, figsize=(13, 8), sharey=True)
+    for ax, r in zip(axes.flat, results):
+        ax.plot(r['times'], r['dist'][0], color=P_COLORS[0], linewidth=1.6, label='Pursuer 1')
+        ax.plot(r['times'], r['dist'][1], color=P_COLORS[1], linewidth=1.6, label='Pursuer 2')
         ax.axhline(CAPTURE_R, color='red', linestyle='--', linewidth=0.8,
                    label=f'Capture r={CAPTURE_R}m')
-        if captured:
-            ax.axvline(cap_t, color='black', linestyle='--', linewidth=1.0,
-                       label=f'Captured {cap_t:.2f}s')
+        if r['captured']:
+            ax.axvline(r['cap_time'], color='black', linestyle='--', linewidth=1.0,
+                       label=f"Captured {r['cap_time']:.2f}s")
         ax.set_xlabel('Time (s)'); ax.set_ylabel('Distance to Evader (m)')
-        ax.set_title(f'{label}', fontsize=9)
+        ax.set_title(_key(r), fontsize=9)
         ax.legend(fontsize=7); ax.grid(True, alpha=0.3)
     fig.suptitle('S013 Pincer Movement — Pursuer Distances to Evader', fontsize=11)
     plt.tight_layout()
@@ -194,74 +217,88 @@ def plot_distances(results, out_dir):
 
 
 def save_animation(results, out_dir):
+    """Side-by-side animation of pincer vs independent against the card's
+    perpendicular evader."""
     import matplotlib.animation as animation
-
-    labels = ['Coordinated Pincer', 'Independent']
-    max_len = max(len(r[2]) for r in results)
-    step = 3
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-
-    artists_store = []
-    for ax, (p1_t, p2_t, e_t, angle_log, dist_log, times, captured, cap_t, _), label \
-            in zip(axes, results, labels):
-        all_pts = np.vstack([p1_t, p2_t, e_t])
-        lo = all_pts.min(axis=0)[:2] - 1.0
-        hi = all_pts.max(axis=0)[:2] + 1.0
-        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1])
+    sel = [r for r in results if r['evader'] == 'perpendicular']
+    max_len = max(len(r['e']) for r in sel)
+    step = max(1, int(np.ceil(max_len / 140)))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6))
+    store = []
+    for ax, r in zip(axes, sel):
+        pts = np.vstack([r['p1'], r['p2'], r['e']])
+        lo = pts.min(axis=0)[:2] - 1.0; hi = pts.max(axis=0)[:2] + 1.0
+        span = max(hi - lo) / 2; c0 = (hi + lo) / 2
+        ax.set_xlim(c0[0] - span, c0[0] + span); ax.set_ylim(c0[1] - span, c0[1] + span)
         ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
         ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
-        for pts, c in [(p1_t, P_COLORS[0]), (p2_t, P_COLORS[1]), (e_t, 'blue')]:
-            ax.scatter(*pts[0, :2], color=c, s=50, zorder=5)
-        lp1, = ax.plot([], [], color=P_COLORS[0], linewidth=1.8)
-        lp2, = ax.plot([], [], color=P_COLORS[1], linewidth=1.8)
-        le,  = ax.plot([], [], color='royalblue', linewidth=1.8)
-        dp1, = ax.plot([], [], '^', color=P_COLORS[0], markersize=10, zorder=6)
-        dp2, = ax.plot([], [], '^', color=P_COLORS[1], markersize=10, zorder=6)
-        de,  = ax.plot([], [], 'bs', markersize=10, zorder=6)
-        ti   = ax.set_title(label, fontsize=9)
-        artists_store.append((lp1, lp2, le, dp1, dp2, de, ti,
-                               p1_t, p2_t, e_t, angle_log, times, captured, cap_t, label))
-
-    n_frames = max_len // step
+        lines = [ax.plot([], [], color=c, linewidth=1.6)[0]
+                 for c in (P_COLORS[0], P_COLORS[1], 'royalblue')]
+        dots = [ax.plot([], [], mk, color=c, markersize=9, zorder=6)[0]
+                for mk, c in (('^', P_COLORS[0]), ('^', P_COLORS[1]), ('s', 'blue'))]
+        ti = ax.set_title('', fontsize=9)
+        store.append((r, lines, dots, ti))
+    n_frames = (max_len - 1) // step + 1
 
     def update(i):
         arts = []
-        for (lp1, lp2, le, dp1, dp2, de, ti,
-             p1_t, p2_t, e_t, angle_log, times, captured, cap_t, label) in artists_store:
-            si = min(i * step, len(e_t)-1)
-            done = (i * step >= len(e_t)-1)
-            t = times[si]
-            ang = angle_log[si]
-            for l, pt in [(lp1, p1_t), (lp2, p2_t), (le, e_t)]:
-                sj = min(si, len(pt)-1)
-                l.set_data(pt[:sj+1, 0], pt[:sj+1, 1])
-            for d, pt in [(dp1, p1_t), (dp2, p2_t), (de, e_t)]:
-                sj = min(si, len(pt)-1)
-                d.set_data([float(pt[sj, 0])], [float(pt[sj, 1])])
+        for r, lines, dots, ti in store:
+            si = min(i * step, len(r['e']) - 1)
+            for l, d, tr in zip(lines, dots, (r['p1'], r['p2'], r['e'])):
+                l.set_data(tr[:si+1, 0], tr[:si+1, 1])
+                d.set_data([float(tr[si, 0])], [float(tr[si, 1])])
+            done = si >= len(r['e']) - 1
             if done:
-                st = f'✓ Captured {cap_t:.2f}s [DONE]' if captured else 'Timeout [DONE]'
-                ti.set_text(f'{label}  t={t:.1f}s\n{st}')
+                st = f"Captured {r['cap_time']:.2f}s" if r['captured'] else 'Timeout'
             else:
-                ti.set_text(f'{label}  t={t:.1f}s  angle={ang:.1f}°')
-            arts += [lp1, lp2, le, dp1, dp2, de, ti]
+                st = f"angle={r['angle'][si]:.0f}°"
+            ti.set_text(f"{_key(r)}\nt={r['times'][si]:.2f}s  {st}")
+            arts += lines + dots + [ti]
         return arts
 
-    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=60, blit=True)
-    fig.suptitle('S013 Pincer Movement', fontsize=10)
+    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=60, blit=False)
+    fig.suptitle('S013 Pincer Movement (card perpendicular evader)', fontsize=10)
     plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=16, dpi=100); plt.close(); print(f'Saved: {path}')
+    ani.save(path, writer='pillow', fps=16, dpi=80); plt.close()
+    print(f'Saved: {path}  ({n_frames} frames, every {step} steps)')
 
 
 if __name__ == '__main__':
+    print(f'Pincer offset reaches R_min at t = (R0-R_min)/V_shrink = '
+          f'{(R0 - R_MIN) / V_SHRINK:.2f} s (then terminal direct closing)')
     results = []
-    for coord, label in [(True, 'Coordinated pincer'), (False, 'Independent')]:
-        res = run_simulation(coordinated=coord)
-        _, _, _, angle_log, _, times, captured, cap_t, cap_who = res
-        status = f'captured P{cap_who+1} @ {cap_t:.2f}s' if captured else 'timeout'
-        print(f'[{label:<22}]  {status}  max_angle={angle_log.max():.1f}°')
-        results.append(res)
+    for ev_mode in EVADERS:
+        for strat in STRATEGIES:
+            r = run_simulation(strat, ev_mode)
+            status = (f"captured by P{r['cap_who']+1} @ {r['cap_time']:.2f}s"
+                      if r['captured'] else 'timeout')
+            t170 = f"{r['t170']:.2f}s" if r['t170'] is not None else 'never'
+            print(f"[{strat:<11} vs {ev_mode:<13} evader]  {status:<26} "
+                  f"initial angle {r['angle'][0]:.1f} deg, max {r['angle'].max():.1f} deg, "
+                  f"first >=170 deg at {t170}, angle at end {r['angle'][-1]:.1f} deg, "
+                  f"evader travelled {np.sum(np.linalg.norm(np.diff(r['e'], axis=0), axis=1)):.2f} m")
+            if strat == 'pincer':
+                t_term = (R0 - R_MIN) / V_SHRINK
+                pre = r['times'] < t_term
+                dmin = np.minimum(r['dist'][0], r['dist'][1])[pre]
+                k = int(np.argmin(dmin))
+                k_hold = (r['times'] >= r['t170']) & pre
+                print(f"    before terminal phase: closest pursuer approach {dmin[k]:.2f} m "
+                      f"at t={r['times'][pre][k]:.2f}s; pincer angle after first >=170 deg: "
+                      f"{r['angle'][k_hold].min():.1f}-{r['angle'][k_hold].max():.1f} deg")
+            results.append(r)
+
+    print('\nPincer shrink-rate sensitivity (capture time; terminal phase starts at '
+          '(R0-R_min)/v_shrink):')
+    for vs in SWEEP_SHRINK:
+        row = []
+        for ev_mode in EVADERS:
+            r = run_simulation('pincer', ev_mode, v_shrink=vs)
+            row.append(f"{ev_mode}: " + (f"{r['cap_time']:.2f}s" if r['captured'] else 'timeout')
+                       + f" (max angle {r['angle'].max():.1f} deg)")
+        print(f'  v_shrink={vs:.1f} m/s  terminal at {(R0 - R_MIN) / vs:.2f}s  ' + '  '.join(row))
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories_2d(results, out_dir)
