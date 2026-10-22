@@ -59,6 +59,11 @@ KP      = 1.2
 KV      = 1.8
 KZ_RATE = 2.0               # descent rate controller gain
 
+# Intercept predictor: iterate the fixed point to a tolerance (card: "3-5 iterations",
+# which is not enough here - see README "Deviations")
+PRED_TOL      = 1e-6        # s   — stop when |change of dt_fly| < PRED_TOL
+PRED_MAX_ITER = 100         # safety cap
+
 # Phase-1 along-LOS speed hold (not in the card; see README "Deviations")
 K_AX    = 1.0               # 1/s  — gain on (v_max - v_along_LOS)
 
@@ -68,24 +73,57 @@ X_TRUCK0 = 0.0                          # truck start x (m), road along x at y=z
 
 # ── Guidance functions ────────────────────────────────────────────────────────
 
-def predict_intercept(p_drone, p_truck, v_truck_vec, v_drone_max, n_iter=5):
+def predict_intercept(p_drone, p_truck, v_truck_vec, v_drone_max,
+                      tol=PRED_TOL, max_iter=PRED_MAX_ITER):
     """Iterative fixed-point intercept prediction.
 
     The aim point is the truck's future (x, y) at hand-over altitude Z_SWITCH:
         p* = p_T + v_T * dt_fly (horizontal),  z* = Z_SWITCH
-        dt_fly = ||p* - p_D|| / v_max      (iterated n_iter times)
+        dt_fly = ||p* - p_D|| / v_max
+    iterated until |dt_fly(k+1) - dt_fly(k)| < tol (contraction factor
+    <= v_T / v_max = 0.5, so convergence is linear).
+
+    Returns (aim_point, dt_fly, iterations_used).
     """
     p_truck_2d = p_truck[:2]
     v_truck_2d = v_truck_vec[:2]
     dz = p_drone[2] - Z_SWITCH
 
     dt_fly = np.linalg.norm(p_truck_2d - p_drone[:2]) / v_drone_max
-    for _ in range(n_iter):
+    n_used = 0
+    for n_used in range(1, max_iter + 1):
         p_int_2d = p_truck_2d + v_truck_2d * dt_fly
         dist_3d  = np.sqrt(np.linalg.norm(p_int_2d - p_drone[:2])**2 + dz**2)
-        dt_fly   = dist_3d / v_drone_max
+        dt_new   = dist_3d / v_drone_max
+        converged = abs(dt_new - dt_fly) < tol
+        dt_fly = dt_new
+        if converged:
+            break
 
-    return np.array([p_int_2d[0], p_int_2d[1], Z_SWITCH]), dt_fly
+    p_int_2d = p_truck_2d + v_truck_2d * dt_fly
+    return np.array([p_int_2d[0], p_int_2d[1], Z_SWITCH]), dt_fly, n_used
+
+
+def vertical_loop_time(z0, vz0, dt=DT):
+    """Phase-2 vertical channel alone: a_z = K*(zdot_cmd(z) - vz), |a_z| <= a_max.
+
+    Returns the time to reach Z_TOUCHDOWN from altitude z0 with initial vertical
+    velocity vz0 (negative = descending), using the same Euler step as the sim.
+    """
+    z, vz, t = z0, vz0, 0.0
+    while z > Z_TOUCHDOWN and t < SIM_TIME:
+        z_dot_cmd = -V_LAND_MAX * np.tanh(z / Z_FLARE)
+        a_z = np.clip(KZ_RATE * (z_dot_cmd - vz), -DRONE_AMAX, DRONE_AMAX)
+        vz += a_z * dt
+        z = max(z + vz * dt, 0.0)
+        t += dt
+    return t
+
+
+def ideal_tanh_time(z0):
+    """Ideal first-order profile zdot = -v_land*tanh(z/z_flare) from z0 to Z_TOUCHDOWN."""
+    return (Z_FLARE / V_LAND_MAX) * np.log(np.sinh(z0 / Z_FLARE) /
+                                           np.sinh(Z_TOUCHDOWN / Z_FLARE))
 
 
 def png_acceleration(p_drone, v_drone, p_target, los_prev, r_prev, N, a_max, dt):
@@ -157,6 +195,7 @@ def run_simulation():
         "dv_horiz":   [],
         "aim":        [],
         "a_pn":       [],
+        "pred_iter":  [],
     }
     landed = False
     touchdown_info = None
@@ -173,7 +212,9 @@ def run_simulation():
 
         # Control
         if phase == 1:
-            p_intercept, _ = predict_intercept(p_drone, p_truck, v_truck, DRONE_VMAX)
+            p_intercept, _, n_it = predict_intercept(p_drone, p_truck, v_truck,
+                                                     DRONE_VMAX)
+            history["pred_iter"].append(n_it)
             a_cmd, los_prev, r_prev, a_pn_mag = png_acceleration(
                 p_drone, v_drone, p_intercept, los_prev, r_prev,
                 N_PNG, DRONE_AMAX, DT)
@@ -484,7 +525,14 @@ def main():
     i2   = int(np.argmax(ph == 2)) if np.any(ph == 2) else None
     print(f"\nStart: drone {P_DRONE0.tolist()} m, truck x0={X_TRUCK0} m, "
           f"v_T={TRUCK_SPEED} m/s")
-    print(f"Initial predicted aim point : ({aim[0,0]:.2f}, {aim[0,1]:.2f}, {aim[0,2]:.2f}) m")
+    print(f"Initial predicted aim point : ({aim[0,0]:.2f}, {aim[0,1]:.2f}, {aim[0,2]:.2f}) m"
+          f"  ({history['pred_iter'][0]} iterations to |Δdt_fly| < {PRED_TOL:g} s)")
+    p5, _, _ = predict_intercept(P_DRONE0, np.array([X_TRUCK0, 0.0, 0.0]),
+                                 np.array([TRUCK_SPEED, 0.0, 0.0]), DRONE_VMAX,
+                                 tol=0.0, max_iter=5)
+    print(f"  (card rule, 5 iterations only, would give x = {p5[0]:.2f} m)")
+    print(f"Predictor iterations over Phase 1: max {max(history['pred_iter'])}, "
+          f"mean {np.mean(history['pred_iter']):.1f}")
     if i2 is not None:
         p_sw  = history["drone"][i2]
         print(f"Phase 1 -> 2 switch at t={t[i2]:.2f}s, drone at "
@@ -501,6 +549,17 @@ def main():
         print(f"  Phase 2: max lateral miss {lat2.max():.3f} m; Δv first <= {DV_MAX} m/s "
               f"after {t[i2 + j0] - t[i2]:.2f} s; max Δv after that {dv2[j0:].max():.3f} m/s")
         print(f"  Phase 2 duration          : {t[-1] - t[i2]:.2f} s")
+        z_sw, vz_sw = history["drone"][i2 - 1][2], -history["vz"][i2 - 1]
+        print(f"  Vertical channel alone from z={z_sw:.2f} m "
+              f"(2nd-order rate loop, K={KZ_RATE}):")
+        print(f"    entry vz={vz_sw:+.3f} m/s (actual)        : "
+              f"{vertical_loop_time(z_sw, vz_sw):.2f} s")
+        vz_ideal = -V_LAND_MAX * np.tanh(z_sw / Z_FLARE)
+        print(f"    entry vz={vz_ideal:+.3f} m/s (on tanh profile): "
+              f"{vertical_loop_time(z_sw, vz_ideal):.2f} s")
+        print(f"    entry vz=+0.000 m/s (from rest)      : "
+              f"{vertical_loop_time(z_sw, 0.0):.2f} s")
+        print(f"    ideal 1st-order tanh profile         : {ideal_tanh_time(z_sw):.2f} s")
     print(f"Number of phase changes     : {n_sw}")
     p1 = ph == 1
     print(f"PN steering |a_PN| in Phase 1: max {apn[p1].max():.3f} m/s², "

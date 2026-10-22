@@ -16,7 +16,7 @@
 
 **Kinematics** (double integrator, gravity cancelled by thrust): $\dot{\mathbf{p}} = \mathbf{v}$, $\dot{\mathbf{v}} = \mathbf{a}_{cmd}$, $\|\mathbf{a}_{cmd}\| \le a_{max}$, $\|\mathbf{v}\| \le v_{max}$.
 
-**Intercept point prediction** (fixed-point iteration, 5 iterations each step):
+**Intercept point prediction** (fixed-point iteration each step, run until $|\Delta t_{fly}^{(k+1)} - \Delta t_{fly}^{(k)}| < 10^{-6}$ s, max 100 iterations):
 
 $$\mathbf{p}^*_{xy} = \mathbf{p}_{T,xy} + \mathbf{v}_{T,xy}\,\Delta t_{fly}, \qquad z^* = z_{switch}, \qquad \Delta t_{fly} = \frac{\|\mathbf{p}^* - \mathbf{p}_D\|}{v_{max}}$$
 
@@ -67,6 +67,7 @@ $$\|\mathbf{p}_{xy,D} - \mathbf{p}_{xy,T}\| \leq r_{pad}, \quad |\dot{z}| \leq v
 |------|------|------|--------|
 | Phase-1 acceleration | pure PN, $\mathbf{a} = N V_c \dot{\hat{\boldsymbol\lambda}}$ | PN **plus** an along-LOS speed-hold term $K_{ax}(v_{max} - \mathbf{v}\cdot\hat{\boldsymbol\lambda})$ using the acceleration budget PN leaves | PN only commands acceleration normal to the LOS; the drone starts at rest, so pure PN has no closing speed and never moves toward the target. The speed hold also makes the drone fly at $v_{max}$, which is what the intercept predictor assumes. |
 | Aim point altitude | predictor returns the truck's future position on the ground | aim point is placed at $z_{switch} = 5$ m above the predicted truck position | Phase 1 is meant to hand over at $z_{switch}$; aiming at the ground would dive at 8 m/s and could hit the ground before the Phase-2 lateral condition is met. |
+| Intercept predictor iterations | "converged after 3–5 fixed-point iterations" | iterate until the change in $\Delta t_{fly}$ is < 10⁻⁶ s (21 iterations at t = 0) | the map contracts by only ≈ 0.5 per iteration here, so 5 iterations leave a 0.27 m error in the initial aim point |
 | LOS rate | card maths: finite difference; card code: $\mathbf{v}_{\perp,rel}/r$ with $\mathbf{v}_T$ as target velocity | finite difference of $\hat{\boldsymbol\lambda}$ and of the range (card maths) | the target is the re-predicted intercept point, not the truck, so its motion is captured by differencing rather than by assuming it moves with $\mathbf{v}_T$ |
 
 The previous version of this script never called its PN function (Phase 1 was a pure-pursuit velocity tracker with an altitude hold) while the README and plot labels claimed PN; that has been replaced by the guidance above.
@@ -77,21 +78,33 @@ The previous version of this script never called its PN function (Phase 1 was a 
 
 | Metric | Value | Limit | Status |
 |--------|-------|-------|--------|
-| Initial predicted aim point | (21.34, 0.00, 5.00) m | — | — |
+| Initial predicted aim point | (21.91, 0.00, 5.00) m after 21 iterations (5 iterations would give x = 21.64 m) | — | — |
+| Predictor iterations over Phase 1 | max 21, mean 20.2 | 100 | — |
 | Phase 1 → 2 switch | t = 7.62 s at (30.67, -0.03, 4.96) m | — | — |
-| Lateral miss / Δv_horiz / \|vz\| at switch | 0.188 m / 3.860 m/s / 1.298 m/s | — | — |
+| Lateral miss / Δv_horiz / \|vz\| at switch | 0.191 m / 3.859 m/s / 1.310 m/s | — | — |
 | Number of phase changes | 1 (no chattering) | — | — |
-| Phase 2: max lateral miss / duration | 1.741 m / 8.56 s | — | — |
-| PN steering \|a_PN\| in Phase 1 | max 1.066 m/s², mean 0.154 m/s² | 5.0 m/s² | — |
-| Touchdown time | **16.18 s** | 30 s | ✅ |
-| Lateral miss | **0.0778 m** | 0.5 m | ✅ |
-| Vertical speed \|vz\| | **0.0405 m/s** | 1.0 m/s | ✅ |
-| Horizontal velocity mismatch | **0.0031 m/s** | 0.5 m/s | ✅ |
+| Phase 2: max lateral miss / duration | 1.744 m / 8.54 s | — | — |
+| PN steering \|a_PN\| in Phase 1 | max 1.078 m/s², mean 0.150 m/s² | 5.0 m/s² | — |
+| Touchdown time | **16.16 s** | 30 s | ✅ |
+| Lateral miss | **0.0777 m** | 0.5 m | ✅ |
+| Vertical speed \|vz\| | **0.0408 m/s** | 1.0 m/s | ✅ |
+| Horizontal velocity mismatch | **0.0032 m/s** | 0.5 m/s | ✅ |
 | Overall result | **SUCCESS** | — | — |
 
-**Phase 1.** The first prediction places the intercept point at x = 21.34 m (sanity check: distance from the start ≈ 43.3 m / 8 m/s ≈ 5.4 s, truck covers 4 × 5.4 ≈ 21.6 m). Because the drone starts from rest and only reaches $v_{max}$ gradually (the speed-hold gain is 1 s⁻¹), the actual hand-over happens later, at 7.62 s, and the predicted point drifts forward to x = 30.45 m — the truck is at 4 × 7.62 = 30.48 m then. PN absorbs this drift with small steering accelerations (max 1.07 m/s²), and the drone arrives 0.19 m from the truck at 4.96 m altitude. It arrives still flying at close to $v_{max}$, so the horizontal velocity mismatch at hand-over is 3.86 m/s.
+**Phase 1.** The converged first prediction places the intercept point at x = 21.91 m (check: distance from the start to (21.91, 0, 5) is $\sqrt{41.91^2 + 8^2 + 10^2} = 43.82$ m → 5.48 s at 8 m/s → truck at 4 × 5.48 = 21.91 m ✓). The fixed-point map contracts only by a factor of up to $v_T/v_{max} = 0.5$ per iteration, so it needs 21 iterations to reach the 10⁻⁶ s tolerance; the card's "3–5 iterations" would stop at x = 21.64 m (the previous version of the script, which also returned the point from the second-to-last iterate, used x = 21.34 m). Because the drone starts from rest and only reaches $v_{max}$ gradually (the speed-hold gain is 1 s⁻¹), the actual hand-over happens later, at 7.62 s, and the predicted point drifts forward to x = 30.44 m — the truck is at 4 × 7.62 = 30.48 m then. PN absorbs this drift with small steering accelerations (max 1.08 m/s²), and the drone arrives 0.19 m from the truck at 4.96 m altitude. It arrives still flying at close to $v_{max}$, so the horizontal velocity mismatch at hand-over is 3.86 m/s.
 
-**Phase 2.** The PD law brings the 3.86 m/s mismatch below the 0.5 m/s limit within 0.76 s; the drone overshoots ahead of the truck (lateral miss peaks at 1.741 m, Δv rebounds to 0.763 m/s) and then settles. The tanh flare brings the descent rate from 1.30 m/s at hand-over to 0.04 m/s at touchdown. Phase 2 takes 8.56 s (an ideal tanh profile from 5 m to 0.05 m would take $2\ln[\sinh(2.5)/\sinh(0.025)] \approx 11$ s; it is shorter here because the drone enters Phase 2 descending at 1.3 m/s). Touchdown at 16.18 s meets all three criteria with wide margins.
+**Phase 2.** The PD law brings the 3.86 m/s mismatch below the 0.5 m/s limit within 0.76 s; the drone overshoots ahead of the truck (lateral miss peaks at 1.744 m, Δv rebounds to 0.765 m/s) and then settles. The flare brings the descent rate from 1.31 m/s at hand-over to 0.04 m/s at touchdown. Phase 2 takes 8.54 s.
+
+Why Phase 2 is shorter than the ideal tanh profile — the script simulates the vertical channel alone from the hand-over altitude (z = 4.99 m):
+
+| Vertical channel | Time to touchdown |
+|------------------|-------------------|
+| Ideal first-order profile $\dot z = -v_{land}	anh(z/z_{flare})$ | 10.97 s |
+| Rate loop ($K_{\dot z} = 2$), entering from rest | 9.24 s |
+| Rate loop, entering on the tanh profile (−0.986 m/s) | 8.76 s |
+| Rate loop, entering at the actual −1.319 m/s | 8.58 s |
+
+The ≈ 2.4 s saving comes from the second-order rate loop: its descent rate lags behind the commanded profile, and near the ground (where the commanded rate shrinks towards zero and the ideal profile spends most of its time) that lag keeps the drone descending faster than commanded. The faster entry speed accounts for only 0.18 s of it (8.76 → 8.58 s). The vertical-only figure (8.58 s) matches the full run (8.54 s); the small difference comes from the joint acceleration limit shared with the lateral channel. Touchdown at 16.16 s meets all three criteria with wide margins.
 
 Compared with the previous (pure-pursuit) version, which touched down at 13.46 s and failed on Δv_horiz (0.53 m/s), the current run lands later but cleanly. The difference is not only due to PN vs pure pursuit: the old Phase 1 also held altitude and aimed differently, so the two runs are not a controlled comparison.
 
