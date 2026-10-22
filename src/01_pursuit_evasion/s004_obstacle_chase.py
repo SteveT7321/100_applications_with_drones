@@ -9,7 +9,10 @@ Comparison:
   - Without obstacle avoidance: pure pursuit — crashes on first obstacle
 
 Both agents have the same APF obstacle repulsion; only the pursuer comparison
-case is stripped of it.
+case is stripped of it. Both agents are confined to the same walled arena
+x in [-5, 5], y in [-3, 3] (hard walls, agents slide along them), so the
+evader cannot leave the obstacle course. An obstacle-free run in the same
+arena is used as the reference for the detour cost.
 
 Usage:
     conda activate drones
@@ -52,6 +55,12 @@ OBSTACLES = np.array([
 K_REP = 4.0    # repulsion gain
 RHO0  = 1.2    # influence range from obstacle surface (m)
 
+# Bounded arena (hard walls for BOTH agents): the obstacle course is enclosed,
+# so the evader cannot run out into open space and the pursuer has to get
+# through the obstacles to reach it.
+ARENA_LO = np.array([-5.0, -3.0, 0.0])
+ARENA_HI = np.array([ 5.0,  3.0, 4.0])
+
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '01_pursuit_evasion', 's004_obstacle_chase',
@@ -89,10 +98,25 @@ def inside_obstacle(pos, obstacles):
 
 # ── Simulation ─────────────────────────────────────────────
 
-def run_simulation(pursuer_uses_apf):
+def bounded_velocity(pos, v_cmd, max_speed):
     """
-    Both evader always uses APF obstacle avoidance + straight escape.
+    Clamp speed to max_speed, then shorten the velocity so that the next
+    position stays inside the arena box (wall = hard constraint, the agent
+    slides along it). Applied identically to pursuer and evader.
+    """
+    speed = np.linalg.norm(v_cmd)
+    if speed > max_speed:
+        v_cmd = v_cmd / speed * max_speed
+    next_pos = np.clip(pos + v_cmd * DT, ARENA_LO, ARENA_HI)
+    return (next_pos - pos) / DT
+
+
+def run_simulation(pursuer_uses_apf, obstacles=OBSTACLES):
+    """
+    The evader always uses straight escape + APF obstacle repulsion.
     Pursuer uses APF only when pursuer_uses_apf=True; else pure pursuit.
+    Both agents are confined to the arena box [ARENA_LO, ARENA_HI].
+    `obstacles` can be an empty (0, 4) array for the obstacle-free reference.
     """
     pursuer = DroneBase(INIT_PURSUER, max_speed=PURSUER_SPEED, dt=DT)
     evader  = DroneBase(INIT_EVADER,  max_speed=EVADER_SPEED,  dt=DT)
@@ -107,7 +131,7 @@ def run_simulation(pursuer_uses_apf):
         t = step * DT
 
         # ── Pursuer crash / capture ──
-        if inside_obstacle(pursuer.pos, OBSTACLES):
+        if inside_obstacle(pursuer.pos, obstacles):
             p_crashed    = True
             p_crash_time = t
             break
@@ -117,7 +141,7 @@ def run_simulation(pursuer_uses_apf):
             break
 
         # ── Evader crash ──
-        if inside_obstacle(evader.pos, OBSTACLES):
+        if inside_obstacle(evader.pos, obstacles):
             e_crashed    = True
             e_crash_time = t
             break
@@ -126,19 +150,19 @@ def run_simulation(pursuer_uses_apf):
         r_pe  = evader.pos - pursuer.pos
         v_att = PURSUER_SPEED * r_pe / (np.linalg.norm(r_pe) + 1e-8)
         if pursuer_uses_apf:
-            v_rep = repulsion_velocity(pursuer.pos, OBSTACLES)
+            v_rep = repulsion_velocity(pursuer.pos, obstacles)
             rep_mag_log.append(np.linalg.norm(v_rep))
             v_p = v_att + v_rep
         else:
             rep_mag_log.append(0.0)
             v_p = v_att
-        pursuer.step(v_p)
+        pursuer.step(bounded_velocity(pursuer.pos, v_p, PURSUER_SPEED))
 
         # ── Evader velocity (straight escape + APF) ──
         r_ep  = evader.pos - pursuer.pos
         v_esc = EVADER_SPEED * r_ep / (np.linalg.norm(r_ep) + 1e-8)
-        v_rep_e = repulsion_velocity(evader.pos, OBSTACLES)
-        evader.step(v_esc + v_rep_e)
+        v_rep_e = repulsion_velocity(evader.pos, obstacles)
+        evader.step(bounded_velocity(evader.pos, v_esc + v_rep_e, EVADER_SPEED))
 
     return (
         pursuer.get_trajectory(), evader.get_trajectory(),
@@ -166,12 +190,14 @@ def _draw_spheres(ax, obstacles, color='steelblue', alpha=0.25):
 # ── Plots ──────────────────────────────────────────────────
 
 def _axis_limits(results, margin=1.0):
-    """Compute shared axis limits from all trajectories."""
+    """Axis limits: the arena in x/y, trajectories +/- margin in z."""
     all_pts = np.vstack([
         np.vstack([res[0], res[1]]) for res in results
     ])
-    lo = all_pts.min(axis=0) - margin
-    hi = all_pts.max(axis=0) + margin
+    lo = ARENA_LO.copy()
+    hi = ARENA_HI.copy()
+    lo[2] = all_pts[:, 2].min() - margin
+    hi[2] = all_pts[:, 2].max() + margin
     return lo, hi
 
 
@@ -222,9 +248,13 @@ def plot_trajectories_3d(results, out_dir):
     print(f'Saved: {path}')
 
 
-def plot_distance_time(results, out_dir):
+def plot_distance_time(results, out_dir, ref=None):
     labels = ['With APF avoidance', 'Without avoidance']
     colors = ['steelblue', 'darkorange']
+    if ref is not None:
+        results = list(results) + [ref]
+        labels  = labels + ['Obstacle-free reference']
+        colors  = colors + ['gray']
 
     fig, ax = plt.subplots(figsize=(9, 5))
     for label, color, res in zip(labels, colors, results):
@@ -360,8 +390,46 @@ if __name__ == '__main__':
         print(f'[{label:>30}]  {status}')
         results.append(res)
 
+    # Obstacle-free reference: same arena, same agents, no obstacles
+    ref = run_simulation(True, obstacles=np.zeros((0, 4)))
+    ref_t = ref[3]
+    print(f'[{"Obstacle-free reference":>30}]  '
+          + (f'captured at {ref_t:.2f} s' if ref[2] else 'timeout'))
+
+    # Diagnostics for the APF case
+    p_traj, e_traj, captured, cap_t = results[0][:4]
+    rep_log = results[0][8]
+    print(f'APF case: evader final position ({e_traj[-1, 0]:.2f}, '
+          f'{e_traj[-1, 1]:.2f}, {e_traj[-1, 2]:.2f}) m')
+    if captured and ref[2]:
+        print(f'APF case: detour cost vs obstacle-free reference: '
+              f'{cap_t - ref_t:.2f} s')
+    for i, (cx, cy, cz, r) in enumerate(OBSTACLES, start=1):
+        d_p = np.min(np.linalg.norm(p_traj - [cx, cy, cz], axis=1) - r)
+        d_e = np.min(np.linalg.norm(e_traj - [cx, cy, cz], axis=1) - r)
+        flag = 'inside rho0' if d_p < RHO0 else 'outside rho0'
+        print(f'  Obstacle {i}: closest surface distance pursuer {d_p:.2f} m '
+              f'({flag}), evader {d_e:.2f} m')
+    active = rep_log > 0
+    print(f'APF case: repulsion active {active.sum()} / {len(rep_log)} steps '
+          f'({100 * active.mean():.0f}% of the chase), '
+          f'peak |v_rep| {rep_log.max():.2f} m/s')
+    p_speed = np.linalg.norm(np.diff(p_traj, axis=0), axis=1) / DT
+    stall = p_speed < 0.5
+    if stall.any():
+        print(f'APF case: pursuer slower than 0.5 m/s for {stall.sum() * DT:.2f} s '
+              f'(local minimum), mean stall position '
+              f'({p_traj[1:][stall, 0].mean():.2f}, {p_traj[1:][stall, 1].mean():.2f}) m')
+    at_wall = np.nonzero(e_traj[:, 0] >= ARENA_HI[0] - 1e-9)[0]
+    if len(at_wall):
+        print(f'APF case: evader reaches the x = {ARENA_HI[0]:.0f} m wall at '
+              f't = {at_wall[0] * DT:.2f} s at y = {e_traj[at_wall[0], 1]:.2f} m')
+    p_len = np.sum(np.linalg.norm(np.diff(p_traj, axis=0), axis=1))
+    print(f'APF case: pursuer path length {p_len:.2f} m, '
+          f'mean speed {p_len / cap_t:.2f} m/s' if captured else '')
+
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories_3d(results, out_dir)
-    plot_distance_time(results, out_dir)
+    plot_distance_time(results, out_dir, ref)
     plot_repulsion(results, out_dir)
     save_animation(results, out_dir)

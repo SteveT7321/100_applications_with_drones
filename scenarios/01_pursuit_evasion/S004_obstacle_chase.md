@@ -98,12 +98,12 @@ python src/01_pursuit_evasion/s004_obstacle_chase.py
 1. Replace spheres with cylinders (buildings) for urban canyon pursuit
 2. Dynamic obstacles (moving obstacles)
 3. Global path planner (A* or RRT) instead of local APF — avoids local minima
-4. Multi-pursuer cooperative APF → [S005](S005_multi_pursuer.md)
+4. Multi-pursuer cooperative APF
 
 ---
 
 ## Related Scenarios
 
 - Prerequisites: [S001](S001_basic_intercept.md), [S003](S003_low_altitude_tracking.md)
-- Next: [S005](S005_multi_pursuer.md)
-- See [domains/01_pursuit_evasion.md](../../domains/01_pursuit_evasion.md)
+- Next: [S005](S005_stealth_approach.md)
+- See [domains/01_pursuit_evasion](../../domains/01_pursuit_evasion/README.md)
