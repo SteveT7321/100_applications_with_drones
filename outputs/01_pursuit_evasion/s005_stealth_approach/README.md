@@ -6,19 +6,20 @@
 
 ## Problem Definition
 
-**Setup**: Pursuer starts inside the evader's forward detection cone and must maneuver
-laterally to escape the cone, then approach from the blind-spot rear.
+**Setup**: The evader patrols along +x and has a forward detection cone. The pursuer starts **ahead** of the evader, just outside detection range but close to the cone axis, so a straight approach has to cross the cone. The pursuer wants to reach the evader without being seen and close in from the rear blind spot.
 
 **Roles**:
-- **Evader**: flies at constant heading (+x); forward-facing detection cone (half-angle 60°, range 5 m); once the pursuer is inside the cone for ≥ 10 consecutive steps (~0.2 s), a **permanent alarm** latches and the evader sprints away at 6 m/s (faster than the detected pursuer's 4 m/s) — forever.
-- **Pursuer**: two strategies compared below.
+- **Evader**: flies at constant heading (+x) at 3 m/s with a forward detection cone (half-angle 60°, range 5 m) along its velocity. The **first** detection alerts it (latched). From then on it flees directly away from the pursuer at 3 m/s (same speed, new direction).
+- **Pursuer**: two strategies compared below. Both obey **the same speed rule**: 5.5 m/s (4.5 + 1.0 bonus) while undetected and the evader is not alerted, otherwise 4.5 m/s.
 
 **Comparison**:
 
-| Strategy | Logic | Outcome |
-|----------|-------|---------|
-| **Stealth flanking** | When in-cone → sidestep laterally; when clear → approach from behind at 7 m/s | ✅ Captured |
-| **Direct frontal** | Always aim straight at evader at 4 m/s | ❌ Alarm → Timeout |
+| Strategy | Logic |
+|----------|-------|
+| **Stealth flanking** | Aim for a waypoint 2 m behind the evader (the evader itself once within 2.5 m). Each step, take the heading closest to that aim whose predicted next position is outside the cone |
+| **Direct frontal** | Always fly straight at the evader |
+
+If the stealth pursuer were detected, it would fall back to direct pursuit at 4.5 m/s. In this run that never happens.
 
 ---
 
@@ -30,21 +31,25 @@ $$\alpha = \arccos\!\left(\frac{(\mathbf{p}_P - \mathbf{p}_E) \cdot \hat{\mathbf
 
 Detected if:  $\alpha < \theta_{cone}$ **AND** $\|\mathbf{p}_P - \mathbf{p}_E\| < R_{detect}$
 
+### Speed Rule (both strategies)
+
+$$v_P = \begin{cases} 5.5 \text{ m/s} & \text{not detected and evader not alerted} \\ 4.5 \text{ m/s} & \text{otherwise} \end{cases}$$
+
 ### Stealth Pursuer Control
 
-**When detected** (sidestep phase): move perpendicular to evader heading to exit the cone
+Desired direction toward the rear waypoint:
 
-$$\mathbf{v}_{cmd} = v_P \cdot \text{sgn}\!\left[(\mathbf{p}_P - \mathbf{p}_E) \cdot \hat{\mathbf{n}}\right] \cdot \hat{\mathbf{n}}, \quad \hat{\mathbf{n}} \perp \hat{\mathbf{v}}_E$$
+$$\hat{\mathbf{d}} = \frac{\mathbf{p}_{target} - \mathbf{p}_P}{\|\mathbf{p}_{target} - \mathbf{p}_P\|}, \quad \mathbf{p}_{target} = \mathbf{p}_E - R_{offset}\,\hat{\mathbf{v}}_E \;\;(\text{or } \mathbf{p}_E \text{ when } \|\mathbf{p}_E - \mathbf{p}_P\| \le R_{offset} + 0.5)$$
 
-**When clear** (rear approach phase):
+Commanded heading = the horizontal unit vector $\hat{\mathbf{u}}$ (searched every 5°) that maximises $\hat{\mathbf{u}} \cdot \hat{\mathbf{d}}$, subject to the predicted next position $\mathbf{p}_P + v_P \hat{\mathbf{u}}\,\Delta t$ being undetected by the evader at its next position. If no heading is safe, $\hat{\mathbf{d}}$ is used.
 
-$$\mathbf{v}_{cmd} = v_{clear} \cdot \frac{\mathbf{p}_{target} - \mathbf{p}_P}{\|\mathbf{p}_{target} - \mathbf{p}_P\|}, \quad \mathbf{p}_{target} = \mathbf{p}_E - R_{offset} \hat{\mathbf{v}}_E$$
+### Alert Mode (Evader)
 
-### Alarm Debounce (Detection Threshold)
+On the first detection the alarm latches, and from then on:
 
-$$\text{alarm} = \begin{cases} \text{True (permanent)} & \text{if } \sum_{\text{consec}} \mathbf{1}[\text{detected}] \geq N_{thr} \\ \text{False} & \text{otherwise} \end{cases}$$
+$$\mathbf{v}_E = v_{E,alert} \cdot \frac{\mathbf{p}_E - \mathbf{p}_P}{\|\mathbf{p}_E - \mathbf{p}_P\|}$$
 
-with $N_{thr} = 10$ steps ($\approx 0.2$ s at 48 Hz).
+Detection is only evaluated while the evader is still patrolling. After the alarm the cone no longer matters.
 
 ---
 
@@ -54,17 +59,18 @@ with $N_{thr} = 10$ steps ($\approx 0.2$ s at 48 Hz).
 |-----------|-------|
 | Detection cone half-angle | 60° |
 | Detection range | 5.0 m |
-| Detection threshold | 10 consecutive steps (≈ 0.2 s) |
-| Pursuer speed (clear) | 7.0 m/s |
-| Pursuer speed (detected) | 4.0 m/s |
-| Evader speed (patrol) | 2.5 m/s |
-| Evader speed (alerted) | 6.0 m/s (faster than detected pursuer!) |
-| Pursuer start | (4, 2, 2) m — inside cone |
+| Alarm | first detection, latched (no debounce) |
+| Pursuer speed (undetected, evader not alerted) | 5.5 m/s (4.5 + 1.0 bonus) |
+| Pursuer speed (detected / evader alerted) | 4.5 m/s |
+| Evader speed (patrol) | 3.0 m/s |
+| Evader speed (alerted) | 3.0 m/s (direction changes) |
+| Pursuer start | (6, 2, 2) m — 6.32 m from evader, α = 18.4° |
 | Evader start | (0, 0, 2) m heading +x |
-| Behind-waypoint offset | 3.0 m |
+| Behind-waypoint offset | 2.0 m |
+| Stealth heading search resolution | 5° |
 | Capture radius | 0.15 m |
 | Control frequency | 48 Hz |
-| Max simulation time | 25 s |
+| Max simulation time | 20 s |
 
 ---
 
@@ -84,36 +90,48 @@ python src/01_pursuit_evasion/s005_stealth_approach.py
 
 ## Results
 
-| Strategy | Alarm Triggered | Capture Time | In-Cone (%) |
-|----------|----------------|--------------|-------------|
-| **Stealth Flanking** | ❌ No | **4.73 s** | **4.4%** |
-| Direct Frontal | ✅ Yes (0.19 s) | ❌ Timeout (>25 s) | 0.8% |
+| Strategy | Alarm Triggered | Capture Time | In-Cone steps (%) | Time at 5.5 m/s | Pursuer path | Evader path |
+|----------|----------------|--------------|-------------------|-----------------|--------------|-------------|
+| **Stealth Flanking** | No | **1.77 s** | 0 (0.0%) | 1.77 s | 9.74 m | 5.31 m |
+| Direct Frontal | Yes (t = 0.17 s) | 3.38 s | 1 (0.6%) | 0.17 s | 15.35 m | 10.12 m |
+
+Capture bearing (pursuer relative to the evader's heading at capture): stealth 177°, direct 180°. Both captures happen from directly behind.
 
 **Key Findings**:
 
-- The direct pursuer stays in the detection cone for the full alarm threshold (~0.19 s), permanently alerting the evader. The evader then flees at 6 m/s vs. the pursuer's 4 m/s — distance grows indefinitely and capture is impossible.
-- The stealth pursuer sidestepped laterally upon initial detection and exited the 5 m detection range in ~3 steps (< 10-step threshold) — **no alarm triggered**. It then curved around to the rear blind-spot and closed at 7 m/s vs. the evader's 2.5 m/s patrol speed, capturing at 4.73 s.
-- The lateral sidestep works because pursuer (+y) and evader (−x flee) velocities diverge at ~7.8 m/s, rapidly pushing the pursuer out of detection range before the alarm latches.
+- **Stealth is about 1.9× faster (1.77 s vs 3.38 s), and the difference comes from the alarm, not from different speed rules.** Both pursuers fly 5.5 m/s until detected. The direct pursuer is detected at $t = 0.17$ s, when it crosses the 5 m range on the cone axis. The evader turns and flees, and the pursuer drops to 4.5 m/s. That leaves a 4.94 m gap to close at only $4.5 - 3.0 = 1.5$ m/s, which takes ~3.19 s more. $0.17 + 3.19 = 3.36$ s, matching the simulated 3.38 s.
+- The stealth pursuer is **never detected** (0 in-cone steps). It first slides along the 5 m range boundary (the distance plot stays flat at ≈5 m from ~0.2 to ~0.65 s). Meanwhile the patrolling evader flies past it, which swings the pursuer out of the 60° cone. The pursuer then dives in behind the evader. The evader keeps patrolling at 3 m/s and never reacts, so the pursuer keeps its 5.5 m/s bonus the whole time and closes from the rear at about 2.5 m/s.
+- The in-cone percentage is low for both strategies because detection is only evaluated until the alarm. The direct pursuer needs just **one** detected step to trigger the alarm. The meaningful metric is whether an alarm happens at all, and when.
+- This advantage depends on the geometry: the evader's patrol carries it toward and past the pursuer. Against an evader heading away from the pursuer, both strategies would start in the blind spot and behave the same (see deviations).
 
-**3D Trajectories** — stealth pursuer (red) flanks outside the yellow detection cone; direct pursuer triggers alarm immediately:
+**Trajectories** — top-down XY view with the detection cone drawn at t = 0, 0.6 and 1.2 s (the cone moves with the evader; dots mark both agents at those times). The stealth pursuer (top) stays outside every snapshot cone; the direct pursuer (bottom) enters the cone and triggers the alarm:
 
-![3D Trajectories](trajectories_3d.png)
+![Trajectories](trajectories_3d.png)
 
-**Detection Status vs Time** — stealth briefly in-cone then clear; direct triggers permanent alarm at 0.19 s:
+**Detection Status vs Time** — stealth: no detection at all; direct: one detected step at 0.17 s latches the alarm:
 
 ![Detection Status](detection_status.png)
 
-**Distance vs Time** — stealth closes steadily from the rear; direct diverges after alarm:
+**Distance vs Time** — stealth holds ≈5 m (range boundary), then closes fast from behind; direct closes at 1.5 m/s after the alarm:
 
 ![Distance vs Time](distance_time.png)
 
-**Capture Time Comparison**:
+**Capture Time and Detection Exposure**:
 
 ![Comparison Bar](comparison_bar.png)
 
-**Animation** (stealth case — pursuer sidesteps then approaches from blind-spot rear):
+**Animation** (stealth case; the cone and range circle move with the evader; every 2nd step, 43 frames):
 
 ![Animation](animation.gif)
+
+### Deviations from the scenario card
+
+| Card | This implementation | Reason |
+|------|--------------------|--------|
+| Pursuer start (-4, 2, 2) m | (6, 2, 2) m | (-4, 2) is behind the evader ($\alpha = 153°$). A direct approach from there is never detected, so both strategies would behave identically. Starting ahead, outside range ($6.32$ m, $\alpha = 18.4°$), forces a straight approach through the cone |
+| Evader flees only while the pursuer is in the cone (card pseudocode re-evaluates every step) | First detection latches the alert permanently | With per-step evaluation the fleeing evader's cone turns away from the pursuer, detection drops, the evader resumes patrol and gets re-detected, so it chatters. "Becomes alerted" in the card text is read as a latched state |
+| Stealth: go to the behind-waypoint when undetected, straight at the evader when detected | Cone-avoiding heading search toward the waypoint (predictive, 5° steps); falls back to direct pursuit only after an alarm | The card's rule only reacts after detection, which would already trigger the latched alarm |
+| — | Speeds 5.5 / 4.5 m/s (pursuer), 3.0 / 3.0 m/s (evader), offset 2 m, max time 20 s, cone 60° / 5 m all match the card | Previous version used 7 / 4 and 2.5 / 6 m/s, offset 3 m, 25 s and a 30-step alarm debounce, with different speed rules for the two strategies. That made the comparison unfair and has been removed |
 
 ---
 
@@ -123,6 +141,7 @@ python src/01_pursuit_evasion/s005_stealth_approach.py
 2. Time-varying evader heading (scanning/turning) — pursuer must predict heading to aim behind-waypoint correctly
 3. Acoustic noise model: speed above threshold increases detection range proportionally
 4. 3D stealth: cone has 3D solid angle, pursuer must also adjust altitude
+5. Monte Carlo over pursuer start positions: map where stealth beats direct pursuit and where they coincide
 
 ---
 

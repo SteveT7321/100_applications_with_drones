@@ -143,4 +143,4 @@ for step in range(MAX_STEPS):
 
 - Prerequisites: [S001](S001_basic_intercept.md), [S002](S002_evasive_maneuver.md)
 - Follow-ups: [S006](S006_energy_race.md), [S016](S016_airspace_defense.md)
-- See [domains/01_pursuit_evasion.md](../../domains/01_pursuit_evasion.md)
+- See [domains/01_pursuit_evasion](../../domains/01_pursuit_evasion/README.md)

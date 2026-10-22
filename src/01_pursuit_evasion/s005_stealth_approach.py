@@ -1,25 +1,26 @@
 """
 S005 Stealth Approach
 ======================
-Pursuer flanks laterally to stay outside the evader's forward detection cone,
-then closes from the rear blind-spot.
+Pursuer tries to reach the evader without entering the evader's forward
+detection cone, then closes from the rear blind spot.
 
 Setup:
-  - Evader at (0,0,2) heading +x.  Its detection cone (60°, 5m) points in the
-    +x direction (forward).
-  - Pursuer starts at (4, 2, 2) — inside the evader's forward cone from the start.
-  - Detection alarm latches permanently once the pursuer is inside the cone for
-    ≥ DETECTION_THRESHOLD consecutive steps (~0.2 s).  Once alerted the evader
-    sprints away at EVADER_SPEED_FLEE (6 m/s) — faster than the detected pursuer
-    (4 m/s) — so it can never be caught via direct chase.
+  - Evader at (0,0,2) patrolling +x at 3 m/s.  Its detection cone
+    (half-angle 60 deg, range 5 m) points along its velocity.
+  - Pursuer starts ahead of the evader at (6, 2, 2): outside detection range
+    (6.32 m) but near the cone axis, so a straight approach must cross the cone.
+  - The FIRST detection alerts the evader (latched); it then flees directly
+    away from the pursuer at 3 m/s for the rest of the run.
+
+Same rules for both strategies:
+  - Pursuer speed 5.5 m/s while undetected and the evader is not alerted,
+    4.5 m/s when detected / once alerted.
 
 Comparison:
-  - Stealth flanking : when in cone → sidestep laterally;  pursuer exits detection
-    range in ~3 steps (< threshold) → no alarm triggered → evader stays on patrol
-    (2.5 m/s) → pursuer approaches from blind-spot rear at 7 m/s → captures easily.
-  - Direct frontal   : pursuer charges straight at evader → stays inside the cone
-    for ≥ threshold steps → permanent alarm → evader flees at 6 m/s forever →
-    pursuer (4 m/s) can NEVER catch up → timeout.
+  - Stealth flanking : aims for a waypoint 2 m behind the evader; each step it
+    takes the heading closest to that aim whose predicted next position is
+    outside the cone (5 deg heading search).
+  - Direct frontal   : always flies straight at the evader.
 
 Usage:
     conda activate drones
@@ -37,20 +38,27 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.base.drone_base import DroneBase
 
-# ── Scenario parameters ─────────────────────────────────────
-PURSUER_SPEED_CLEAR    = 7.0   # bonus speed while outside detection cone (unalerted)
-PURSUER_SPEED_DETECTED = 4.0   # speed when inside cone (pre-alarm)
-EVADER_SPEED_PATROL    = 2.5   # m/s constant heading when no alert
-EVADER_SPEED_FLEE      = 6.0   # m/s flee speed when ALERTED — faster than detected pursuer!
+# ── Scenario parameters (speeds, cone, offset, max time as in the card) ──
+# Speed rules are IDENTICAL for both pursuer strategies:
+#   pursuer flies PURSUER_SPEED_STEALTH while undetected and the evader is
+#   not alerted, PURSUER_SPEED_DETECTED otherwise.
+PURSUER_SPEED_STEALTH  = 4.5 + 1.0   # m/s, bonus speed while undetected
+PURSUER_SPEED_DETECTED = 4.5         # m/s, when detected / once evader is alerted
+EVADER_SPEED_NORMAL    = 3.0         # m/s constant heading (patrol)
+EVADER_SPEED_ALERT     = 3.0         # m/s, same speed — only direction changes
 CONE_HALF_ANGLE_DEG    = 60.0
-DETECT_RANGE           = 5.0   # m
-CAPTURE_R              = 0.15  # m
-BEHIND_OFFSET          = 3.0   # m behind evader for stealth waypoint
-DETECTION_THRESHOLD    = 30    # consecutive steps in cone before permanent alarm (~0.625s)
+DETECT_RANGE           = 5.0         # m
+CAPTURE_R              = 0.15        # m
+BEHIND_OFFSET          = 2.0         # m behind evader for stealth waypoint
+HEADING_STEP_DEG       = 5.0         # resolution of the stealth heading search
 DT                     = 1 / 48
-MAX_TIME               = 25.0
+MAX_TIME               = 20.0
 
-INIT_PURSUER   = np.array([4.0, 2.0, 2.0])   # inside cone from start
+# Pursuer starts AHEAD of the evader, outside detection range (6.32 m) but
+# on the cone axis side (alpha = 18.4 deg), so a straight approach must pass
+# through the cone. (The card's (-4, 2, 2) is already behind the evader,
+# where a direct approach is never detected and both strategies coincide.)
+INIT_PURSUER   = np.array([6.0, 2.0, 2.0])
 INIT_EVADER    = np.array([0.0, 0.0, 2.0])
 EVADER_HEADING = np.array([1.0, 0.0, 0.0])   # constant patrol heading +x
 
@@ -80,62 +88,71 @@ def behind_waypoint(pos_e, vel_e, offset=BEHIND_OFFSET):
     return pos_e - offset * v_hat
 
 
-def lateral_escape_dir(pos_p, pos_e, vel_e):
+def stealth_heading(pos_p, pos_e, vel_e, desired_dir, speed):
     """
-    Unit vector perpendicular to evader heading that increases the pursuer's
-    angular separation from the forward cone (same lateral side as current offset).
+    Cone-avoiding heading: among horizontal headings (every HEADING_STEP_DEG),
+    pick the one closest to desired_dir whose predicted next pursuer position
+    (evader advanced one step along its patrol heading) is NOT detected.
+    Falls back to desired_dir if every heading would be detected.
     """
-    v_hat = vel_e / (np.linalg.norm(vel_e) + 1e-8)
-    perp  = np.array([-v_hat[1], v_hat[0], 0.0])   # 2-D perpendicular in XY
-    diff  = pos_p - pos_e
-    lat_sign = np.sign(np.dot(diff, perp))
-    if lat_sign == 0:
-        lat_sign = 1.0
-    return lat_sign * perp
+    e_next = pos_e + vel_e / (np.linalg.norm(vel_e) + 1e-8) * EVADER_SPEED_NORMAL * DT
+    best, best_dot = None, -np.inf
+    for ang in np.radians(np.arange(0.0, 360.0, HEADING_STEP_DEG)):
+        d = np.array([np.cos(ang), np.sin(ang), 0.0])
+        if is_detected(pos_p + d * speed * DT, e_next, vel_e,
+                       CONE_HALF_ANGLE_DEG, DETECT_RANGE):
+            continue
+        dot = np.dot(d, desired_dir)
+        if dot > best_dot:
+            best, best_dot = d, dot
+    return desired_dir if best is None else best
 
 
 # ── Simulation ──────────────────────────────────────────────
 
 def run_simulation(stealth_mode):
     """
-    stealth_mode=True  → reactive flanking: sidestep when in cone,
-                         aim for behind-waypoint when clear.
-    stealth_mode=False → direct: always charge straight at evader.
+    stealth_mode=True  → aim for the behind-waypoint (BEHIND_OFFSET m behind the
+                         evader); each step choose the heading closest to that
+                         aim whose predicted next position is outside the cone.
+                         Within BEHIND_OFFSET + 0.5 m of the evader, aim at the
+                         evader itself (still cone-avoiding).
+    stealth_mode=False → direct: always fly straight at the evader.
 
-    Alarm latches permanently once the pursuer is detected for
-    DETECTION_THRESHOLD consecutive steps.  Alerted evader flees at
-    EVADER_SPEED_FLEE (6 m/s) — faster than the detected pursuer (4 m/s).
+    Same rules for both strategies:
+      - pursuer speed = PURSUER_SPEED_STEALTH if not detected and evader not
+        alerted, else PURSUER_SPEED_DETECTED;
+      - the first detection alerts the evader (latched): it then flees
+        directly away from the pursuer at EVADER_SPEED_ALERT for the rest
+        of the run.
     """
-    pursuer = DroneBase(INIT_PURSUER.copy(), max_speed=PURSUER_SPEED_CLEAR, dt=DT)
-    evader  = DroneBase(INIT_EVADER.copy(),  max_speed=EVADER_SPEED_FLEE,   dt=DT)
+    pursuer = DroneBase(INIT_PURSUER.copy(), max_speed=PURSUER_SPEED_STEALTH, dt=DT)
+    evader  = DroneBase(INIT_EVADER.copy(),
+                        max_speed=max(EVADER_SPEED_NORMAL, EVADER_SPEED_ALERT), dt=DT)
 
     vel_e       = EVADER_HEADING.copy().astype(float)
     alerted     = False
-    consec_det  = 0           # consecutive steps inside cone
     alarm_step  = None        # timestep when alarm latched
     max_steps   = int(MAX_TIME / DT)
 
     captured     = False
     capture_time = None
     detected_log = []         # per-step 0/1
-    alerted_log  = []         # per-step 0/1 (permanent after alarm)
+    alerted_log  = []         # per-step 0/1 (latched after first detection)
+    speed_log    = []         # pursuer commanded speed per step
 
     for step in range(max_steps):
         t = step * DT
 
-        # ── Momentary detection ──
-        detected_now = is_detected(pursuer.pos, evader.pos, vel_e,
-                                   CONE_HALF_ANGLE_DEG, DETECT_RANGE)
+        # ── Momentary detection (only meaningful while patrolling) ──
+        detected_now = (not alerted) and is_detected(
+            pursuer.pos, evader.pos, vel_e, CONE_HALF_ANGLE_DEG, DETECT_RANGE)
         detected_log.append(1 if detected_now else 0)
 
-        # ── Alarm debounce: latch permanently after threshold ──
-        if detected_now:
-            consec_det += 1
-            if consec_det >= DETECTION_THRESHOLD and not alerted:
-                alerted    = True
-                alarm_step = step
-        else:
-            consec_det = 0
+        # ── First detection alerts the evader (latched) ──
+        if detected_now and not alerted:
+            alerted    = True
+            alarm_step = step
         alerted_log.append(1 if alerted else 0)
 
         # ── Capture check ──
@@ -144,47 +161,36 @@ def run_simulation(stealth_mode):
             capture_time = t
             break
 
-        # ── Pursuer velocity ──
-        if stealth_mode:
-            if detected_now:
-                # sidestep laterally to exit the cone — use full clear speed to escape fast
-                speed   = PURSUER_SPEED_CLEAR
-                cmd_dir = lateral_escape_dir(pursuer.pos, evader.pos, vel_e)
+        # ── Pursuer speed: identical rule for both strategies ──
+        speed = PURSUER_SPEED_DETECTED if (detected_now or alerted) else PURSUER_SPEED_STEALTH
+        speed_log.append(speed)
+
+        # ── Pursuer heading ──
+        to_e = evader.pos - pursuer.pos
+        if stealth_mode and not alerted:
+            if np.linalg.norm(to_e) > BEHIND_OFFSET + 0.5:
+                target = behind_waypoint(evader.pos, vel_e)
             else:
-                speed = PURSUER_SPEED_CLEAR
-                dist  = np.linalg.norm(pursuer.pos - evader.pos)
-                if dist > BEHIND_OFFSET + 0.5:
-                    target = behind_waypoint(evader.pos, vel_e)
-                else:
-                    target = evader.pos            # close enough — finish directly
-                cmd_dir = target - pursuer.pos
-                n = np.linalg.norm(cmd_dir)
-                cmd_dir = cmd_dir / n if n > 1e-6 else cmd_dir
+                target = evader.pos            # close enough — finish directly
+            desired = target - pursuer.pos
+            desired = desired / (np.linalg.norm(desired) + 1e-8)
+            cmd_dir = stealth_heading(pursuer.pos, evader.pos, vel_e, desired, speed)
         else:
-            # direct: always charge at evader
-            speed   = PURSUER_SPEED_DETECTED
-            cmd_dir = evader.pos - pursuer.pos
-            n = np.linalg.norm(cmd_dir)
-            cmd_dir = cmd_dir / n if n > 1e-6 else cmd_dir
+            # direct pursuit (and stealth pursuer once the evader is alerted)
+            cmd_dir = to_e / (np.linalg.norm(to_e) + 1e-8)
 
         pursuer.step(cmd_dir * speed)
 
         # ── Evader velocity ──
         if alerted:
-            # PERMANENT: sprint away from pursuer forever
             flee = evader.pos - pursuer.pos
             n    = np.linalg.norm(flee)
             if n > 1e-6:
                 vel_e = flee / n
-            evader.step(vel_e * EVADER_SPEED_FLEE)
+            evader.step(vel_e * EVADER_SPEED_ALERT)
         else:
-            # patrol: resume constant heading
             vel_e = EVADER_HEADING.copy().astype(float)
-            if detected_now:
-                # brief pre-alarm reaction: sidestep slightly but don't sprint
-                evader.step(vel_e * EVADER_SPEED_PATROL)
-            else:
-                evader.step(vel_e * EVADER_SPEED_PATROL)
+            evader.step(vel_e * EVADER_SPEED_NORMAL)
 
     alarm_time = alarm_step * DT if alarm_step is not None else None
     return (
@@ -196,6 +202,7 @@ def run_simulation(stealth_mode):
         alarm_time,
         np.array(detected_log),
         np.array(alerted_log),
+        np.array(speed_log),
     )
 
 
@@ -257,25 +264,39 @@ def _draw_cone_2d(ax, apex, heading, half_angle_deg, length, color='gold', alpha
 def plot_trajectories_3d(results, out_dir):
     """俯瞰 XY 圖（z=2 平面）+ 右側小 3D 圖，清楚展示側翼路徑。"""
     labels = ['Stealth Flanking', 'Direct Frontal']
-    clip_steps = [None, int(5.0 / DT)]   # direct 只顯示前 5 秒
+    clip_steps = [None, None]   # both runs end in capture well inside MAX_TIME
 
-    fig = plt.figure(figsize=(16, 7))
+    fig = plt.figure(figsize=(14, 10))
+    gs = fig.add_gridspec(2, 2, width_ratios=[2.2, 1])
+    snap_times = [0.0, 0.6, 1.2]          # cone snapshots (cone moves with evader)
+    snap_alpha = [0.30, 0.18, 0.10]
 
     for i, (label, res, clip) in enumerate(zip(labels, results, clip_steps)):
-        p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, _ = res
+        p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, _, _ = res
 
         pt = p_traj if clip is None else _clip_traj(p_traj, clip)
         et = e_traj if clip is None else _clip_traj(e_traj, clip)
 
         # ── 俯瞰 XY ──────────────────────────────────────
-        ax = fig.add_subplot(2, 2, i * 2 + 1)
+        ax = fig.add_subplot(gs[i, 0])
 
-        # 偵測錐投影（從 evader 起點畫）
-        _draw_cone_2d(ax, INIT_EVADER, EVADER_HEADING,
-                      CONE_HALF_ANGLE_DEG, DETECT_RANGE)
+        # Detection cone snapshots while the evader is still patrolling
+        # (after the alarm the evader flees and detection no longer matters)
+        for ts, al in zip(snap_times, snap_alpha):
+            k = int(round(ts / DT))
+            if k >= len(et) or (alarm_t is not None and ts > alarm_t):
+                continue
+            _draw_cone_2d(ax, et[k], EVADER_HEADING,
+                          CONE_HALF_ANGLE_DEG, DETECT_RANGE, alpha=al)
+            ax.scatter(*pt[k, :2], color='red', s=25, marker='o',
+                       edgecolor='black', zorder=9)
+            ax.scatter(*et[k, :2], color='blue', s=25, marker='o',
+                       edgecolor='black', zorder=9)
+            ax.annotate(f't={ts:.1f}s', pt[k, :2], textcoords='offset points',
+                        xytext=(5, 5), fontsize=7, color='darkred')
 
-        # 偵測圈
-        circle = plt.Circle(INIT_EVADER[:2], DETECT_RANGE,
+        # 偵測圈 (at t = 0)
+        circle = plt.Circle(et[0, :2], DETECT_RANGE,
                              fill=False, color='goldenrod', linestyle='--',
                              linewidth=1.0, alpha=0.5)
         ax.add_patch(circle)
@@ -297,12 +318,14 @@ def plot_trajectories_3d(results, out_dir):
                     xytext=et[0, :2],
                     arrowprops=dict(arrowstyle='->', color='royalblue', lw=1.5))
 
+        alarm_str = (f'alarm @ {alarm_t:.2f} s' if alarm_t is not None
+                     else 'no alarm')
         if captured:
             ax.scatter(*pt[-1, :2], color='black', s=150, marker='X', zorder=8,
                        label=f'Captured {cap_t:.2f}s')
-            status = f'Captured {cap_t:.2f} s'
+            status = f'{alarm_str}, captured {cap_t:.2f} s'
         else:
-            status = f'ALARM @ {alarm_t:.2f}s → Timeout'
+            status = f'{alarm_str} → timeout'
             ax.scatter(*pt[-1, :2], color='grey', s=100, marker='X', zorder=8)
             if clip:
                 ax.text(0.02, 0.02, f'(showing first {clip*DT:.0f}s)',
@@ -316,7 +339,7 @@ def plot_trajectories_3d(results, out_dir):
         ax.legend(fontsize=7, loc='upper left')
 
         # ── 小 3D 圖 ─────────────────────────────────────
-        ax3 = fig.add_subplot(2, 2, i * 2 + 2, projection='3d')
+        ax3 = fig.add_subplot(gs[i, 1], projection='3d')
         ax3.view_init(elev=30, azim=-50)
 
         ax3.plot(pt[:, 0], pt[:, 1], pt[:, 2],
@@ -335,7 +358,7 @@ def plot_trajectories_3d(results, out_dir):
         ax3.set_title('3D View', fontsize=8)
 
     fig.suptitle('S005 Stealth Approach — Trajectories\n'
-                 '(gold = detection cone  |  bright red = pursuer detected)',
+                 '(gold = detection cone at t = 0 / 0.6 / 1.2 s, dots = positions at those times  |  light red = pursuer detected)',
                  fontsize=11)
     plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
@@ -351,14 +374,14 @@ def plot_detection_status(results, out_dir):
 
     fig, axes = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
     for ax, label, color, res in zip(axes, labels, colors, results):
-        p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, alert_log = res
+        p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, alert_log, _ = res
         t_ax = np.arange(len(det_log)) * DT
 
         ax.fill_between(t_ax, det_log, step='mid', color=color, alpha=0.4,
                         label='Momentary detection')
         ax.fill_between(t_ax, alert_log, step='mid', color='red', alpha=0.2,
-                        label='Permanent alarm active')
-        if alarm_t:
+                        label='Evader alerted (latched)')
+        if alarm_t is not None:
             ax.axvline(alarm_t, color='red', linestyle='-', linewidth=1.5,
                        label=f'ALARM @ {alarm_t:.2f}s')
         if captured:
@@ -387,14 +410,14 @@ def plot_distance_time(results, out_dir):
 
     fig, ax = plt.subplots(figsize=(11, 5))
     for label, color, res in zip(labels, colors, results):
-        p_traj, e_traj, captured, cap_t, _, alarm_t, _, _ = res
+        p_traj, e_traj, captured, cap_t, _, alarm_t, _, _, _ = res
         n     = min(len(p_traj), len(e_traj))
         dists = np.linalg.norm(p_traj[:n] - e_traj[:n], axis=1)
         times = np.arange(n) * DT
         ax.plot(times, dists, color=color, linewidth=1.8, label=label)
         if captured:
             ax.axvline(cap_t, color=color, linestyle='--', linewidth=1, alpha=0.8)
-        if alarm_t:
+        if alarm_t is not None:
             ax.axvline(alarm_t, color=color, linestyle=':', linewidth=1.5,
                        alpha=0.9, label=f'{label[:7]} alarm {alarm_t:.2f}s')
 
@@ -420,7 +443,7 @@ def plot_comparison_bar(results, out_dir):
     det_pcts  = []
     alerted_flags = []
     for res in results:
-        _, _, captured, cap_t, alerted_flag, _, det_log, _ = res
+        _, _, captured, cap_t, alerted_flag, _, det_log, _, _ = res
         cap_times.append(cap_t if captured else MAX_TIME)
         det_pcts.append(100 * det_log.mean())
         alerted_flags.append(alerted_flag)
@@ -429,7 +452,7 @@ def plot_comparison_bar(results, out_dir):
 
     bars = ax1.bar(labels, cap_times, color=colors, width=0.4, edgecolor='black')
     for bar, t, res, af in zip(bars, cap_times, results, alerted_flags):
-        txt = f'{t:.2f} s' if res[2] else f'>{t:.0f} s\n(ALARM→Timeout)'
+        txt = f'{t:.2f} s' if res[2] else f'>{t:.0f} s\n(timeout)'
         ax1.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
                  txt, ha='center', va='bottom', fontsize=9)
     ax1.set_ylabel('Capture Time (s)')
@@ -455,13 +478,13 @@ def plot_comparison_bar(results, out_dir):
 
 
 def save_animation(results, out_dir):
-    """俯瞰 XY 動畫：stealth pursuer（紅）繞過偵測錐（金色）從後方捕獲 evader（藍）。"""
+    """Top-down XY animation of the stealth case; the detection cone (gold) moves with the evader."""
     import matplotlib.animation as animation
 
-    p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, alert_log = results[0]
-    lo, hi = _traj_limits(p_traj, e_traj, margin=2.0)
+    p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, alert_log, _ = results[0]
+    lo, hi = _traj_limits(p_traj, e_traj, margin=DETECT_RANGE)
 
-    step     = 3
+    step     = 2
     p_frames = p_traj[::step]
     e_frames = e_traj[::step]
     d_frames = det_log[::step]
@@ -472,10 +495,24 @@ def save_animation(results, out_dir):
     ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
     ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
 
-    # 靜態：偵測錐 + 偵測圈
-    _draw_cone_2d(ax, INIT_EVADER, EVADER_HEADING,
-                  CONE_HALF_ANGLE_DEG, DETECT_RANGE, alpha=0.20)
-    circle = plt.Circle(INIT_EVADER[:2], DETECT_RANGE,
+    # Detection cone (sector) and range circle, updated every frame
+    from matplotlib.patches import Polygon
+    half = np.radians(CONE_HALF_ANGLE_DEG)
+
+    def _sector(apex, heading):
+        a0 = np.arctan2(heading[1], heading[0])
+        angs = np.linspace(a0 - half, a0 + half, 40)
+        pts = [apex[:2]] + [apex[:2] + DETECT_RANGE * np.array([np.cos(a), np.sin(a)])
+                            for a in angs]
+        return np.array(pts)
+
+    e_head = np.diff(e_traj, axis=0)
+    e_head = np.vstack([e_head, e_head[-1:]])[::step]
+    cone_patch = Polygon(_sector(e_frames[0], EVADER_HEADING), closed=True,
+                         color='gold', alpha=0.25, zorder=2,
+                         label=f'Detection cone ({CONE_HALF_ANGLE_DEG:.0f} deg, {DETECT_RANGE:.0f} m)')
+    ax.add_patch(cone_patch)
+    circle = plt.Circle(e_frames[0, :2], DETECT_RANGE,
                         fill=False, color='goldenrod', linestyle='--',
                         linewidth=1.2, alpha=0.6, label=f'Detection range {DETECT_RANGE}m')
     ax.add_patch(circle)
@@ -504,8 +541,10 @@ def save_animation(results, out_dir):
         t = i * step * DT
         status = '[IN CONE]' if detected else '[Clear]'
         p_trail.set_color('tomato' if detected else 'red')
+        cone_patch.set_xy(_sector(e_frames[i], e_head[i]))
+        circle.center = (float(e_frames[i, 0]), float(e_frames[i, 1]))
         title_txt.set_text(f'S005 Stealth Approach  t={t:.2f}s  {status}')
-        return p_trail, e_trail, p_dot, e_dot, title_txt
+        return p_trail, e_trail, p_dot, e_dot, title_txt, cone_patch, circle
 
     ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=70, blit=True)
 
@@ -532,8 +571,32 @@ if __name__ == '__main__':
         if captured:
             status = f'captured {cap_t:.2f} s'
         else:
-            status = f'TIMEOUT (alarm @ {alarm_t:.2f}s)' if alarm_t else 'timeout (no alarm)'
+            status = f'TIMEOUT (alarm @ {alarm_t:.2f}s)' if alarm_t is not None else 'timeout (no alarm)'
         print(f'[{label:<28}]  {status}  |  in-cone {det_pct:.1f}% of sim')
+        p_traj, e_traj, speed_log = res[0], res[1], res[8]
+        n = min(len(p_traj), len(e_traj))
+        d = np.linalg.norm(p_traj[:n] - e_traj[:n], axis=1)
+        p_len = np.sum(np.linalg.norm(np.diff(p_traj, axis=0), axis=1))
+        e_len = np.sum(np.linalg.norm(np.diff(e_traj, axis=0), axis=1))
+        print(f'{"":>32}alarm: {"t = %.2f s" % alarm_t if alarm_t is not None else "never"}'
+              f'  |  in-cone steps {int(det_log.sum())}'
+              f'  |  time at {PURSUER_SPEED_STEALTH} m/s: '
+              f'{np.sum(speed_log == PURSUER_SPEED_STEALTH) * DT:.2f} s')
+        print(f'{"":>32}pursuer path {p_len:.2f} m, evader path {e_len:.2f} m, '
+              f'min distance {d.min():.3f} m')
+        if alarm_t is not None:
+            k_al = int(round(alarm_t / DT))
+            print(f'{"":>32}distance at alarm {d[k_al]:.2f} m -> pure chase at '
+                  f'{PURSUER_SPEED_DETECTED} vs {EVADER_SPEED_ALERT} m/s needs '
+                  f'~{(d[k_al] - CAPTURE_R) / (PURSUER_SPEED_DETECTED - EVADER_SPEED_ALERT):.2f} s more')
+        # Bearing of the pursuer relative to the evader's heading at capture
+        if captured and n >= 2:
+            e_vel = e_traj[n - 1] - e_traj[n - 2]
+            rel = p_traj[n - 1] - e_traj[n - 1]
+            cosb = np.dot(rel, e_vel) / (np.linalg.norm(rel) * np.linalg.norm(e_vel) + 1e-12)
+            print(f'{"":>32}capture bearing from evader heading: '
+                  f'{np.degrees(np.arccos(np.clip(cosb, -1, 1))):.0f} deg '
+                  f'(>{CONE_HALF_ANGLE_DEG:.0f} = outside cone, 180 = directly behind)')
         results.append(res)
 
     out_dir = os.path.normpath(OUTPUT_DIR)
