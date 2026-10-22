@@ -58,6 +58,8 @@ SWEEP_SHRINK = [0.3, 0.6, 1.0, 2.0]   # m/s pincer shrink-rate sensitivity
 EVADERS    = ['perpendicular', 'flee', 'jink']
 SWEEP_VE   = [3.5, 4.5, 5.0, 5.5]     # m/s evader-speed sweep (V_P = 5)
 INSIDE_FRAC = 0.1    # evader "inside the pincer" threshold (fraction of half-spacing)
+TIE_TOL    = 0.2     # |cos| below which the previous heading does not pick a side
+OFFSET_TOL = 1e-6    # m   evader counts as "on the pursuer axis" below this offset
 T_JINK     = 1.0     # s   jink evader: heading offset redrawn every T_JINK
 JINK_MAX   = np.radians(60.0)
 JINK_SEED  = 13
@@ -81,32 +83,62 @@ def pincer_angle(p1, p2, pe):
     return np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
 
 
-def _axis_perp(p1, p2, prev_dir):
-    """Unit vector perpendicular to the pursuer axis, on the side closer to
-    the previous heading (tie -> +90 deg rotation of P1->P2)."""
+def _pick_side(cand, prev_dir, side):
+    """Deterministic side choice for a +-cand heading: follow the previous
+    heading only when it clearly prefers one side (|cos| > TIE_TOL);
+    otherwise keep the previously chosen side."""
+    dot = float(cand @ prev_dir)
+    if dot > TIE_TOL:
+        return 1.0
+    if dot < -TIE_TOL:
+        return -1.0
+    return side
+
+
+def _between(p1, p2, pe):
+    """True if the evader's projection falls strictly between P1 and P2."""
     ax = (p2 - p1)[:2]
-    n = np.linalg.norm(ax)
-    if n < 1e-9:
-        return prev_dir
-    ax = ax / n
-    u = np.array([-ax[1], ax[0]])
-    return -u if u @ prev_dir < 0 else u
+    L2 = float(ax @ ax)
+    if L2 < 1e-12:
+        return False
+    s_ = float((pe - p1)[:2] @ ax) / L2
+    return 0.0 < s_ < 1.0
 
 
-def evader_velocity(p1, p2, pe, mode, prev_dir, v_e, jink_offset=0.0):
-    """Returns (velocity, unit heading, used_fallback)."""
+def _open_side(p1, p2, pe, prev_dir, state):
+    """Escape perpendicular to the pursuer axis (the open side of the pincer).
+    Side: the side of the axis the evader is already on (moving that way
+    increases its distance to both pursuers); if it is on the axis
+    (|offset| <= OFFSET_TOL), the previous heading if it clearly prefers a
+    side; otherwise the side used last time."""
+    ax = (p2 - p1)[:2]
+    ax = ax / np.linalg.norm(ax)
+    cand = np.array([-ax[1], ax[0]])
+    off = float((pe - p1)[:2] @ cand)
+    if abs(off) > OFFSET_TOL:
+        state['axis_side'] = 1.0 if off > 0 else -1.0
+    else:
+        state['axis_side'] = _pick_side(cand, prev_dir, state['axis_side'])
+    return state['axis_side'] * cand
+
+
+def evader_velocity(p1, p2, pe, mode, prev_dir, v_e, state, jink_offset=0.0):
+    """Returns (velocity, unit heading, used_inside_pincer_rule).
+    state: dict with 'perp_side' and 'axis_side' (+1/-1), updated in place."""
     half_spacing = 0.5 * np.linalg.norm((p2 - p1)[:2])
-    fallback = False
+    inside = False
     if mode == 'perpendicular':
         d = (pe - 0.5 * (p1 + p2))[:2]
         n = np.linalg.norm(d)
-        if n < INSIDE_FRAC * half_spacing or n < 1e-9:
-            u = _axis_perp(p1, p2, prev_dir); fallback = True
+        inside = _between(p1, p2, pe) and n < INSIDE_FRAC * half_spacing
+        if inside:
+            u = _open_side(p1, p2, pe, prev_dir, state)
+        elif n < 1e-9:
+            u = prev_dir
         else:
-            d = d / n
-            u = np.array([-d[1], d[0]])          # card: +90 deg rotation ...
-            if u @ prev_dir < 0:                 # ... but keep the side closer to
-                u = -u                           # the previous heading (no flip-flop)
+            cand = np.array([-d[1], d[0]]) / n          # card: 90 deg to centroid dir
+            state['perp_side'] = _pick_side(cand, prev_dir, state['perp_side'])
+            u = state['perp_side'] * cand
     else:   # 'flee' or 'jink'
         terms = []
         for p in (p1, p2):
@@ -114,14 +146,19 @@ def evader_velocity(p1, p2, pe, mode, prev_dir, v_e, jink_offset=0.0):
             terms.append(r / max(r @ r, 1e-9))
         rep_v = terms[0] + terms[1]
         biggest = max(np.linalg.norm(terms[0]), np.linalg.norm(terms[1]))
-        if np.linalg.norm(rep_v) < INSIDE_FRAC * biggest:
-            u = _axis_perp(p1, p2, prev_dir); fallback = True
+        inside = _between(p1, p2, pe) and np.linalg.norm(rep_v) < INSIDE_FRAC * biggest
+        if inside:
+            u = _open_side(p1, p2, pe, prev_dir, state)
+        elif np.linalg.norm(rep_v) < 1e-12:
+            u = prev_dir
         else:
             u = rep_v / np.linalg.norm(rep_v)
-        if mode == 'jink' and jink_offset != 0.0:
-            c, s_ = np.cos(jink_offset), np.sin(jink_offset)
-            u = np.array([c * u[0] - s_ * u[1], s_ * u[0] + c * u[1]])
-    return v_e * np.array([u[0], u[1], 0.0]), u, fallback
+            # jink offset is applied to the flee heading only, never on top of
+            # the inside-pincer escape
+            if mode == 'jink' and jink_offset != 0.0:
+                c, s_ = np.cos(jink_offset), np.sin(jink_offset)
+                u = np.array([c * u[0] - s_ * u[1], s_ * u[0] + c * u[1]])
+    return v_e * np.array([u[0], u[1], 0.0]), u, inside
 
 
 # ── Simulation ────────────────────────────────────────────────
@@ -142,6 +179,7 @@ def run_simulation(strategy='pincer', evader_mode='perpendicular', v_shrink=V_SH
     time_log  = [0.0]
     prev_dir  = np.array([1.0, 0.0])
     n_fallback = 0
+    side_state = {'perp_side': 1.0, 'axis_side': 1.0}
 
     captured = False; cap_time = None; cap_who = None
 
@@ -164,7 +202,7 @@ def run_simulation(strategy='pincer', evader_mode='perpendicular', v_shrink=V_SH
         if evader_mode == 'jink' and (step - 1) % jink_steps == 0:
             jink_offset = rng.uniform(-JINK_MAX, JINK_MAX)
         e_vel, prev_dir, fb = evader_velocity(p1.pos, p2.pos, ev.pos, evader_mode,
-                                              prev_dir, v_e, jink_offset)
+                                              prev_dir, v_e, side_state, jink_offset)
         n_fallback += int(fb)
         ev.step(e_vel)
 
