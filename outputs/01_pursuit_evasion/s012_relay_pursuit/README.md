@@ -78,15 +78,15 @@ Runtime ≈ 20 s (GIF: every 3rd step, 138 frames).
 
 | Strategy | Outcome | Handoffs | Final energies |
 |----------|---------|----------|----------------|
-| **3-Pursuer Relay** (card energy model) | ✅ Captured @ **8.62 s** | 1: P1 → P2 @ 4.81 s | P1 11.9 J, P2 21.9 J, P3 60.0 J |
-| **Single Pursuer** | ❌ Battery out @ 6.00 s, 1.10 m short | — | P1 0.0 J |
-| Relay, standbys also drain k·v² (sensitivity) | ❌ All batteries empty @ 8.42 s, 2.38 m short | P1 → P2 @ 4.81 s, P2 → P3 @ 6.56 s, P3 → P2 @ 8.40 s | all 0.0 J |
+| **3-Pursuer Relay** (card energy model) | ✅ Captured @ **8.65 s** | 1: P1 → P2 @ 4.83 s | P1 11.9 J, P2 21.7 J, P3 60.0 J |
+| **Single Pursuer** | ❌ Battery out @ 6.00 s, 1.00 m short | — | P1 0.0 J |
+| Relay, standbys also drain k·v² (sensitivity) | ❌ All batteries empty @ 8.40 s, 2.33 m short | P1 → P2 @ 4.83 s, P2 → P3 @ 6.56 s, P3 → P2 @ 8.40 s | all 0.0 J |
 | Single pursuer, card gap 5 m (check) | ✅ Captured @ 3.25 s | — | P1 27.5 J |
 
 **Key Findings**:
-- **Single pursuer**: closing speed 5 − 3.5 = 1.5 m/s, so capture needs (10 − 0.15)/1.5 = 6.57 s but the battery lasts 6.00 s. P1 dies 1.10 m short after the evader has travelled 21.00 m.
-- **Relay**: P1 hands off at 4.81 s (first step below 12 J). P2 and P3 both still have 60.0 J, so the tie goes to the lower label, P2. P2 is 5.95 m from the evader at that moment — farther than P1 was (2.81 m) — so the handoff is a step back in distance, but P2 brings a full 6 s battery and captures at 8.62 s with 21.9 J left.
-- **Why the relay works**: per the card, standby drones reposition at 4 m/s at no energy cost, so P2 arrives with a full battery. When standbys are charged k·v² = 6.4 W while repositioning, each has only 29.3 J at the first handoff; the chain P1 → P2 → P3 → P2 runs out of energy at 8.42 s, 2.38 m short. Under that more realistic accounting the relay does **not** capture in this geometry.
+- **Single pursuer**: closing speed 5 − 3.5 = 1.5 m/s, so capture needs (10 − 0.15)/1.5 = 6.57 s but the battery lasts 6.00 s. P1 dies 1.00 m short (= 10 − 1.5 × 6) after the evader has travelled 21.00 m.
+- **Relay**: P1 hands off at 4.83 s (first step that starts below 12 J; P1 has 11.9 J). P2 and P3 both still have 60.0 J, so the tie goes to the lower label, P2. P2 is 5.93 m from the evader at that moment — farther than P1 was (2.78 m) — so the handoff is a step back in distance, but P2 brings a full 6 s battery and captures at 8.65 s with 21.7 J left.
+- **Why the relay works**: per the card, standby drones reposition at 4 m/s at no energy cost, so P2 arrives with a full battery. When standbys are charged k·v² = 6.4 W while repositioning, each has only 29.2 J at the first handoff; the chain P1 → P2 → P3 → P2 runs out of energy at 8.40 s, 2.33 m short. (The last handoff, at 8.40 s, goes to P2 with 0.2 J left, 2.36 m away vs P3's 2.22 m — that is the small step up at the end of the grey curve.) Under that more realistic accounting the relay does **not** capture in this geometry.
 - With the card's 5 m starting gap a single pursuer already captures at 3.25 s with 27.5 J left (never reaching the 20% threshold), so the relay would never be triggered; that is why the gap was increased to 10 m.
 
 **3D Trajectories**:
@@ -112,6 +112,8 @@ Runtime ≈ 20 s (GIF: every 3rd step, 138 frames).
 | P1 starts 5 m from the evader | 10 m | With 5 m a single pursuer captures in 3.25 s (checked in the script), so no handoff ever happens and the comparison is empty |
 | Standby start positions not given | P2/P3 flank at (2, ±4, 2) m | Plausible standby posts beside the chase line |
 | Next active = highest energy | Same, restricted to standbys ≥ 20%, tie → lowest label | Card rule leaves ties (P2 = P3 = 60 J) and ping-pong between depleted drones undefined |
+| T_h = E_active/(k·V²) (no floor) | T_h = max(E_active/(k·V²), 0.5 s) | Once the active drone is nearly empty T_h → 0 and the standbys would aim at the evader's current position; the 0.5 s floor keeps them aiming slightly ahead |
+| Energy update order not specified | A drone pays k·v²·Δt after the step it actually flies | Earlier ordering charged the last step and then grounded the drone in the same step (single pursuer ended 1.10 m short instead of 1.00 m) |
 | Standby flight has no energy cost (card pseudocode) | Kept for the main run; extra sensitivity run with standby drain | The free standby flight is the reason the relay succeeds; the sensitivity run shows it |
 
 ---

@@ -87,9 +87,9 @@ def run_simulation(relay=True, standby_drain=False, init_evader=INIT_EVADER):
     for step in range(1, max_steps + 1):
         t = step * DT
 
-        # ── Energy drain for active pursuer ──
-        energy[active] -= K_ENERGY * V_ACTIVE ** 2 * DT
-        energy[active]  = max(energy[active], 0.0)
+        # Energy is paid for the step actually flown (drain after the move),
+        # so a drone with energy left at the start of a step always flies it.
+        alive = [e > 0 for e in energy]
 
         # ── Handoff check (relay only) ──
         if relay and energy[active] / E0 < HANDOFF_FRAC:
@@ -115,7 +115,9 @@ def run_simulation(relay=True, standby_drain=False, init_evader=INIT_EVADER):
                 if energy[i] > 0:
                     d = evader.pos - pursuer.pos
                     n = np.linalg.norm(d)
-                    pursuer.step(V_ACTIVE * d / n if n > 1e-8 else np.zeros(3))
+                    v_cmd = V_ACTIVE * d / n if n > 1e-8 else np.zeros(3)
+                    pursuer.step(v_cmd)
+                    energy[i] = max(energy[i] - K_ENERGY * float(v_cmd @ v_cmd) * DT, 0.0)
                 # else pursuer is dead — stays put
             else:
                 if relay and energy[i] > 0:
@@ -134,7 +136,7 @@ def run_simulation(relay=True, standby_drain=False, init_evader=INIT_EVADER):
 
         # ── Capture check ──
         for i, p in enumerate(pursuers):
-            if np.linalg.norm(p.pos - evader.pos) < CAPTURE_R and energy[i] > 0:
+            if np.linalg.norm(p.pos - evader.pos) < CAPTURE_R and alive[i]:
                 captured = True; cap_time = t
                 break
 
