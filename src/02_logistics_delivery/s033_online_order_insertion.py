@@ -1,82 +1,99 @@
 """
 S033 Online Order Insertion
 ============================
-A fleet of K=4 drones is executing a pre-planned delivery schedule when new
-customer orders arrive mid-mission. The dispatcher evaluates every feasible
-insertion position across all drones and splices each new order into the
-globally cheapest slot, subject to battery-range and deadline constraints.
-Four strategies are compared: Cheapest Insertion, Nearest Drone, Least Loaded,
-and Random Feasible. The simulation advances drones along their routes step-by-
-step and dispatches orders as they arrive.
+A fleet of K=4 drones is executing pre-planned delivery routes (12 waypoints each,
+then back to the depot) when 8 new customer orders arrive between t = 10 s and 80 s.
+Each order has a deadline = arrival time + nearest-drone ETA + 30 s. The dispatcher
+splices every order into one drone's remaining route, subject to battery range and
+deadline feasibility. If no drone can meet the deadline, the order is queued: it is
+appended to the drone that finishes its route earliest (served late) if that drone has
+the battery for it, otherwise it is rejected.
+
+Strategies compared (same fleet and orders for every strategy):
+  cheapest_insertion - global minimum detour over all feasible drones / positions
+  nearest_drone      - feasible drone whose current position is closest to the order
+  least_loaded       - feasible drone with the fewest remaining waypoints
+  random_feasible    - uniform random feasible drone
+
+The simulation runs until every drone is back at the depot. Results are reported for
+the seed-0 instance (plots) and averaged over N_SEEDS instances.
 
 Usage:
     conda activate drones
     python src/02_logistics_delivery/s033_online_order_insertion.py
 """
 
-import sys, os
+import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
 # ── Parameters ─────────────────────────────────
-K            = 4          # number of drones
-V_DRONE      = 8.0        # m/s cruise speed
-B_FULL       = 10_000.0   # m  full-battery range equivalent
-DT           = 0.1        # s  simulation timestep
-N_WP_INIT    = 12         # pre-planned waypoints per drone at t=0
-N_INSERTIONS = 8          # online orders arriving mid-mission
-T_ORDER_LO   = 10.0       # s  earliest order arrival
-T_ORDER_HI   = 80.0       # s  latest order arrival
-DEADLINE_SLACK = 30.0     # s  added on top of nearest-drone ETA for deadline
-ARENA_LO     = -500.0     # m
-ARENA_HI     =  500.0     # m
-ALT_LO       = 2.0        # m
-ALT_HI       = 8.0        # m
-DEPOT        = np.array([0.0, 0.0, 2.0])
+K              = 4          # number of drones
+V_DRONE        = 8.0        # m/s cruise speed
+B_FULL         = 10_000.0   # m  full-battery range equivalent
+B_INIT_LO      = 0.75       # initial battery fraction ~ U(B_INIT_LO, 1.0)
+DT             = 0.1        # s  simulation timestep
+T_CAP          = 3000.0     # s  safety cap (all runs finish well before this)
+N_WP_INIT      = 12         # pre-planned waypoints per drone at t=0
+N_INSERTIONS   = 8          # online orders arriving mid-mission
+T_ORDER_LO     = 10.0       # s  earliest order arrival
+T_ORDER_HI     = 80.0       # s  latest order arrival
+DEADLINE_SLACK = 30.0       # s  deadline = t_arrive + nearest-drone ETA + slack
+ARENA_LO       = -500.0     # m
+ARENA_HI       =  500.0     # m
+ALT_LO         = 2.0        # m
+ALT_HI         = 8.0        # m
+DEPOT          = np.array([0.0, 0.0, 2.0])
+SEED0          = 0          # instance used for the plots
+N_SEEDS        = 20         # Monte-Carlo instances (seeds 0 ... 19)
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '02_logistics_delivery', 's033_online_order_insertion',
 )
 
-RNG = np.random.default_rng(0)   # fixed seed for reproducibility
-
 DRONE_COLORS = ['tab:red', 'tab:blue', 'tab:green', 'tab:orange']
 STRATEGIES   = ['cheapest_insertion', 'nearest_drone', 'least_loaded', 'random_feasible']
+STRAT_COLORS = ['#2ecc71', '#3498db', '#e67e22', '#9b59b6']
 
 
 # ── Helpers ────────────────────────────────────
 
-def rand_wp():
-    """Random 3-D waypoint inside arena."""
-    xy = RNG.uniform(ARENA_LO, ARENA_HI, 2)
-    z  = RNG.uniform(ALT_LO,   ALT_HI)
-    return np.array([xy[0], xy[1], z])
+def rand_wp(rng):
+    """Random 3-D waypoint inside the arena."""
+    xy = rng.uniform(ARENA_LO, ARENA_HI, 2)
+    return np.array([xy[0], xy[1], rng.uniform(ALT_LO, ALT_HI)])
 
 
 def route_length(pts: List[np.ndarray]) -> float:
-    """Sum of Euclidean segment lengths."""
-    return sum(np.linalg.norm(pts[i+1] - pts[i]) for i in range(len(pts)-1))
+    return float(sum(np.linalg.norm(pts[i + 1] - pts[i]) for i in range(len(pts) - 1)))
 
 
-def insertion_delta(a: np.ndarray, q: np.ndarray, b: np.ndarray) -> float:
+def insertion_delta(a, q, b) -> float:
     """Extra distance introduced by inserting q between a and b."""
-    return (np.linalg.norm(a - q) + np.linalg.norm(q - b)
-            - np.linalg.norm(b - a))
+    return float(np.linalg.norm(a - q) + np.linalg.norm(q - b) - np.linalg.norm(b - a))
+
+
+def point_along(pts: List[np.ndarray], s: float) -> np.ndarray:
+    """Position after flying distance s along polyline pts (clamped at the end)."""
+    for i in range(len(pts) - 1):
+        seg = float(np.linalg.norm(pts[i + 1] - pts[i]))
+        if s <= seg:
+            return pts[i] + (pts[i + 1] - pts[i]) * (s / max(seg, 1e-12))
+        s -= seg
+    return pts[-1].copy()
 
 
 # ── Data classes ───────────────────────────────
 
 @dataclass
 class Order:
+    oid: int
     loc: np.ndarray
     t_arrive: float
     t_deadline: float
@@ -87,522 +104,405 @@ class Drone:
     id: int
     pos: np.ndarray
     route: List[np.ndarray]          # remaining waypoints (index 0 = next)
+    route_ids: List[int]             # order id per waypoint (-1 = pre-planned / depot)
     battery_rem: float               # metres of flight remaining
     speed: float = V_DRONE
-    # tracking
-    path_x: List[float] = field(default_factory=list)
-    path_y: List[float] = field(default_factory=list)
     initial_route: List[np.ndarray] = field(default_factory=list)
-    inserted_orders: int = 0         # count of online orders assigned
+    path: List[np.ndarray] = field(default_factory=list)
+    battery_log: List[float] = field(default_factory=list)
+    flown: float = 0.0
 
-    def full_pts(self) -> List[np.ndarray]:
-        """Current position prepended to remaining route."""
+    def full_pts(self):
         return [self.pos] + self.route
 
     def remaining_length(self) -> float:
         return route_length(self.full_pts())
 
-    def best_insertion(self, q: np.ndarray, t_now: float, t_deadline: float
-                       ) -> Optional[Tuple[int, float]]:
-        """Return (insert_idx, delta) for cheapest feasible slot, or None."""
+    def best_insertion(self, q, t_now, t_deadline) -> Optional[Tuple[int, float]]:
+        """Cheapest (insert_idx, delta) that is battery- and deadline-feasible, or None.
+
+        Insertion never goes after the final depot return (last waypoint)."""
         pts = self.full_pts()
         n_seg = len(pts) - 1
         if n_seg < 1:
             return None
-        best_idx, best_delta = None, float('inf')
+        L = self.remaining_length()
+        best_idx, best_delta = None, np.inf
+        prefix = 0.0
         for idx in range(n_seg):
+            if idx > 0:
+                prefix += float(np.linalg.norm(pts[idx] - pts[idx - 1]))
             delta = insertion_delta(pts[idx], q, pts[idx + 1])
-            new_len = self.remaining_length() + delta
-            # distance to q via this insertion prefix
-            dist_to_q = route_length(pts[:idx+1]) + np.linalg.norm(pts[idx] - q)
-            t_arr = t_now + dist_to_q / self.speed
-            if new_len <= self.battery_rem and t_arr <= t_deadline:
-                if delta < best_delta:
-                    best_delta = delta
-                    best_idx   = idx
-        if best_idx is None:
-            return None
-        return best_idx, best_delta
+            t_arr = t_now + (prefix + float(np.linalg.norm(pts[idx] - q))) / self.speed
+            if L + delta <= self.battery_rem and t_arr <= t_deadline and delta < best_delta:
+                best_idx, best_delta = idx, delta
+        return None if best_idx is None else (best_idx, best_delta)
 
-    def insert_order(self, q: np.ndarray, insert_idx: int) -> float:
-        """Splice q into route; return detour cost."""
+    def insert_order(self, q, insert_idx, oid) -> float:
+        """Splice q into the route. Battery is NOT pre-debited: it is consumed while flying."""
         pts = self.full_pts()
         delta = insertion_delta(pts[insert_idx], q, pts[insert_idx + 1])
-        self.route.insert(insert_idx, q)
-        self.battery_rem -= delta
-        self.inserted_orders += 1
+        self.route.insert(insert_idx, q.copy())
+        self.route_ids.insert(insert_idx, oid)
         return delta
 
-    def step(self, dt: float):
-        """Advance drone toward next waypoint; record path."""
-        self.path_x.append(self.pos[0])
-        self.path_y.append(self.pos[1])
-        if not self.route:
-            return
-        target = self.route[0]
-        diff   = target - self.pos
-        dist   = np.linalg.norm(diff)
-        move   = self.speed * dt
-        if dist <= move:
-            self.pos = target.copy()
-            self.battery_rem = max(0.0, self.battery_rem - dist)
-            self.route.pop(0)
-        else:
-            self.pos = self.pos + diff / dist * move
-            self.battery_rem = max(0.0, self.battery_rem - move)
+    def step(self, dt, t, deliveries):
+        """Advance toward the route with an exact distance budget; log deliveries."""
+        budget = self.speed * dt
+        while budget > 1e-12 and self.route:
+            tgt = self.route[0]
+            d = float(np.linalg.norm(tgt - self.pos))
+            if d <= budget:
+                self.pos = tgt.copy()
+                budget -= d
+                self.flown += d
+                self.battery_rem -= d
+                oid = self.route_ids.pop(0)
+                self.route.pop(0)
+                if oid >= 0:
+                    deliveries[oid] = t + (self.speed * dt - budget) / self.speed
+            else:
+                self.pos = self.pos + (tgt - self.pos) / d * budget
+                self.flown += budget
+                self.battery_rem -= budget
+                budget = 0.0
 
     @property
     def route_done(self) -> bool:
         return len(self.route) == 0
 
 
-# ── Fleet & order initialisation ───────────────
+# ── Instance generation ────────────────────────
 
-def initialise_fleet() -> List[Drone]:
-    drones = []
+def make_instance(seed):
+    """Fleet + online orders. Deadlines use the nearest drone on the *planned* routes
+    at the arrival time, so they are identical for every strategy."""
+    rng = np.random.default_rng(seed)
+    fleet = []
     for k in range(K):
-        wps = [rand_wp() for _ in range(N_WP_INIT)]
-        wps.append(DEPOT.copy())
-        bat = B_FULL * RNG.uniform(0.75, 1.0)  # slight variation
-        d = Drone(id=k, pos=DEPOT.copy(), route=wps,
-                  battery_rem=bat, speed=V_DRONE)
+        wps = [rand_wp(rng) for _ in range(N_WP_INIT)] + [DEPOT.copy()]
+        bat = B_FULL * rng.uniform(B_INIT_LO, 1.0)
+        fleet.append((wps, bat))
+    arrivals = np.sort(rng.uniform(T_ORDER_LO, T_ORDER_HI, N_INSERTIONS))
+    orders = []
+    for n, t_a in enumerate(arrivals):
+        loc = rand_wp(rng)
+        eta = min(np.linalg.norm(point_along([DEPOT] + wps, V_DRONE * t_a) - loc)
+                  for wps, _ in fleet) / V_DRONE
+        orders.append(Order(n, loc, float(t_a), float(t_a + eta + DEADLINE_SLACK)))
+    return fleet, orders
+
+
+def build_drones(fleet):
+    drones = []
+    for k, (wps, bat) in enumerate(fleet):
+        d = Drone(id=k, pos=DEPOT.copy(), route=[w.copy() for w in wps],
+                  route_ids=[-1] * len(wps), battery_rem=bat)
         d.initial_route = [DEPOT.copy()] + [w.copy() for w in wps]
         drones.append(d)
     return drones
 
 
-def generate_orders() -> List[Order]:
-    orders = []
-    arrivals = np.sort(RNG.uniform(T_ORDER_LO, T_ORDER_HI, N_INSERTIONS))
-    for t_a in arrivals:
-        loc = rand_wp()
-        # deadline = now + nearest-drone flying time + slack
-        t_dl = t_a + DEADLINE_SLACK + RNG.uniform(0, 20)
-        orders.append(Order(loc=loc, t_arrive=t_a, t_deadline=t_dl))
-    return orders
-
-
 # ── Dispatch strategies ────────────────────────
 
-def dispatch_cheapest(drones: List[Drone], order: Order, t_now: float
-                      ) -> Optional[Tuple[int, int, float]]:
-    """Global cheapest-insertion across all feasible drones."""
-    best = None
+def _feasible(drones, order, t_now):
+    out = []
     for d in drones:
         res = d.best_insertion(order.loc, t_now, order.t_deadline)
-        if res is None:
-            continue
-        idx, delta = res
-        if best is None or delta < best[2]:
-            best = (d.id, idx, delta)
-    return best
+        if res is not None:
+            out.append((d, res[0], res[1]))
+    return out
 
 
-def dispatch_nearest(drones: List[Drone], order: Order, t_now: float
-                     ) -> Optional[Tuple[int, int, float]]:
-    """Assign to drone whose current position is closest to the new order."""
-    feasible = []
-    for d in drones:
-        res = d.best_insertion(order.loc, t_now, order.t_deadline)
-        if res is None:
-            continue
-        dist_cur = np.linalg.norm(d.pos - order.loc)
-        feasible.append((dist_cur, d.id, res[0], res[1]))
-    if not feasible:
+def dispatch(strategy, drones, order, t_now, rng):
+    feas = _feasible(drones, order, t_now)
+    if not feas:
         return None
-    feasible.sort(key=lambda x: x[0])
-    _, did, idx, delta = feasible[0]
-    return (did, idx, delta)
+    if strategy == 'cheapest_insertion':
+        key = lambda f: f[2]
+    elif strategy == 'nearest_drone':
+        key = lambda f: float(np.linalg.norm(f[0].pos - order.loc))
+    elif strategy == 'least_loaded':
+        key = lambda f: (len(f[0].route), f[0].id)
+    else:
+        return feas[int(rng.integers(len(feas)))]
+    return min(feas, key=key)
 
 
-def dispatch_least_loaded(drones: List[Drone], order: Order, t_now: float
-                          ) -> Optional[Tuple[int, int, float]]:
-    """Assign to feasible drone with fewest remaining waypoints."""
-    feasible = []
+def queue_fallback(drones, order):
+    """Infeasible order: append before the depot return of the drone that finishes its
+    route earliest among those with enough battery. Returns (drone, idx, delta) or None."""
+    cands = []
     for d in drones:
-        res = d.best_insertion(order.loc, t_now, order.t_deadline)
-        if res is None:
+        if not d.route:
             continue
-        feasible.append((len(d.route), d.id, res[0], res[1]))
-    if not feasible:
+        idx = len(d.route) - 1                        # slot before the final depot return
+        pts = d.full_pts()
+        delta = insertion_delta(pts[idx], order.loc, pts[idx + 1])
+        if d.remaining_length() + delta <= d.battery_rem:
+            cands.append((d.remaining_length() / d.speed, d.id, d, idx, delta))
+    if not cands:
         return None
-    feasible.sort(key=lambda x: x[0])
-    _, did, idx, delta = feasible[0]
-    return (did, idx, delta)
-
-
-def dispatch_random(drones: List[Drone], order: Order, t_now: float
-                    ) -> Optional[Tuple[int, int, float]]:
-    """Uniform random draw from feasible drones."""
-    feasible = []
-    for d in drones:
-        res = d.best_insertion(order.loc, t_now, order.t_deadline)
-        if res is None:
-            continue
-        feasible.append((d.id, res[0], res[1]))
-    if not feasible:
-        return None
-    choice = feasible[RNG.integers(len(feasible))]
-    return choice
-
-
-DISPATCH_FNS = {
-    'cheapest_insertion': dispatch_cheapest,
-    'nearest_drone':      dispatch_nearest,
-    'least_loaded':       dispatch_least_loaded,
-    'random_feasible':    dispatch_random,
-}
+    _, _, d, idx, delta = min(cands, key=lambda c: (c[0], c[1]))
+    return d, idx, delta
 
 
 # ── Simulation ─────────────────────────────────
 
-def run_simulation(strategy: str = 'cheapest_insertion'):
-    """Run full simulation for one strategy. Return metrics + per-drone data."""
-    # Re-seed to same state so all strategies get the same drones & orders
-    RNG.bit_generator.state = np.random.default_rng(0).bit_generator.state
+def run_simulation(strategy='cheapest_insertion', seed=SEED0, record=False):
+    """Run one strategy on one instance until all drones are back at the depot."""
+    fleet, orders = make_instance(seed)
+    drones = build_drones(fleet)
+    rng_pick = np.random.default_rng(seed + 10_000)   # random_feasible choices
+    planned_len = sum(route_length(d.initial_route) for d in drones)
 
-    drones = initialise_fleet()
-    orders = generate_orders()
-    order_queue = sorted(orders, key=lambda o: o.t_arrive)
-
-    metrics = {
-        'total_detour': 0.0,
-        'feasible':     0,
-        'queued':       0,
-        'strategy':     strategy,
-        'order_events': [],   # (t, drone_id, delta) for timeline plot
-    }
-    per_drone_inserted = [0] * K
-
+    pending = sorted(orders, key=lambda o: o.t_arrive)
+    assign = {}                  # oid -> (drone id, mode 'online' | 'queued', delta)
+    rejected = []
+    deliveries = {}
+    events = []                  # (t, drone id, delta, mode)
     t = 0.0
-    T_MAX = T_ORDER_HI + 150.0   # run until all routes are done
-    dispatch_fn = DISPATCH_FNS[strategy]
+    times = []
+    while (any(not d.route_done for d in drones) or pending) and t < T_CAP:
+        while pending and pending[0].t_arrive <= t + 1e-9:
+            o = pending.pop(0)
+            res = dispatch(strategy, drones, o, t, rng_pick)
+            mode = 'online'
+            if res is None:
+                res = queue_fallback(drones, o)
+                mode = 'queued'
+            if res is None:
+                rejected.append(o.oid)
+                continue
+            d, idx, _ = res
+            delta = d.insert_order(o.loc, idx, o.oid)
+            assign[o.oid] = (d.id, mode, delta)
+            events.append((t, d.id, delta, mode))
+        if record:
+            times.append(t)
+            for d in drones:
+                d.path.append(d.pos.copy())
+                d.battery_log.append(d.battery_rem)
+        for d in drones:
+            d.step(DT, t, deliveries)
+        t = round(t + DT, 10)
+    if record:
+        times.append(t)
+        for d in drones:
+            d.path.append(d.pos.copy())
+            d.battery_log.append(d.battery_rem)
 
-    while (any(not d.route_done for d in drones) or order_queue) and t <= T_MAX:
-        # Dispatch newly arrived orders
-        due = [o for o in order_queue if o.t_arrive <= t]
-        for order in due:
-            order_queue.remove(order)
-            result = dispatch_fn(drones, order, t)
-            if result is not None:
-                did, idx, delta = result
-                drone = next(d for d in drones if d.id == did)
-                drone.insert_order(order.loc, idx)
-                metrics['total_detour']  += delta
-                metrics['feasible']      += 1
-                per_drone_inserted[did]  += 1
-                metrics['order_events'].append((t, did, delta))
-            else:
-                metrics['queued'] += 1
-
-        # Advance drones
-        for drone in drones:
-            drone.step(DT)
-
-        t += DT
-
-    metrics['per_drone_inserted'] = per_drone_inserted
-    metrics['drones'] = drones
-    metrics['orders'] = orders
-    return metrics
-
-
-def run_all_strategies():
-    """Run simulation for all four strategies; return dict keyed by strategy."""
-    results = {}
-    for s in STRATEGIES:
-        results[s] = run_simulation(s)
-    return results
+    on_time = sum(1 for o in orders if o.oid in deliveries and deliveries[o.oid] <= o.t_deadline)
+    late = sum(1 for o in orders if o.oid in deliveries and deliveries[o.oid] > o.t_deadline)
+    lateness = [deliveries[o.oid] - o.t_deadline for o in orders
+                if o.oid in deliveries and deliveries[o.oid] > o.t_deadline]
+    flown = sum(d.flown for d in drones)
+    per_drone = [sum(1 for v in assign.values() if v[0] == k) for k in range(K)]
+    return {
+        'strategy': strategy, 'seed': seed, 'drones': drones, 'orders': orders,
+        'assign': assign, 'deliveries': deliveries, 'events': events,
+        'n_online': sum(1 for v in assign.values() if v[1] == 'online'),
+        'n_queued': sum(1 for v in assign.values() if v[1] == 'queued'),
+        'n_rejected': len(rejected), 'on_time': on_time, 'late': late,
+        'mean_lateness': float(np.mean(lateness)) if lateness else 0.0,
+        'detour_planned': float(sum(v[2] for v in assign.values())),
+        'added_flown': flown - planned_len, 'makespan': t,
+        'min_battery': min(d.battery_rem for d in drones),
+        'per_drone': per_drone, 'times': np.array(times) if record else None,
+    }
 
 
 # ── Plots ──────────────────────────────────────
 
-def plot_route_map(metrics, out_dir):
-    """2-D top-down: initial routes (dashed) vs updated routes (solid)."""
+def plot_route_map(res, out_dir):
+    """Planned routes (dashed) vs flown routes (solid), cheapest insertion, seed 0."""
     fig, ax = plt.subplots(figsize=(9, 9))
-    ax.set_facecolor('#f7f7f7')
-
-    drones = metrics['drones']
-    orders = metrics['orders']
-
-    for d in drones:
+    for d in res['drones']:
         c = DRONE_COLORS[d.id]
-        lbl = f'Drone {d.id+1}'
-        # Initial planned route
-        ir = d.initial_route
-        ax.plot([p[0] for p in ir], [p[1] for p in ir],
-                '--', color=c, linewidth=1.0, alpha=0.5)
-        # Actual path flown
-        ax.plot(d.path_x, d.path_y, '-', color=c, linewidth=1.8,
-                label=lbl)
-        # Start position = depot
-        ax.plot(ir[0][0], ir[0][1], 's', color=c, markersize=7)
-
-    # Depot
-    ax.plot(DEPOT[0], DEPOT[1], 'k*', markersize=14, label='Depot', zorder=5)
-
-    # New order locations
-    for i, o in enumerate(orders):
-        ax.plot(o.loc[0], o.loc[1], 'p', color='purple',
-                markersize=9, zorder=4)
-    ax.plot([], [], 'p', color='purple', markersize=9, label='Online Orders')
-
-    # Legend helpers
-    dash_patch = mlines.Line2D([], [], linestyle='--', color='grey', alpha=0.6,
-                               label='Planned route (dashed)')
-
-    ax.set_xlim(ARENA_LO - 50, ARENA_HI + 50)
-    ax.set_ylim(ARENA_LO - 50, ARENA_HI + 50)
-    ax.set_xlabel('x (m)', fontsize=11)
-    ax.set_ylabel('y (m)', fontsize=11)
-    ax.set_title('S033 Online Order Insertion — Route Map\n'
-                 '(dashed = planned, solid = actual)', fontsize=12)
-    handles, labels = ax.get_legend_handles_labels()
-    handles.append(dash_patch)
-    ax.legend(handles=handles, loc='upper right', fontsize=9, framealpha=0.85)
-    ax.grid(True, linestyle=':', alpha=0.5)
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'route_map.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
-
-
-def plot_battery_timeline(metrics, out_dir):
-    """Drone battery consumption over time with order-arrival markers."""
-    fig, ax = plt.subplots(figsize=(10, 5))
-
-    drones = metrics['drones']
-    # Reconstruct battery-over-time from route lengths (approx)
-    # We plot remaining_length proxy: just mark events
-    events = metrics['order_events']
-
-    for ev in events:
-        t_ev, did, delta = ev
-        ax.axvline(t_ev, color=DRONE_COLORS[did], linestyle=':', alpha=0.7)
-        ax.text(t_ev + 0.5, 0.92 - did * 0.07,
-                f'D{did+1} +{delta:.0f}m',
-                color=DRONE_COLORS[did], fontsize=7.5,
-                transform=ax.get_xaxis_transform())
-
-    # Show order arrival times
-    orders = metrics['orders']
-    for o in orders:
-        ax.axvspan(o.t_arrive, o.t_deadline, alpha=0.04, color='grey')
-
-    for i, (t_ev, did, delta) in enumerate(events):
-        ax.annotate('', xy=(t_ev, 0.1 + did * 0.2),
-                    xytext=(t_ev - 2, 0.1 + did * 0.2),
-                    xycoords=('data', 'axes fraction'),
-                    textcoords=('data', 'axes fraction'),
-                    arrowprops=dict(arrowstyle='->', color=DRONE_COLORS[did],
-                                   lw=1.5))
-
-    ax.set_xlim(0, T_ORDER_HI + 10)
-    ax.set_ylim(0, 1)
-    ax.set_xlabel('Simulation time (s)', fontsize=11)
-    ax.set_ylabel('Relative timeline', fontsize=11)
-    ax.set_title('S033 Order Arrival Timeline\n'
-                 '(vertical lines = order assigned to drone; '
-                 'grey bands = arrival→deadline window)', fontsize=11)
-
-    handles = [mpatches.Patch(color=DRONE_COLORS[i], label=f'Drone {i+1}')
-               for i in range(K)]
-    ax.legend(handles=handles, loc='upper left', fontsize=9)
-    ax.grid(True, axis='x', linestyle=':', alpha=0.5)
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'order_timeline.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
-
-
-def plot_strategy_comparison(all_results, out_dir):
-    """Bar chart: total detour cost per strategy + feasibility rate."""
-    labels    = [s.replace('_', '\n') for s in STRATEGIES]
-    detours   = [all_results[s]['total_detour'] for s in STRATEGIES]
-    feas_rate = [all_results[s]['feasible'] / N_INSERTIONS * 100
-                 for s in STRATEGIES]
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 5))
-
-    colors = ['#2ecc71', '#3498db', '#e67e22', '#9b59b6']
-
-    bars = ax1.bar(labels, detours, color=colors, edgecolor='white', linewidth=1.2)
-    ax1.bar_label(bars, fmt='%.0f m', padding=3, fontsize=9)
-    ax1.set_ylabel('Total Detour Distance (m)', fontsize=11)
-    ax1.set_title('Detour Cost by Strategy', fontsize=12)
-    ax1.set_ylim(0, max(detours) * 1.25)
-    ax1.grid(True, axis='y', linestyle=':', alpha=0.5)
-
-    bars2 = ax2.bar(labels, feas_rate, color=colors, edgecolor='white', linewidth=1.2)
-    ax2.bar_label(bars2, fmt='%.0f%%', padding=3, fontsize=9)
-    ax2.set_ylabel('Feasibility Rate (%)', fontsize=11)
-    ax2.set_title('Orders Served On-Time', fontsize=12)
-    ax2.set_ylim(0, 115)
-    ax2.axhline(100, color='grey', linestyle='--', linewidth=1)
-    ax2.grid(True, axis='y', linestyle=':', alpha=0.5)
-
-    fig.suptitle('S033 Strategy Comparison', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'strategy_comparison.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
-
-
-def plot_load_balance(all_results, out_dir):
-    """Per-drone insertion count histogram for each strategy."""
-    fig, axes = plt.subplots(1, len(STRATEGIES), figsize=(13, 4), sharey=True)
-
-    for ax, s in zip(axes, STRATEGIES):
-        counts = all_results[s]['per_drone_inserted']
-        bars = ax.bar(range(K), counts,
-                      color=DRONE_COLORS[:K], edgecolor='white', linewidth=1.2)
-        ax.bar_label(bars, padding=2, fontsize=9)
-        ax.set_xticks(range(K))
-        ax.set_xticklabels([f'D{i+1}' for i in range(K)], fontsize=9)
-        ax.set_title(s.replace('_', ' ').title(), fontsize=10)
-        ax.set_ylim(0, N_INSERTIONS + 1)
-        ax.grid(True, axis='y', linestyle=':', alpha=0.5)
-
-    axes[0].set_ylabel('Inserted Orders', fontsize=11)
-    fig.suptitle('S033 Load Balance per Strategy', fontsize=13, fontweight='bold')
-    plt.tight_layout()
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'load_balance.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
-
-
-def save_animation(metrics, out_dir):
-    """Top-down animation of drone movement + order insertion events."""
-    import matplotlib.animation as animation
-
-    drones = metrics['drones']
-    orders = metrics['orders']
-
-    # ---- Re-simulate, storing positions every step ----
-    RNG.bit_generator.state = np.random.default_rng(0).bit_generator.state
-    sim_drones = initialise_fleet()
-    sim_orders = generate_orders()
-    order_queue = sorted(sim_orders, key=lambda o: o.t_arrive)
-    dispatch_fn = DISPATCH_FNS['cheapest_insertion']
-
-    pos_history  = {k: [] for k in range(K)}
-    event_frames = []   # (frame_idx, drone_id, order_loc)
-
-    t = 0.0
-    frame = 0
-    T_MAX = T_ORDER_HI + 80.0
-    STEP  = 4   # record every 4 DT steps => fewer frames
-
-    while (any(not d.route_done for d in sim_drones) or order_queue) and t <= T_MAX:
-        due = [o for o in order_queue if o.t_arrive <= t]
-        for order in due:
-            order_queue.remove(order)
-            result = dispatch_fn(sim_drones, order, t)
-            if result is not None:
-                did, idx, delta = result
-                drone = next(d for d in sim_drones if d.id == did)
-                drone.insert_order(order.loc, idx)
-                event_frames.append((frame, did, order.loc.copy()))
-
-        for d in sim_drones:
-            d.step(DT)
-
-        if frame % STEP == 0:
-            for d in sim_drones:
-                pos_history[d.id].append(d.pos[:2].copy())
-
-        t    += DT
-        frame += 1
-
-    n_frames = min(len(pos_history[0]), 200)   # cap animation length
-    step_ani = max(1, len(pos_history[0]) // n_frames)
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    ax.set_xlim(ARENA_LO - 50, ARENA_HI + 50)
-    ax.set_ylim(ARENA_LO - 50, ARENA_HI + 50)
-    ax.set_facecolor('#f0f0f0')
+        ir = np.array(d.initial_route)
+        P = np.array(d.path)
+        ax.plot(ir[:, 0], ir[:, 1], '--', color=c, lw=1.0, alpha=0.5)
+        ax.plot(P[:, 0], P[:, 1], '-', color=c, lw=1.6, label=f'Drone {d.id + 1}')
+    ax.plot(DEPOT[0], DEPOT[1], 'k*', ms=14, label='Depot', zorder=5)
+    for o in res['orders']:
+        did, mode = res['assign'].get(o.oid, (None, 'rejected'))[:2]
+        ok = o.oid in res['deliveries'] and res['deliveries'][o.oid] <= o.t_deadline
+        ax.plot(o.loc[0], o.loc[1], '*', ms=15, zorder=6,
+                color='green' if ok else 'red', mec='k')
+        ax.annotate(f'O{o.oid + 1}' + (f'->D{did + 1}' if did is not None else ''),
+                    (o.loc[0], o.loc[1]), xytext=(6, 6), textcoords='offset points', fontsize=8)
+    handles, _ = ax.get_legend_handles_labels()
+    handles += [mlines.Line2D([], [], ls='--', color='grey', label='Planned route'),
+                mlines.Line2D([], [], marker='*', ls='', color='green', mec='k', ms=12,
+                              label='Order delivered on time'),
+                mlines.Line2D([], [], marker='*', ls='', color='red', mec='k', ms=12,
+                              label='Order late / rejected')]
+    ax.legend(handles=handles, loc='upper left', bbox_to_anchor=(1.01, 1.0), fontsize=8)
+    ax.set_xlim(ARENA_LO - 50, ARENA_HI + 50); ax.set_ylim(ARENA_LO - 50, ARENA_HI + 50)
+    ax.set_aspect('equal'); ax.grid(True, ls=':', alpha=0.5)
     ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)')
-    ax.set_title('S033 Online Order Insertion — Cheapest Insertion')
+    ax.set_title('S033 Route Map - Cheapest Insertion, seed 0\n'
+                 '(dashed = planned, solid = flown to completion)')
+    path = os.path.join(out_dir, 'route_map.png')
+    plt.savefig(path, dpi=130, bbox_inches='tight'); plt.close()
+    print(f'Saved: {path}')
 
-    # Depot
-    ax.plot(DEPOT[0], DEPOT[1], 'k*', markersize=12, zorder=5)
 
-    # Order locations
-    for o in sim_orders:
-        ax.plot(o.loc[0], o.loc[1], 'p', color='purple', markersize=8, alpha=0.6, zorder=4)
+def plot_battery_timeline(res, out_dir):
+    """Battery remaining vs time per drone with order arrival / assignment markers."""
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5), gridspec_kw={'width_ratios': [2, 1]})
+    t = res['times']
+    for ax, xmax in zip(axes, [t[-1], T_ORDER_HI + 70]):
+        for d in res['drones']:
+            ax.plot(t, d.battery_log, color=DRONE_COLORS[d.id], lw=1.6, label=f'Drone {d.id + 1}')
+        for (te, did, delta, mode) in res['events']:
+            ax.axvline(te, color=DRONE_COLORS[did], ls=':' if mode == 'online' else '--', lw=1)
+        ax.set_xlim(0, xmax); ax.grid(alpha=0.3)
+        ax.set_xlabel('Time (s)'); ax.set_ylabel('Battery remaining (m of range)')
+    for o in res['orders']:
+        axes[1].axvspan(o.t_arrive, o.t_deadline, color='grey', alpha=0.05)
+    for (te, did, delta, mode) in res['events']:
+        axes[1].text(te, axes[1].get_ylim()[1], f' D{did + 1} +{delta:.0f} m', rotation=90,
+                     va='top', fontsize=7, color=DRONE_COLORS[did])
+    axes[0].set_title('Battery over the whole mission (dotted = order assigned online)')
+    axes[1].set_title('Zoom on the order window (grey = arrival-to-deadline)')
+    axes[0].legend(fontsize=8)
+    fig.suptitle('S033 Order timeline and battery - Cheapest Insertion, seed 0', fontsize=12)
+    fig.tight_layout()
+    path = os.path.join(out_dir, 'order_timeline.png')
+    plt.savefig(path, dpi=130); plt.close()
+    print(f'Saved: {path}')
 
-    dots   = [ax.plot([], [], 'o', color=DRONE_COLORS[k], markersize=8, zorder=6)[0]
-              for k in range(K)]
-    trails = [ax.plot([], [], '-', color=DRONE_COLORS[k], linewidth=1.2, alpha=0.6)[0]
-              for k in range(K)]
-    time_txt = ax.text(0.02, 0.97, '', transform=ax.transAxes,
-                       fontsize=10, verticalalignment='top')
 
-    def init():
-        for dot, trail in zip(dots, trails):
-            dot.set_data([], [])
-            trail.set_data([], [])
-        time_txt.set_text('')
-        return dots + trails + [time_txt]
+def plot_strategy_comparison(seed0, mc, out_dir):
+    """Seed-0 and Monte-Carlo detour / on-time rate per strategy."""
+    labels = [s.replace('_', '\n') for s in STRATEGIES]
+    x = np.arange(len(STRATEGIES))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    panels = [
+        ('detour_planned', 'Insertion detour (m)', '{:.0f}'),
+        ('on_time', f'Orders delivered on time (of {N_INSERTIONS})', '{:.2f}'),
+        ('added_flown', 'Added flown distance vs plan (m)', '{:.0f}'),
+    ]
+    w = 0.38
+    for ax, (key, title, fmt) in zip(axes, panels):
+        v0 = [seed0[s][key] for s in STRATEGIES]
+        vm = [np.mean([r[key] for r in mc[s]]) for s in STRATEGIES]
+        sd = [np.std([r[key] for r in mc[s]]) for s in STRATEGIES]
+        b1 = ax.bar(x - w / 2, v0, w, color=STRAT_COLORS, alpha=0.55, label='seed 0')
+        b2 = ax.bar(x + w / 2, vm, w, yerr=sd, capsize=3, color=STRAT_COLORS,
+                    label=f'mean of {N_SEEDS} seeds')
+        ax.bar_label(b1, labels=[fmt.format(v) for v in v0], fontsize=7, padding=2)
+        ax.bar_label(b2, labels=[fmt.format(v) for v in vm], fontsize=7, padding=2)
+        ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=8)
+        ax.set_title(title, fontsize=10); ax.grid(axis='y', alpha=0.3)
+    axes[0].legend(fontsize=8)
+    fig.suptitle('S033 Strategy comparison (light = seed 0, dark = Monte-Carlo mean +/- std)',
+                 fontsize=12)
+    fig.tight_layout()
+    path = os.path.join(out_dir, 'strategy_comparison.png')
+    plt.savefig(path, dpi=130); plt.close()
+    print(f'Saved: {path}')
+
+
+def plot_load_balance(mc, out_dir):
+    """Inserted orders per drone summed over all Monte-Carlo instances."""
+    fig, axes = plt.subplots(1, len(STRATEGIES), figsize=(14, 4), sharey=True)
+    for ax, s in zip(axes, STRATEGIES):
+        counts = np.sum([r['per_drone'] for r in mc[s]], axis=0)
+        bars = ax.bar(range(K), counts, color=DRONE_COLORS)
+        ax.bar_label(bars, fontsize=9)
+        ax.set_xticks(range(K)); ax.set_xticklabels([f'D{i + 1}' for i in range(K)])
+        ax.set_title(s.replace('_', ' ').title(), fontsize=10); ax.grid(axis='y', alpha=0.3)
+    axes[0].set_ylabel(f'Orders assigned (sum over {N_SEEDS} seeds)')
+    fig.suptitle('S033 Load balance per strategy', fontsize=12)
+    fig.tight_layout()
+    path = os.path.join(out_dir, 'load_balance.png')
+    plt.savefig(path, dpi=130); plt.close()
+    print(f'Saved: {path}')
+
+
+def save_animation(res, out_dir):
+    """Top-down animation of the cheapest-insertion run (seed 0), <= 150 frames."""
+    import matplotlib.animation as animation
+    t = res['times']
+    n = len(t)
+    frames = list(np.linspace(0, n - 1, 150).astype(int))
+    fig, ax = plt.subplots(figsize=(7, 7))
+    ax.set_xlim(ARENA_LO - 50, ARENA_HI + 50); ax.set_ylim(ARENA_LO - 50, ARENA_HI + 50)
+    ax.set_aspect('equal'); ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)')
+    ax.plot(DEPOT[0], DEPOT[1], 'k*', ms=12, zorder=5)
+    for d in res['drones']:
+        ir = np.array(d.initial_route)
+        ax.plot(ir[:, 0], ir[:, 1], '--', color=DRONE_COLORS[d.id], lw=0.6, alpha=0.4)
+    order_marks = [ax.plot([], [], '*', ms=13, color='purple', mec='k', zorder=6)[0]
+                   for _ in res['orders']]
+    dots = [ax.plot([], [], 'o', color=DRONE_COLORS[k], ms=8, zorder=7)[0] for k in range(K)]
+    trails = [ax.plot([], [], '-', color=DRONE_COLORS[k], lw=1.3)[0] for k in range(K)]
+    txt = ax.text(0.02, 0.97, '', transform=ax.transAxes, va='top', fontsize=10)
+    ax.set_title('S033 Online Order Insertion - Cheapest Insertion (seed 0)')
+    paths = [np.array(d.path) for d in res['drones']]
 
     def update(fi):
-        real_fi = fi * step_ani
+        f = frames[fi]
         for k in range(K):
-            hist = pos_history[k]
-            idx  = min(real_fi, len(hist) - 1)
-            px   = [h[0] for h in hist[:idx+1]]
-            py   = [h[1] for h in hist[:idx+1]]
-            dots[k].set_data([px[-1]] if px else [], [py[-1]] if py else [])
-            trail_start = max(0, idx - 60)
-            trails[k].set_data(px[trail_start:], py[trail_start:])
-        sim_t = real_fi * STEP * DT
-        time_txt.set_text(f't = {sim_t:.1f} s')
-        return dots + trails + [time_txt]
+            dots[k].set_data([paths[k][f, 0]], [paths[k][f, 1]])
+            trails[k].set_data(paths[k][:f + 1, 0], paths[k][:f + 1, 1])
+        for o, m in zip(res['orders'], order_marks):
+            if o.t_arrive <= t[f]:
+                done = o.oid in res['deliveries'] and res['deliveries'][o.oid] <= t[f]
+                m.set_data([o.loc[0]], [o.loc[1]])
+                m.set_color('lightgrey' if done else 'purple')
+        txt.set_text(f't = {t[f]:.0f} s')
+        return dots + trails + order_marks + [txt]
 
-    ani = animation.FuncAnimation(fig, update, frames=n_frames,
-                                  init_func=init, blit=True, interval=50)
-    os.makedirs(out_dir, exist_ok=True)
+    ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=50, blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
+    ani.save(path, writer='pillow', fps=20, dpi=80)
     plt.close()
-    print(f'Saved: {path}')
+    print(f'Saved: {path}  ({len(frames)} frames)')
 
 
 # ── Main ───────────────────────────────────────
 
 if __name__ == '__main__':
-    print('Running all strategies...')
-    all_results = run_all_strategies()
-
-    print('\n=== S033 Online Order Insertion — Results ===')
-    for s in STRATEGIES:
-        m = all_results[s]
-        feas = m['feasible']
-        queued = m['queued']
-        rate = feas / N_INSERTIONS * 100
-        print(f"  {s:25s}  detour={m['total_detour']:7.1f} m  "
-              f"served={feas}/{N_INSERTIONS}  queued={queued}  "
-              f"feasibility={rate:.0f}%")
-
-    ci = all_results['cheapest_insertion']
-    nd = all_results['nearest_drone']
-    saving = nd['total_detour'] - ci['total_detour']
-    print(f"\n  Cheapest Insertion saves {saving:.1f} m vs Nearest Drone")
-    print(f"  Per-drone load (cheapest): {ci['per_drone_inserted']}")
-
     out_dir = os.path.normpath(OUTPUT_DIR)
-    plot_route_map(ci, out_dir)
-    plot_battery_timeline(ci, out_dir)
-    plot_strategy_comparison(all_results, out_dir)
-    plot_load_balance(all_results, out_dir)
-    save_animation(ci, out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+
+    seed0 = {s: run_simulation(s, SEED0, record=(s == 'cheapest_insertion')) for s in STRATEGIES}
+    fleet, orders = make_instance(SEED0)
+    print('Seed-0 instance:')
+    for k, (wps, bat) in enumerate(fleet):
+        print(f'  D{k + 1}: planned route {route_length([DEPOT] + wps):7.1f} m, '
+              f'battery {bat:7.1f} m')
+    for o in orders:
+        print(f'  O{o.oid + 1}: t_arrive={o.t_arrive:5.1f} s  deadline={o.t_deadline:6.1f} s')
+
+    print('\n=== Seed 0 ===')
+    for s in STRATEGIES:
+        r = seed0[s]
+        print(f"  {s:20s} detour={r['detour_planned']:7.1f} m  added_flown={r['added_flown']:7.1f} m  "
+              f"online={r['n_online']} queued={r['n_queued']} rejected={r['n_rejected']}  "
+              f"on_time={r['on_time']}/{N_INSERTIONS} late={r['late']}  "
+              f"makespan={r['makespan']:6.1f} s  min_battery={r['min_battery']:7.1f} m  "
+              f"per_drone={r['per_drone']}")
+
+    mc = {s: [run_simulation(s, SEED0 + i) for i in range(N_SEEDS)] for s in STRATEGIES}
+    print(f'\n=== Mean over {N_SEEDS} seeds ===')
+    for s in STRATEGIES:
+        rs = mc[s]
+        f = lambda k: (np.mean([r[k] for r in rs]), np.std([r[k] for r in rs]))
+        print(f"  {s:20s} detour={f('detour_planned')[0]:7.1f} +/- {f('detour_planned')[1]:6.1f} m  "
+              f"added_flown={f('added_flown')[0]:7.1f} m  on_time={f('on_time')[0]:.2f}/{N_INSERTIONS}  "
+              f"queued={f('n_queued')[0]:.2f}  rejected={f('n_rejected')[0]:.2f}  "
+              f"late={f('late')[0]:.2f}  makespan={f('makespan')[0]:6.1f} s")
+    ci = np.array([r['detour_planned'] for r in mc['cheapest_insertion']])
+    for s in STRATEGIES[1:]:
+        o = np.array([r['detour_planned'] for r in mc[s]])
+        print(f'  cheapest detour <= {s} in {int(np.sum(ci <= o + 1e-9))}/{N_SEEDS} seeds')
+
+    plot_route_map(seed0['cheapest_insertion'], out_dir)
+    plot_battery_timeline(seed0['cheapest_insertion'], out_dir)
+    plot_strategy_comparison(seed0, mc, out_dir)
+    plot_load_balance(mc, out_dir)
+    save_animation(seed0['cheapest_insertion'], out_dir)
