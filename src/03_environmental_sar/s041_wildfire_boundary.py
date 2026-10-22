@@ -2,29 +2,33 @@
 S041 Wildfire Boundary Scan
 ============================
 A fleet of 3 IR-equipped drones tracks the expanding boundary of an active
-wildfire in a 200x200 m arena. The fire spreads via the elliptical Rothermel
-model driven by a 45-degree NE wind. Each drone uses a gradient-following
-guidance law to patrol the perimeter, updating a shared occupancy grid from
-noisy IR observations and triggering replanning when contact is lost or
-coverage gaps exceed 30 s. Key metrics are the mean Hausdorff distance between
-the true and estimated fire boundary, and the coverage freshness fraction.
+wildfire in a 200x200 m arena. The fire spreads with an elliptical
+(Huygens / Rothermel-style) rate of spread R(theta) = R0 (1-e)/(1 - e cos theta)
+driven by a wind blowing toward the NE (45 deg). Spread is implemented as a
+cellular automaton with fractional (sub-cell) burn progress on a 16-direction
+stencil, so slow spread rates still move the front.
+
+The drones start with NO map of the fire (every cell "unknown"). They build a
+shared three-state occupancy grid (unknown / unburned / burning) from noisy IR
+readings, patrol the boundary with a gradient-following guidance law and
+replan when contact is lost or a boundary cell has not been scanned for 30 s.
+Metrics: Hausdorff distance between the true and estimated boundary, coverage
+freshness, and replanning events by trigger type. A small sweep over the
+head-fire rate R0 shows how tracking error grows with spread rate.
 
 Usage:
     conda activate drones
     python src/03_environmental_sar/s041_wildfire_boundary.py
 """
 
-import sys
 import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.colors import LinearSegmentedColormap
-from scipy.spatial.distance import cdist
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from matplotlib.lines import Line2D
+from scipy.spatial import cKDTree
 
 # ── Parameters ─────────────────────────────────────────────────────────────
 N_DRONES       = 3
@@ -41,595 +45,577 @@ K_PHI          = 0.8       # s^-1 — stand-off correction gain
 D_REPLAN       = 3.0       # m — lost-contact replanning distance
 DT_GAP         = 30.0      # s — max allowed scan gap per boundary cell
 R0_SPREAD      = 0.04      # m/s — head-fire rate of spread
-ECC            = 0.6       # ellipse eccentricity parameter e_w
-WIND_DIR_DEG   = 45.0      # degrees — prevailing wind direction (from N)
-SIGMA_SPOT     = 0.05      # m — spotting noise std per timestep
+ECC            = 0.6       # ellipse eccentricity e_w  (R_head/R_back = 4)
+WIND_DIR_DEG   = 45.0      # deg — direction the wind blows TOWARD (CCW from +x)
+SIGMA_SPOT     = 0.01      # m — spotting noise std per timestep (card: 0.05, see README)
+SIGMA_SPOT_CARD = 0.05     # m — card value, used only in the spread diagnostic
+GAP_HOLD       = 10.0      # s — after reaching a replan target a drone follows the front this long before another gap replan
+NORMAL_WIN     = 6         # cells — half-window for the local outward-normal estimate (3 m)
 IGN_CENTRE     = np.array([100.0, 100.0])  # m — ignition point
 R_INIT         = 20.0      # m — initial fire radius
 DT             = 0.5       # s — simulation timestep
 T_SIM          = 300.0     # s — total simulation duration
+START_OFFSET   = 1.0       # m — drones start this far outside the reported perimeter
+RESERVE_RADIUS = 10.0      # m — replan targets closer than this to another drone's target are skipped
+SWEEP_R0       = [0.02, 0.04, 0.08, 0.16]  # m/s — head-fire rates for the sweep
+SEED           = 0
+ANIM_EVERY     = 4         # record an animation frame every 4 steps (150 frames)
 
 N_CELLS = int(ARENA_SIZE / GRID_RES)  # 400
+UNKNOWN, UNBURNED, BURNING = -1, 0, 1
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '03_environmental_sar', 's041_wildfire_boundary',
 )
 
-RNG = np.random.default_rng(0)
+# 16-direction stencil (all offsets with |di|,|dj| <= 2 and gcd = 1)
+STENCIL = [(1, 0), (0, 1), (-1, 0), (0, -1),
+           (1, 1), (1, -1), (-1, 1), (-1, -1),
+           (2, 1), (1, 2), (-1, 2), (-2, 1),
+           (-2, -1), (-1, -2), (1, -2), (2, -1)]
 
-# ── Helpers ────────────────────────────────────────────────────────────────
+CELL_C = np.arange(N_CELLS) * GRID_RES + GRID_RES / 2.0   # cell-centre coords
+
+
+# ── Fire model ─────────────────────────────────────────────────────────────
+
+def rate_of_spread(theta, r0, ecc):
+    """Elliptical rate of spread: R0 at the head (theta=0), R0(1-e)/(1+e) at the back."""
+    return r0 * (1.0 - ecc) / (1.0 - ecc * np.cos(theta))
+
 
 def init_grid():
-    """Initialise binary burn grid: circle of radius R_INIT centred at IGN_CENTRE."""
-    xs = np.arange(N_CELLS) * GRID_RES + GRID_RES / 2.0
-    ys = np.arange(N_CELLS) * GRID_RES + GRID_RES / 2.0
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-    dist = np.hypot(X - IGN_CENTRE[0], Y - IGN_CENTRE[1])
-    return (dist <= R_INIT).astype(np.float32)
+    """Binary burn grid: disc of radius R_INIT centred at IGN_CENTRE."""
+    X, Y = np.meshgrid(CELL_C, CELL_C, indexing='ij')
+    return np.hypot(X - IGN_CENTRE[0], Y - IGN_CENTRE[1]) <= R_INIT
 
 
-def spread_fire(F, dt, wind_dir_rad, r0, ecc, sigma_spot):
-    """Expand fire by one timestep using elliptical Huygens model (vectorised)."""
-    # Find boundary cells: burning cells adjacent to an unburned cell
-    padded = np.pad(F, 1, constant_values=0)
-    boundary_mask = np.zeros_like(F, dtype=bool)
-    for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        neighbour = padded[1 + di:N_CELLS + 1 + di, 1 + dj:N_CELLS + 1 + dj]
-        boundary_mask |= ((F == 1) & (neighbour == 0))
+def make_spread_kernel(r0):
+    """Rate of spread R(theta_k) and length L_k for every stencil offset."""
+    wind = np.deg2rad(WIND_DIR_DEG)
+    rates, lens = [], []
+    for di, dj in STENCIL:
+        theta = np.arctan2(dj, di) - wind
+        rates.append(rate_of_spread(theta, r0, ECC))
+        lens.append(np.hypot(di, dj) * GRID_RES)
+    return np.array(rates), np.array(lens)
 
-    cells_i, cells_j = np.where(boundary_mask)
-    if len(cells_i) == 0:
-        return F
 
-    # Approximate centroid of burning region for outward normal computation
-    bi, bj = np.where(F == 1)
-    cx = np.mean(bi) * GRID_RES + GRID_RES / 2.0
-    cy = np.mean(bj) * GRID_RES + GRID_RES / 2.0
-
-    cell_x = cells_i * GRID_RES + GRID_RES / 2.0
-    cell_y = cells_j * GRID_RES + GRID_RES / 2.0
-
-    nx = cell_x - cx
-    ny = cell_y - cy
-    norm = np.hypot(nx, ny) + 1e-8
-    nx /= norm
-    ny /= norm
-
-    # Angle between outward normal and wind direction
-    theta = np.arctan2(ny, nx) - wind_dir_rad
-
-    # Elliptical Rothermel rate of spread
-    R_theta = r0 * (1.0 + ecc) ** 2 / (1.0 + ecc * np.cos(theta))
-
-    # Stochastic advance
-    noise = RNG.normal(0.0, sigma_spot, size=len(cells_i))
-    advance = np.maximum(0.0, R_theta * dt + noise)
-
-    # Advance fire along outward normal
-    new_i = np.round(cells_i + advance * nx / GRID_RES).astype(int)
-    new_j = np.round(cells_j + advance * ny / GRID_RES).astype(int)
-
-    valid = (new_i >= 0) & (new_i < N_CELLS) & (new_j >= 0) & (new_j < N_CELLS)
-    F[new_i[valid], new_j[valid]] = 1.0
+def spread_fire(F, T_ign, noise_acc, t, kernel, rng, sigma=SIGMA_SPOT):
+    """
+    Advance the fire to time t (Huygens principle on a 16-direction stencil).
+    A burning cell n ignited at T_ign(n) has pushed its front a distance
+    R(theta_nc) (t - T_ign(n)) toward neighbour c.  Cell c also carries the
+    accumulated spotting perturbation W_c = sum eps_i, eps_i ~ N(0, sigma_spot^2)
+    drawn once per step while c is adjacent to the fire (zero-mean, unclamped,
+    so the mean spread rate is exactly R(theta)).  c ignites when
+        max_n [R(theta_nc) (t - T_ign(n)) - L_nc] + W_c >= 0.
+    Sub-cell progress is therefore carried in continuous time, so slow fronts
+    advance correctly.  Burned cells never revert.
+    """
+    rates, lens = kernel
+    P = 2
+    Tp = np.pad(T_ign, P, constant_values=np.inf)
+    reach = np.full(F.shape, -np.inf)
+    for (di, dj), r, L in zip(STENCIL, rates, lens):
+        src_T = Tp[P - di:P - di + N_CELLS, P - dj:P - dj + N_CELLS]   # source = target - offset
+        np.maximum(reach, r * (t - src_T) - L, out=reach)
+    active = np.isfinite(reach) & (~F)
+    idx = np.nonzero(active)
+    noise_acc[idx] += rng.normal(0.0, sigma, size=len(idx[0]))
+    ignite = active & (reach + noise_acc >= 0.0)
+    F[ignite] = True
+    T_ign[ignite] = t
     return F
 
 
-def get_boundary_mask(F):
-    """Return boolean mask of boundary cells (burning, adjacent to unburned)."""
-    padded = np.pad(F, 1, constant_values=0)
-    mask = np.zeros_like(F, dtype=bool)
+def boundary_mask_true(F):
+    """Burning cells 4-adjacent to an unburned cell."""
+    Fp = np.pad(F, 1, constant_values=False)
+    nb_unburned = np.zeros_like(F)
     for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        neighbour = padded[1 + di:N_CELLS + 1 + di, 1 + dj:N_CELLS + 1 + dj]
-        mask |= ((F == 1) & (neighbour == 0))
-    return mask
+        nb_unburned |= ~Fp[1 + di:N_CELLS + 1 + di, 1 + dj:N_CELLS + 1 + dj]
+    return F & nb_unburned
 
 
-def get_boundary_cells(F):
-    """Return (i, j) index arrays for boundary cells."""
-    mask = get_boundary_mask(F)
-    return np.where(mask)
+def boundary_mask_est(E):
+    """Estimated boundary: cells observed burning that are 4-adjacent to a cell observed unburned."""
+    Ep = np.pad(E, 1, constant_values=UNKNOWN)
+    nb_unburned = np.zeros(E.shape, dtype=bool)
+    for di, dj in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        nb_unburned |= Ep[1 + di:N_CELLS + 1 + di, 1 + dj:N_CELLS + 1 + dj] == UNBURNED
+    return (E == BURNING) & nb_unburned
 
 
-def ir_observation(F, drone_pos):
-    """Return footprint mask and noisy binary observation."""
-    xs = np.arange(N_CELLS) * GRID_RES + GRID_RES / 2.0
-    ys = np.arange(N_CELLS) * GRID_RES + GRID_RES / 2.0
-    X, Y = np.meshgrid(xs, ys, indexing='ij')
-    dist_to_drone = np.hypot(X - drone_pos[0], Y - drone_pos[1])
-    footprint = dist_to_drone <= SENSOR_RADIUS
+# ── Sensor / guidance ──────────────────────────────────────────────────────
 
-    T_true = np.where(F == 1, T_FIRE, T_AMBIENT)
-    noise = RNG.normal(0.0, np.sqrt(R_SENSOR_VAR), F.shape)
-    z = T_true + noise
-    obs = (z >= T_THRESH).astype(np.float32)
-    return footprint, obs
+def ir_observe(F_true, E, last_scan, pos, t, rng):
+    """Noisy IR reading of every cell in the footprint; overwrite the shared estimate."""
+    i0 = max(int((pos[0] - SENSOR_RADIUS) / GRID_RES) - 1, 0)
+    i1 = min(int((pos[0] + SENSOR_RADIUS) / GRID_RES) + 2, N_CELLS)
+    j0 = max(int((pos[1] - SENSOR_RADIUS) / GRID_RES) - 1, 0)
+    j1 = min(int((pos[1] + SENSOR_RADIUS) / GRID_RES) + 2, N_CELLS)
+    X, Y = np.meshgrid(CELL_C[i0:i1], CELL_C[j0:j1], indexing='ij')
+    fp = np.hypot(X - pos[0], Y - pos[1]) <= SENSOR_RADIUS
+    T_true = np.where(F_true[i0:i1, j0:j1], T_FIRE, T_AMBIENT)
+    z = T_true + rng.normal(0.0, np.sqrt(R_SENSOR_VAR), size=T_true.shape)
+    obs = np.where(z >= T_THRESH, BURNING, UNBURNED)
+    E_win = E[i0:i1, j0:j1]
+    E_win[fp] = obs[fp]
+    ls_win = last_scan[i0:i1, j0:j1]
+    ls_win[fp] = t
 
 
-def boundary_gradient_step(pos, F_est):
-    """Compute commanded velocity for one drone using gradient-following law."""
-    bi, bj = get_boundary_cells(F_est)
-    if len(bi) == 0:
-        return np.zeros(2), False
+def outward_normal(E, ci, cj, fallback):
+    """Local outward boundary normal: from the centroid of observed-burning cells to the
+    centroid of observed-unburned cells within NORMAL_WIN cells of boundary cell (ci, cj)."""
+    i0, i1 = max(ci - NORMAL_WIN, 0), min(ci + NORMAL_WIN + 1, N_CELLS)
+    j0, j1 = max(cj - NORMAL_WIN, 0), min(cj + NORMAL_WIN + 1, N_CELLS)
+    win = E[i0:i1, j0:j1]
+    bi, bj = np.nonzero(win == BURNING)
+    ui, uj = np.nonzero(win == UNBURNED)
+    if len(bi) == 0 or len(ui) == 0:
+        n = fallback
+    else:
+        n = np.array([ui.mean() - bi.mean(), uj.mean() - bj.mean()])
+    nn = np.linalg.norm(n)
+    return n / nn if nn > 1e-9 else np.array([1.0, 0.0])
 
-    bx = bi * GRID_RES + GRID_RES / 2.0
-    by = bj * GRID_RES + GRID_RES / 2.0
-    dists = np.hypot(bx - pos[0], by - pos[1])
-    nearest_idx = np.argmin(dists)
-    d_fire = dists[nearest_idx]
 
-    nearest_pt = np.array([bx[nearest_idx], by[nearest_idx]])
-    n_hat = (pos - nearest_pt) / (d_fire + 1e-8)   # inward normal (drone to fire)
-
-    # Boundary tangent (clockwise): rotate n_hat by -90 degrees
-    t_hat = np.array([n_hat[1], -n_hat[0]])
-
-    phi = d_fire - SENSOR_RADIUS
+def gradient_step(pos, bxy, bij, E):
+    """
+    Boundary gradient-following velocity  v = v_cruise t_hat - K_phi phi n_hat
+    (clipped to v_cruise).  n_hat is the local outward normal of the estimated
+    boundary, phi = s d - r_s with s = +1 when the drone is on the unburned side
+    and -1 when it is over the burned side, so the drone always settles r_s
+    OUTSIDE the front.  t_hat = clockwise tangent.
+    """
+    if len(bxy) == 0:
+        return np.zeros(2), np.inf
+    d = np.hypot(bxy[:, 0] - pos[0], bxy[:, 1] - pos[1])
+    k = np.argmin(d)
+    d_fire = d[k]
+    rel = pos - bxy[k]
+    n_hat = outward_normal(E, bij[0][k], bij[1][k], rel)
+    side = 1.0 if np.dot(rel, n_hat) >= 0 else -1.0
+    t_hat = np.array([n_hat[1], -n_hat[0]])       # clockwise tangent
+    phi = side * d_fire - SENSOR_RADIUS
     vel = V_CRUISE * t_hat - K_PHI * phi * n_hat
-
-    speed = np.linalg.norm(vel)
-    if speed > V_CRUISE:
-        vel = vel * V_CRUISE / speed
-
-    replan = (d_fire > SENSOR_RADIUS + D_REPLAN)
-    return vel, replan
+    sp = np.linalg.norm(vel)
+    if sp > V_CRUISE:
+        vel *= V_CRUISE / sp
+    return vel, d_fire
 
 
-def select_replan_target(F_est, last_scan, t_now):
-    """Find boundary cell with the oldest scan timestamp."""
-    bi, bj = get_boundary_cells(F_est)
-    if len(bi) == 0:
+def footprint_all_burning(E, pos):
+    """True if every observed cell under the drone's footprint is classified burning."""
+    i0 = max(int((pos[0] - SENSOR_RADIUS) / GRID_RES) - 1, 0)
+    i1 = min(int((pos[0] + SENSOR_RADIUS) / GRID_RES) + 2, N_CELLS)
+    j0 = max(int((pos[1] - SENSOR_RADIUS) / GRID_RES) - 1, 0)
+    j1 = min(int((pos[1] + SENSOR_RADIUS) / GRID_RES) + 2, N_CELLS)
+    X, Y = np.meshgrid(CELL_C[i0:i1], CELL_C[j0:j1], indexing='ij')
+    win = E[i0:i1, j0:j1][np.hypot(X - pos[0], Y - pos[1]) <= SENSOR_RADIUS]
+    return bool(np.all(win == BURNING))
+
+
+def select_replan_target(bxy, ages, other_targets):
+    """Oldest-timestamp boundary cell, skipping cells near other drones' active targets."""
+    if len(bxy) == 0:
         return None
-    ages = t_now - last_scan[bi, bj]
-    oldest_idx = np.argmax(ages)
-    return np.array([
-        bi[oldest_idx] * GRID_RES + GRID_RES / 2.0,
-        bj[oldest_idx] * GRID_RES + GRID_RES / 2.0,
-    ])
+    ok = np.ones(len(bxy), dtype=bool)
+    for tgt in other_targets:
+        if tgt is not None:
+            ok &= np.hypot(bxy[:, 0] - tgt[0], bxy[:, 1] - tgt[1]) > RESERVE_RADIUS
+    if not ok.any():
+        ok[:] = True
+    cand = np.nonzero(ok)[0]
+    return bxy[cand[np.argmax(ages[cand])]].copy()
 
 
-def hausdorff_distance(bi_true, bj_true, bi_est, bj_est):
-    """Symmetric mean Hausdorff distance between two boundary cell sets."""
-    if len(bi_true) == 0 or len(bi_est) == 0:
-        return 0.0
-    tb = np.stack([bi_true, bj_true], axis=1).astype(float) * GRID_RES
-    eb = np.stack([bi_est,  bj_est],  axis=1).astype(float) * GRID_RES
-    D = cdist(tb, eb)
-    d1 = np.mean(np.min(D, axis=1))
-    d2 = np.mean(np.min(D, axis=0))
-    return 0.5 * (d1 + d2)
+def hausdorff_pair(true_xy, est_xy):
+    """Return (card d_H = mean of the two directed max-min distances,
+               average Hausdorff = mean of the two directed mean-min distances)."""
+    if len(true_xy) == 0 or len(est_xy) == 0:
+        return np.nan, np.nan
+    d_te, _ = cKDTree(est_xy).query(true_xy)
+    d_et, _ = cKDTree(true_xy).query(est_xy)
+    return 0.5 * (d_te.max() + d_et.max()), 0.5 * (d_te.mean() + d_et.mean())
 
 
 # ── Simulation ──────────────────────────────────────────────────────────────
 
-def run_simulation():
-    """Run the main wildfire boundary scan simulation. Return all data for plotting."""
-    wind_rad = np.deg2rad(WIND_DIR_DEG)
+def simulate(r0, seed, record=False):
+    """One full mission with head-fire rate r0."""
+    rng = np.random.default_rng(seed)
+    kernel = make_spread_kernel(r0)
     F_true = init_grid()
-    F_est  = F_true.copy()
-
-    # Per-cell last-scan timestamp (initialised to -inf)
+    T_ign = np.where(F_true, 0.0, np.inf)       # initial disc ignites at t = 0
+    noise_acc = np.zeros((N_CELLS, N_CELLS))
+    E = np.full((N_CELLS, N_CELLS), UNKNOWN, dtype=np.int8)
     last_scan = np.full((N_CELLS, N_CELLS), -np.inf)
 
-    # Initialise drones evenly spaced around initial fire perimeter
+    # Drones start evenly spaced just outside the reported initial perimeter
     angles = np.linspace(0, 2.0 * np.pi, N_DRONES, endpoint=False)
-    drone_pos = np.array([
-        IGN_CENTRE + (R_INIT + SENSOR_RADIUS) * np.array([np.cos(a), np.sin(a)])
-        for a in angles
-    ])
-    replan_targets = [None] * N_DRONES
+    pos = np.array([IGN_CENTRE + (R_INIT + START_OFFSET) * np.array([np.cos(a), np.sin(a)])
+                    for a in angles])
+    targets = [None] * N_DRONES
+    search_dir = [None] * N_DRONES
+    follow_since = np.zeros(N_DRONES)          # time the drone (re)started gradient-following
 
-    t_steps = int(T_SIM / DT)
-    hausdorff_history  = np.zeros(t_steps)
-    freshness_history  = np.zeros(t_steps)
-    drone_trajectories = [[] for _ in range(N_DRONES)]
-    replan_events      = [[] for _ in range(N_DRONES)]
+    n_steps = int(round(T_SIM / DT))
+    t_axis = np.arange(n_steps) * DT
+    dH = np.zeros(n_steps)
+    dAvg = np.zeros(n_steps)
+    fresh = np.zeros(n_steps)
+    trajs = np.zeros((N_DRONES, n_steps, 2))
+    events = []           # (t, drone, type, x, y)
+    snap_steps = {0, 200, 400, n_steps - 1}
+    snaps, anim = {}, []
 
-    # Snapshot times for the evolution map plot
-    snap_times  = {0: None, 100: None, 200: None, int(T_SIM) - 1: None}
-    snap_frames = {}
-
-    for step in range(t_steps):
-        t = step * DT
-
-        # 1. Spread fire
-        F_true = spread_fire(F_true, DT, wind_rad, R0_SPREAD, ECC, SIGMA_SPOT)
-
-        # 2. Each drone observes and updates shared estimate
+    for step in range(n_steps):
+        t = t_axis[step]
+        # 1. fire spreads
+        F_true = spread_fire(F_true, T_ign, noise_acc, t + DT, kernel, rng)
+        # 2. observations
         for k in range(N_DRONES):
-            footprint, obs = ir_observation(F_true, drone_pos[k])
-            F_est[footprint] = obs[footprint]
-            ci_arr, cj_arr = np.where(footprint)
-            last_scan[ci_arr, cj_arr] = t
-
-        # 3. Move each drone
+            ir_observe(F_true, E, last_scan, pos[k], t, rng)
+        b_est = boundary_mask_est(E)
+        bi, bj = np.nonzero(b_est)
+        bxy = np.stack([CELL_C[bi], CELL_C[bj]], axis=1)
+        ages = t - last_scan[bi, bj]           # finite: every estimated cell was observed
+        # 3. guidance
         for k in range(N_DRONES):
-            if replan_targets[k] is not None:
-                diff = replan_targets[k] - drone_pos[k]
-                dist = np.linalg.norm(diff)
-                if dist < V_CRUISE * DT or dist < 1e-6:
-                    drone_pos[k] = replan_targets[k].copy()
-                    replan_targets[k] = None
+            if search_dir[k] is not None:
+                # Front re-acquisition: fly outward until the front is back in reach
+                d_near = (np.min(np.hypot(bxy[:, 0] - pos[k, 0], bxy[:, 1] - pos[k, 1]))
+                          if len(bxy) else np.inf)
+                if d_near <= SENSOR_RADIUS + D_REPLAN or not footprint_all_burning(E, pos[k]):
+                    search_dir[k] = None
+                    follow_since[k] = t
                 else:
-                    drone_pos[k] += V_CRUISE * (diff / dist) * DT
+                    pos[k] += V_CRUISE * DT * search_dir[k]
+            elif targets[k] is not None:
+                diff = targets[k] - pos[k]
+                dist = np.linalg.norm(diff)
+                if dist <= V_CRUISE * DT:
+                    pos[k] = targets[k]
+                    targets[k] = None
+                    follow_since[k] = t
+                else:
+                    pos[k] += V_CRUISE * DT * diff / dist
             else:
-                vel, need_replan = boundary_gradient_step(drone_pos[k], F_est)
-                drone_pos[k] += vel * DT
-                if need_replan:
-                    replan_events[k].append(drone_pos[k].copy())
-                    replan_targets[k] = select_replan_target(F_est, last_scan, t)
+                vel, d_fire = gradient_step(pos[k], bxy, (bi, bj), E)
+                pos[k] += vel * DT
+                if d_fire > SENSOR_RADIUS + D_REPLAN and footprint_all_burning(E, pos[k]):
+                    # front has outrun the estimate here: search outward from the fire centre
+                    bu, bv = np.nonzero(E == BURNING)
+                    c = np.array([CELL_C[bu].mean(), CELL_C[bv].mean()])
+                    u = pos[k] - c
+                    search_dir[k] = u / (np.linalg.norm(u) + 1e-9)
+                    events.append((t, k, 'search', pos[k, 0], pos[k, 1]))
+                elif d_fire > SENSOR_RADIUS + D_REPLAN and len(bxy) > 0:
+                    targets[k] = select_replan_target(
+                        bxy, ages, targets[:k] + targets[k + 1:])
+                    events.append((t, k, 'lost', pos[k, 0], pos[k, 1]))
+                elif (len(ages) > 0 and np.any(ages > DT_GAP)
+                      and t - follow_since[k] >= GAP_HOLD):
+                    targets[k] = select_replan_target(
+                        bxy, ages, targets[:k] + targets[k + 1:])
+                    events.append((t, k, 'gap', pos[k, 0], pos[k, 1]))
+            pos[k] = np.clip(pos[k], 0.0, ARENA_SIZE)
+            trajs[k, step] = pos[k]
+        # 4. metrics
+        b_true = boundary_mask_true(F_true)
+        ti, tj = np.nonzero(b_true)
+        txy = np.stack([CELL_C[ti], CELL_C[tj]], axis=1)
+        dH[step], dAvg[step] = hausdorff_pair(txy, bxy)
+        fresh[step] = np.mean(ages <= DT_GAP) if len(ages) else np.nan
+        if record:
+            if step in snap_steps:
+                snaps[step] = dict(F=F_true.copy(), bxy=bxy.copy(),
+                                   pos=pos.copy(), t=t)
+            if step % ANIM_EVERY == 0 or step == n_steps - 1:
+                anim.append((F_true.copy(), bxy.copy(), pos.copy(), t))
 
-            # Gap coverage trigger
-            bi_b, bj_b = get_boundary_cells(F_est)
-            if len(bi_b) > 0 and replan_targets[k] is None:
-                ages = t - last_scan[bi_b, bj_b]
-                if np.any(ages > DT_GAP):
-                    replan_events[k].append(drone_pos[k].copy())
-                    replan_targets[k] = select_replan_target(F_est, last_scan, t)
-
-            drone_pos[k] = np.clip(drone_pos[k], 0.0, ARENA_SIZE)
-            drone_trajectories[k].append(drone_pos[k].copy())
-
-        # 4. Compute metrics
-        bi_t, bj_t = get_boundary_cells(F_true)
-        bi_e, bj_e = get_boundary_cells(F_est)
-        hausdorff_history[step] = hausdorff_distance(bi_t, bj_t, bi_e, bj_e)
-
-        if len(bi_e) > 0:
-            fresh_ages = t - last_scan[bi_e, bj_e]
-            freshness_history[step] = np.mean(fresh_ages <= DT_GAP)
-        else:
-            freshness_history[step] = 1.0
-
-        # Save snapshots
-        t_int = int(round(t))
-        if t_int in snap_times and snap_times[t_int] is None:
-            snap_times[t_int] = step
-            snap_frames[t_int] = {
-                'F_true': F_true.copy(),
-                'F_est':  F_est.copy(),
-                'drone_pos': drone_pos.copy(),
-                'last_scan': last_scan.copy(),
-                't': t,
-            }
-
-    t_axis = np.arange(t_steps) * DT
-    drone_trajectories = [np.array(tr) for tr in drone_trajectories]
-
-    # Print key metrics
-    mean_hd  = np.mean(hausdorff_history)
-    final_hd = hausdorff_history[-1]
-    mean_fr  = np.mean(freshness_history) * 100.0
-    print(f"Mean Hausdorff distance : {mean_hd:.2f} m")
-    print(f"Final Hausdorff distance: {final_hd:.2f} m")
-    print(f"Mean coverage freshness : {mean_fr:.1f} %")
-    total_replan = sum(len(e) for e in replan_events)
-    print(f"Total replanning events : {total_replan}")
-    bi_f, bj_f = get_boundary_cells(F_true)
-    # Approx fire area
-    fire_area = np.sum(F_true) * GRID_RES ** 2
-    print(f"Final fire area         : {fire_area:.0f} m^2")
-
-    return {
-        'F_true_final':      F_true,
-        'F_est_final':       F_est,
-        'hausdorff_history': hausdorff_history,
-        'freshness_history': freshness_history,
-        'drone_trajectories': drone_trajectories,
-        'replan_events':     replan_events,
-        't_axis':            t_axis,
-        'snap_frames':       snap_frames,
-        'last_scan':         last_scan,
-        'mean_hd':           mean_hd,
-        'final_hd':          final_hd,
-        'mean_fr':           mean_fr,
-        'total_replan':      total_replan,
-    }
+    return dict(r0=r0, F_final=F_true, dH=dH, dAvg=dAvg, fresh=fresh,
+                trajs=trajs, events=events, t_axis=t_axis, snaps=snaps,
+                anim=anim, area0=init_grid().sum() * GRID_RES ** 2,
+                area=F_true.sum() * GRID_RES ** 2)
 
 
-# ── Colours ─────────────────────────────────────────────────────────────────
-DRONE_COLORS = ['#e63946', '#2a9d8f', '#f4a261']
+def front_advance(F):
+    """Max advance of the burned region beyond R_INIT along head / flank / back directions."""
+    w = np.deg2rad(WIND_DIR_DEG)
+    X, Y = np.meshgrid(CELL_C, CELL_C, indexing='ij')
+    ang = np.arctan2(Y - IGN_CENTRE[1], X - IGN_CENTRE[0])
+    rad = np.hypot(X - IGN_CENTRE[0], Y - IGN_CENTRE[1])
+    out = []
+    for d in (w, w + np.pi / 2, w + np.pi):
+        sel = F & (np.abs(np.angle(np.exp(1j * (ang - d)))) < np.deg2rad(3))
+        out.append(rad[sel].max() - R_INIT)
+    return out
+
+
+def fire_only_advance(sigma, seed):
+    """Spread the fire alone for T_SIM (no drones) to check the spread model."""
+    rng = np.random.default_rng(seed)
+    kernel = make_spread_kernel(R0_SPREAD)
+    F = init_grid()
+    T_ign = np.where(F, 0.0, np.inf)
+    W = np.zeros(F.shape)
+    for step in range(int(round(T_SIM / DT))):
+        F = spread_fire(F, T_ign, W, (step + 1) * DT, kernel, rng, sigma)
+    return front_advance(F), F.sum() * GRID_RES ** 2
+
+
+def summarise(res):
+    cnt = {k: sum(1 for e in res['events'] if e[2] == k) for k in ('lost', 'gap', 'search')}
+    return dict(mean_dH=np.nanmean(res['dH']), final_dH=res['dH'][-1],
+                mean_dAvg=np.nanmean(res['dAvg']), final_dAvg=res['dAvg'][-1],
+                mean_fresh=100 * np.nanmean(res['fresh']),
+                min_fresh=100 * np.nanmin(res['fresh'][res['t_axis'] >= DT_GAP]),
+                n_lost=cnt['lost'], n_gap=cnt['gap'], n_search=cnt['search'])
+
+
+def run_simulation():
+    """Main mission (R0 = 0.04 m/s, animated) plus a sweep over head-fire rate."""
+    print('=== Spread-model check (fire only, R0 = %.2f m/s, %.0f s) ===' % (R0_SPREAD, T_SIM))
+    print(f"Model R(theta)*T     head/flank/back: {R0_SPREAD * T_SIM:.1f} / "
+          f"{rate_of_spread(np.pi / 2, R0_SPREAD, ECC) * T_SIM:.1f} / "
+          f"{rate_of_spread(np.pi, R0_SPREAD, ECC) * T_SIM:.1f} m")
+    for sig in (0.0, SIGMA_SPOT, SIGMA_SPOT_CARD):
+        (h, f, b), a = fire_only_advance(sig, SEED)
+        print(f"sigma_spot = {sig:.2f} m: advance head/flank/back {h:.1f} / {f:.1f} / {b:.1f} m, "
+              f"area {a:.0f} m^2")
+
+    main = simulate(R0_SPREAD, SEED, record=True)
+    s = summarise(main)
+    head, flank, back = front_advance(main['F_final'])
+    print('=== Main run (R0 = %.2f m/s, sigma_spot = %.2f m, seed %d) ===' % (R0_SPREAD, SIGMA_SPOT, SEED))
+    print(f"Fire area                 : {main['area0']:.0f} -> {main['area']:.0f} m^2 "
+          f"(+{100 * (main['area'] / main['area0'] - 1):.1f} %)")
+    print(f"Front advance head/flank/back: {head:.1f} / {flank:.1f} / {back:.1f} m")
+    print(f"Hausdorff d_H (card, max-based): mean {s['mean_dH']:.2f} m, final {s['final_dH']:.2f} m")
+    print(f"Average Hausdorff (mean-based) : mean {s['mean_dAvg']:.2f} m, final {s['final_dAvg']:.2f} m")
+    print(f"Coverage freshness        : mean {s['mean_fresh']:.1f} %, min (t>=30 s) {s['min_fresh']:.1f} %")
+    print(f"Replans: lost-contact {s['n_lost']}, coverage-gap {s['n_gap']}, total {s['n_lost'] + s['n_gap']}; "
+          f"front re-acquisition searches {s['n_search']}")
+    first_gap = [e[0] for e in main['events'] if e[2] == 'gap']
+    print(f"First coverage-gap replan at t = {first_gap[0]:.1f} s" if first_gap
+          else "No coverage-gap replans")
+
+    sweep = []
+    print('=== Spread-rate sweep (seed %d) ===' % SEED)
+    for r0 in SWEEP_R0:
+        res = main if r0 == R0_SPREAD else simulate(r0, SEED)
+        ss = summarise(res)
+        ss['r0'] = r0
+        ss['area'] = res['area']
+        sweep.append(ss)
+        print(f"R0 = {r0:.2f} m/s: mean d_H {ss['mean_dH']:.2f} m, final d_H {ss['final_dH']:.2f} m, "
+              f"mean avg-H {ss['mean_dAvg']:.2f} m, freshness {ss['mean_fresh']:.1f} %, "
+              f"replans lost/gap {ss['n_lost']}/{ss['n_gap']}, searches {ss['n_search']}, final area {ss['area']:.0f} m^2")
+    main['summary'] = s
+    main['sweep'] = sweep
+    return main
 
 
 # ── Plots ───────────────────────────────────────────────────────────────────
+DRONE_COLORS = ['#1f77b4', '#9467bd', '#17becf']
+FIRE_CMAP = matplotlib.colors.ListedColormap(['none', '#ff8c42'])
+EXTENT = [0, ARENA_SIZE, 0, ARENA_SIZE]
 
-def plot_fire_evolution(snap_frames, out_dir):
-    """4-panel fire evolution map at t=0, 100, 200, 300 s."""
-    snap_keys = sorted(snap_frames.keys())
-    fig, axes = plt.subplots(1, 4, figsize=(20, 5))
 
-    xs = np.arange(N_CELLS) * GRID_RES
-    ys = np.arange(N_CELLS) * GRID_RES
-
-    for ax, t_key in zip(axes, snap_keys):
-        frame = snap_frames[t_key]
-        F_t = frame['F_true']
-        F_e = frame['F_est']
-        dpos = frame['drone_pos']
-        t_val = frame['t']
-
-        # True burn region (orange)
-        ax.contourf(xs, ys, F_t.T, levels=[0.5, 1.5], colors=['#ff6b35'],
-                    alpha=0.55)
-        # Estimated boundary (red contour)
-        bnd_e = get_boundary_mask(F_e)
-        if bnd_e.any():
-            ax.contour(xs, ys, bnd_e.T.astype(float), levels=[0.5],
-                       colors=['#c1121f'], linewidths=1.2)
-        # True boundary (dark orange)
-        bnd_t = get_boundary_mask(F_t)
-        if bnd_t.any():
-            ax.contour(xs, ys, bnd_t.T.astype(float), levels=[0.5],
-                       colors=['#8b2500'], linewidths=0.8, linestyles='--')
-
-        # Drones and sensor footprints
-        for k in range(N_DRONES):
-            px, py = dpos[k]
-            circle = plt.Circle((px, py), SENSOR_RADIUS,
-                                 color=DRONE_COLORS[k], fill=False,
-                                 linewidth=1.2, alpha=0.8)
-            ax.add_patch(circle)
-            ax.plot(px, py, 'o', color=DRONE_COLORS[k], ms=6, zorder=5)
-
-        # Wind arrow
-        wind_rad = np.deg2rad(WIND_DIR_DEG)
-        ax.annotate('', xy=(15 + 12 * np.cos(wind_rad),
-                             15 + 12 * np.sin(wind_rad)),
-                    xytext=(15, 15),
-                    arrowprops=dict(arrowstyle='->', color='navy', lw=1.5))
-        ax.text(15, 8, 'Wind', fontsize=7, color='navy')
-
-        ax.set_xlim(60, 160)
-        ax.set_ylim(60, 160)
-        ax.set_aspect('equal')
-        ax.set_title(f't = {t_val:.0f} s', fontsize=11)
-        ax.set_xlabel('x (m)')
-        if ax == axes[0]:
-            ax.set_ylabel('y (m)')
-
-    # Legend
-    patches = [
-        mpatches.Patch(color='#ff6b35', alpha=0.55, label='True burn region'),
-        mpatches.Patch(color='#c1121f', label='Estimated boundary'),
-        mpatches.Patch(color='#8b2500', label='True boundary'),
-    ]
+def _draw_map(ax, F, bxy, pos, xlim=(65, 140)):
+    ax.imshow(F.T.astype(float), origin='lower', extent=EXTENT, cmap=FIRE_CMAP,
+              vmin=0, vmax=1, alpha=0.6, interpolation='nearest')
+    ax.contour(CELL_C, CELL_C, F.T.astype(float), levels=[0.5],
+               colors=['#8b2500'], linewidths=0.8)
+    if len(bxy):
+        ax.plot(bxy[:, 0], bxy[:, 1], '.', color='#d62728', ms=1.5)
     for k in range(N_DRONES):
-        patches.append(mpatches.Patch(color=DRONE_COLORS[k],
-                                      label=f'Drone {k+1} + footprint'))
-    fig.legend(handles=patches, loc='lower center', ncol=6,
-               bbox_to_anchor=(0.5, -0.05), fontsize=8)
-    fig.suptitle('S041 Wildfire Boundary Scan — Fire Evolution', fontsize=13,
-                 fontweight='bold')
-    plt.tight_layout(rect=[0, 0.05, 1, 0.97])
-    os.makedirs(out_dir, exist_ok=True)
+        ax.add_patch(plt.Circle(pos[k], SENSOR_RADIUS, color=DRONE_COLORS[k],
+                                fill=False, lw=1.2))
+        ax.plot(*pos[k], 'o', color=DRONE_COLORS[k], ms=5, zorder=5)
+    w = np.deg2rad(WIND_DIR_DEG)
+    ax.annotate('', xy=(xlim[0] + 5 + 8 * np.cos(w), xlim[0] + 5 + 8 * np.sin(w)),
+                xytext=(xlim[0] + 5, xlim[0] + 5),
+                arrowprops=dict(arrowstyle='->', color='navy', lw=1.5))
+    ax.text(xlim[0] + 3, xlim[0] + 1.5, 'wind', fontsize=7, color='navy')
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*xlim)
+    ax.set_aspect('equal')
+
+
+def plot_fire_evolution(snaps, out_dir):
+    keys = sorted(snaps)
+    fig, axes = plt.subplots(1, 4, figsize=(20, 5.4))
+    for ax, k in zip(axes, keys):
+        s = snaps[k]
+        _draw_map(ax, s['F'], s['bxy'], s['pos'])
+        ax.set_title(f"t = {s['t']:.1f} s", fontsize=11)
+        ax.set_xlabel('x (m)')
+    axes[0].set_ylabel('y (m)')
+    handles = [mpatches.Patch(color='#ff8c42', alpha=0.6, label='True burn region'),
+               Line2D([], [], color='#8b2500', lw=0.8, label='True boundary'),
+               Line2D([], [], color='#d62728', marker='.', ls='', label='Estimated boundary cells')]
+    handles += [Line2D([], [], color=DRONE_COLORS[k], marker='o', ls='',
+                       label=f'Drone {k + 1} + IR footprint') for k in range(N_DRONES)]
+    fig.legend(handles=handles, loc='lower center', ncol=6, fontsize=9)
+    fig.suptitle('S041 Wildfire Boundary Scan — Fire Evolution (R0 = 0.04 m/s, wind toward NE)',
+                 fontsize=13, fontweight='bold')
+    plt.tight_layout(rect=[0, 0.07, 1, 0.95])
     path = os.path.join(out_dir, 'fire_evolution.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.savefig(path, dpi=130)
     plt.close()
     print(f'Saved: {path}')
 
 
-def plot_hausdorff(hausdorff_history, t_axis, replan_events,
-                   drone_trajectories, out_dir):
-    """Hausdorff distance over time with replanning event markers."""
-    fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(t_axis, hausdorff_history, color='#264653', lw=1.5,
-            label='Hausdorff distance $d_H(t)$')
-    ax.axhline(np.mean(hausdorff_history), color='#e9c46a', lw=1.2,
-               ls='--', label=f'Mean = {np.mean(hausdorff_history):.2f} m')
-
-    # Mark replanning events for each drone
-    for k, events in enumerate(replan_events):
-        if events:
-            ev_arr = np.array(events)
-            # Map events to time by nearest trajectory point
-            traj = drone_trajectories[k]
-            ev_times = []
-            for ev_pos in ev_arr:
-                diffs = traj - ev_pos[np.newaxis, :]
-                idx = np.argmin(np.linalg.norm(diffs, axis=1))
-                ev_times.append(t_axis[min(idx, len(t_axis) - 1)])
-            ev_times = np.array(ev_times)
-            hd_at_ev = np.interp(ev_times, t_axis, hausdorff_history)
-            ax.scatter(ev_times, hd_at_ev, marker='^', s=50,
-                       color=DRONE_COLORS[k], zorder=5,
-                       label=f'Drone {k+1} replan ({len(ev_times)})')
-
+def plot_hausdorff(res, out_dir):
+    t = res['t_axis']
+    fig, ax = plt.subplots(figsize=(10, 4.2))
+    ax.plot(t, res['dH'], color='#264653', lw=1.3, label='$d_H$ (card, max-based)')
+    ax.plot(t, res['dAvg'], color='#e76f51', lw=1.3, label='Average Hausdorff (mean-based)')
+    for typ, mk in [('lost', 'v'), ('gap', '^'), ('search', 'D')]:
+        for k in range(N_DRONES):
+            ev = [e[0] for e in res['events'] if e[1] == k and e[2] == typ]
+            if ev:
+                ax.scatter(ev, np.interp(ev, t, res['dH']), marker=mk, s=40,
+                           color=DRONE_COLORS[k], edgecolors='k', lw=0.4, zorder=5,
+                           label=f'Drone {k + 1} {typ} replan ({len(ev)})')
     ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Hausdorff distance (m)')
-    ax.set_title('Boundary Tracking Error — Mean Hausdorff Distance')
-    ax.legend(fontsize=9)
+    ax.set_ylabel('Distance (m)')
+    ax.set_title('Boundary tracking error (v lost-contact replan, ^ coverage-gap replan, D front search)')
+    ax.legend(fontsize=8, ncol=2)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'hausdorff_distance.png')
     plt.savefig(path, dpi=150)
     plt.close()
     print(f'Saved: {path}')
 
 
-def plot_coverage_freshness(freshness_history, t_axis, out_dir):
-    """Coverage freshness fraction over time."""
+def plot_coverage_freshness(res, out_dir):
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot(t_axis, freshness_history * 100.0, color='#2a9d8f', lw=1.5,
+    ax.plot(res['t_axis'], res['fresh'] * 100.0, color='#2a9d8f', lw=1.5,
             label='Coverage freshness $\\eta(t)$')
-    ax.axhline(90.0, color='#e76f51', lw=1.2, ls='--',
-               label='90% target threshold')
+    ax.axhline(90.0, color='#e76f51', lw=1.2, ls='--', label='90% target')
+    ax.axvline(DT_GAP, color='grey', lw=0.8, ls=':', label='t = 30 s')
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Fresh boundary fraction (%)')
     ax.set_ylim(-5, 105)
-    ax.set_title('Coverage Freshness — Fraction of Boundary Scanned within 30 s')
+    ax.set_title('Coverage freshness — estimated boundary cells scanned within the last 30 s')
     ax.legend(fontsize=10)
     ax.grid(True, alpha=0.3)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'coverage_freshness.png')
     plt.savefig(path, dpi=150)
     plt.close()
     print(f'Saved: {path}')
 
 
-def plot_trajectory_overlay(drone_trajectories, F_true_final, replan_events,
-                             out_dir):
-    """Full 2D drone paths colour-coded by time, superimposed on final burn footprint."""
+def plot_trajectory_overlay(res, out_dir):
     fig, ax = plt.subplots(figsize=(8, 8))
-
-    xs = np.arange(N_CELLS) * GRID_RES
-    ys = np.arange(N_CELLS) * GRID_RES
-    ax.contourf(xs, ys, F_true_final.T, levels=[0.5, 1.5],
-                colors=['#ff6b35'], alpha=0.35)
-    ax.contour(xs, ys, F_true_final.T, levels=[0.5],
-               colors=['#8b2500'], linewidths=0.8)
-
-    cmap_list = [
-        LinearSegmentedColormap.from_list('r_t', ['#2196F3', '#F44336']),
-        LinearSegmentedColormap.from_list('g_t', ['#4CAF50', '#FF9800']),
-        LinearSegmentedColormap.from_list('b_t', ['#9C27B0', '#FFEB3B']),
-    ]
-
-    for k, traj in enumerate(drone_trajectories):
-        n = len(traj)
-        for i in range(n - 1):
-            frac = i / max(n - 1, 1)
-            col = cmap_list[k](frac)
-            ax.plot(traj[i:i+2, 0], traj[i:i+2, 1], '-', color=col,
-                    lw=0.8, alpha=0.7)
-        ax.plot(traj[0, 0], traj[0, 1], 's', color=DRONE_COLORS[k], ms=7,
-                label=f'Drone {k+1} start')
-        ax.plot(traj[-1, 0], traj[-1, 1], '*', color=DRONE_COLORS[k], ms=10)
-
-        # Replan events
-        if replan_events[k]:
-            ev_arr = np.array(replan_events[k])
-            ax.scatter(ev_arr[:, 0], ev_arr[:, 1], marker='^', s=50,
-                       color=DRONE_COLORS[k], zorder=5,
-                       edgecolors='k', linewidths=0.5)
-
-    # Wind arrow
-    wind_rad = np.deg2rad(WIND_DIR_DEG)
-    ax.annotate('', xy=(170 + 15 * np.cos(wind_rad),
-                         170 + 15 * np.sin(wind_rad)),
-                xytext=(170, 170),
-                arrowprops=dict(arrowstyle='->', color='navy', lw=2))
-    ax.text(175, 163, 'Wind NE', fontsize=9, color='navy')
-
-    ax.set_xlim(50, 180)
-    ax.set_ylim(50, 180)
+    F = res['F_final']
+    ax.imshow(F.T.astype(float), origin='lower', extent=EXTENT, cmap=FIRE_CMAP,
+              vmin=0, vmax=1, alpha=0.35, interpolation='nearest')
+    ax.contour(CELL_C, CELL_C, init_grid().T.astype(float), levels=[0.5],
+               colors=['k'], linewidths=0.8, linestyles='--')
+    ax.contour(CELL_C, CELL_C, F.T.astype(float), levels=[0.5],
+               colors=['#8b2500'], linewidths=1.0)
+    t = res['t_axis']
+    for k in range(N_DRONES):
+        tr = res['trajs'][k]
+        sc = ax.scatter(tr[:, 0], tr[:, 1], c=t, cmap='coolwarm', s=1.5)
+        ax.plot(*tr[0], 's', color=DRONE_COLORS[k], ms=8, mec='k', label=f'Drone {k + 1} start')
+        ax.plot(*tr[-1], '*', color=DRONE_COLORS[k], ms=12, mec='k')
+        for typ, mk in [('lost', 'v'), ('gap', '^'), ('search', 'D')]:
+            ev = np.array([(e[3], e[4]) for e in res['events'] if e[1] == k and e[2] == typ])
+            if len(ev):
+                ax.scatter(ev[:, 0], ev[:, 1], marker=mk, s=45, color=DRONE_COLORS[k],
+                           edgecolors='k', lw=0.5, zorder=6)
+    plt.colorbar(sc, ax=ax, fraction=0.046, label='time (s)')
+    ax.plot([], [], 'k--', lw=0.8, label='Perimeter t = 0')
+    ax.plot([], [], color='#8b2500', lw=1.0, label='Perimeter t = 300 s')
+    ax.plot([], [], 'v', color='grey', mec='k', label='Lost-contact replan')
+    ax.plot([], [], '^', color='grey', mec='k', label='Coverage-gap replan')
+    ax.plot([], [], 'D', color='grey', mec='k', label='Front re-acquisition search')
+    ax.set_xlim(65, 140)
+    ax.set_ylim(65, 140)
     ax.set_aspect('equal')
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
-    ax.set_title('Drone Trajectory Overlay (colour = time, blue→red)\n'
-                 'Triangles = replanning events')
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.2)
+    ax.set_title('Drone trajectories (colour = time, blue early -> red late)')
+    ax.legend(fontsize=8, loc='lower right')
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectory_overlay.png')
     plt.savefig(path, dpi=150)
     plt.close()
     print(f'Saved: {path}')
 
 
-def save_animation(snap_frames, drone_trajectories, t_axis, out_dir):
-    """Animate fire expansion with drones orbiting the boundary."""
-    import matplotlib.animation as animation
-
-    # Use every 4th step for performance (0.5 s * 4 = 2 s per frame, 150 frames)
-    t_steps = len(t_axis)
-    step_size = 4
-    frame_indices = list(range(0, t_steps, step_size))
-
-    # Pre-build a list of (F_true, drone_pos) snapshots by re-running
-    # We use the drone_trajectories already stored
-    # Rebuild F_true snapshots by using snap_frames at known times and
-    # linearly picking the closest. For animation we need per-step F_true.
-    # Because storing every grid is memory-intensive, we re-simulate compactly.
-
-    # --- Lightweight re-simulation storing only what animation needs ---
-    wind_rad = np.deg2rad(WIND_DIR_DEG)
-    F_anim = init_grid()
-    anim_frames = []
-
-    for step in range(t_steps):
-        F_anim = spread_fire(F_anim, DT, wind_rad, R0_SPREAD, ECC, SIGMA_SPOT)
-        if step in frame_indices:
-            dposes = [drone_trajectories[k][min(step, len(drone_trajectories[k])-1)]
-                      for k in range(N_DRONES)]
-            anim_frames.append((F_anim.copy(), list(dposes), step * DT))
-
-    xs = np.arange(N_CELLS) * GRID_RES
-    ys = np.arange(N_CELLS) * GRID_RES
-
-    fig, ax = plt.subplots(figsize=(6, 6))
-    ax.set_xlim(50, 170)
-    ax.set_ylim(50, 170)
-    ax.set_aspect('equal')
-    ax.set_xlabel('x (m)')
-    ax.set_ylabel('y (m)')
-
-    # Initial artists
-    contf = [None]
-    contb = [None]
-    drone_markers = [ax.plot([], [], 'o', color=DRONE_COLORS[k],
-                             ms=8, zorder=5)[0]
-                     for k in range(N_DRONES)]
-    footprint_circles = [plt.Circle((0, 0), SENSOR_RADIUS,
-                                     color=DRONE_COLORS[k], fill=False,
-                                     lw=1.2, alpha=0.7)
-                          for k in range(N_DRONES)]
-    for c in footprint_circles:
-        ax.add_patch(c)
-    time_text = ax.text(0.02, 0.96, '', transform=ax.transAxes, fontsize=10,
-                        va='top', color='black',
-                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.7))
-    title_text = ax.set_title('S041 Wildfire Boundary Scan', fontsize=11)
-
-    def update(frame_idx):
-        F, dposes, t_val = anim_frames[frame_idx]
-        # Clear previous contours
-        for coll in ax.collections[:]:
-            coll.remove()
-        for c in footprint_circles:
-            ax.add_patch(c)
-
-        # Fire region
-        ax.contourf(xs, ys, F.T, levels=[0.5, 1.5],
-                    colors=['#ff6b35'], alpha=0.55)
-        ax.contour(xs, ys, F.T, levels=[0.5],
-                   colors=['#8b2500'], linewidths=0.8)
-
-        for k in range(N_DRONES):
-            px, py = dposes[k]
-            drone_markers[k].set_data([px], [py])
-            footprint_circles[k].center = (px, py)
-
-        time_text.set_text(f't = {t_val:.0f} s')
-        return drone_markers + footprint_circles + [time_text]
-
-    ani = animation.FuncAnimation(
-        fig, update, frames=len(anim_frames),
-        interval=80, blit=False
-    )
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=12, dpi=100)
+def plot_spread_sweep(sweep, out_dir):
+    r0 = [s['r0'] for s in sweep]
+    fig, (a1, a2) = plt.subplots(1, 2, figsize=(11, 4))
+    a1.plot(r0, [s['mean_dH'] for s in sweep], 'o-', label='mean $d_H$ (max-based)')
+    a1.plot(r0, [s['final_dH'] for s in sweep], 's--', label='final $d_H$')
+    a1.plot(r0, [s['mean_dAvg'] for s in sweep], 'd-', label='mean average-Hausdorff')
+    a1.set_xlabel('Head-fire rate $R_0$ (m/s)')
+    a1.set_ylabel('Tracking error (m)')
+    a1.set_xscale('log', base=2)
+    a1.set_xticks(r0, [f'{v:.2f}' for v in r0])
+    a1.legend(fontsize=8)
+    a1.grid(True, alpha=0.3)
+    a2.plot(r0, [s['mean_fresh'] for s in sweep], 'o-', color='#2a9d8f')
+    a2.axhline(90, color='#e76f51', ls='--', lw=1)
+    a2.set_xscale('log', base=2)
+    a2.set_xticks(r0, [f'{v:.2f}' for v in r0])
+    a2.set_xlabel('Head-fire rate $R_0$ (m/s)')
+    a2.set_ylabel('Mean coverage freshness (%)')
+    a2.set_ylim(0, 105)
+    a2.grid(True, alpha=0.3)
+    fig.suptitle('Tracking performance vs fire spread rate (3 drones, seed 0)')
+    plt.tight_layout()
+    path = os.path.join(out_dir, 'spread_rate_sweep.png')
+    plt.savefig(path, dpi=150)
     plt.close()
     print(f'Saved: {path}')
+
+
+def save_animation(res, out_dir):
+    """Replay the recorded history of the main run (same fire the drones tracked)."""
+    import matplotlib.animation as animation
+    frames = res['anim']
+    fig, ax = plt.subplots(figsize=(6, 6))
+
+    def update(i):
+        ax.clear()
+        F, bxy, pos, t = frames[i]
+        _draw_map(ax, F, bxy, pos)
+        ax.set_title(f'S041 Wildfire Boundary Scan   t = {t:.0f} s', fontsize=11)
+        ax.set_xlabel('x (m)')
+        ax.set_ylabel('y (m)')
+        return []
+
+    ani = animation.FuncAnimation(fig, update, frames=len(frames), interval=80, blit=False)
+    path = os.path.join(out_dir, 'animation.gif')
+    ani.save(path, writer='pillow', fps=12, dpi=80)
+    plt.close()
+    print(f'Saved: {path}  ({len(frames)} frames)')
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     print('Running S041 Wildfire Boundary Scan simulation...')
-    data = run_simulation()
-
     out_dir = os.path.normpath(OUTPUT_DIR)
-    plot_fire_evolution(data['snap_frames'], out_dir)
-    plot_hausdorff(data['hausdorff_history'], data['t_axis'],
-                   data['replan_events'], data['drone_trajectories'], out_dir)
-    plot_coverage_freshness(data['freshness_history'], data['t_axis'], out_dir)
-    plot_trajectory_overlay(data['drone_trajectories'], data['F_true_final'],
-                             data['replan_events'], out_dir)
-    save_animation(data['snap_frames'], data['drone_trajectories'],
-                   data['t_axis'], out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    data = run_simulation()
+    plot_fire_evolution(data['snaps'], out_dir)
+    plot_hausdorff(data, out_dir)
+    plot_coverage_freshness(data, out_dir)
+    plot_trajectory_overlay(data, out_dir)
+    plot_spread_sweep(data['sweep'], out_dir)
+    save_animation(data, out_dir)
     print('Done.')

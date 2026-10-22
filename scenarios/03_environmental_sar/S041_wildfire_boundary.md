@@ -39,10 +39,14 @@ burning if $F = 1$. Fire spread follows the elliptical Rothermel model. At each 
 the fire front advances outward with a local rate-of-spread that depends on the angle $\theta$
 between the spread direction and the prevailing wind:
 
-$$R(\theta) = R_0 \cdot \frac{(1 + e_w)^2}{1 + e_w \cos\theta}$$
+$$R(\theta) = R_0 \cdot \frac{1 - e_w}{1 - e_w \cos\theta}$$
 
-where $R_0$ is the head-fire rate of spread (m/s), $e_w = (R_{head}/R_{back} - 1)/2$ is the
-eccentricity parameter, and $\theta$ is measured from the wind direction. Stochastic spotting is
+where $R_0$ is the head-fire rate of spread (m/s), reached at $\theta = 0$ (spreading with the wind),
+$e_w = (R_{head}/R_{back} - 1)/(R_{head}/R_{back} + 1)$ is the eccentricity parameter, and $\theta$
+is measured from the direction the wind blows toward. The back-fire rate is
+$R(\pi) = R_0 (1 - e_w)/(1 + e_w)$; with $e_w = 0.6$ the head fire is 4× faster than the back fire
+($R_{head} = 0.04$, flank $R(\pi/2) = 0.016$, back $R_{back} = 0.01$ m/s). (An earlier version of this
+card used $R_0 (1+e_w)^2/(1+e_w\cos\theta)$, which made the back fire 4× faster than the head fire.) Stochastic spotting is
 added by sampling a Gaussian perturbation on each boundary cell's advance:
 
 $$\Delta r_i = R(\theta_i) \cdot \Delta t + \epsilon_i, \qquad \epsilon_i \sim \mathcal{N}(0,\,\sigma_{spot}^2)$$
@@ -147,7 +151,7 @@ D_REPLAN        = 3.0         # m — lost-contact replanning distance
 DT_GAP          = 30.0        # s — max allowed scan gap per boundary cell
 R0_SPREAD       = 0.04        # m/s — head-fire rate of spread
 ECC             = 0.6         # ellipse eccentricity parameter e_w
-WIND_DIR_DEG    = 45.0        # degrees — prevailing wind direction
+WIND_DIR_DEG    = 45.0        # degrees — direction the wind blows toward (CCW from +x)
 SIGMA_SPOT      = 0.05        # m — spotting noise std per timestep
 IGN_CENTRE      = np.array([100.0, 100.0])   # m — ignition point
 R_INIT          = 20.0        # m — initial fire radius
@@ -185,7 +189,7 @@ def spread_fire(F, dt, wind_dir_rad, r0, ecc, sigma_spot):
         norm = np.hypot(nx, ny) + 1e-8
         nx /= norm; ny /= norm
         theta = np.arctan2(ny, nx) - wind_dir_rad
-        R_theta = r0 * (1 + ecc)**2 / (1 + ecc * np.cos(theta))
+        R_theta = r0 * (1 - ecc) / (1 - ecc * np.cos(theta))   # R0 at head, R0(1-e)/(1+e) at back
         advance = R_theta * dt + np.random.normal(0, sigma_spot)
         advance = max(0, advance)
         # Advance fire along outward normal
