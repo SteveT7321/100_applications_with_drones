@@ -60,6 +60,7 @@ MAX_TIME               = 20.0
 # where a direct approach is never detected and both strategies coincide.)
 INIT_PURSUER   = np.array([6.0, 2.0, 2.0])
 INIT_EVADER    = np.array([0.0, 0.0, 2.0])
+CARD_INIT_PURSUER = np.array([-4.0, 2.0, 2.0])   # card's start, run as a check
 EVADER_HEADING = np.array([1.0, 0.0, 0.0])   # constant patrol heading +x
 
 OUTPUT_DIR = os.path.join(
@@ -110,7 +111,7 @@ def stealth_heading(pos_p, pos_e, vel_e, desired_dir, speed):
 
 # ── Simulation ──────────────────────────────────────────────
 
-def run_simulation(stealth_mode):
+def run_simulation(stealth_mode, init_pursuer=INIT_PURSUER):
     """
     stealth_mode=True  → aim for the behind-waypoint (BEHIND_OFFSET m behind the
                          evader); each step choose the heading closest to that
@@ -126,7 +127,7 @@ def run_simulation(stealth_mode):
         directly away from the pursuer at EVADER_SPEED_ALERT for the rest
         of the run.
     """
-    pursuer = DroneBase(INIT_PURSUER.copy(), max_speed=PURSUER_SPEED_STEALTH, dt=DT)
+    pursuer = DroneBase(np.array(init_pursuer, dtype=float), max_speed=PURSUER_SPEED_STEALTH, dt=DT)
     evader  = DroneBase(INIT_EVADER.copy(),
                         max_speed=max(EVADER_SPEED_NORMAL, EVADER_SPEED_ALERT), dt=DT)
 
@@ -206,34 +207,6 @@ def run_simulation(stealth_mode):
     )
 
 
-# ── Detection cone mesh ─────────────────────────────────────
-
-def _cone_mesh(apex, axis, half_angle_deg, length, n=30):
-    theta = np.linspace(0, 2 * np.pi, n)
-    r     = length * np.tan(np.radians(half_angle_deg))
-    cx    = r * np.cos(theta)
-    cy    = r * np.sin(theta)
-    cz    = np.full_like(theta, length)
-
-    axis = axis / (np.linalg.norm(axis) + 1e-8)
-    z    = np.array([0.0, 0.0, 1.0])
-    cross = np.cross(z, axis)
-    cross_norm = np.linalg.norm(cross)
-    if cross_norm < 1e-6:
-        R = np.eye(3) if np.dot(z, axis) > 0 else np.diag([1, 1, -1])
-    else:
-        k = cross / cross_norm
-        c = np.dot(z, axis); s = cross_norm
-        K = np.array([[0,-k[2],k[1]],[k[2],0,-k[0]],[-k[1],k[0],0]])
-        R = np.eye(3) + s * K + (1 - c) * K @ K
-
-    pts = R @ np.vstack([cx, cy, cz])
-    X = np.column_stack([np.full(n, apex[0]), apex[0] + pts[0]])
-    Y = np.column_stack([np.full(n, apex[1]), apex[1] + pts[1]])
-    Z = np.column_stack([np.full(n, apex[2]), apex[2] + pts[2]])
-    return X, Y, Z
-
-
 # ── Plots ───────────────────────────────────────────────────
 
 # 每個子圖各自算軸範圍，避免 timeout 那條軌跡把軸撐爆
@@ -242,11 +215,6 @@ def _traj_limits(p_traj, e_traj, margin=2.0):
     lo  = pts.min(axis=0) - margin
     hi  = pts.max(axis=0) + margin
     return lo, hi
-
-
-def _clip_traj(traj, max_steps):
-    """只保留前 max_steps 步，讓 timeout 那張不要畫到太遠。"""
-    return traj[:max_steps]
 
 
 def _draw_cone_2d(ax, apex, heading, half_angle_deg, length, color='gold', alpha=0.3):
@@ -264,18 +232,16 @@ def _draw_cone_2d(ax, apex, heading, half_angle_deg, length, color='gold', alpha
 def plot_trajectories_3d(results, out_dir):
     """俯瞰 XY 圖（z=2 平面）+ 右側小 3D 圖，清楚展示側翼路徑。"""
     labels = ['Stealth Flanking', 'Direct Frontal']
-    clip_steps = [None, None]   # both runs end in capture well inside MAX_TIME
 
     fig = plt.figure(figsize=(14, 10))
     gs = fig.add_gridspec(2, 2, width_ratios=[2.2, 1])
     snap_times = [0.0, 0.6, 1.2]          # cone snapshots (cone moves with evader)
     snap_alpha = [0.30, 0.18, 0.10]
 
-    for i, (label, res, clip) in enumerate(zip(labels, results, clip_steps)):
+    for i, (label, res) in enumerate(zip(labels, results)):
         p_traj, e_traj, captured, cap_t, alerted, alarm_t, det_log, _, _ = res
 
-        pt = p_traj if clip is None else _clip_traj(p_traj, clip)
-        et = e_traj if clip is None else _clip_traj(e_traj, clip)
+        pt, et = p_traj, e_traj
 
         # ── 俯瞰 XY ──────────────────────────────────────
         ax = fig.add_subplot(gs[i, 0])
@@ -327,9 +293,6 @@ def plot_trajectories_3d(results, out_dir):
         else:
             status = f'{alarm_str} → timeout'
             ax.scatter(*pt[-1, :2], color='grey', s=100, marker='X', zorder=8)
-            if clip:
-                ax.text(0.02, 0.02, f'(showing first {clip*DT:.0f}s)',
-                        transform=ax.transAxes, fontsize=7, color='grey')
 
         lo, hi = _traj_limits(pt, et, margin=1.5)
         ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1])
@@ -589,6 +552,20 @@ if __name__ == '__main__':
             print(f'{"":>32}distance at alarm {d[k_al]:.2f} m -> pure chase at '
                   f'{PURSUER_SPEED_DETECTED} vs {EVADER_SPEED_ALERT} m/s needs '
                   f'~{(d[k_al] - CAPTURE_R) / (PURSUER_SPEED_DETECTED - EVADER_SPEED_ALERT):.2f} s more')
+        # Closing speed once the pursuer is behind the evader (bearing > 90 deg)
+        e_v = np.diff(e_traj[:n], axis=0)
+        rel = p_traj[:n - 1] - e_traj[:n - 1]
+        bear = np.degrees(np.arccos(np.clip(
+            np.sum(rel * e_v, axis=1) /
+            (np.linalg.norm(rel, axis=1) * np.linalg.norm(e_v, axis=1) + 1e-12), -1, 1)))
+        behind = np.nonzero(bear > 90.0)[0]
+        if captured and len(behind):
+            k0 = behind[0]
+            n_last = 6
+            print(f'{"":>32}behind the evader (bearing > 90 deg) from t = {k0 * DT:.2f} s: '
+                  f'mean closing speed {(d[k0] - d[n - 1]) / ((n - 1 - k0) * DT):.2f} m/s; '
+                  f'last {n_last * DT:.3f} s: '
+                  f'{(d[n - 1 - n_last] - d[n - 1]) / (n_last * DT):.2f} m/s')
         # Bearing of the pursuer relative to the evader's heading at capture
         if captured and n >= 2:
             e_vel = e_traj[n - 1] - e_traj[n - 2]
@@ -598,6 +575,16 @@ if __name__ == '__main__':
                   f'{np.degrees(np.arccos(np.clip(cosb, -1, 1))):.0f} deg '
                   f'(>{CONE_HALF_ANGLE_DEG:.0f} = outside cone, 180 = directly behind)')
         results.append(res)
+
+    # Check: the card's start position (-4, 2, 2) lies behind the evader
+    print(f'Card start ({CARD_INIT_PURSUER[0]:g}, {CARD_INIT_PURSUER[1]:g}, {CARD_INIT_PURSUER[2]:g}) (bearing '
+          f'{np.degrees(np.arccos(CARD_INIT_PURSUER[0] / np.linalg.norm(CARD_INIT_PURSUER[:2] - INIT_EVADER[:2]))):.1f} deg '
+          f'from the evader heading):')
+    for label, stealth in cases:
+        r = run_simulation(stealth, init_pursuer=CARD_INIT_PURSUER)
+        print(f'  [{label:<28}]  '
+              + (f'captured {r[3]:.2f} s' if r[2] else 'timeout')
+              + f'  |  alarm: {"t = %.2f s" % r[5] if r[5] is not None else "never"}')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories_3d(results, out_dir)
