@@ -11,11 +11,16 @@ Setup:
 
 Battery model:
   E0 = 80 J, k = 0.5 W·s²/m²  →  dE/dt = -k·v²
+  A drone whose battery is empty stops (holds position, no further drain).
 
-Results:
+Analytical expectation (head-on, T_cap = r0 / (v_p - v_e)):
   v=3 m/s  →  pursuer == evader speed, gap never closes  →  BATTERY OUT
-  v=4 m/s  →  T_cap ≈ 6 s < T_max = 10 s              →  captured
-  v=5 m/s  →  T_cap ≈ 3 s < T_max = 6.4 s             →  captured
+  v=4 m/s  →  T_cap = 6 s   < T_max = 10 s             →  captured
+  v=5 m/s  →  T_cap = 3 s   < T_max = 6.4 s            →  captured
+
+Feasibility band: T_cap <= T_max  ⇔  k r0 v² - E0 v + E0 v_e <= 0, so the
+feasible pursuer speeds lie between the two roots v_lo (minimum) and v_hi
+(maximum) of this quadratic.  The band vanishes for r0 > E0 / (4 k v_e).
 
 Usage:
     conda activate drones
@@ -86,7 +91,8 @@ def run_simulation(v_pursuer):
     """
     Pure pursuit at constant speed v_pursuer vs straight-flying evader at V_EVADER.
     Both have finite battery E0.  Simulation ends on capture, pursuer battery empty,
-    or timeout.
+    or timeout.  If the evader's battery empties first it stops (holds position,
+    no further drain) and the pursuer keeps closing in.
 
     Returns:
         p_traj      (N, 3)
@@ -133,9 +139,12 @@ def run_simulation(v_pursuer):
         pursuer.step(cmd_dir * v_pursuer)
         p_energy -= K_ENERGY * v_pursuer ** 2 * DT
 
-        # ── Evader straight flight ──
-        evader.step(EVADER_DIR * V_EVADER)
-        e_energy -= K_ENERGY * V_EVADER ** 2 * DT
+        # ── Evader straight flight (stops once its battery is empty) ──
+        if e_out:
+            evader.step(np.zeros(3))
+        else:
+            evader.step(EVADER_DIR * V_EVADER)
+            e_energy -= K_ENERGY * V_EVADER ** 2 * DT
 
         p_energy = max(p_energy, 0.0)
         e_energy = max(e_energy, 0.0)
@@ -146,13 +155,11 @@ def run_simulation(v_pursuer):
         e_energy_log.append(e_energy)
         time_log.append(t)
 
-        if p_energy <= 0.0 and not captured:
+        if e_energy <= 0.0:
+            e_out = True   # evader holds position from the next step on
+        if p_energy <= 0.0:
             p_out = True
             break
-        if e_energy <= 0.0 and not captured:
-            e_out = True
-            # Evader has stopped — pursuer can still close in; continue
-            # (evader holds position from now on)
 
     return (
         np.array(p_traj_list),
@@ -170,13 +177,12 @@ def run_simulation(v_pursuer):
 # ── Plots ────────────────────────────────────────────────────
 
 def plot_trajectories_3d(results, out_dir):
-    """Top-down XY view + 3D inset for all three speed cases."""
-    colors = ['steelblue', 'darkorange', 'mediumseagreen']
+    """3D trajectories, one panel per pursuer speed."""
     labels = [f'v={v} m/s' for v in PURSUER_SPEEDS]
 
     fig = plt.figure(figsize=(16, 5))
 
-    for idx, (res, color, label) in enumerate(zip(results, colors, labels)):
+    for idx, (res, label) in enumerate(zip(results, labels)):
         p_traj, e_traj, p_en, e_en, times, captured, cap_t, p_out, e_out = res
 
         ax = fig.add_subplot(1, 3, idx + 1, projection='3d')
@@ -215,7 +221,8 @@ def plot_trajectories_3d(results, out_dir):
 
 
 def plot_energy_vs_time(results, out_dir):
-    """Energy remaining vs time for pursuer (solid) and evader (dashed)."""
+    """Energy remaining vs time for pursuer (solid) and evader (dashed).
+    The logs end at capture / battery-out, so the curves stop there."""
     colors = ['steelblue', 'darkorange', 'mediumseagreen']
     labels = [f'v={v} m/s' for v in PURSUER_SPEEDS]
 
@@ -228,14 +235,11 @@ def plot_energy_vs_time(results, out_dir):
         ax.plot(times, e_en, color='royalblue', linewidth=1.5, linestyle='--',
                 label='Evader energy')
 
-        # Shade "dead" zone
         ax.axhline(0, color='black', linestyle=':', linewidth=0.8, alpha=0.5)
 
         if captured:
             ax.axvline(cap_t, color='black', linestyle='--', linewidth=1.2,
                        label=f'Captured {cap_t:.2f}s')
-            ax.fill_betweenx([0, E0], cap_t, times[-1],
-                             color='lightgreen', alpha=0.15, label='After capture')
 
         t_max_p = max_flight_time(PURSUER_SPEEDS[labels.index(label)])
         ax.axvline(t_max_p, color=color, linestyle=':', linewidth=1.2, alpha=0.7,
@@ -317,45 +321,67 @@ def plot_capture_bar(results, out_dir):
     print(f'Saved: {path}')
 
 
+def feasibility_band(r0, k=K_ENERGY, e0=E0, v_e=V_EVADER):
+    """
+    Feasible pursuer-speed interval [v_lo, v_hi] for initial distance r0.
+
+    T_cap <= T_max  <=>  r0 / (v_p - v_e) <= E0 / (k v_p^2)
+                    <=>  k r0 v_p^2 - E0 v_p + E0 v_e <= 0
+    The quadratic opens upward, so the inequality holds between its roots:
+    v_lo = minimum feasible speed, v_hi = maximum feasible speed.
+    Returns (nan, nan) when the discriminant is negative (no feasible speed).
+    """
+    a = k * r0
+    b = -e0
+    c = e0 * v_e
+    disc = b ** 2 - 4 * a * c
+    if disc < 0:
+        return np.nan, np.nan
+    root = np.sqrt(disc)
+    return (-b - root) / (2 * a), (-b + root) / (2 * a)
+
+
+def print_feasibility_band():
+    """Print the feasibility band at R0 and the largest feasible r0 per speed."""
+    lo, hi = feasibility_band(R0)
+    print(f'Feasibility band at r0={R0:.1f} m: v_lo={lo:.3f} m/s (min), '
+          f'v_hi={hi:.3f} m/s (max)')
+    print(f'Band closes at r0_max = E0/(4 k v_e) = '
+          f'{E0 / (4 * K_ENERGY * V_EVADER):.3f} m (at v = 2 v_e = {2 * V_EVADER:.1f} m/s)')
+    for v_p in PURSUER_SPEEDS:
+        if v_p <= V_EVADER:
+            print(f'  v={v_p} m/s: never feasible (v_p <= v_e)')
+        else:
+            r_lim = E0 * (v_p - V_EVADER) / (K_ENERGY * v_p ** 2)
+            print(f'  v={v_p} m/s: feasible for r0 <= {r_lim:.2f} m')
+    print()
+
+
 def plot_feasibility_boundary(out_dir):
     """
-    Feasibility boundary: for each initial distance r0, the minimum pursuer speed
-    required such that T_cap(v_p) <= T_max(v_p).
-
-    Condition: r0 / (v_p - v_e) = E0 / (k * v_p^2)
-    → k * v_p^2 * r0 = E0 * (v_p - v_e)
-    → k * r0 * v_p^2 - E0 * v_p + E0 * v_e = 0
-    → quadratic in v_p.
+    Feasibility band vs initial distance: lower boundary v_lo(r0) (minimum
+    feasible pursuer speed) and upper boundary v_hi(r0) (maximum feasible
+    speed; anything faster drains the battery before capture).
     """
-    r0_range = np.linspace(0.5, 30, 300)
-    v_min_boundary = []
-
-    for r0 in r0_range:
-        # k*r0 * v^2 - E0*v + E0*v_e = 0
-        a = K_ENERGY * r0
-        b = -E0
-        c = E0 * V_EVADER
-        disc = b ** 2 - 4 * a * c
-        if disc < 0:
-            v_min_boundary.append(np.nan)
-        else:
-            v_sol = (-b + np.sqrt(disc)) / (2 * a)
-            v_min_boundary.append(v_sol)
-
-    v_min_boundary = np.array(v_min_boundary)
+    r_crit = E0 / (4 * K_ENERGY * V_EVADER)
+    r0_range = np.linspace(0.5, 16, 600)
+    band = np.array([feasibility_band(r) for r in r0_range])
+    v_lo, v_hi = band[:, 0], band[:, 1]
+    v_top = 20.0
 
     fig, ax = plt.subplots(figsize=(9, 5))
 
-    ax.plot(r0_range, v_min_boundary, color='steelblue', linewidth=2.0,
-            label='Min feasible pursuer speed')
+    ax.fill_between(r0_range, v_lo, np.minimum(v_hi, v_top),
+                    where=~np.isnan(v_lo), alpha=0.15, color='mediumseagreen',
+                    label='Feasible (capture before battery out)')
+    ax.plot(r0_range, v_lo, color='steelblue', linewidth=2.0,
+            label='$v_{lo}$: minimum feasible pursuer speed')
+    ax.plot(r0_range, v_hi, color='purple', linewidth=2.0,
+            label='$v_{hi}$: maximum feasible pursuer speed')
     ax.axhline(V_EVADER, color='royalblue', linestyle='--', linewidth=1.2,
                label=f'Evader speed ({V_EVADER} m/s)')
-
-    # Shade feasible region
-    ax.fill_between(r0_range, v_min_boundary, np.nanmax(v_min_boundary) * 1.1,
-                    alpha=0.12, color='mediumseagreen', label='Feasible (capture)')
-    ax.fill_between(r0_range, V_EVADER, v_min_boundary,
-                    alpha=0.12, color='tomato', label='Infeasible (battery out)')
+    ax.axvline(r_crit, color='grey', linestyle=':', linewidth=1.2,
+               label=f'$r_{{0,max}}$ = {r_crit:.2f} m (band closes)')
 
     # Mark our scenario points
     for v_p, col in zip(PURSUER_SPEEDS, ['steelblue', 'darkorange', 'mediumseagreen']):
@@ -364,16 +390,23 @@ def plot_feasibility_boundary(out_dir):
         feasible = t_cap <= t_max
         marker = 'o' if feasible else 'X'
         ax.scatter(R0, v_p, color=col, s=120, marker=marker, zorder=5,
-                   label=f'v={v_p} m/s ({"OK" if feasible else "FAIL"})')
+                   edgecolor='black',
+                   label=f'v={v_p} m/s at r0={R0:.0f} m ({"OK" if feasible else "FAIL"})')
+
+    lo6, hi6 = feasibility_band(R0)
+    ax.annotate(f'r0={R0:.0f} m: v_lo={lo6:.2f} m/s, v_hi={hi6:.2f} m/s'
+                + (' (off scale)' if hi6 > v_top else ''),
+                xy=(R0, lo6), xytext=(R0 + 1.0, 1.0), fontsize=8,
+                arrowprops=dict(arrowstyle='->', color='black'))
 
     ax.set_xlabel('Initial Distance r₀ (m)')
     ax.set_ylabel('Pursuer Speed (m/s)')
-    ax.set_title('S006 Energy Race — Feasibility Boundary\n'
-                 'Minimum pursuer speed to capture before battery runs out',
+    ax.set_title('S006 Energy Race — Feasibility Band\n'
+                 'Pursuer speeds that capture before the battery runs out',
                  fontsize=10)
-    ax.set_xlim(0.5, 30)
-    ax.set_ylim(V_EVADER * 0.9, max(np.nanmax(v_min_boundary), max(PURSUER_SPEEDS)) * 1.15)
-    ax.legend(fontsize=8, loc='upper left')
+    ax.set_xlim(0.5, 16)
+    ax.set_ylim(0, v_top)
+    ax.legend(fontsize=7, loc='upper right')
     ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
@@ -394,9 +427,9 @@ def save_animation(results, out_dir):
     colors = ['steelblue', 'darkorange', 'mediumseagreen']
     labels = [f'v={v} m/s' for v in PURSUER_SPEEDS]
 
-    # Drive animation by the longest trajectory
+    # Drive animation by the longest trajectory (every 6th step)
     max_len = max(len(res[0]) for res in results)
-    step = 3
+    step = 6
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
@@ -423,7 +456,8 @@ def save_animation(results, out_dir):
         dots_p.append(dp);  dots_e.append(de)
         titles.append(ti)
 
-    n_frames = max_len // step
+    n_frames = (max_len - 1) // step + 2   # +1 so the final state is shown
+    print(f'Animation: {n_frames} frames (every {step} steps)')
 
     def update(i):
         artists = []
@@ -478,6 +512,7 @@ def save_animation(results, out_dir):
 
 if __name__ == '__main__':
     print_feasibility()
+    print_feasibility_band()
 
     results = []
     for v_p in PURSUER_SPEEDS:
@@ -490,7 +525,8 @@ if __name__ == '__main__':
                       f'(dist = {np.linalg.norm(p_traj[-1]-e_traj[-1]):.2f} m)')
         else:
             status = 'timeout'
-        print(f'v={v_p} m/s  →  {status}')
+        print(f'v={v_p} m/s  →  {status}  [pursuer {p_en[-1]:.2f} J, '
+              f'evader {e_en[-1]:.2f} J, evader battery out: {e_out}]')
         results.append(res)
 
     out_dir = os.path.normpath(OUTPUT_DIR)
