@@ -249,15 +249,20 @@ def plot_trajectories_3d(results, out_dir):
 
 
 def plot_distance_time(results, out_dir, ref=None):
-    labels = ['With APF avoidance', 'Without avoidance']
+    # The no-avoidance curve coincides with the reference until its crash, so it
+    # is drawn thicker, with markers, on top; the reference is dashed underneath.
+    labels = ['With APF avoidance', 'Without avoidance (crash)']
     colors = ['steelblue', 'darkorange']
+    styles = [dict(linewidth=1.8, zorder=3),
+              dict(linewidth=3.5, marker='o', markersize=4, markevery=2, zorder=4)]
     if ref is not None:
         results = list(results) + [ref]
         labels  = labels + ['Obstacle-free reference']
         colors  = colors + ['gray']
+        styles  = styles + [dict(linewidth=1.5, linestyle='--', zorder=2)]
 
     fig, ax = plt.subplots(figsize=(9, 5))
-    for label, color, res in zip(labels, colors, results):
+    for label, color, style, res in zip(labels, colors, styles, results):
         p_traj, e_traj = res[0], res[1]
         captured, cap_t = res[2], res[3]
         p_crashed, p_crash_t = res[4], res[5]
@@ -265,7 +270,7 @@ def plot_distance_time(results, out_dir, ref=None):
         n     = min(len(p_traj), len(e_traj))
         dists = np.linalg.norm(p_traj[:n] - e_traj[:n], axis=1)
         times = np.arange(n) * DT
-        ax.plot(times, dists, color=color, linewidth=1.8, label=label)
+        ax.plot(times, dists, color=color, label=label, **style)
 
         if captured:
             ax.axvline(cap_t, color=color, linestyle='--', linewidth=1, alpha=0.7)
@@ -410,6 +415,25 @@ if __name__ == '__main__':
         flag = 'inside rho0' if d_p < RHO0 else 'outside rho0'
         print(f'  Obstacle {i}: closest surface distance pursuer {d_p:.2f} m '
               f'({flag}), evader {d_e:.2f} m')
+    # Per-obstacle repulsion along the APF pursuer path (positions before each step)
+    per_obs = np.array([[np.linalg.norm(repulsion_velocity(p, OBSTACLES[i:i + 1]))
+                         for i in range(len(OBSTACLES))]
+                        for p in p_traj[:len(rep_log)]])
+    for i in range(len(OBSTACLES)):
+        act = per_obs[:, i] > 0
+        print(f'  Obstacle {i + 1}: peak repulsion {per_obs[:, i].max():.2f} m/s, '
+              f'active {act.sum() * DT:.2f} s')
+    dom = np.argmax(per_obs, axis=1)
+    segs, start = [], None
+    for k in range(len(rep_log) + 1):
+        cur = dom[k] if k < len(rep_log) and rep_log[k] > 0 else -1
+        prev = (dom[k - 1] if rep_log[k - 1] > 0 else -1) if k > 0 else -1
+        if cur != prev:
+            if prev >= 0:
+                segs.append((prev, start, k))
+            start = k
+    print('APF case: dominant obstacle by time: '
+          + ', '.join(f'#{o + 1} {a * DT:.2f}-{b * DT:.2f} s' for o, a, b in segs))
     active = rep_log > 0
     print(f'APF case: repulsion active {active.sum()} / {len(rep_log)} steps '
           f'({100 * active.mean():.0f}% of the chase), '

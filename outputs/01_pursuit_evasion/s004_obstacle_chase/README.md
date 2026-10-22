@@ -99,12 +99,14 @@ python src/01_pursuit_evasion/s004_obstacle_chase.py
 
 APF case diagnostics (printed by the script):
 
-| Obstacle | Closest surface distance — pursuer | Closest surface distance — evader |
-|----------|-----------------------------------|-----------------------------------|
-| 1 | 0.70 m (inside $\rho_0$) | 4.90 m |
-| 2 | 1.13 m (inside $\rho_0$) | 3.48 m |
-| 3 | 0.71 m (inside $\rho_0$) | 2.03 m |
-| 4 | 0.76 m (inside $\rho_0$) | 0.59 m |
+| Obstacle | Closest surface distance — pursuer | Peak repulsion on pursuer | Repulsion active | Closest surface distance — evader |
+|----------|-----------------------------------|---------------------------|------------------|-----------------------------------|
+| 1 | 0.70 m (inside $\rho_0$) | 5.00 m/s | 1.98 s | 4.90 m |
+| 2 | 1.13 m (just inside $\rho_0 = 1.2$ m) | 0.15 m/s | 0.15 s | 3.48 m |
+| 3 | 0.71 m (inside $\rho_0$) | 4.67 m/s | 0.98 s | 2.03 m |
+| 4 | 0.76 m (inside $\rho_0$) | 3.33 m/s | 0.65 s | 0.59 m |
+
+Dominant obstacle (largest single repulsion term) over time: #1 0.04–2.02 s, #3 2.08–2.98 s, #4 2.98–3.56 s.
 
 - Repulsion on the pursuer is active for 166 of 194 steps (86% of the chase); peak $|\mathbf{v}_{rep}|$ = 5.00 m/s
 - Pursuer path length 12.54 m in 4.04 s, a mean speed of 3.10 m/s (vs. 5 m/s max)
@@ -115,20 +117,20 @@ APF case diagnostics (printed by the script):
 **Key Findings**:
 
 - Without obstacle avoidance the pursuer flies straight into obstacle 1 and crashes at $t = 0.27$ s. Pure pursuit points directly at the evader regardless of obstacles.
-- With APF the pursuer comes within $\rho_0$ of **all four** obstacles and captures the evader at $t = 4.04$ s, 2.27 s later than the obstacle-free reference (1.77 s).
+- With APF the pursuer captures the evader at $t = 4.04$ s, 2.27 s later than the obstacle-free reference (1.77 s). Obstacles 1, 3 and 4 shape the path. Obstacle 2 barely matters: the pursuer only grazes the edge of its influence range (1.13 m vs $\rho_0$ = 1.2 m), so it never contributes more than 0.15 m/s of repulsion.
 - **Most of the detour cost is an APF local minimum, not the extra path.** Obstacle 1 sits exactly on the line of sight. The pursuer stalls at about (-3.29, -0.05) m, where repulsion (≈5 m/s, the plateau at 0.25–1.2 s in the repulsion plot) cancels the 5 m/s attraction. It nearly stops there: it is slower than 0.5 m/s for 0.69 s in total, and the distance plot is flat at ≈8.3 m. It escapes only because the evader is slightly off-axis ($y = -0.07$ m when it reaches the wall). That tiny asymmetry slowly rotates the line of sight until the pursuer slides around obstacle 1 on the $-y$ side.
 - The walls matter. The evader reaches the $x = 5$ m wall at 0.44 s and then slides along it into the (5, 3) corner, where it is captured. Without walls (previous version of this scenario) the evader ran out of the course into open space. The pursuer then saw obstacles only during the first ~2.6 s, and the rest of the chase was an open-field tail chase.
-- After escaping the local minimum, the pursuer weaves on the $-y$ side of obstacles 2 and 3 and then passes obstacle 4. This produces the second and third repulsion peaks (~2.0–2.9 s and ~2.9–3.55 s). The final ~0.5 s run into the corner is in free space.
+- After escaping the local minimum, the pursuer passes well clear of obstacle 2 and goes around the $-y$ side of obstacle 3, which produces the second repulsion peak (2.08–2.98 s). It then passes obstacle 4, which produces the third peak (2.98–3.56 s). The final ~0.5 s run into the corner is in free space.
 
 **3D Trajectories** — pursuer (red) and evader (blue) through obstacles (blue spheres); axes span the arena in x/y:
 
 ![3D Trajectories](trajectories_3d.png)
 
-**Distance vs Time** — APF case (blue) with the local-minimum plateau, no-avoidance case ending at the crash (orange dotted line), and the obstacle-free reference (gray):
+**Distance vs Time** — APF case (blue) with the local-minimum plateau; no-avoidance case (thick orange with markers, ending at the crash, orange dotted line), which coincides with the obstacle-free reference (gray dashed) until the crash because both fly the same straight line:
 
 ![Distance vs Time](distance_time.png)
 
-**APF Repulsion Magnitude** — a long saturated plateau at obstacle 1 (local minimum), then the passes around obstacles 2/3 and 4:
+**APF Repulsion Magnitude** — a long saturated plateau at obstacle 1 (local minimum), then the passes around obstacle 3 and obstacle 4:
 
 ![Repulsion Magnitude](repulsion_magnitude.png)
 
