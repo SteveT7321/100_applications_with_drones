@@ -10,7 +10,13 @@ crosswind. Three guidance strategies are compared:
 Outputs (saved to outputs/02_logistics_delivery/s024_wind_compensation/):
   - trajectory_3d.png
   - crosstrack_and_speed.png
+  - lateral_bar.png
   - animation.gif
+
+Terminal note: every run stops at the first step inside R_LAND, so the final
+distance to the goal is ~0.3 m for every strategy by construction and is NOT a
+performance metric. Strategies are compared on cross-track error (RMS and peak)
+and flight time, for the seed-42 run and a Monte-Carlo over N_MC gust seeds.
 """
 
 import os
@@ -40,6 +46,9 @@ R_LAND     = 0.3      # m,   arrival radius
 P0         = np.array([0.0, 0.0, Z_REF])
 P_GOAL     = np.array([20.0, 0.0, Z_REF])   # 20 m straight ahead (+x)
 T_MAX      = 60.0     # s,   safety timeout
+KZ_ALT     = 2.0      # 1/s, altitude-hold gain
+SEED       = 42       # seed of the showcase run
+N_MC       = 50       # Monte-Carlo gust realisations (seeds SEED .. SEED+N_MC-1)
 
 STRATEGIES = ["none", "crab", "pid"]
 LABELS     = ["No Compensation", "Crab-Angle FF", "PID Cross-Track"]
@@ -47,10 +56,10 @@ COLORS     = ["#888888", "#E87722", "#1F77B4"]
 
 
 # ── Wind model ────────────────────────────────────────────────────────────────
-def wind_step(w_gust, dt, tau_g, sigma_g, w_mean_vec):
+def wind_step(w_gust, dt, tau_g, sigma_g, w_mean_vec, rng):
     """First-order Gauss-Markov gust + mean wind."""
     alpha     = np.exp(-dt / tau_g)
-    noise     = np.sqrt(1.0 - alpha ** 2) * sigma_g * np.random.randn(2)
+    noise     = np.sqrt(1.0 - alpha ** 2) * sigma_g * rng.standard_normal(2)
     w_gust_new = alpha * w_gust + noise
     return w_gust_new, w_mean_vec + w_gust_new
 
@@ -89,8 +98,9 @@ def cross_track_error(pos, p0, d_hat):
 
 
 # ── Single-strategy simulation ────────────────────────────────────────────────
-def run_strategy(strategy, seed=42):
-    np.random.seed(seed)
+def run_strategy(strategy, seed=SEED):
+    # Same seed for every strategy -> identical gust sequence (fair comparison)
+    rng    = np.random.default_rng(seed)
     pos    = P0.copy().astype(float)
     w_gust = np.zeros(2)
     pid    = CrossTrackPID()
@@ -108,7 +118,7 @@ def run_strategy(strategy, seed=42):
     t          = 0.0
 
     while np.linalg.norm(pos[:2] - P_GOAL[:2]) > R_LAND and t < T_MAX:
-        w_gust, w_total = wind_step(w_gust, DT, TAU_GUST, SIGMA_GUST, w_mean_vec)
+        w_gust, w_total = wind_step(w_gust, DT, TAU_GUST, SIGMA_GUST, w_mean_vec, rng)
         wind_log.append(w_total.copy())
 
         d    = P_GOAL[:2] - pos[:2]
@@ -136,7 +146,7 @@ def run_strategy(strategy, seed=42):
 
         v_ground = v_air_2d + w_total
         pos[:2] += v_ground * DT
-        pos[2]  += 2.0 * (Z_REF - pos[2]) * DT        # altitude hold kz=2.0
+        pos[2]  += KZ_ALT * (Z_REF - pos[2]) * DT     # altitude hold
 
         e_ct_now = cross_track_error(pos, P0, d_hat0)
         ect_log.append(e_ct_now)
@@ -145,28 +155,48 @@ def run_strategy(strategy, seed=42):
         traj.append(pos.copy())
         t += DT
 
+    ect = np.array(ect_log)
+    traj = np.array(traj)
     return {
-        "traj"   : np.array(traj),
+        "traj"   : traj,
         "wind"   : np.array(wind_log),
-        "ect"    : np.array(ect_log),
+        "ect"    : ect,
         "speed"  : np.array(speed_log),
         "time"   : t,
+        "rms_ect": float(np.sqrt(np.mean(ect ** 2))),
+        "max_ect": float(np.max(np.abs(ect))),
+        "final_dist": float(np.linalg.norm(traj[-1, :2] - P_GOAL[:2])),
+        "arrived": bool(np.linalg.norm(traj[-1, :2] - P_GOAL[:2]) <= R_LAND),
     }
 
 
 # ── Run all three strategies ──────────────────────────────────────────────────
-def run_simulation(seed=42):
+def run_simulation(seed=SEED, n_mc=N_MC):
+    print(f"Showcase run (seed {seed}):")
     results = {}
+    for strat, label in zip(STRATEGIES, LABELS):
+        r = run_strategy(strat, seed=seed)
+        results[strat] = r
+        print(f"  [{label:16s}] steps={len(r['traj'])-1:4d}  "
+              f"time={r['time']:5.2f}s  rms_ect={r['rms_ect']:.3f}m  "
+              f"max|ect|={r['max_ect']:.3f}m  final_dist={r['final_dist']:.3f}m"
+              f"{'' if r['arrived'] else '  (TIMEOUT)'}")
+
+    # Monte-Carlo over gust realisations (same seeds for every strategy)
+    mc = {}
     for strat in STRATEGIES:
-        results[strat] = run_strategy(strat, seed=seed)
-        traj  = results[strat]["traj"]
-        ect   = results[strat]["ect"]
-        label = LABELS[STRATEGIES.index(strat)]
-        final_miss = np.linalg.norm(traj[-1, :2] - P_GOAL[:2])
-        rms_ect    = np.sqrt(np.mean(ect ** 2)) if len(ect) else 0.0
-        print(f"[{label:22s}]  steps={len(traj)-1:4d}  "
-              f"flight_time={results[strat]['time']:5.2f}s  "
-              f"final_miss={final_miss:.3f}m  rms_ect={rms_ect:.3f}m")
+        runs = [run_strategy(strat, seed=seed + k) for k in range(n_mc)]
+        mc[strat] = {key: np.array([r[key] for r in runs])
+                     for key in ("time", "rms_ect", "max_ect", "final_dist", "arrived")}
+    print(f"\nMonte-Carlo, {n_mc} gust seeds ({seed}..{seed + n_mc - 1}), mean ± std:")
+    for strat, label in zip(STRATEGIES, LABELS):
+        m = mc[strat]
+        print(f"  [{label:16s}] time={m['time'].mean():5.2f}±{m['time'].std():.2f}s  "
+              f"rms_ect={m['rms_ect'].mean():.3f}±{m['rms_ect'].std():.3f}m  "
+              f"max|ect|={m['max_ect'].mean():.3f}±{m['max_ect'].std():.3f}m  "
+              f"final_dist={m['final_dist'].min():.3f}-{m['final_dist'].max():.3f}m  "
+              f"arrived={int(m['arrived'].sum())}/{n_mc}")
+    results["_mc"] = mc
     return results
 
 
@@ -250,35 +280,34 @@ def plot_crosstrack_and_speed(results):
 
 # ── Plot 3 — lateral displacement bar chart ───────────────────────────────────
 def plot_lateral_bar(results):
-    fig, ax = plt.subplots(figsize=(7, 5))
-    rms_vals  = []
-    miss_vals = []
-    for strat in STRATEGIES:
-        ect  = results[strat]["ect"]
-        traj = results[strat]["traj"]
-        rms_vals.append(np.sqrt(np.mean(ect ** 2)) if len(ect) else 0.0)
-        miss_vals.append(np.linalg.norm(traj[-1, :2] - P_GOAL[:2]))
+    """RMS and peak |cross-track error|, Monte-Carlo mean ± std."""
+    mc = results["_mc"]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    rms_m = [mc[s]["rms_ect"].mean() for s in STRATEGIES]
+    rms_s = [mc[s]["rms_ect"].std()  for s in STRATEGIES]
+    max_m = [mc[s]["max_ect"].mean() for s in STRATEGIES]
+    max_s = [mc[s]["max_ect"].std()  for s in STRATEGIES]
 
-    x   = np.arange(len(STRATEGIES))
-    w   = 0.35
-    b1  = ax.bar(x - w/2, rms_vals,  w, label="RMS cross-track (m)", color=COLORS, alpha=0.75)
-    b2  = ax.bar(x + w/2, miss_vals, w, label="Final miss dist (m)",  color=COLORS, alpha=0.45,
-                 edgecolor="black", linewidth=0.8)
+    x  = np.arange(len(STRATEGIES))
+    w  = 0.35
+    b1 = ax.bar(x - w/2, rms_m, w, yerr=rms_s, capsize=4, color=COLORS, alpha=0.85,
+                label="RMS cross-track error")
+    b2 = ax.bar(x + w/2, max_m, w, yerr=max_s, capsize=4, color=COLORS, alpha=0.40,
+                edgecolor="black", linewidth=0.8, hatch="//",
+                label="Peak |cross-track error|")
 
     ax.set_xticks(x)
     ax.set_xticklabels(LABELS, fontsize=9)
     ax.set_ylabel("Distance (m)")
-    ax.set_title("S024 Wind Compensation — Lateral Performance Summary")
+    n_mc = len(mc[STRATEGIES[0]]["time"])
+    ax.set_title(f"S024 Wind Compensation — Lateral Drift "
+                 f"(mean ± std over {n_mc} gust seeds)")
     ax.legend(fontsize=9)
     ax.grid(axis="y", alpha=0.3)
-
-    # Annotate bars
-    for bar in b1:
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                f"{bar.get_height():.3f}", ha="center", va="bottom", fontsize=8)
-    for bar in b2:
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                f"{bar.get_height():.3f}", ha="center", va="bottom", fontsize=8)
+    for bars, sds in ((b1, rms_s), (b2, max_s)):
+        for bar, sd in zip(bars, sds):
+            ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + sd + 0.03,
+                    f"{bar.get_height():.3f}", ha="center", va="bottom", fontsize=8)
 
     fig.tight_layout()
     out = os.path.join(OUT_DIR, "lateral_bar.png")
@@ -317,7 +346,7 @@ def save_animation(results):
     # Trajectory lines and drone markers (animated)
     lines  = []
     dots   = []
-    trajs  = [results[s]["traj"] for s in STRATEGIES]
+    trajs  = [results[st]["traj"] for st in STRATEGIES]
     n_max  = max(len(t) for t in trajs)
 
     for col, label in zip(COLORS, LABELS):
@@ -333,7 +362,9 @@ def save_animation(results):
 
     # Skip frames for a 5 s GIF at ~20 fps = 100 frames
     skip   = max(1, n_max // 100)
-    frames = list(range(0, n_max, skip)) + [n_max - 1]
+    frames = list(range(0, n_max, skip))
+    if frames[-1] != n_max - 1:
+        frames.append(n_max - 1)
 
     def init():
         for ln, dt in zip(lines, dots):
@@ -372,7 +403,7 @@ if __name__ == "__main__":
     print("S024 Wind Compensation — Simulation")
     print("=" * 60)
 
-    results = run_simulation(seed=42)
+    results = run_simulation(seed=SEED, n_mc=N_MC)
 
     print("\nGenerating plots ...")
     plot_trajectories_3d(results)
@@ -381,16 +412,6 @@ if __name__ == "__main__":
 
     print("\nGenerating animation ...")
     save_animation(results)
-
-    # Print summary statistics
-    print("\n── Summary ─────────────────────────────────────────────")
-    for strat, label in zip(STRATEGIES, LABELS):
-        traj = results[strat]["traj"]
-        ect  = results[strat]["ect"]
-        miss = np.linalg.norm(traj[-1, :2] - P_GOAL[:2])
-        rms  = np.sqrt(np.mean(ect ** 2)) if len(ect) else 0.0
-        t    = results[strat]["time"]
-        print(f"  {label:22s}  time={t:5.2f}s  miss={miss:.3f}m  rms_ect={rms:.4f}m")
 
     print("\nAll outputs saved to:", OUT_DIR)
     print("Done.")
