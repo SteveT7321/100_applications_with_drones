@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: $N = 4$ quadrotor drones are rigidly attached to an oversized cargo package via inextensible cables of known length $l_i$. The package mass $m_L = 0.8$ kg exceeds the single-drone payload limit of 0.1 kg. The drones hover in a symmetric cross formation above the load and must jointly lift it from ground level to a delivery altitude of $z_d = 4.0$ m, translate horizontally to a target position, and perform a coordinated descent.
+**Setup**: $N = 4$ quadrotor drones are rigidly attached to an oversized cargo package via inextensible cables of known length $l_i$. The package mass $m_L = 0.8$ kg exceeds the single-drone payload limit of 0.3 kg (four drones together can carry 1.2 kg; the 0.1 kg limit in the first version made the task impossible even cooperatively, 4 × 0.1 < 0.8 kg). The drones hover in a symmetric cross formation above the load and must jointly lift it from ground level to a delivery altitude of $z_d = 4.0$ m, translate horizontally to a target position, and perform a coordinated descent.
 
 **Roles**:
 - **Drones 1–4**: each contributes upward thrust $T_i$ and maintains a fixed cable attachment point $\mathbf{b}_i$ on the package body frame
@@ -48,7 +48,7 @@ $$\mathbf{b}_{rhs} = \begin{bmatrix} 0 \\ 0 \\ m_L g \\ 0 \\ 0 \\ 0 \end{bmatrix
 
 ### Minimum-Norm Tension (Pseudo-Inverse)
 
-For $N > 3$ the system is underdetermined. The minimum $\ell_2$-norm solution via the Moore–Penrose pseudo-inverse is:
+Note: with the full $6 \times N$ matrix and $N = 4$, $\mathbf{A}\mathbf{A}^T$ is $6 \times 6$ with rank $\le 4$ and cannot be inverted, so the formula below does not apply to it. For a point-mass (non-rotating) load only the three force rows constrain the motion: $\mathbf{A}$ reduces to the $3 \times N$ matrix of cable unit vectors and $\mathbf{b}_{rhs} = m_L(g\hat{\mathbf{z}} + \ddot{\mathbf{q}}^{des})$. For $N > 3$ that system is underdetermined, and the minimum $\ell_2$-norm solution via the Moore–Penrose pseudo-inverse is:
 
 $$\mathbf{f}^* = \mathbf{A}^T (\mathbf{A} \mathbf{A}^T)^{-1} \mathbf{b}_{rhs}$$
 
@@ -80,7 +80,7 @@ $$\mathbf{p}_i^{des}(t) = \mathbf{q}^{des}(t) + \mathbf{d}_i$$
 
 $$\mathbf{d}_1 = [+s,\ 0,\ h]^T, \quad \mathbf{d}_2 = [-s,\ 0,\ h]^T, \quad \mathbf{d}_3 = [0,\ +s,\ h]^T, \quad \mathbf{d}_4 = [0,\ -s,\ h]^T$$
 
-where $s = 0.6$ m is the horizontal formation radius and $h = l_c \cos\alpha_0$ is the vertical cable projection at nominal angle $\alpha_0$.
+where $s = b + \sqrt{l_c^2 - h^2} = 0.15 + 0.30 = 0.45$ m is the horizontal formation radius (attachment radius $b = 0.15$ m plus the horizontal cable projection; the earlier $s = 0.6$ m implied a 0.60 m cable, inconsistent with $l_c = 0.5$ m) and $h = l_c \cos\alpha_0$ is the vertical cable projection at nominal angle $\alpha_0$.
 
 ### PD Position Controller (per Drone)
 
@@ -121,9 +121,9 @@ from scipy.optimize import minimize
 # Key constants
 N_DRONES      = 4
 MASS_LOAD     = 0.8    # kg
-MASS_DRONE    = 0.027  # kg (Crazyflie 2X body)
+MASS_DRONE    = 0.5    # kg (a 27 g CF2X cannot pull a ~2.5 N cable)
 CABLE_LENGTH  = 0.5    # m
-FORMATION_S   = 0.6    # m  horizontal offset radius
+FORMATION_S   = 0.45   # m  horizontal offset radius = 0.15 + sqrt(0.5^2 - 0.4^2)
 FORMATION_H   = 0.40   # m  vertical cable projection
 F_MIN         = 0.05   # N  minimum cable tension (anti-slack)
 KP            = 4.0    # PD position gain
@@ -199,9 +199,9 @@ def pd_control(p_des, p, v_des, v):
 |-----------|-------|
 | Number of drones | 4 |
 | Load mass $m_L$ | 0.8 kg |
-| Drone body mass $m_d$ | 0.027 kg (CF2X) |
+| Drone body mass $m_d$ | 0.5 kg |
 | Cable length $l_c$ | 0.5 m |
-| Formation radius $s$ | 0.6 m |
+| Formation radius $s$ | 0.45 m |
 | Formation height offset $h$ | 0.40 m |
 | Minimum cable tension $f_{min}$ | 0.05 N |
 | Delivery altitude $z_d$ | 4.0 m |
@@ -236,4 +236,4 @@ def pd_control(p_des, p, v_des, v):
 ## Related Scenarios
 
 - Prerequisites: [S021](S021_point_delivery.md), [S025](S025_payload_cog_offset.md)
-- Follow-ups: [S027](S027_aerial_refueling.md), [S028](S028_cargo_escort.md)
+- Follow-ups: [S027](S027_aerial_refueling_relay.md), [S028](S028_cargo_escort_formation.md)
