@@ -50,7 +50,7 @@ $$P_0(\mathbf{x}) = \frac{1}{Z} \exp\!\left(-\frac{\|\mathbf{x} - \mathbf{x}_{LK
 
 where $\sigma_0^2 = \sigma_{LKP}^2 + 2 D \Delta t$ combines positional uncertainty at the LKP
 ($\sigma_{LKP} = 10$ m) with Brownian diffusion ($D = 0.02$ m$^2$/s, $\Delta t = 7200$ s), giving
-$\sigma_0 \approx 17.2$ m. $Z$ is the normalisation constant over all $N_c$ grid cells:
+$\sigma_0 = \sqrt{10^2 + 2 \cdot 0.02 \cdot 7200} = \sqrt{388} \approx 19.7$ m. $Z$ is the normalisation constant over all $N_c$ grid cells:
 
 $$Z = \sum_{\mathbf{x} \in \mathcal{G}} \exp\!\left(-\frac{\|\mathbf{x} - \mathbf{x}_{LKP}\|^2}{2\,\sigma_0^2}\right)$$
 
@@ -367,7 +367,7 @@ def run_simulation():
 | LKP positional uncertainty $\sigma_{LKP}$ | 10.0 m |
 | Brownian diffusion coefficient $D$ | 0.02 m²/s |
 | Time since LKP $\Delta t$ | 7200 s (2 hours) |
-| Prior spread $\sigma_0$ | $\approx$ 17.2 m |
+| Prior spread $\sigma_0$ | $\approx$ 19.7 m |
 | LKP coordinates | (100, 120) m |
 | Hard mission cutoff | 1800 s (30 minutes) |
 | Redundancy exclusion radius | $2\,r_s = 4.0$ m |
@@ -377,7 +377,7 @@ def run_simulation():
 ## Expected Output
 
 - **Prior belief heatmap**: 2D top-down plot of $B_0(\mathbf{x})$ over the 400 × 400 grid;
-  Gaussian centred on LKP with $\sigma_0 \approx 17.2$ m; colour scale from white (low) to red
+  Gaussian centred on LKP with $\sigma_0 \approx 19.7$ m; colour scale from white (low) to red
   (high belief); LKP marked with white cross.
 - **Belief evolution snapshots**: four-panel figure showing $B_t$ at $t = 0, 60, 120,$ and
   $t_{det}$ s; drone positions overlaid as cyan triangles; sensor footprints as circles; true

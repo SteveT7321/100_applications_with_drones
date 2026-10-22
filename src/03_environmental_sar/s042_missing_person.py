@@ -3,27 +3,32 @@ S042 Missing Person Localization
 =================================
 Three drones search a 200x200 m wilderness area for a hiker whose last known
 position (LKP) was recorded 2 hours ago. A Gaussian prior (broadened by
-Brownian diffusion) represents initial probability of presence. Drones share a
-Bayesian belief map updated with binary hit/miss sensor observations; a greedy
-max-belief frontier policy navigates them toward the most probable unsearched
-cell. Two strategies are compared: greedy and lawnmower sweep. Monte Carlo
-trials measure expected detection time distribution.
+Brownian diffusion, sigma0 = sqrt(10^2 + 2*0.02*7200) = 19.7 m) represents the
+initial probability of presence. Drones share a Bayesian belief map updated
+with binary hit/miss observations (Pd = 0.90, Pfa = 0.02) taken after a 1 s
+dwell at each waypoint. Drones fly kinematically (5 m/s straight legs).
+
+Three strategies are compared under identical conditions (same start
+positions, speed, sensor, dwell, and the same person positions per trial):
+  1. Greedy max-belief   — fly to the highest-belief cell (excluding cells
+                            within 2 r_s of other drones' targets).
+  2. Lawnmower           — boustrophedon sweep of the LKP +/- 2 sigma0 box,
+                            split into three strips, 2.5 m waypoint lattice
+                            (<= sqrt(2) r_s, so footprints leave no gaps).
+  3. Belief-weighted random walk — next waypoint sampled among 2.5 m blocks
+                            within 20 m, with probability ~ (block belief)^(1/T)
+                            and temperature T annealed from 1.0 to 0.25.
 
 Usage:
     conda activate drones
     python src/03_environmental_sar/s042_missing_person.py
 """
 
-import sys
 import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from dataclasses import dataclass
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ─────────────────────────────────
 N_DRONES        = 3
@@ -32,7 +37,7 @@ GRID_RES        = 0.5          # m per cell
 GRID_N          = int(AREA_SIZE / GRID_RES)   # 400 cells per side
 
 SENSOR_RADIUS   = 2.0          # m
-SCAN_HEIGHT     = 10.0         # m (for reference)
+SCAN_HEIGHT     = 10.0         # m (for reference, 2D simulation)
 DRONE_SPEED     = 5.0          # m/s
 TAU_DWELL       = 1.0          # s, sensor dwell at each waypoint
 
@@ -42,533 +47,512 @@ P_FALSE_ALARM   = 0.02         # P(hit | person NOT in footprint)
 SIGMA_LKP       = 10.0         # m, LKP positional uncertainty
 DIFFUSION_D     = 0.02         # m^2/s, Brownian diffusion coefficient
 DELTA_T_SEC     = 2.0 * 3600.0  # 7200 s elapsed since LKP
+SIGMA0          = np.sqrt(SIGMA_LKP ** 2 + 2.0 * DIFFUSION_D * DELTA_T_SEC)  # 19.7 m
 
 LKP = np.array([100.0, 120.0])  # last known position (m)
+START_POS = np.array([[40.0, 5.0], [100.0, 5.0], [160.0, 5.0]])  # south edge
 
 MAX_SIM_TIME    = 1800.0       # s, 30-minute hard cutoff
-N_MC_TRIALS     = 50           # Monte Carlo trials for box-plot
+N_MC_TRIALS     = 50           # Monte Carlo trials per strategy
+
+LM_SPACING      = 2.5          # m, lawnmower lattice spacing (<= sqrt(2) r_s = 2.83 m)
+LM_HALF_WIDTH   = 2.0 * SIGMA0  # m, lawnmower box = LKP +/- 2 sigma0
+
+BLOCK           = 5            # cells per random-walk block side (2.5 m)
+RW_RADIUS       = 20.0         # m, random-walk candidate radius
+RW_T0           = 1.0          # initial temperature
+RW_T_MIN        = 0.25         # final temperature
+RW_TAU          = 600.0        # s, annealing time constant  T = max(T_MIN, T0 exp(-t/tau))
+
+STRATEGIES = ["greedy", "lawnmower", "random_walk"]
+LABELS = {"greedy": "Greedy max-belief", "lawnmower": "Lawnmower (2σ box)",
+          "random_walk": "Belief-weighted random walk"}
+COLORS = {"greedy": "tab:blue", "lawnmower": "tab:orange", "random_walk": "tab:green"}
+
+N_FRAMES        = 150          # GIF frames
+ENTROPY_EVERY   = 5.0          # s, entropy sampling interval
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '03_environmental_sar', 's042_missing_person',
 )
 
-RNG = np.random.default_rng(0)   # fixed seed for reproducibility
+CELL_C = (np.arange(GRID_N) + 0.5) * GRID_RES      # cell-centre coordinate
+NB = GRID_N // BLOCK                               # 80 blocks per side
+BLOCK_C = (np.arange(NB) + 0.5) * BLOCK * GRID_RES  # block-centre coordinate
 
-# ── Pre-compute grid cell centres ──────────────
-_xs = np.arange(0.5 * GRID_RES, AREA_SIZE, GRID_RES)   # (400,)
-_ys = np.arange(0.5 * GRID_RES, AREA_SIZE, GRID_RES)   # (400,)
-_XX, _YY = np.meshgrid(_xs, _ys)                        # (400, 400)
-CELLS = np.stack([_XX.ravel(), _YY.ravel()], axis=-1)   # (160000, 2)
 
-# ── Helpers ────────────────────────────────────
+# ── Belief helpers (B[iy, ix], row = y) ────────
 
 def build_prior():
     """Gaussian prior centred on LKP, broadened by Brownian diffusion."""
-    sigma2 = SIGMA_LKP**2 + 2.0 * DIFFUSION_D * DELTA_T_SEC
-    dist2 = np.sum((CELLS - LKP)**2, axis=1)
-    log_p = -dist2 / (2.0 * sigma2)
-    log_p -= log_p.max()
-    p = np.exp(log_p)
-    return p / p.sum()   # shape (160000,)
+    X, Y = np.meshgrid(CELL_C, CELL_C)            # X[iy, ix]
+    p = np.exp(-((X - LKP[0]) ** 2 + (Y - LKP[1]) ** 2) / (2.0 * SIGMA0 ** 2))
+    return p / p.sum()
 
 
-def sensor_footprint(drone_pos):
-    """Boolean mask of cells within sensor radius of drone position."""
-    dist = np.linalg.norm(CELLS - drone_pos, axis=1)
-    return dist <= SENSOR_RADIUS   # (160000,)
+def footprint_window(pos):
+    """Index window and boolean disc mask of the cells within r_s of pos."""
+    ix0 = max(int((pos[0] - SENSOR_RADIUS) / GRID_RES) - 1, 0)
+    ix1 = min(int((pos[0] + SENSOR_RADIUS) / GRID_RES) + 2, GRID_N)
+    iy0 = max(int((pos[1] - SENSOR_RADIUS) / GRID_RES) - 1, 0)
+    iy1 = min(int((pos[1] + SENSOR_RADIUS) / GRID_RES) + 2, GRID_N)
+    X, Y = np.meshgrid(CELL_C[ix0:ix1], CELL_C[iy0:iy1])
+    mask = np.hypot(X - pos[0], Y - pos[1]) <= SENSOR_RADIUS
+    return (slice(iy0, iy1), slice(ix0, ix1)), mask
 
 
-def bayes_update(belief, drone_pos, hit):
-    """Apply one Bayesian belief update from a binary hit/miss observation."""
-    in_fp = sensor_footprint(drone_pos)
-    if hit:
-        likelihood = np.where(in_fp, P_DETECT, P_FALSE_ALARM)
-    else:
-        likelihood = np.where(in_fp, 1.0 - P_DETECT, 1.0 - P_FALSE_ALARM)
-    posterior = likelihood * belief
-    total = posterior.sum()
-    if total < 1e-300:
-        return belief   # numerical guard
-    return posterior / total
-
-
-def belief_entropy(belief):
-    """Shannon entropy of the belief map (nats)."""
-    mask = belief > 0
-    return -np.sum(belief[mask] * np.log(belief[mask]))
-
-
-def greedy_next_waypoint(belief, assigned_wps):
+def bayes_update(B, pos, hit):
     """
-    Select the highest-belief cell not redundantly covered.
-    Cells within 2*r_s of an already-assigned waypoint are excluded.
+    In-place Bayes update with one binary observation. Outside the footprint the
+    likelihood is the same constant for every cell, so it only rescales B and is
+    dropped; inside the footprint B is multiplied by the likelihood ratio.
+    B is kept unnormalised (normalise before use as a probability).
     """
-    scores = belief.copy()
-    for wp in assigned_wps:
-        too_close = np.linalg.norm(CELLS - wp, axis=1) < 2.0 * SENSOR_RADIUS
-        scores[too_close] = 0.0
-    best_idx = np.argmax(scores)
-    return CELLS[best_idx].copy()
+    win, mask = footprint_window(pos)
+    ratio = P_DETECT / P_FALSE_ALARM if hit else (1.0 - P_DETECT) / (1.0 - P_FALSE_ALARM)
+    sub = B[win]
+    sub[mask] *= ratio
 
 
-# ── Lawnmower (boustrophedon) state ────────────
-
-def build_lawnmower_sequence():
-    """
-    Pre-compute a boustrophedon waypoint sequence that sweeps the 200x200 m
-    area with rows spaced 2*r_s apart. Returns array of (N_wp, 2) positions.
-    """
-    row_spacing = 2.0 * SENSOR_RADIUS   # 4.0 m
-    rows = np.arange(SENSOR_RADIUS, AREA_SIZE, row_spacing)
-    wps = []
-    for i, y in enumerate(rows):
-        xs = np.arange(SENSOR_RADIUS, AREA_SIZE, row_spacing)
-        if i % 2 == 1:
-            xs = xs[::-1]
-        for x in xs:
-            wps.append([x, y])
-    return np.array(wps)
+def belief_entropy(B):
+    """Shannon entropy (nats) of the normalised belief."""
+    p = B / B.sum()
+    p = p[p > 0]
+    return float(-np.sum(p * np.log(p)))
 
 
-LAWNMOWER_SEQ = build_lawnmower_sequence()
+# ── Strategies ─────────────────────────────────
+
+def greedy_next(B, other_targets):
+    """Highest-belief cell, excluding cells within 2 r_s of other drones' targets."""
+    saved = []
+    for wp in other_targets:
+        ix0 = max(int((wp[0] - 2 * SENSOR_RADIUS) / GRID_RES), 0)
+        ix1 = min(int((wp[0] + 2 * SENSOR_RADIUS) / GRID_RES) + 1, GRID_N)
+        iy0 = max(int((wp[1] - 2 * SENSOR_RADIUS) / GRID_RES), 0)
+        iy1 = min(int((wp[1] + 2 * SENSOR_RADIUS) / GRID_RES) + 1, GRID_N)
+        X, Y = np.meshgrid(CELL_C[ix0:ix1], CELL_C[iy0:iy1])
+        m = np.hypot(X - wp[0], Y - wp[1]) < 2 * SENSOR_RADIUS
+        win = (slice(iy0, iy1), slice(ix0, ix1))
+        saved.append((win, m, B[win][m].copy()))
+        B[win][m] = -1.0
+    k = int(np.argmax(B))
+    for win, m, vals in reversed(saved):
+        B[win][m] = vals
+    iy, ix = divmod(k, GRID_N)
+    return np.array([CELL_C[ix], CELL_C[iy]])
 
 
-# ── Drone dataclass ────────────────────────────
+def build_lawnmower_sequences():
+    """Per-drone boustrophedon waypoint lists over three vertical strips of the LKP +/- 2 sigma0 box."""
+    x_lo, x_hi = LKP[0] - LM_HALF_WIDTH, LKP[0] + LM_HALF_WIDTH
+    y_lo, y_hi = LKP[1] - LM_HALF_WIDTH, LKP[1] + LM_HALF_WIDTH
+    edges = np.linspace(x_lo, x_hi, N_DRONES + 1)
+    ys = np.arange(y_lo + LM_SPACING / 2, y_hi, LM_SPACING)
+    seqs = []
+    for k in range(N_DRONES):
+        xs = np.arange(edges[k] + LM_SPACING / 2, edges[k + 1], LM_SPACING)
+        wps = []
+        for r, y in enumerate(ys):
+            for x in (xs if r % 2 == 0 else xs[::-1]):
+                wps.append([x, y])
+        seqs.append(np.array(wps))
+    return seqs
 
-@dataclass
-class Drone:
-    idx: int
-    pos: np.ndarray
-    waypoint: np.ndarray
-    t_arrive: float = 0.0   # sim time of arrival at current waypoint
-    lm_cursor: int = 0      # lawnmower sequence cursor
+
+LAWNMOWER_SEQS = build_lawnmower_sequences()
+
+
+def random_walk_next(B, pos, other_targets, t, rng):
+    """Sample a nearby 2.5 m block with probability ~ (block belief)^(1/T(t))."""
+    T = max(RW_T_MIN, RW_T0 * np.exp(-t / RW_TAU))
+    mass = B.reshape(NB, BLOCK, NB, BLOCK).sum(axis=(1, 3))     # mass[by, bx]
+    BX, BY = np.meshgrid(BLOCK_C, BLOCK_C)
+    ok = np.hypot(BX - pos[0], BY - pos[1]) <= RW_RADIUS
+    for wp in other_targets:
+        ok &= np.hypot(BX - wp[0], BY - wp[1]) > 2 * SENSOR_RADIUS
+    cand = np.flatnonzero(ok)
+    if len(cand) == 0:
+        cand = np.flatnonzero(np.hypot(BX - pos[0], BY - pos[1]) <= RW_RADIUS)
+    m = mass.ravel()[cand]
+    w = (m / m.max()) ** (1.0 / T)
+    k = cand[rng.choice(len(cand), p=w / w.sum())]
+    by, bx = divmod(k, NB)
+    return np.array([BLOCK_C[bx], BLOCK_C[by]])
 
 
 # ── Simulation ─────────────────────────────────
 
-def simulate(strategy="greedy", seed=0, record_snapshots=False):
+class Drone:
+    """Kinematic drone: straight leg at DRONE_SPEED, then TAU_DWELL hover, then observe."""
+
+    def __init__(self, idx, pos):
+        self.idx = idx
+        self.legs = []                 # (t_depart, p_from, t_arrive, p_to)
+        self.target = pos.copy()
+        self.t_obs = 0.0
+        self.lm_cursor = 0
+        self.legs.append((0.0, pos.copy(), 0.0, pos.copy()))
+
+    def assign(self, wp, t_now):
+        p_from = self.target.copy()
+        t_arr = t_now + np.linalg.norm(wp - p_from) / DRONE_SPEED
+        self.legs.append((t_now, p_from, t_arr, wp.copy()))
+        self.target = wp.copy()
+        self.t_obs = t_arr + TAU_DWELL
+
+    def pos_at(self, t):
+        for t0, p0, t1, p1 in reversed(self.legs):
+            if t >= t0:
+                if t >= t1 or t1 <= t0:
+                    return p1.copy()
+                return p0 + (p1 - p0) * (t - t0) / (t1 - t0)
+        return self.legs[0][1].copy()
+
+
+def next_waypoint(strategy, B, drone, drones, t, rng_w):
+    others = [d.target for d in drones if d is not drone]
+    if strategy == "greedy":
+        return greedy_next(B, others)
+    if strategy == "lawnmower":
+        seq = LAWNMOWER_SEQS[drone.idx]
+        wp = seq[drone.lm_cursor % len(seq)].copy()
+        drone.lm_cursor += 1
+        return wp
+    return random_walk_next(B, drone.target, others, t, rng_w)
+
+
+def simulate(strategy, seed, record=False, person_absent=False, frame_times=None):
     """
-    Run one full search mission.
-
-    Parameters
-    ----------
-    strategy : "greedy" or "lawnmower"
-    seed     : RNG seed (for reproducibility / MC trials)
-    record_snapshots : if True, save (time, belief_copy, drone_positions) at
-                       t=0, 60, 120, and detection.
-
-    Returns
-    -------
-    history          : list of (t, entropy) tuples
-    detection_time   : float or None
-    final_belief     : (160000,) array
-    snapshots        : list of (t, belief, [pos, ...]) or [] if not requested
-    drone_traj       : dict {drone_idx: [(t, x, y), ...]}
+    Run one search mission. Returns dict with detection time (None if not found),
+    entropy history (if record), snapshots and animation frames (if requested).
+    The person position depends only on the seed, so every strategy searches for
+    the same person in trial `seed`.
     """
-    rng = np.random.default_rng(seed)
-    belief = build_prior()
+    rng_p = np.random.default_rng([seed, 0])   # person position
+    rng_s = np.random.default_rng([seed, 1])   # sensor outcomes
+    rng_w = np.random.default_rng([seed, 2])   # random-walk choices
+    prior = build_prior()
+    B = prior.copy()
+    k = rng_p.choice(GRID_N * GRID_N, p=prior.ravel())
+    iy, ix = divmod(int(k), GRID_N)
+    person = np.array([CELL_C[ix], CELL_C[iy]])
 
-    # Draw true person location from prior
-    person_idx = rng.choice(len(CELLS), p=belief)
-    person_pos = CELLS[person_idx].copy()
+    drones = [Drone(i, START_POS[i]) for i in range(N_DRONES)]
+    for d in drones:
+        d.assign(next_waypoint(strategy, B, d, drones, 0.0, rng_w), 0.0)
 
-    # Initialise drones spread along the south edge
-    start_xs = [40.0, 100.0, 160.0]
-    drones = [
-        Drone(
-            idx=k,
-            pos=np.array([start_xs[k], 5.0]),
-            waypoint=np.array([start_xs[k], 5.0]),
-            lm_cursor=k * (len(LAWNMOWER_SEQ) // N_DRONES),
-        )
-        for k in range(N_DRONES)
-    ]
+    Q = np.ones_like(prior)        # prod (1 - Pd) over scans covering each cell
+    ent_t = [0.0]
+    ent_h = [belief_entropy(B)] if record else [np.nan]
+    pdet = [0.0]
+    next_ent = ENTROPY_EVERY
+    snap_times = [0.0, 60.0, 120.0]
+    snaps, frames = [], []
+    f_idx = 0
+    frame_times = [] if frame_times is None else list(frame_times)
+    n_obs = 0
+    det_time = None
 
-    sim_time    = 0.0
-    history     = []
-    snapshots   = []
-    detection_time = None
-    snap_times  = {0.0, 60.0, 120.0}   # record belief map at these times
-    last_snap_t = -1.0
+    def capture(t_cap):
+        return (t_cap, B / B.sum(), np.array([d.pos_at(t_cap) for d in drones]))
 
-    # Drone trajectories for animation: {idx: [(t, x, y), ...]}
-    drone_traj = {k: [(0.0, drones[k].pos[0], drones[k].pos[1])] for k in range(N_DRONES)}
-
-    # Assign initial waypoints
-    assigned = []
-    for drone in drones:
-        if strategy == "greedy":
-            wp = greedy_next_waypoint(belief, assigned)
-        else:
-            wp = LAWNMOWER_SEQ[drone.lm_cursor % len(LAWNMOWER_SEQ)].copy()
-            drone.lm_cursor += 1
-        dist = np.linalg.norm(wp - drone.pos)
-        drone.pos = wp.copy()
-        drone.waypoint = wp.copy()
-        drone.t_arrive = dist / DRONE_SPEED + TAU_DWELL
-        assigned.append(wp)
-
-    # Record initial snapshot
-    if record_snapshots:
-        snapshots.append((0.0, belief.copy(), [d.pos.copy() for d in drones]))
-
-    while sim_time < MAX_SIM_TIME:
-        # Find next drone arrival
-        next_t = min(d.t_arrive for d in drones)
-        if next_t > MAX_SIM_TIME:
+    while True:
+        d = min(drones, key=lambda dd: (dd.t_obs, dd.idx))
+        t = d.t_obs
+        if t > MAX_SIM_TIME:
             break
-        sim_time = next_t
+        # record states strictly before this observation
+        if record:
+            while snap_times and snap_times[0] < t:
+                snaps.append(capture(snap_times.pop(0)))
+            while next_ent < t:
+                ent_t.append(next_ent)
+                ent_h.append(belief_entropy(B))
+                pdet.append(1.0 - float((prior * Q).sum()))
+                next_ent += ENTROPY_EVERY
+        while f_idx < len(frame_times) and frame_times[f_idx] < t:
+            tf = frame_times[f_idx]
+            frames.append((tf, (B / B.sum()).reshape(GRID_N // 2, 2, GRID_N // 2, 2).sum(axis=(1, 3)),
+                           np.array([dd.pos_at(tf) for dd in drones])))
+            f_idx += 1
+        # observation at the end of the dwell
+        pos = d.target
+        in_fp = (not person_absent) and np.hypot(*(pos - person)) <= SENSOR_RADIUS
+        hit = rng_s.random() < (P_DETECT if in_fp else P_FALSE_ALARM)
+        bayes_update(B, pos, hit)
+        if record:
+            win, mask = footprint_window(pos)
+            Q[win][mask] *= (1.0 - P_DETECT)
+        n_obs += 1
+        if hit and in_fp:
+            det_time = t
+            break
+        d.assign(next_waypoint(strategy, B, d, drones, t, rng_w), t)
 
-        # Record snapshots at designated times
-        if record_snapshots:
-            for st in sorted(snap_times):
-                if last_snap_t < st <= sim_time:
-                    snapshots.append((st, belief.copy(), [d.pos.copy() for d in drones]))
-                    snap_times.discard(st)
-            last_snap_t = sim_time
-
-        # Process all drones arriving at this time
-        arriving = [d for d in drones if abs(d.t_arrive - sim_time) < 1e-6]
-
-        assigned_wps = [d.waypoint for d in drones if d not in arriving]
-
-        for drone in arriving:
-            # Sensor observation
-            dist_person = np.linalg.norm(drone.pos - person_pos)
-            in_fp = dist_person <= SENSOR_RADIUS
-            if in_fp:
-                hit = rng.random() < P_DETECT
-            else:
-                hit = rng.random() < P_FALSE_ALARM
-
-            # Bayesian update
-            belief = bayes_update(belief, drone.pos, hit)
-
-            # Termination: confirmed hit inside footprint
-            if hit and in_fp:
-                detection_time = sim_time
-                history.append((sim_time, belief_entropy(belief)))
-                if record_snapshots:
-                    snapshots.append((sim_time, belief.copy(), [d.pos.copy() for d in drones]))
-                return history, detection_time, belief, snapshots, drone_traj
-
-            # Assign next waypoint
-            if strategy == "greedy":
-                new_wp = greedy_next_waypoint(belief, assigned_wps)
-            else:
-                new_wp = LAWNMOWER_SEQ[drone.lm_cursor % len(LAWNMOWER_SEQ)].copy()
-                drone.lm_cursor += 1
-
-            assigned_wps.append(new_wp)
-            dist = np.linalg.norm(new_wp - drone.pos)
-            drone.pos = new_wp.copy()
-            drone.waypoint = new_wp.copy()
-            drone.t_arrive = sim_time + dist / DRONE_SPEED + TAU_DWELL
-            drone_traj[drone.idx].append((sim_time, drone.pos[0], drone.pos[1]))
-
-        history.append((sim_time, belief_entropy(belief)))
-
-    return history, detection_time, belief, snapshots, drone_traj
+    t_end = det_time if det_time is not None else MAX_SIM_TIME
+    if record:
+        ent_t.append(t_end)
+        ent_h.append(belief_entropy(B))
+        pdet.append(1.0 - float((prior * Q).sum()))
+        snaps.append(capture(t_end))
+    while f_idx < len(frame_times):     # freeze the final state for remaining frames
+        tf = frame_times[f_idx]
+        frames.append((min(tf, t_end), (B / B.sum()).reshape(GRID_N // 2, 2, GRID_N // 2, 2).sum(axis=(1, 3)),
+                       np.array([dd.pos_at(min(tf, t_end)) for dd in drones])))
+        f_idx += 1
+    return dict(det_time=det_time, person=person, n_obs=n_obs,
+                ent_t=np.array(ent_t), ent_h=np.array(ent_h, dtype=float), pdet=np.array(pdet),
+                snaps=snaps, frames=frames, drones=drones, t_end=t_end)
 
 
 def run_simulation():
-    """Run all strategies and Monte Carlo trials."""
-    results = {}
-    mc_times = {}
+    """Seed-0 demo runs, person-absent entropy runs, and Monte Carlo trials."""
+    demo, absent, mc = {}, {}, {}
+    print(f"Prior sigma0 = sqrt({SIGMA_LKP:.0f}^2 + 2*{DIFFUSION_D}*{DELTA_T_SEC:.0f}) = {SIGMA0:.2f} m")
+    print(f"Prior entropy H0 = {belief_entropy(build_prior()):.3f} nats")
+    print(f"Lawnmower box: x {LKP[0] - LM_HALF_WIDTH:.1f}-{LKP[0] + LM_HALF_WIDTH:.1f} m, "
+          f"y {LKP[1] - LM_HALF_WIDTH:.1f}-{LKP[1] + LM_HALF_WIDTH:.1f} m, "
+          f"{sum(len(s) for s in LAWNMOWER_SEQS)} waypoints")
+    X, Y = np.meshgrid(CELL_C, CELL_C)
+    inbox = (np.abs(X - LKP[0]) <= LM_HALF_WIDTH) & (np.abs(Y - LKP[1]) <= LM_HALF_WIDTH)
+    print(f"Prior mass inside lawnmower box: {build_prior()[inbox].sum():.3f}")
 
-    print("Running greedy strategy (seed=0)...")
-    hist_g, dt_g, bel_g, snaps_g, traj_g = simulate("greedy", seed=0, record_snapshots=True)
-    results["greedy"] = (hist_g, dt_g, bel_g, snaps_g, traj_g)
-    status_g = f"{dt_g:.1f} s" if dt_g is not None else "NOT FOUND"
-    print(f"  Greedy detection time: {status_g}")
+    print("--- Seed-0 demo runs ---")
+    for s in STRATEGIES:
+        demo[s] = simulate(s, 0, record=True)
+    t_last = max(r["t_end"] for r in demo.values())
+    frame_times = np.linspace(0.0, t_last, N_FRAMES)
+    for s in STRATEGIES:
+        demo[s] = simulate(s, 0, record=True, frame_times=frame_times)
+        r = demo[s]
+        st = f"{r['det_time']:.1f} s" if r['det_time'] is not None else "NOT FOUND"
+        print(f"[{s:>11s}] person at ({r['person'][0]:.2f}, {r['person'][1]:.2f}), "
+              f"detection {st}, {r['n_obs']} observations, "
+              f"H {r['ent_h'][0]:.3f} -> {r['ent_h'][-1]:.3f} nats")
 
-    print("Running lawnmower strategy (seed=0)...")
-    hist_l, dt_l, bel_l, snaps_l, traj_l = simulate("lawnmower", seed=0, record_snapshots=True)
-    results["lawnmower"] = (hist_l, dt_l, bel_l, snaps_l, traj_l)
-    status_l = f"{dt_l:.1f} s" if dt_l is not None else "NOT FOUND"
-    print(f"  Lawnmower detection time: {status_l}")
+    print("--- Person-absent runs (entropy reduction over the full 1800 s, seed 0) ---")
+    for s in STRATEGIES:
+        absent[s] = simulate(s, 0, record=True, person_absent=True)
+        r = absent[s]
+        hs = {tt: np.interp(tt, r['ent_t'], r['ent_h']) for tt in (300, 900, 1800)}
+        ps = {tt: np.interp(tt, r['ent_t'], r['pdet']) for tt in (300, 900, 1800)}
+        print(f"[{s:>11s}] H(0)={r['ent_h'][0]:.3f}, H(300)={hs[300]:.3f}, "
+              f"H(900)={hs[900]:.3f}, H(1800)={hs[1800]:.3f} nats, {r['n_obs']} observations")
+        legs = np.array([np.linalg.norm(p1 - p0) for d in r['drones'] for (_, p0, _, p1) in d.legs[2:]])
+        print(f"[{s:>11s}] mean leg {legs.mean():.1f} m, transit share of mission time "
+              f"{100 * legs.sum() / DRONE_SPEED / (N_DRONES * MAX_SIM_TIME):.0f} %")
+        print(f"[{s:>11s}] model-expected P_det: t=300 s {ps[300]:.3f}, t=900 s {ps[900]:.3f}, "
+              f"t=1800 s {ps[1800]:.3f}")
 
-    # Entropy summary
-    h0_g = hist_g[0][1] if hist_g else float("nan")
-    hf_g = hist_g[-1][1] if hist_g else float("nan")
-    h0_l = hist_l[0][1] if hist_l else float("nan")
-    hf_l = hist_l[-1][1] if hist_l else float("nan")
-    print(f"  Greedy entropy: {h0_g:.3f} -> {hf_g:.3f} nats")
-    print(f"  Lawnmower entropy: {h0_l:.3f} -> {hf_l:.3f} nats")
-
-    # Monte Carlo
-    print(f"Running {N_MC_TRIALS} Monte Carlo trials per strategy...")
-    for strat in ("greedy", "lawnmower"):
+    print(f"--- Monte Carlo: {N_MC_TRIALS} trials per strategy (same person positions) ---")
+    for s in STRATEGIES:
         times = []
         for seed in range(N_MC_TRIALS):
-            _, dt, _, _, _ = simulate(strat, seed=seed)
-            times.append(dt if dt is not None else MAX_SIM_TIME)
-        mc_times[strat] = times
-        found = sum(1 for t in times if t < MAX_SIM_TIME)
-        print(f"  [{strat}] detected {found}/{N_MC_TRIALS}, "
-              f"median={np.median(times):.1f} s, "
-              f"IQR=[{np.percentile(times, 25):.1f}, {np.percentile(times, 75):.1f}] s")
-
-    return results, mc_times
+            r = simulate(s, seed)
+            times.append(r['det_time'] if r['det_time'] is not None else np.nan)
+        times = np.array(times)
+        mc[s] = times
+        found = np.isfinite(times)
+        cens = np.where(found, times, MAX_SIM_TIME)
+        print(f"[{s:>11s}] found {found.sum()}/{N_MC_TRIALS}, "
+              f"median {np.median(cens):.1f} s, IQR [{np.percentile(cens, 25):.1f}, "
+              f"{np.percentile(cens, 75):.1f}] s (not-found counted as {MAX_SIM_TIME:.0f} s); "
+              f"median of found {np.median(times[found]):.1f} s; "
+              f"detected by 60 s: {np.sum(times <= 60) / N_MC_TRIALS:.2f}, by 1800 s: {found.mean():.2f}")
+    return demo, absent, mc
 
 
 # ── Plots ──────────────────────────────────────
 
 def plot_prior(out_dir):
-    """Prior belief heatmap centred on LKP."""
-    prior = build_prior()
-    grid = prior.reshape(GRID_N, GRID_N)
-
+    """Prior belief heatmap centred on LKP, with the lawnmower box."""
     fig, ax = plt.subplots(figsize=(7, 7))
-    im = ax.imshow(
-        grid, origin="lower",
-        extent=[0, AREA_SIZE, 0, AREA_SIZE],
-        cmap="hot_r", interpolation="nearest",
-    )
-    plt.colorbar(im, ax=ax, label="Prior probability P0(x)")
-    ax.plot(*LKP, "wx", ms=14, mew=3, label="LKP (100, 120)")
-    sigma2 = SIGMA_LKP**2 + 2.0 * DIFFUSION_D * DELTA_T_SEC
-    sigma0 = np.sqrt(sigma2)
-    circ = plt.Circle(LKP, sigma0, color="white", fill=False, lw=1.5, ls="--",
-                      label=f"1-sigma ({sigma0:.1f} m)")
-    ax.add_patch(circ)
+    im = ax.imshow(build_prior(), origin="lower", extent=[0, AREA_SIZE, 0, AREA_SIZE],
+                   cmap="hot_r", interpolation="nearest")
+    plt.colorbar(im, ax=ax, fraction=0.046, label="Prior probability P0(x)")
+    ax.plot(*LKP, "x", color="k", ms=12, mew=2.5, label="LKP (100, 120)")
+    ax.add_patch(plt.Circle(LKP, SIGMA0, color="k", fill=False, lw=1.2, ls="--",
+                            label=f"1σ0 ({SIGMA0:.1f} m)"))
+    ax.add_patch(plt.Rectangle(LKP - LM_HALF_WIDTH, 2 * LM_HALF_WIDTH, 2 * LM_HALF_WIDTH,
+                               fill=False, ec="tab:orange", lw=1.5, label="Lawnmower box (±2σ0)"))
+    ax.plot(START_POS[:, 0], START_POS[:, 1], "^", color="tab:purple", ms=9, label="Drone starts")
     ax.set_xlim(0, AREA_SIZE)
     ax.set_ylim(0, AREA_SIZE)
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
-    ax.set_title("Prior Belief Map: Gaussian + Brownian Diffusion")
-    ax.legend(loc="upper right", fontsize=9)
+    ax.set_title("Prior belief: Gaussian + Brownian diffusion")
+    ax.legend(loc="upper right", fontsize=8)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "prior_belief.png")
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"Saved: {path}")
 
 
-def plot_belief_snapshots(results, out_dir):
-    """Four-panel belief snapshots at t=0, 60, 120, t_det for greedy strategy."""
-    hist, det_time, final_bel, snapshots, _ = results["greedy"]
-
-    # We may have fewer than 4 snapshots if detection happened early
-    snap_list = snapshots[:4] if len(snapshots) >= 4 else snapshots
-    while len(snap_list) < 4:
-        snap_list.append(snap_list[-1])
-
-    fig, axes = plt.subplots(2, 2, figsize=(13, 12))
-    titles = [f"t = {s[0]:.0f} s" for s in snap_list]
-    titles[-1] = f"t = {snap_list[-1][0]:.0f} s (detection)" if det_time else titles[-1]
-
-    for ax, (t_snap, bel_snap, drone_poses), title in zip(axes.ravel(), snap_list, titles):
-        grid = bel_snap.reshape(GRID_N, GRID_N)
-        im = ax.imshow(
-            grid, origin="lower",
-            extent=[0, AREA_SIZE, 0, AREA_SIZE],
-            cmap="hot_r", interpolation="nearest",
-            vmin=0, vmax=build_prior().max(),
-        )
-        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        ax.plot(*LKP, "wx", ms=10, mew=2.5, label="LKP")
-        colors = ["cyan", "lime", "yellow"]
-        for k, pos in enumerate(drone_poses):
-            circ = plt.Circle(pos, SENSOR_RADIUS, color=colors[k], fill=False, lw=1.5)
-            ax.add_patch(circ)
-            ax.plot(*pos, "^", color=colors[k], ms=8, label=f"D{k}")
-        ax.set_xlim(0, AREA_SIZE)
-        ax.set_ylim(0, AREA_SIZE)
-        ax.set_title(title, fontsize=11)
-        ax.set_xlabel("x (m)")
-        ax.set_ylabel("y (m)")
-
-    fig.suptitle("Belief Map Evolution — Greedy Strategy", fontsize=13, y=1.01)
+def plot_belief_snapshots(demo, out_dir):
+    """Belief at t = 0, 60, 120 s and at the end of the run, one row per strategy (seed 0)."""
+    vmax = build_prior().max()
+    fig, axes = plt.subplots(3, 4, figsize=(17, 13))
+    dcol = ["cyan", "lime", "magenta"]
+    for row, s in enumerate(STRATEGIES):
+        r = demo[s]
+        for col, (t_s, bel, poses) in enumerate(r["snaps"][:4]):
+            ax = axes[row, col]
+            ax.imshow(bel, origin="lower", extent=[0, AREA_SIZE, 0, AREA_SIZE],
+                      cmap="hot_r", interpolation="nearest", vmin=0, vmax=vmax)
+            ax.plot(*LKP, "x", color="k", ms=8, mew=2)
+            for k, p in enumerate(poses):
+                ax.add_patch(plt.Circle(p, SENSOR_RADIUS, color=dcol[k], fill=False, lw=1.2))
+                ax.plot(*p, "^", color=dcol[k], ms=7, mec="k", mew=0.5)
+            ax.plot(*r["person"], "*", color="green", ms=13, mec="k")
+            end = " (detection)" if col == 3 and r["det_time"] is not None else \
+                  (" (end, not found)" if col == 3 else "")
+            ax.set_title(f"{LABELS[s]} — t = {t_s:.0f} s{end}", fontsize=10)
+            ax.set_xlim(40, 160)
+            ax.set_ylim(0, 180)
+            ax.set_xlabel("x (m)")
+            ax.set_ylabel("y (m)")
+        for col in range(len(r["snaps"][:4]), 4):
+            axes[row, col].axis("off")
+    fig.suptitle("Belief map evolution, seed 0 (green star = true person, revealed for display)",
+                 fontsize=13)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "belief_snapshots.png")
-    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.savefig(path, dpi=110)
     plt.close()
     print(f"Saved: {path}")
 
 
-def plot_entropy(results, out_dir):
-    """Entropy reduction curves for both strategies."""
-    colors = {"greedy": "tab:blue", "lawnmower": "tab:orange"}
-    fig, ax = plt.subplots(figsize=(9, 4))
-
-    for label, (history, det_time, _, _, _) in results.items():
-        ts = [h[0] for h in history]
-        hs = [h[1] for h in history]
-        ax.plot(ts, hs, color=colors[label], label=label.capitalize(), lw=2)
-        if det_time is not None:
-            ax.axvline(det_time, color=colors[label], ls="--", lw=1.2,
-                       label=f"{label.capitalize()} detection ({det_time:.0f} s)")
-
+def plot_entropy(absent, demo, out_dir):
+    """Entropy vs time for the person-absent runs (full 1800 s) and the seed-0 demo runs."""
+    fig, ax = plt.subplots(figsize=(10, 4.5))
+    for s in STRATEGIES:
+        ax.plot(absent[s]["ent_t"], absent[s]["ent_h"], color=COLORS[s], lw=2,
+                label=f"{LABELS[s]} (person absent)")
+        ax.plot(demo[s]["ent_t"], demo[s]["ent_h"], color=COLORS[s], lw=1, ls=":",
+                label=f"{LABELS[s]} (seed 0, until detection)")
+        if demo[s]["det_time"] is not None:
+            ax.plot(demo[s]["det_time"], demo[s]["ent_h"][-1], "o", color=COLORS[s])
     ax.set_xlabel("Simulation time (s)")
     ax.set_ylabel("Belief entropy H(B) (nats)")
-    ax.set_title("Entropy Reduction over Time")
-    ax.legend(fontsize=9)
+    ax.set_title("Entropy reduction over time")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=8)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "entropy_reduction.png")
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"Saved: {path}")
 
 
-def plot_mc_boxplot(mc_times, out_dir):
-    """Box-plot of detection times from Monte Carlo trials."""
-    labels = list(mc_times.keys())
-    data = [mc_times[k] for k in labels]
-
-    fig, ax = plt.subplots(figsize=(6, 5))
-    bp = ax.boxplot(data, labels=[l.capitalize() for l in labels],
-                    patch_artist=True, notch=False)
-    colors_box = ["#4c72b0", "#dd8452"]
-    for patch, color in zip(bp["boxes"], colors_box):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-
-    for i, (label, times) in enumerate(mc_times.items()):
-        found = [t for t in times if t < MAX_SIM_TIME]
-        median = np.median(times)
-        ax.text(i + 1, median + 20,
-                f"median={median:.0f}s\n({len(found)}/{len(times)} found)",
+def plot_mc_boxplot(mc, out_dir):
+    """Box-plot of detection times (not-found trials counted as the 1800 s cutoff)."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    data = [np.where(np.isfinite(mc[s]), mc[s], MAX_SIM_TIME) for s in STRATEGIES]
+    bp = ax.boxplot(data, tick_labels=[LABELS[s] for s in STRATEGIES], patch_artist=True)
+    for patch, s in zip(bp["boxes"], STRATEGIES):
+        patch.set_facecolor(COLORS[s])
+        patch.set_alpha(0.6)
+    for i, s in enumerate(STRATEGIES):
+        d = data[i]
+        found = np.isfinite(mc[s]).sum()
+        ax.text(i + 1, 1850, f"median {np.median(d):.0f} s\nIQR [{np.percentile(d, 25):.0f}, "
+                f"{np.percentile(d, 75):.0f}]\n{found}/{len(d)} found",
                 ha="center", va="bottom", fontsize=8)
-
     ax.axhline(MAX_SIM_TIME, color="red", ls="--", lw=1, label="30-min cutoff")
+    ax.set_ylim(0, 2150)
     ax.set_ylabel("Detection time (s)")
-    ax.set_title(f"Detection Time Distribution ({N_MC_TRIALS} MC Trials)")
-    ax.legend(fontsize=8)
+    ax.set_title(f"Detection time distribution ({N_MC_TRIALS} MC trials per strategy)")
+    ax.legend(fontsize=8, loc="lower right")
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, "mc_boxplot.png")
     plt.savefig(path, dpi=150)
     plt.close()
     print(f"Saved: {path}")
 
 
-def save_animation(results, out_dir):
-    """Animate belief map + drone positions for the greedy strategy."""
-    import matplotlib.animation as animation
-
-    hist, det_time, _, snapshots, drone_traj = results["greedy"]
-
-    # Build animation frames from drone trajectories
-    # Collect all unique times across drones
-    all_times = sorted({t for k, tlist in drone_traj.items() for t, _, _ in tlist})
-    if det_time is not None:
-        all_times = [t for t in all_times if t <= det_time]
-    all_times = all_times[:300]   # cap at 300 frames
-
-    # Interpolate belief for each frame using the snapshot nearest in time
-    # Build a timeline of belief states: (t, belief)
-    belief_timeline = []
-    b = build_prior()
-    belief_timeline.append((0.0, b.copy()))
-    for t_s, bel_s, _ in snapshots:
-        if t_s > 0:
-            belief_timeline.append((t_s, bel_s.copy()))
-
-    def get_belief_at(t):
-        """Return the most recent belief update at or before time t."""
-        b_cur = belief_timeline[0][1]
-        for tb, bb in belief_timeline:
-            if tb <= t:
-                b_cur = bb
-        return b_cur
-
-    def get_drone_pos_at(t):
-        """Return drone positions at time t (last known position before t)."""
-        positions = []
-        for k in range(N_DRONES):
-            tlist = drone_traj[k]
-            pos = tlist[0][1:]
-            for ti, xi, yi in tlist:
-                if ti <= t:
-                    pos = (xi, yi)
-            positions.append(pos)
-        return positions
-
-    fig, ax = plt.subplots(figsize=(7, 7))
-    initial_belief = get_belief_at(0.0)
-    grid0 = initial_belief.reshape(GRID_N, GRID_N)
-    im = ax.imshow(
-        grid0, origin="lower",
-        extent=[0, AREA_SIZE, 0, AREA_SIZE],
-        cmap="hot_r", interpolation="nearest",
-        vmin=0, vmax=initial_belief.max(),
-        animated=True,
-    )
-    plt.colorbar(im, ax=ax, label="Belief")
-    ax.plot(*LKP, "wx", ms=10, mew=2.5, label="LKP")
-
-    drone_colors = ["cyan", "lime", "yellow"]
-    drone_markers = []
-    drone_circles = []
-    init_pos = get_drone_pos_at(0.0)
-    for k in range(N_DRONES):
-        mk, = ax.plot(*init_pos[k], "^", color=drone_colors[k], ms=9, zorder=5)
-        circ = plt.Circle(init_pos[k], SENSOR_RADIUS,
-                          color=drone_colors[k], fill=False, lw=1.5)
-        ax.add_patch(circ)
-        drone_markers.append(mk)
-        drone_circles.append(circ)
-
-    ax.set_xlim(0, AREA_SIZE)
-    ax.set_ylim(0, AREA_SIZE)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    title_text = ax.set_title("Greedy Search — t = 0.0 s")
-
-    # Decimation for reasonable GIF size
-    step = max(1, len(all_times) // 120)
-    frame_times = all_times[::step]
-
-    def update(frame_t):
-        bel = get_belief_at(frame_t)
-        im.set_data(bel.reshape(GRID_N, GRID_N))
-        poses = get_drone_pos_at(frame_t)
-        for k in range(N_DRONES):
-            drone_markers[k].set_data([poses[k][0]], [poses[k][1]])
-            drone_circles[k].set_center(poses[k])
-        title_text.set_text(f"Greedy Search — t = {frame_t:.0f} s  |  "
-                            f"H = {belief_entropy(bel):.2f} nats")
-        return [im, title_text] + drone_markers + drone_circles
-
-    ani = animation.FuncAnimation(
-        fig, update, frames=frame_times,
-        interval=100, blit=False,
-    )
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, "animation.gif")
-    ani.save(path, writer="pillow", fps=10, dpi=100)
+def plot_detection_cdf(mc, absent, out_dir):
+    """Empirical P_det(t) over the MC trials (solid) and model-expected P_det(t)
+    = sum_x B0(x) (1 - prod(1 - Pd)) along the person-absent search paths (dashed)."""
+    fig, ax = plt.subplots(figsize=(9, 4.5))
+    tt = np.linspace(0, MAX_SIM_TIME, 721)
+    for s in STRATEGIES:
+        times = mc[s]
+        cdf = [(times <= t).sum() / len(times) for t in tt]
+        ax.plot(tt, cdf, color=COLORS[s], lw=2, label=f"{LABELS[s]} (MC empirical)")
+        ax.plot(absent[s]["ent_t"], absent[s]["pdet"], color=COLORS[s], lw=1.2, ls="--",
+                label=f"{LABELS[s]} (model-expected, seed-0 path)")
+    ax.axhline(0.95, color="grey", ls="--", lw=1, label="0.95 target")
+    ax.set_xlabel("Time (s)")
+    ax.set_ylabel("Probability of detection")
+    ax.set_ylim(0, 1.02)
+    ax.set_title(f"P_det(t): empirical over {N_MC_TRIALS} MC trials (solid) vs model-expected (dashed)")
+    ax.grid(True, alpha=0.3)
+    ax.legend(fontsize=7.5, loc="lower right")
+    plt.tight_layout()
+    path = os.path.join(out_dir, "detection_cdf.png")
+    plt.savefig(path, dpi=150)
     plt.close()
     print(f"Saved: {path}")
+
+
+def save_animation(demo, out_dir):
+    """Three panels (one per strategy), seed 0, kinematic drone positions, belief updates."""
+    import matplotlib.animation as animation
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.6))
+    vmax = build_prior().max() * 4
+    dcol = ["cyan", "lime", "magenta"]
+    ims, marks, circs, titles = [], [], [], []
+    for ax, s in zip(axes, STRATEGIES):
+        f0 = demo[s]["frames"][0]
+        ims.append(ax.imshow(f0[1], origin="lower", extent=[0, AREA_SIZE, 0, AREA_SIZE],
+                             cmap="hot_r", interpolation="nearest", vmin=0, vmax=vmax))
+        ax.plot(*LKP, "x", color="k", ms=8, mew=2)
+        ax.plot(*demo[s]["person"], "*", color="green", ms=12, mec="k")
+        mk, cc = [], []
+        for k in range(N_DRONES):
+            mk.append(ax.plot([], [], "^", color=dcol[k], ms=7, mec="k", mew=0.5)[0])
+            c = plt.Circle((0, 0), SENSOR_RADIUS, color=dcol[k], fill=False, lw=1.2)
+            ax.add_patch(c)
+            cc.append(c)
+        marks.append(mk)
+        circs.append(cc)
+        titles.append(ax.set_title(""))
+        ax.set_xlim(40, 160)
+        ax.set_ylim(0, 180)
+        ax.set_xlabel("x (m)")
+    axes[0].set_ylabel("y (m)")
+
+    def update(i):
+        for j, s in enumerate(STRATEGIES):
+            tf, bel, poses = demo[s]["frames"][i]
+            ims[j].set_data(bel)
+            for k in range(N_DRONES):
+                marks[j][k].set_data([poses[k][0]], [poses[k][1]])
+                circs[j][k].set_center(poses[k])
+            done = demo[s]["det_time"] is not None and tf >= demo[s]["det_time"]
+            titles[j].set_text(f"{LABELS[s]}\nt = {tf:.0f} s" + ("  FOUND" if done else ""))
+        return []
+
+    ani = animation.FuncAnimation(fig, update, frames=N_FRAMES, interval=100, blit=False)
+    path = os.path.join(out_dir, "animation.gif")
+    ani.save(path, writer="pillow", fps=10, dpi=70)
+    plt.close()
+    print(f"Saved: {path}  ({N_FRAMES} frames)")
 
 
 # ── Main ───────────────────────────────────────
 
 if __name__ == "__main__":
-    results, mc_times = run_simulation()
-
-    # Print summary metrics
-    for strat, (hist, dt, _, _, _) in results.items():
-        h0 = hist[0][1] if hist else float("nan")
-        hf = hist[-1][1] if hist else float("nan")
-        status = f"{dt:.1f} s" if dt is not None else "NOT FOUND"
-        print(f"[{strat}] det={status} | H: {h0:.3f}->{hf:.3f} nats")
-
-    for strat, times in mc_times.items():
-        found = sum(1 for t in times if t < MAX_SIM_TIME)
-        print(f"[MC {strat}] found={found}/{N_MC_TRIALS} "
-              f"median={np.median(times):.1f}s "
-              f"p25={np.percentile(times, 25):.1f}s "
-              f"p75={np.percentile(times, 75):.1f}s")
-
     out_dir = os.path.normpath(OUTPUT_DIR)
+    os.makedirs(out_dir, exist_ok=True)
+    demo, absent, mc = run_simulation()
     plot_prior(out_dir)
-    plot_belief_snapshots(results, out_dir)
-    plot_entropy(results, out_dir)
-    plot_mc_boxplot(mc_times, out_dir)
-    save_animation(results, out_dir)
+    plot_belief_snapshots(demo, out_dir)
+    plot_entropy(absent, demo, out_dir)
+    plot_mc_boxplot(mc, out_dir)
+    plot_detection_cdf(mc, absent, out_dir)
+    save_animation(demo, out_dir)
+    print("Done.")
