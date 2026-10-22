@@ -115,7 +115,7 @@ DT            = 0.5        # s
 V_DRONE       = 8.0        # m/s cruise speed
 E_CAP         = 1.0        # normalised battery capacity
 P_CHG         = 0.25       # charge rate (fraction of E_cap per second)
-ALPHA         = 1.8e-4     # efficiency constant (1/m), tuned so ~5 km range at full charge
+ALPHA         = 1.8e-4     # efficiency constant (1/m): 1.8e-4*2.0*9.81 = 3.53e-3 E_cap/m -> ~283 m range at full charge
 M_BODY        = 1.5        # kg
 M_PAYLOAD     = 0.5        # kg
 G             = 9.81       # m/s²

@@ -6,14 +6,14 @@
 
 ## Problem Definition
 
-**Setup**: A fleet of 6 delivery drones operates continuously over a city grid (±30 m), executing
-delivery tasks from a shared mission queue. The base station provides 2 charging pads; a drone
-that needs to recharge must fly back to base, wait in a FIFO queue if both pads are occupied,
-charge to full, and then resume missions. The simulation runs for a fixed horizon of 300 s.
+**Setup**: A fleet of 6 delivery drones works a ±30 m city grid for 300 s, taking delivery points from a shared mission queue. Drones fly **multi-drop sorties**: after each delivery they go straight to the next delivery point and only return to base when their charge policy says so. The base has 2 charging pads; a returning drone waits in a FIFO queue if both pads are busy and charges to full before taking the next delivery. A drone whose battery reaches 0 before it is back at base is **stranded** (out of service for the rest of the run, its parcel goes back into the queue).
 
-**Key question**: What is the optimal return-to-charge threshold β* that maximises total deliveries
-completed? How do three different charge-management policies — threshold, greedy, and predictive —
-compare in deliveries completed and fleet utilisation?
+**Key question**: Which return-to-charge rule delivers the most parcels when the two pads are the bottleneck, and what is the optimal threshold β*?
+
+**Policies**:
+1. **Threshold** — abort the current delivery and return as soon as SoC ≤ β (β swept 0.10–0.50)
+2. **Greedy (always-finish)** — never abort a delivery; after each delivery return if SoC ≤ β (β swept 0.10–0.50)
+3. **Predictive** — return (aborting if needed) as soon as SoC ≤ s_min(i) = energy to fly home + β_safe
 
 ---
 
@@ -21,27 +21,23 @@ compare in deliveries completed and fleet utilisation?
 
 **Battery discharge per metre of flight:**
 
-$$\Delta E / d = \alpha (m_{body} + m_p) g$$
+$$\frac{\Delta s}{d} = \frac{\alpha (m_{body} + m_p) g}{E_{cap}} = \frac{1.8\times10^{-4}\cdot 2.0 \cdot 9.81}{1} = 3.53\times10^{-3}\ \text{per m}$$
 
-**State-of-charge after travelling distance d:**
+so a full battery lasts 283 m (35.4 s at 8 m/s). A random delivery leg in the 60 × 60 m grid averages ≈ 0.52 × 60 ≈ 31 m ≈ 11 % of a charge, and a worst-case leg (85 m diagonal) costs 30 %.
 
-$$s' = s - \frac{\alpha (m_{body} + m_p) g \cdot d}{E_{cap}}$$
-
-**Minimum SoC needed to return safely:**
+**Minimum SoC needed to return safely (predictive policy):**
 
 $$s_{min}(i) = \frac{\alpha (m_{body} + m_p) g \cdot \|\mathbf{p}_i - \mathbf{p}_{base}\|}{E_{cap}} + \beta_{safe}$$
 
-**Charging time given arrival SoC s_arrive:**
+**Charging time given arrival SoC:**
 
-$$t_{chg} = \frac{(1 - s_{arrive}) \cdot E_{cap}}{P_{chg}}$$
+$$t_{chg} = \frac{(1 - s_{arrive}) \cdot E_{cap}}{P_{chg}} \quad (\le 25\text{ s})$$
 
-**Fleet utilisation for drone i:**
+**Fleet utilisation:** $u_i = t_{fly,i} / T_{sim}$ (flying + returning time; no mandatory grounding).
 
-$$u_i = \frac{t_{fly,i}}{T_{sim}}$$
+**Optimal threshold:** $\beta^* = \arg\max_{\beta} \bar D_{total}(\beta)$, and $\beta^*_{safe}$ = the best β with zero stranded drones in all seeds.
 
-**Optimal threshold:**
-
-$$\beta^* = \arg\max_{\beta \in \mathcal{B}} D_{total}(\beta), \quad \mathcal{B} = \{0.10, 0.15, \ldots, 0.50\}$$
+**Why the pads bind:** 2 pads × 0.04 E_cap/s × 300 s = 24 E_cap of charging in the whole run, while 6 drones flying continuously would use 6 × 300 s × 8 m/s × 3.53×10⁻³ ≈ 51 E_cap. Energy, not flight time, limits deliveries, so how much energy each delivery costs (aborted legs, return legs) is what separates the policies.
 
 ---
 
@@ -55,14 +51,15 @@ $$\beta^* = \arg\max_{\beta \in \mathcal{B}} D_{total}(\beta), \quad \mathcal{B}
 | Timestep DT | 0.5 s |
 | Cruise speed v | 8.0 m/s |
 | Battery capacity E_cap | 1.0 (normalised) |
-| Charging rate P_chg | 0.25 E_cap/s |
+| Charging rate P_chg | 0.04 E_cap/s (25 s from empty) |
 | Discharge constant α | 1.8 × 10⁻⁴ m⁻¹ |
 | Body mass m_body | 1.5 kg |
 | Payload mass m_p | 0.5 kg |
-| Safety reserve β_safe | 0.05 |
+| Safety reserve β_safe | 0.05 (predictive policy) |
 | Delivery area | [−30, 30]² m |
 | Base position | (0, 0, 2) m |
-| Threshold sweep B | 0.10 – 0.50 in steps of 0.05 |
+| Threshold sweep | 0.10 – 0.50 in steps of 0.05 (threshold and greedy) |
+| Monte-Carlo runs | 20 delivery streams (seeds 42 – 61), identical for every policy |
 
 ---
 
@@ -77,57 +74,81 @@ conda activate drones
 python src/02_logistics_delivery/s032_charging_queue.py
 ```
 
+Runtime ≈ 35 s (380 simulations + a 150-frame GIF).
+
 ---
 
 ## Results
 
-| Metric | Value |
-|--------|-------|
-| Optimal threshold β* | 0.10 |
-| Deliveries (threshold β*=0.10) | 270 |
-| Deliveries (greedy policy) | 270 |
-| Deliveries (predictive policy) | 270 |
-| Mean fleet utilisation (threshold) | 93.7% |
-| Mean fleet utilisation (greedy) | 93.7% |
-| Max charging queue length | see queue_length.png |
+### Threshold sweep (mean ± std over 20 seeds)
+
+| β | Threshold: deliveries | Threshold: stranded | Greedy: deliveries | Greedy: stranded |
+|---|---:|---:|---:|---:|
+| 0.10 | 168.7 ± 22.9 | 3.20 | 68.8 ± 15.8 | 6.00 |
+| 0.15 | **204.1 ± 4.9** | 0.00 | 101.0 ± 23.4 | 5.75 |
+| 0.20 | 200.8 ± 5.4 | 0.00 | 157.8 ± 33.6 | 4.00 |
+| 0.25 | 201.2 ± 6.5 | 0.00 | 198.6 ± 20.1 | 1.55 |
+| 0.30 | 197.1 ± 5.4 | 0.00 | **207.4 ± 7.5** | 0.65 |
+| 0.35 | 194.4 ± 6.3 | 0.00 | 204.9 ± 6.5 | 0.00 |
+| 0.40 | 194.0 ± 6.2 | 0.00 | 205.3 ± 6.3 | 0.00 |
+| 0.45 | 191.1 ± 5.5 | 0.00 | 202.6 ± 4.4 | 0.00 |
+| 0.50 | 186.4 ± 7.6 | 0.00 | 201.3 ± 4.4 | 0.00 |
+
+Threshold: β* = β*_safe = 0.15. Greedy: β* = 0.30, β*_safe = 0.40.
+
+### Policy comparison (mean of 20 seeds)
+
+| Policy | Deliveries | Utilisation | Stranded | Aborted deliveries | Charge visits | Queue wait (drone-s) |
+|--------|---:|---:|---:|---:|---:|---:|
+| Threshold β* = 0.15 (also the safe optimum) | 204.1 ± 4.9 | 51.2 % | 0.00 | 24.00 | 25.00 | 345.1 |
+| Greedy β* = 0.30 | 207.4 ± 7.5 | 50.8 % | 0.65 | 0.00 | 26.10 | 282.1 |
+| Greedy safe β = 0.40 | 205.3 ± 6.3 | 51.0 % | 0.00 | 0.00 | 30.75 | 334.3 |
+| Predictive | 197.9 ± 5.8 | 50.8 % | 0.00 | 21.20 | 24.00 | 357.8 |
+
+Recorded single runs (seed 42, used for the traces, Gantt chart, queue plot and animation): threshold β = 0.15 → 209 deliveries, greedy β = 0.30 → 212, predictive → 199; 0 stranded in all three, maximum queue length 4.
 
 **Key Findings**:
-- With a small delivery grid (±30 m radius) and α = 1.8×10⁻⁴ m⁻¹, the maximum possible
-  discharge per delivery round trip (~85 m) is only ≈ 1.5 % of E_cap, so drones almost never
-  hit any threshold before completing a delivery. All three policies therefore achieve identical
-  throughput (270 deliveries in 300 s), confirming that charging policy only matters when
-  battery drain per mission is a non-trivial fraction of capacity.
-- The 93.7 % fleet utilisation indicates that the 2-pad bottleneck and the fast charging rate
-  (P_chg = 0.25, full charge in ~4 s from empty) create negligible idle time — drones spend
-  the vast majority of the horizon in productive flight.
-- The uniform deliveries across all β values in the sweep reveal that the critical design
-  variable for this scenario is the charging infrastructure throughput (K pads, P_chg) rather
-  than the return threshold: increasing mission range or reducing P_chg would shift the
-  optimal β away from the lower bound and create visible differentiation in the sweep curve.
+- **The policies now behave differently.** Batteries are actually drained (SoC traces go down to 0.03–0.2), the thresholds bind, and the sweep has a clear shape: too low a β strands drones, too high a β wastes energy on extra return trips (threshold charge visits rise from 25.00 at β = 0.15 to 40.40 at β = 0.50, deliveries fall from 204.1 to 186.4).
+- **Threshold policy**: β = 0.10 strands 3.20 drones per run (28 m of range left is less than the up-to-42 m flight home), so β* = 0.15 — the lowest swept β that got every drone home in all 20 seeds (the farthest grid corner is 42 m from base, 42 × 3.53×10⁻³ ≈ 0.15).
+- **Greedy needs a much higher β** because it commits to the whole next leg before checking (up to 85 m = 0.30 SoC). Below β = 0.35 it strands drones; its raw optimum β* = 0.30 still strands 0.65 drones per run. Part of that score comes from the stranding itself: a stranded drone no longer occupies a pad, so the survivors wait less (282.1 vs 334.3 drone-s). Counting only safe settings, greedy at β = 0.40 (205.3) is the best policy here, because it never wastes energy on an aborted leg.
+- **Predictive** never strands a drone and needs no tuning, but delivered the least (197.9, about 6 fewer than threshold β = 0.15, i.e. roughly one standard deviation). It aborts 21.20 deliveries per run mid-leg (energy spent on the abandoned leg is wasted), and because it drains every drone to ~0.03–0.05 the charges are long and drones fall into lock-step pairs (see SoC traces), giving the highest queue wait (357.8 drone-s).
+- **Utilisation is ~51 % for every policy**: with 24 E_cap of pad energy against ~51 E_cap of potential demand, the fleet spends about half the time charging or queueing whatever the policy. Policy choice moves deliveries by only ~5 % among safe settings; adding pads or charge power would move them much more (not swept here).
 
-**Threshold sweep — total deliveries D_total vs return threshold β:**
+**Threshold sweep — mean deliveries and stranded drones vs β:**
 
 ![Threshold Sweep](threshold_sweep.png)
 
-**Policy comparison — total deliveries and fleet utilisation across three policies:**
+**Policy comparison — deliveries, utilisation, stranded drones, queue waiting (hatched = best stranding-free β):**
 
 ![Policy Comparison](policy_comparison.png)
 
-**SoC traces — battery state-of-charge over time for all 6 drones (optimal threshold run):**
+**SoC traces — battery state of charge for all 6 drones, one panel per policy (seed 42):**
 
 ![SoC Traces](soc_traces.png)
 
-**State timeline — Gantt chart of each drone's state over the simulation horizon:**
+**State timeline — Gantt chart of each drone's state, one panel per policy (seed 42):**
 
 ![State Gantt](state_gantt.png)
 
-**Queue length — number of drones waiting for a charging pad over time:**
+**Queue length — drones waiting for a pad, per policy (seed 42):**
 
 ![Queue Length](queue_length.png)
 
-**Animation:**
+**Animation — SoC bars coloured by state for the three policies (seed 42, 150 frames):**
 
 ![Animation](animation.gif)
+
+### Deviations from the scenario card
+
+| Card | Code | Reason |
+|------|------|--------|
+| Drone returns to base after every single delivery | Multi-drop sorties: a drone chains deliveries and returns only when its policy says so (parcels are treated as reloaded during charging; payload mass stays 0.5 kg) | With a return after every ~85 m round trip SoC never fell below ~0.70, no threshold ever triggered and all policies were identical (old result 270/270/270). |
+| P_chg = 0.25 E_cap/s (full charge in 4 s) | P_chg = 0.04 E_cap/s (25 s) | At 4 s per charge the pads are never a bottleneck, so there is no charging queue to study. At 0.04 the pads can supply 24 E_cap per run against ~51 E_cap of demand. |
+| Safety override (`soc ≤ s_min`) applied in every policy | Applied only in the predictive policy; others can strand | The override made greedy identical to predictive. Stranding is reported as a separate metric instead. |
+| Greedy has no β | Greedy uses β, checked only after a completed delivery, and is swept like the threshold policy | A greedy drone needs some rule for when to go home; sweeping β for both keeps the comparison fair. |
+| Single run, seed 42 | Mean of 20 seeds (42–61), same delivery streams for every policy | Single-run differences of a few deliveries are within noise. |
+| Card comment says α gives "~5 km range" | Actual range 283 m | Arithmetic error in the card (fixed). |
+| — | β*_safe (best β with zero stranded drones) reported alongside β* | The raw argmax can reward losing drones. |
 
 ---
 
