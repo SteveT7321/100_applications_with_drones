@@ -338,6 +338,17 @@ if __name__ == '__main__':
         print(f'{"":>32}path length {path_len:.3f} m, peak z {traj[:, 2].max():.3f} m, '
               f'min clearance above terrain {clr.min():.4f} m, '
               f'max k_GE {k_ge.max():.4f}')
+        if use_avoidance:
+            above = clr - H_SAFE                      # height above the safety floor
+            dz = np.diff(traj[:, 2])
+            climb = np.nonzero(dz > 1e-9)[0] + 1      # positions reached while climbing
+            on_floor = np.nonzero(np.abs(above) < 5e-4)[0]
+            off = [k for k in climb if abs(above[k]) >= 5e-4]
+            print(f'{"":>32}climb: {len(climb)} steps; off-floor climb steps are '
+                  f'{1000 * min(above[k] for k in off):.1f}-'
+                  f'{1000 * max(above[k] for k in off):.1f} mm above the safety floor')
+            print(f'{"":>32}on the floor (|gap| < 0.5 mm) at t = '
+                  + ', '.join(f'{k * DT:.3f}' for k in on_floor) + ' s')
         results.append((traj, captured, cap_t, crashed, crash_t, k_ge, h_log))
 
     d_straight = np.linalg.norm(TARGET_POS - INIT_PURSUER) - CAPTURE_R

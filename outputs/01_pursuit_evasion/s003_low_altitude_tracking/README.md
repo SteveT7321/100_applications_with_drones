@@ -108,7 +108,7 @@ Reference: straight-line path to capture is 7.850 m (1.570 s at 5 m/s).
 
 ![3D Trajectories](trajectories_3d.png)
 
-**Altitude vs Time** — drone altitude, terrain height directly under the drone (shaded) and the safety floor under the avoidance drone (dashed). The red curve rides exactly on the floor during the climb:
+**Altitude vs Time** — drone altitude, terrain height directly under the drone (shaded) and the safety floor under the avoidance drone (dashed). During the 16-step climb the red curve stays just above the floor: 0.7–7.4 mm above it, except at the crest, where it sits on the floor (gap < 0.5 mm) at t = 0.792, 0.812, 0.833 and 0.854 s. The small gap comes from how the floor is computed. The lift targets the floor at the uncapped next horizontal position. When the 5 m/s cap then shortens the horizontal step, the drone ends up at an $x$ where the floor is slightly lower. At plot scale this gap is invisible:
 
 ![Altitude vs Time](altitude_time.png)
 
@@ -127,6 +127,7 @@ Reference: straight-line path to capture is 7.850 m (1.570 s at 5 m/s).
 | Hill at (1, 0.5), $H = 0.5$ m, $\sigma^2 = 2.0$ m² | Hill at (0, 0), $H = 0.8$ m, $\sigma^2 = 1.5$ m² | With the card's hill and 0.8 m flight altitude, the highest terrain on the $y=0$ path is 0.441 m. The safety floor (0.741 m) then stays below the flight altitude, so avoidance never activates and the two cases would be identical. A taller hill centred on the path makes the comparison meaningful |
 | Two drones at $(\pm 3, 0, 0.8)$ m, pursuer tracking a drone | Pursuer at (-4, 0, 0.5) m, **stationary** target at (4, 0, 0.5) m | Isolates terrain following from evasion. A lower altitude puts the hill in the way; a longer baseline leaves room to climb and descend. A moving target is listed as an extension |
 | `Physics.PYB_GND` (PyBullet with ground effect) | Kinematic point mass (`DroneBase`); no PyBullet | This repository does not use PyBullet for these scenarios. The point-mass model has no thrust, so ground effect is computed as a diagnostic only |
+| Problem item 2: terrain "blocking the line of sight" | No visibility / occlusion model; the hill is only a physical obstacle | The target is stationary and its position is always known, so line of sight never affects the pursuer. Occlusion-dependent tracking (e.g. losing the target behind the hill) is an extension |
 | Expected: "altitude fluctuations caused by ground effect" | Not produced | Ground effect is not in the dynamics (see above). Its size here (≤ +0.43%) would be negligible anyway |
 | Expected: "pursuit success rate vs terrain complexity" | Not produced; a single hill with ON/OFF comparison | Kept to one deterministic case. A terrain-complexity sweep is an extension |
 | Card text: "+10~20% thrust for $h < 0.5$ m" | Formula gives +0.16% at 0.5 m | Arithmetic error in the card, now corrected there |
@@ -140,6 +141,7 @@ Reference: straight-line path to capture is 7.850 m (1.570 s at 5 m/s).
 3. Use sensor-noise altitude measurement (ultrasonic altimeter model)
 4. Add thrust-level dynamics so ground effect actually perturbs altitude
 5. Urban canyon pursuit: narrow corridors instead of open hills → [S004](../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
+6. Line-of-sight occlusion: the hill hides a moving target and the pursuer must search or predict
 
 ---
 
