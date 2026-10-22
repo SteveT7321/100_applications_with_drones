@@ -7,6 +7,12 @@ standby with the highest remaining energy takes over.  Standby drones
 fly toward the predicted intercept position to be ready.
 
 Comparison: 3-pursuer relay vs single pursuer (battery dies before capture).
+As in the card, only the ACTIVE pursuer drains energy; standby drones
+reposition for free.  A sensitivity run in which standbys also pay
+k*v^2 while repositioning shows how much the relay relies on that.
+
+Pursuers are labelled P1, P2, P3 everywhere (P1 starts active).  Handoff
+selection: highest remaining energy; ties broken toward the lowest label.
 
 Usage:
     conda activate drones
@@ -35,15 +41,17 @@ CAPTURE_R       = 0.15    # m
 DT              = 1 / 48
 MAX_TIME        = 35.0
 
-INIT_EVADER   = np.array([10.0, 0.0, 2.0])
+INIT_GAP      = 10.0      # m — initial P1-to-evader distance (card: 5 m, see README)
+CARD_GAP      = 5.0       # m — card value, run only as a single-pursuer check
+INIT_EVADER   = np.array([INIT_GAP, 0.0, 2.0])
 EVADER_DIR    = np.array([ 1.0, 0.0, 0.0])
-# P0: directly behind evader; P1/P2 flank positions ready to intercept
-# T_max(P0)=6s, T_cap_single=10/1.5=6.67s → P0 runs out before capture
-# P1/P2 positioned so they arrive near evader just after P0 hands off
+# P1: directly behind evader.  T_max = E0/(k*V_ACTIVE^2) = 6 s;
+# single-pursuer capture needs 10 m / (5-3.5) m/s = 6.67 s > 6 s -> fails.
+# P2/P3: flanking standbys (positions not specified by the card).
 PURSUER_INITS = [
-    np.array([ 0.0,  0.0, 2.0]),   # P0 — 10 m behind evader (sole active)
-    np.array([ 2.0,  4.0, 2.0]),   # P1 — flanking standby (closer)
-    np.array([ 2.0, -4.0, 2.0]),   # P2 — flanking standby (closer)
+    np.array([ 0.0,  0.0, 2.0]),   # P1 — 10 m behind evader (starts active)
+    np.array([ 2.0,  4.0, 2.0]),   # P2 — flanking standby
+    np.array([ 2.0, -4.0, 2.0]),   # P3 — flanking standby
 ]
 
 P_COLORS = ['red', 'steelblue', 'mediumseagreen']
@@ -56,14 +64,15 @@ OUTPUT_DIR = os.path.join(
 
 # ── Simulation ────────────────────────────────────────────────
 
-def run_simulation(relay=True):
+def run_simulation(relay=True, standby_drain=False, init_evader=INIT_EVADER):
     pursuers = [DroneBase(p.copy(), max_speed=max(V_ACTIVE, V_STANDBY), dt=DT)
                 for p in PURSUER_INITS]
-    evader   = DroneBase(INIT_EVADER.copy(), max_speed=V_EVADER, dt=DT)
+    evader   = DroneBase(np.array(init_evader, dtype=float), max_speed=V_EVADER, dt=DT)
 
     energy   = [E0] * N_PURSUERS
     active   = 0
     handoff_times = []
+    handoff_info  = []   # (t, from, to, energies at handoff)
 
     p_trajs  = [[p.pos.copy()] for p in pursuers]
     e_traj   = [evader.pos.copy()]
@@ -73,7 +82,7 @@ def run_simulation(relay=True):
     dist_log = [np.linalg.norm(pursuers[0].pos - evader.pos)]
 
     captured = False; cap_time = None
-    max_steps = int(MAX_TIME / DT) if relay else int(MAX_TIME / DT)
+    max_steps = int(round(MAX_TIME / DT))
 
     for step in range(1, max_steps + 1):
         t = step * DT
@@ -84,13 +93,20 @@ def run_simulation(relay=True):
 
         # ── Handoff check (relay only) ──
         if relay and energy[active] / E0 < HANDOFF_FRAC:
-            candidates = [(energy[j], j) for j in range(N_PURSUERS) if j != active
-                          and energy[j] > 0]
+            # only hand off to a standby that is itself above the threshold;
+            # if none is, the active drone keeps going until empty, then the
+            # one with energy left takes over (prevents ping-pong handoffs)
+            candidates = [j for j in range(N_PURSUERS) if j != active
+                          and energy[j] / E0 >= HANDOFF_FRAC]
+            if not candidates and energy[active] <= 0:
+                candidates = [j for j in range(N_PURSUERS) if j != active and energy[j] > 0]
             if candidates:
-                new_active = max(candidates)[1]
-                if new_active != active:
-                    handoff_times.append(t)
-                    active = new_active
+                # highest energy; tie -> lowest label (explicit, deterministic)
+                new_active = min(candidates, key=lambda j: (-energy[j], j))
+                handoff_times.append(t)
+                handoff_info.append((t, active, new_active, list(energy),
+                                     [float(np.linalg.norm(q.pos - evader.pos)) for q in pursuers]))
+                active = new_active
 
         # ── Pursuer movements ──
         for i, pursuer in enumerate(pursuers):
@@ -103,12 +119,15 @@ def run_simulation(relay=True):
                 # else pursuer is dead — stays put
             else:
                 if relay and energy[i] > 0:
-                    # Fly toward predicted intercept
+                    # Fly toward predicted intercept (card: p_E + v_E*T_h)
                     t_handoff = max(energy[active] / (K_ENERGY * V_ACTIVE**2), 0.5)
                     p_intercept = evader.pos + EVADER_DIR * V_EVADER * t_handoff
                     d = p_intercept - pursuer.pos
                     n = np.linalg.norm(d)
-                    pursuer.step(V_STANDBY * d / n if n > 1e-8 else np.zeros(3))
+                    v_cmd = V_STANDBY * d / n if n > 1e-8 else np.zeros(3)
+                    pursuer.step(v_cmd)
+                    if standby_drain:   # sensitivity run only (card: standby is free)
+                        energy[i] = max(energy[i] - K_ENERGY * float(v_cmd @ v_cmd) * DT, 0.0)
 
         # ── Evader straight escape ──
         evader.step(EVADER_DIR * V_EVADER)
@@ -133,6 +152,9 @@ def run_simulation(relay=True):
         # Single pursuer: stop when battery dead
         if not relay and energy[0] <= 0:
             break
+        # Relay: stop when every pursuer is empty
+        if relay and all(e <= 0 for e in energy):
+            break
 
     return (
         [np.array(tr) for tr in p_trajs],
@@ -143,6 +165,7 @@ def run_simulation(relay=True):
         np.array(act_log),
         handoff_times,
         captured, cap_time,
+        handoff_info,
     )
 
 
@@ -153,7 +176,7 @@ def plot_trajectories_3d(relay_res, single_res, out_dir):
 
     for col, (res, title) in enumerate([(relay_res, '3-Pursuer Relay'),
                                          (single_res, 'Single Pursuer')]):
-        p_trajs, e_traj, en_log, times, dist, act_log, handoffs, captured, cap_t = res
+        p_trajs, e_traj, en_log, times, dist, act_log, handoffs, captured, cap_t = res[:9]
         ax = fig.add_subplot(1, 2, col+1, projection='3d')
         ax.view_init(elev=25, azim=-55)
 
@@ -182,7 +205,7 @@ def plot_trajectories_3d(relay_res, single_res, out_dir):
 
 
 def plot_battery_levels(relay_res, out_dir):
-    p_trajs, e_traj, en_log, times, dist, act_log, handoffs, captured, cap_t = relay_res
+    p_trajs, e_traj, en_log, times, dist, act_log, handoffs, captured, cap_t = relay_res[:9]
     fig, ax = plt.subplots(figsize=(12, 5))
 
     for i, (en, color) in enumerate(zip(en_log, P_COLORS)):
@@ -208,12 +231,15 @@ def plot_battery_levels(relay_res, out_dir):
     plt.savefig(path, dpi=150); plt.close(); print(f'Saved: {path}')
 
 
-def plot_distance_comparison(relay_res, single_res, out_dir):
+def plot_distance_comparison(relay_res, single_res, out_dir, drain_res=None):
     fig, ax = plt.subplots(figsize=(12, 5))
 
-    for res, label, color in [(relay_res, '3-Pursuer Relay', 'steelblue'),
-                               (single_res, 'Single Pursuer', 'tomato')]:
-        _, _, _, times, dist, _, _, captured, cap_t = res
+    runs = [(relay_res, '3-Pursuer Relay (standby free, card)', 'steelblue'),
+            (single_res, 'Single Pursuer', 'tomato')]
+    if drain_res is not None:
+        runs.append((drain_res, 'Relay, standbys also drain energy', 'darkgray'))
+    for res, label, color in runs:
+        _, _, _, times, dist, _, _, captured, cap_t = res[:9]
         ax.plot(times, dist, color=color, linewidth=1.8, label=label)
         if captured:
             ax.axvline(cap_t, color=color, linestyle='--', linewidth=1.0, alpha=0.7)
@@ -237,7 +263,7 @@ def plot_distance_comparison(relay_res, single_res, out_dir):
 def save_animation(relay_res, out_dir):
     import matplotlib.animation as animation
 
-    p_trajs, e_traj, en_log, times, dist, act_log, handoffs, captured, cap_t = relay_res
+    p_trajs, e_traj, en_log, times, dist, act_log, handoffs, captured, cap_t = relay_res[:9]
     max_len = len(e_traj); step = 3
     fig, ax = plt.subplots(figsize=(9, 7))
 
@@ -288,19 +314,36 @@ def save_animation(relay_res, out_dir):
     ani.save(path, writer='pillow', fps=16, dpi=100); plt.close(); print(f'Saved: {path}')
 
 
-if __name__ == '__main__':
-    print('Running relay (3 pursuers)...')
-    relay_res  = run_simulation(relay=True)
-    print('Running single pursuer...')
-    single_res = run_simulation(relay=False)
+def report(label, res):
+    _, e_traj, en_log, times, dist, _, handoffs, captured, cap_t, hinfo = res
+    status = f'captured @ {cap_t:.2f}s' if captured else f'failed @ {times[-1]:.2f}s'
+    print(f'[{label}]  {status}  final active-pursuer distance {dist[-1]:.2f} m  '
+          f'evader travelled {np.linalg.norm(e_traj[-1]-e_traj[0]):.2f} m')
+    for (t, fr, to, en, dd) in hinfo:
+        print(f'    handoff @ {t:.2f}s  P{fr+1} -> P{to+1}   energies at handoff: '
+              + ', '.join(f'P{j+1}={e:.1f}J' for j, e in enumerate(en))
+              + '   distances to evader: '
+              + ', '.join(f'P{j+1}={d:.2f}m' for j, d in enumerate(dd)))
+    print('    final energies: ' + ', '.join(f'P{j+1}={en_log[j][-1]:.1f}J'
+                                         for j in range(N_PURSUERS)))
 
-    for res, label in [(relay_res, 'Relay'), (single_res, 'Single')]:
-        _, _, _, times, _, _, handoffs, captured, cap_t = res
-        status = f'captured @ {cap_t:.2f}s' if captured else f'failed @ {times[-1]:.2f}s'
-        print(f'[{label:<6}]  {status}  handoffs={handoffs}')
+
+if __name__ == '__main__':
+    print(f'T_max (active) = E0/(k*V_ACTIVE^2) = {E0/(K_ENERGY*V_ACTIVE**2):.2f} s; '
+          f'handoff at {HANDOFF_FRAC*100:.0f}% -> t = '
+          f'{(1-HANDOFF_FRAC)*E0/(K_ENERGY*V_ACTIVE**2):.2f} s')
+    relay_res   = run_simulation(relay=True)
+    single_res  = run_simulation(relay=False)
+    drain_res   = run_simulation(relay=True, standby_drain=True)
+    card_single = run_simulation(relay=False,
+                                 init_evader=np.array([CARD_GAP, 0.0, 2.0]))
+    report('Relay (card energy model)', relay_res)
+    report('Single pursuer', single_res)
+    report('Relay, standbys also drain k*v^2 (sensitivity)', drain_res)
+    report(f'Single pursuer, card gap {CARD_GAP:.0f} m (check)', card_single)
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories_3d(relay_res, single_res, out_dir)
     plot_battery_levels(relay_res, out_dir)
-    plot_distance_comparison(relay_res, single_res, out_dir)
+    plot_distance_comparison(relay_res, single_res, out_dir, drain_res)
     save_animation(relay_res, out_dir)
