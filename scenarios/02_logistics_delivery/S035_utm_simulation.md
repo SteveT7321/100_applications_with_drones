@@ -279,7 +279,7 @@ def resolve_fcfs(intents: List[DroneIntent],
     # Sort by first conflict time
     for id_k, id_j, t_conf, _ in sorted(conflicts, key=lambda x: x[2]):
         dt_sep = d_sep_h / v_close + t_buffer
-        current_gap = delays[id_k] - delays[id_j]
+        current_gap = delays[id_j] - delays[id_k]   # j must trail k by dt_sep
         if current_gap < dt_sep:
             delays[id_j] += dt_sep - current_gap
     return delays
