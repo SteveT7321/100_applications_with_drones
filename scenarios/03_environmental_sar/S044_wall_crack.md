@@ -113,7 +113,7 @@ frame, accounting for the range component along the wall direction).
 Camera resolution $R_{px} = 2048$ px across the FOV. The minimum resolvable crack width:
 
 $$w_{min}(d) = \frac{2\, d \cdot \tan(\alpha)}{R_{px}} \cdot 1000\ \text{mm}
-             = \frac{2 \times 1.5 \times \tan(30°)}{2048} \times 1000 \approx 0.847\ \mu\text{m}$$
+             = \frac{2 \times 1.5 \times \tan(30°)}{2048} \times 1000 \approx 0.846\ \text{mm}$$
 
 In practice, detection is probabilistic; the detection probability at slant range $r$:
 

@@ -48,16 +48,28 @@ N_PASS   = int(np.ceil(WALL_HEIGHT / DELTA_Z)) # 15 passes
 
 # PD controller gains
 KP_X = 16.0;  KD_X = 8.0    # standoff (x) control  omega_n = 4 rad/s
-KP_Z =  9.0;  KD_Z = 6.0    # height (z) control
 
 SIGMA_X = 0.05  # m  — wall-distance sensor noise std
+GRID_RES = 0.1  # m  — coverage grid cell size (card value)
+N_ANIM_FRAMES = 150
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '03_environmental_sar', 's044_wall_crack',
 )
 
-RNG = np.random.default_rng(0)   # fixed seed for reproducibility
+
+
+def footprint_cells(y, z):
+    """Index ranges [j0, j1) x [k0, k1) of grid cells whose CENTRES lie inside the
+    square image footprint |y_j - y| <= h_strip, |z_k - z| <= h_strip."""
+    ny = int(round(WALL_WIDTH / GRID_RES))
+    nz = int(round(WALL_HEIGHT / GRID_RES))
+    j0 = max(0, int(np.ceil((y - H_STRIP) / GRID_RES - 0.5)))
+    j1 = min(ny, int(np.floor((y + H_STRIP) / GRID_RES - 0.5)) + 1)
+    k0 = max(0, int(np.ceil((z - H_STRIP) / GRID_RES - 0.5)))
+    k1 = min(nz, int(np.floor((z + H_STRIP) / GRID_RES - 0.5)) + 1)
+    return j0, j1, k0, k1
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -138,10 +150,9 @@ def run_simulation():
     t_hist  = [0.0]
     detected = np.zeros(N_CRACKS, dtype=bool)
 
-    # Coverage grid  (ny x nz booleans)
-    GRID_RES = 0.5   # m
-    ny = int(WALL_WIDTH  / GRID_RES)
-    nz = int(WALL_HEIGHT / GRID_RES)
+    # Coverage grid  (ny x nz booleans, 0.1 m cells)
+    ny = int(round(WALL_WIDTH / GRID_RES))
+    nz = int(round(WALL_HEIGHT / GRID_RES))
     covered = np.zeros((ny, nz), dtype=bool)
 
     # Pass-by-pass coverage checkpoints (waypoint pair index = completed pass)
@@ -154,7 +165,7 @@ def run_simulation():
         to_wp  = wp - state[:2]
         dist   = np.linalg.norm(to_wp)
 
-        if abs(to_wp[0]) <= 0.3 and abs(to_wp[1]) <= 0.3:
+        if abs(to_wp[0]) <= 1e-9 and abs(to_wp[1]) <= 1e-9:
             # Check if we just completed a full horizontal pass
             if wp_idx % 2 == 0:          # every 2 waypoints = 1 complete pass
                 frac = covered.sum() / (ny * nz)
@@ -164,10 +175,10 @@ def run_simulation():
             continue
 
         # ── Velocity command ────────────────────────────────────────────
-        dir_y = np.sign(to_wp[0]) if abs(to_wp[0]) > 0.3 else 0.0
-        dir_z = np.sign(to_wp[1]) if abs(to_wp[1]) > 0.3 else 0.0
-        state[2] = dir_y * V_CRUISE
-        state[3] = dir_z * V_CRUISE
+        # cruise at V_CRUISE along each axis, slowing on the last step so the
+        # waypoint is reached exactly (no 0.3 m arrival tolerance)
+        state[2] = np.clip(to_wp[0] / DT, -V_CRUISE, V_CRUISE)
+        state[3] = np.clip(to_wp[1] / DT, -V_CRUISE, V_CRUISE)
 
         # ── Integrate position ──────────────────────────────────────────
         state[:2] += state[2:] * DT
@@ -188,10 +199,7 @@ def run_simulation():
 
         # ── Coverage update ─────────────────────────────────────────────
         y_pos, z_pos = state[0], state[1]
-        j0 = max(0, int((y_pos - H_STRIP) / GRID_RES))
-        j1 = min(ny, int((y_pos + H_STRIP) / GRID_RES) + 1)
-        k0 = max(0, int((z_pos - H_STRIP) / GRID_RES))
-        k1 = min(nz, int((z_pos + H_STRIP) / GRID_RES) + 1)
+        j0, j1, k0, k1 = footprint_cells(y_pos, z_pos)
         covered[j0:j1, k0:k1] = True
 
         # ── Crack detection ─────────────────────────────────────────────
@@ -278,16 +286,12 @@ def plot_trajectory(traj, cracks, detected, pass_heights, path_len, out_dir):
 
 def plot_coverage_map(traj, cracks, detected, out_dir):
     """2D heatmap of wall coverage (visit count per cell) with crack overlays."""
-    GRID_RES = 0.5
-    ny = int(WALL_WIDTH  / GRID_RES)
-    nz = int(WALL_HEIGHT / GRID_RES)
+    ny = int(round(WALL_WIDTH / GRID_RES))
+    nz = int(round(WALL_HEIGHT / GRID_RES))
     visit_count = np.zeros((ny, nz), dtype=int)
 
-    for pos in traj:
-        j0 = max(0, int((pos[0] - H_STRIP) / GRID_RES))
-        j1 = min(ny, int((pos[0] + H_STRIP) / GRID_RES) + 1)
-        k0 = max(0, int((pos[1] - H_STRIP) / GRID_RES))
-        k1 = min(nz, int((pos[1] + H_STRIP) / GRID_RES) + 1)
+    for pos in traj[1:]:          # same frames as the coverage computation
+        j0, j1, k0, k1 = footprint_cells(pos[0], pos[1])
         visit_count[j0:j1, k0:k1] += 1
 
     fig, ax = plt.subplots(figsize=(14, 6))
@@ -484,7 +488,7 @@ def save_animation(traj, cracks, detected, pass_heights, out_dir):
     trail_line, = ax.plot([], [], color='steelblue', lw=0.6, alpha=0.5)
 
     # Decimate for animation speed
-    step = max(1, len(traj) // 200)
+    step = int(np.ceil(len(traj) / N_ANIM_FRAMES))
     frames = range(0, len(traj), step)
     detected_so_far = np.zeros(N_CRACKS, dtype=bool)
 
@@ -553,7 +557,20 @@ if __name__ == '__main__':
     print(f'  Cracks detected        : {detected.sum()} / {N_CRACKS}  ({det_rate*100:.1f}%)')
     print(f'  Simulation steps       : {len(traj)}')
     print(f'  Simulation time        : {t_hist[-1]:.1f} s  ({t_hist[-1]/60:.1f} min)')
-    print(f'  Standoff RMS error     : {np.std(x_hist - D_STANDOFF)*100:.2f} cm')
+    err = x_hist - D_STANDOFF
+    print(f'  Standoff error         : RMS {np.sqrt(np.mean(err**2))*100:.2f} cm, '
+          f'mean {np.mean(err)*100:.2f} cm, max |e| {np.max(np.abs(err))*100:.2f} cm')
+    print(f'  Coverage grid          : {GRID_RES} m cells; footprint spans z = '
+          f'{traj[1:, 1].min() - H_STRIP:.2f} - {traj[1:, 1].max() + H_STRIP:.2f} m '
+          f'(passes flown at z = {traj[1:, 1].min():.3f} - {traj[1:, 1].max():.3f} m)')
+    print(f'  Pass spacing           : {pass_heights[1] - pass_heights[0]:.3f} m '
+          f'(overlap {100 * (1 - (pass_heights[1] - pass_heights[0]) / W_STRIP):.1f}%)')
+    print(f'  w_min at standoff      : {w_min_at_range(D_STANDOFF):.3f} mm; cracks wider than this: '
+          f'{int(np.sum(cracks[:, 2] > w_min_at_range(D_STANDOFF)))} / {N_CRACKS}')
+    for lo, hi in zip([0.0, 0.5, 1.0, 1.5], [0.5, 1.0, 1.5, 2.0]):
+        m = (cracks[:, 2] >= lo) & (cracks[:, 2] < hi)
+        print(f'  Width {lo:.1f}-{hi:.1f} mm      : detected {int(detected[m].sum())} / {int(m.sum())}')
+    print(f'  Coverage after each pass (%): ' + ', '.join(f'{100 * c:.1f}' for c in pass_coverage))
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     print(f'Output dir: {out_dir}', flush=True)
