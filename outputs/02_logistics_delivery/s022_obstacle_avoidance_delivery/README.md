@@ -58,6 +58,7 @@ Tracking error (card definition): $\epsilon_{track} = \sqrt{\frac{1}{T}\sum_t \|
 
 | Item | Card | Code | Reason |
 |------|------|------|--------|
+| Steering step | always a full step: $\mathbf{q}_{new} = \mathbf{q}_{nearest} + \eta\,\hat{\mathbf{u}}$ | $\mathbf{q}_{new} = \mathbf{q}_{nearest} + \min(\eta, d)\,\hat{\mathbf{u}}$, $d = \|\mathbf{q}_{rand} - \mathbf{q}_{nearest}\|$ | standard RRT* steering: a sample closer than η (including the goal sample) is reached exactly instead of being overshot by up to η |
 | Goal handling | not specified | 10 % goal-biased sampling; a node within 1.5 η of the goal with a free edge becomes a goal-parent candidate | standard RRT* practice; needed to connect the tree to an exact goal point |
 | Tracking controller | "Roles" mentions a PID position controller | the card's own *Waypoint Tracking Controller* section (constant-speed proportional-direction velocity command) on a kinematic point mass (`DroneBase`) | follows the card's maths section; no PID/dynamics are simulated |
 | Extra metric | — | distance from the drone to the planned polyline (cross-track) is reported alongside the card's time-indexed RMSE | the time-indexed RMSE mostly measures along-track lead from corner-cutting, not lateral deviation (see below) |
