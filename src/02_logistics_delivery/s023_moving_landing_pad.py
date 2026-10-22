@@ -4,8 +4,11 @@ S023 Moving Landing Pad
 A delivery drone intercepts and lands on a moving truck (simulated as a ground vehicle).
 
 Two-phase guidance:
-  Phase 1 — Proportional Navigation to predicted intercept point
-  Phase 2 — PD descent + velocity matching + tanh flare
+  Phase 1 — 3-D Proportional Navigation (N=3, finite-difference LOS rate) toward
+            the predicted intercept point at hand-over altitude z_switch, plus an
+            along-LOS speed-hold term (PN alone only steers normal to the LOS and
+            cannot accelerate a drone that starts from rest)
+  Phase 2 — PD lateral position/velocity matching + tanh flare descent
 
 Outputs (saved to outputs/02_logistics_delivery/s023_moving_landing_pad/):
   - trajectory_3d.png       : 3-D flight path with truck road and pad
@@ -56,66 +59,67 @@ KP      = 1.2
 KV      = 1.8
 KZ_RATE = 2.0               # descent rate controller gain
 
+# Phase-1 along-LOS speed hold (not in the card; see README "Deviations")
+K_AX    = 1.0               # 1/s  — gain on (v_max - v_along_LOS)
+
+P_DRONE0 = np.array([-20.0, 8.0, Z0])   # drone start (m)
+X_TRUCK0 = 0.0                          # truck start x (m), road along x at y=z=0
+
 
 # ── Guidance functions ────────────────────────────────────────────────────────
 
 def predict_intercept(p_drone, p_truck, v_truck_vec, v_drone_max, n_iter=5):
-    """Iterative fixed-point intercept prediction (horizontal plane only)."""
-    # Work in 2-D (x,y) — the intercept target is at truck ground level
-    p_drone_2d  = p_drone[:2]
-    p_truck_2d  = p_truck[:2]
-    v_truck_2d  = v_truck_vec[:2]
+    """Iterative fixed-point intercept prediction.
 
-    dt_fly = np.linalg.norm(p_truck_2d - p_drone_2d) / v_drone_max
+    The aim point is the truck's future (x, y) at hand-over altitude Z_SWITCH:
+        p* = p_T + v_T * dt_fly (horizontal),  z* = Z_SWITCH
+        dt_fly = ||p* - p_D|| / v_max      (iterated n_iter times)
+    """
+    p_truck_2d = p_truck[:2]
+    v_truck_2d = v_truck_vec[:2]
+    dz = p_drone[2] - Z_SWITCH
+
+    dt_fly = np.linalg.norm(p_truck_2d - p_drone[:2]) / v_drone_max
     for _ in range(n_iter):
         p_int_2d = p_truck_2d + v_truck_2d * dt_fly
-        # Distance in 3-D: horizontal to intercept + drone is at altitude Z0
-        dist_3d  = np.sqrt(np.linalg.norm(p_int_2d - p_drone_2d)**2 + p_drone[2]**2)
+        dist_3d  = np.sqrt(np.linalg.norm(p_int_2d - p_drone[:2])**2 + dz**2)
         dt_fly   = dist_3d / v_drone_max
 
-    # Return full 3-D intercept waypoint at Z_SWITCH altitude (not ground)
-    p_intercept_3d = np.array([p_int_2d[0], p_int_2d[1], Z_SWITCH])
-    return p_intercept_3d
+    return np.array([p_int_2d[0], p_int_2d[1], Z_SWITCH]), dt_fly
 
 
-def png_acceleration(p_drone, v_drone, p_target, v_target, N, a_max):
-    """3-D Proportional Navigation guidance law."""
+def png_acceleration(p_drone, v_drone, p_target, los_prev, r_prev, N, a_max, dt):
+    """3-D Proportional Navigation, card form:  a = N * Vc * dlambda/dt.
+
+    lambda_hat = (p* - p_D)/||p* - p_D||, LOS rate and closing speed
+    Vc = -d||p* - p_D||/dt are both finite differences over one step, so the
+    motion of the (re-predicted) aim point is included automatically.
+    An along-LOS speed-hold term K_AX*(v_max - v_D.lambda) is added because PN
+    acceleration is normal to the LOS (it cannot speed the drone up from rest).
+    The PN (steering) term has priority under the |a| <= a_max saturation.
+
+    Returns (a_cmd, los, r_norm, a_pn_magnitude).
+    """
     r = p_target - p_drone
     r_norm = np.linalg.norm(r) + 1e-9
     los = r / r_norm
 
-    v_rel = v_target - v_drone
-    vc = -np.dot(v_rel, los)                        # closing speed (positive = closing)
-    v_perp = v_rel - np.dot(v_rel, los) * los        # velocity perpendicular to LOS
-    los_rate = v_perp / (r_norm + 1e-9)              # approximate LOS rate
+    if los_prev is None:
+        a_pn = np.zeros(3)
+    else:
+        los_rate = (los - los_prev) / dt
+        vc = -(r_norm - r_prev) / dt                  # closing speed (+ = closing)
+        a_pn = N * vc * los_rate
+        n_pn = np.linalg.norm(a_pn)
+        if n_pn > a_max:
+            a_pn = a_pn * (a_max / n_pn)
 
-    a = N * vc * los_rate
-    a_norm = np.linalg.norm(a)
-    if a_norm > a_max:
-        a = a * (a_max / a_norm)
-    return a
+    # Along-LOS speed hold with the remaining acceleration budget
+    a_ax_cmd = K_AX * (DRONE_VMAX - np.dot(v_drone, los))
+    budget = np.sqrt(max(a_max**2 - np.dot(a_pn, a_pn), 0.0))
+    a_ax = np.clip(a_ax_cmd, -budget, budget)
 
-
-def phase1_acceleration(p_drone, v_drone, p_intercept, v_truck, a_max):
-    """Phase 1: navigate to intercept waypoint (lateral + altitude), hold altitude near Z0."""
-    r    = p_intercept - p_drone
-    dist = np.linalg.norm(r) + 1e-9
-
-    # Simple proportional pursuit toward intercept waypoint
-    desired_v = (r / dist) * DRONE_VMAX
-    a = 3.0 * (desired_v - v_drone)          # proportional velocity tracking
-
-    # Altitude hold: if drone is above intercept Z, brake z descent
-    if p_drone[2] > Z_SWITCH + 1.0:
-        # Keep altitude until we're close laterally
-        lat_err = np.linalg.norm(r[:2])
-        if lat_err > R_SWITCH * 3:
-            a[2] = 2.0 * (Z0 - p_drone[2]) - 1.0 * v_drone[2]  # hold altitude
-
-    a_norm = np.linalg.norm(a)
-    if a_norm > a_max:
-        a = a * (a_max / a_norm)
-    return a
+    return a_pn + a_ax * los, los, r_norm, float(np.linalg.norm(a_pn))
 
 
 def descent_acceleration(p_drone, v_drone, p_truck, v_truck):
@@ -138,9 +142,10 @@ def descent_acceleration(p_drone, v_drone, p_truck, v_truck):
 def run_simulation():
     """Run the moving-landing-pad simulation and return history dict."""
     # Initial conditions
-    p_drone = np.array([-20.0, 8.0, Z0], dtype=float)
+    p_drone = P_DRONE0.astype(float).copy()
     v_drone = np.zeros(3)
     v_truck = np.array([TRUCK_SPEED, 0.0, 0.0])
+    los_prev, r_prev = None, None
 
     history = {
         "time":       [],
@@ -150,6 +155,8 @@ def run_simulation():
         "lat_miss":   [],
         "vz":         [],
         "dv_horiz":   [],
+        "aim":        [],
+        "a_pn":       [],
     }
     landed = False
     touchdown_info = None
@@ -158,7 +165,7 @@ def run_simulation():
         t = step * DT
 
         # Truck position (straight road along x, y=z=0)
-        p_truck = np.array([TRUCK_SPEED * t, 0.0, 0.0])
+        p_truck = np.array([X_TRUCK0 + TRUCK_SPEED * t, 0.0, 0.0])
 
         # Phase logic
         lat_dist = np.linalg.norm(p_drone[:2] - p_truck[:2])
@@ -166,9 +173,14 @@ def run_simulation():
 
         # Control
         if phase == 1:
-            p_intercept = predict_intercept(p_drone, p_truck, v_truck, DRONE_VMAX)
-            a_cmd = phase1_acceleration(p_drone, v_drone, p_intercept, v_truck, DRONE_AMAX)
+            p_intercept, _ = predict_intercept(p_drone, p_truck, v_truck, DRONE_VMAX)
+            a_cmd, los_prev, r_prev, a_pn_mag = png_acceleration(
+                p_drone, v_drone, p_intercept, los_prev, r_prev,
+                N_PNG, DRONE_AMAX, DT)
         else:
+            p_intercept = np.full(3, np.nan)
+            a_pn_mag = 0.0
+            los_prev, r_prev = None, None     # PN re-initialises if Phase 1 resumes
             a_cmd = descent_acceleration(p_drone, v_drone, p_truck, v_truck)
             a_norm = np.linalg.norm(a_cmd)
             if a_norm > DRONE_AMAX:
@@ -190,6 +202,8 @@ def run_simulation():
         history["lat_miss"].append(np.linalg.norm(p_drone[:2] - p_truck[:2]))
         history["vz"].append(abs(v_drone[2]))
         history["dv_horiz"].append(np.linalg.norm(v_drone[:2] - v_truck[:2]))
+        history["aim"].append(p_intercept.copy())
+        history["a_pn"].append(a_pn_mag)
 
         # Touchdown check
         if p_drone[2] <= Z_TOUCHDOWN:
@@ -202,7 +216,8 @@ def run_simulation():
             break
 
     # Convert lists to arrays
-    for key in ("time", "drone", "truck", "phase", "lat_miss", "vz", "dv_horiz"):
+    for key in ("time", "drone", "truck", "phase", "lat_miss", "vz", "dv_horiz",
+                "aim", "a_pn"):
         history[key] = np.array(history[key])
 
     return history, landed, touchdown_info
@@ -227,7 +242,7 @@ def plot_trajectory_3d(history, touchdown_info, out_dir):
     idx2 = np.where(phase == 2)[0]
     if len(idx1):
         ax.plot(drone[idx1, 0], drone[idx1, 1], drone[idx1, 2],
-                color="red", lw=2, label="Drone – Phase 1 (PNG)")
+                color="red", lw=2, label="Drone – Phase 1 (PN + speed hold)")
     if len(idx2):
         ax.plot(drone[idx2, 0], drone[idx2, 1], drone[idx2, 2],
                 color="darkred", lw=2, label="Drone – Phase 2 (Descent)")
@@ -332,10 +347,10 @@ def plot_metrics(history, touchdown_info, out_dir):
         ax.set_ylim(ymin, ymax)
 
     # Phase legend patch
-    p1_patch = mpatches.Patch(color="lightblue",  alpha=0.5, label="Phase 1 (PNG)")
+    p1_patch = mpatches.Patch(color="lightblue",  alpha=0.5, label="Phase 1 (PN)")
     p2_patch = mpatches.Patch(color="lightyellow", alpha=0.7, label="Phase 2 (Descent)")
     axes[0].legend(handles=axes[0].get_legend_handles_labels()[0] + [p1_patch, p2_patch],
-                   labels=axes[0].get_legend_handles_labels()[1] + ["Phase 1 (PNG)", "Phase 2 (Descent)"],
+                   labels=axes[0].get_legend_handles_labels()[1] + ["Phase 1 (PN)", "Phase 2 (Descent)"],
                    fontsize=7, loc="upper right")
 
     # Touchdown annotation
@@ -363,10 +378,9 @@ def save_animation(history, out_dir):
     phase = history["phase"]
     t     = history["time"]
 
-    # Subsample to keep GIF manageable (~200 frames)
+    # Subsample to keep GIF manageable (<= 150 frames, last frame included)
     n = len(t)
-    step = max(1, n // 200)
-    idx  = np.arange(0, n, step)
+    idx = np.unique(np.linspace(0, n - 1, min(150, n)).astype(int))
 
     fig, (ax_top, ax_side) = plt.subplots(1, 2, figsize=(14, 6))
     fig.suptitle("S023 — Moving Landing Pad Animation", fontsize=13)
@@ -460,6 +474,37 @@ def main():
     print("=" * 60)
 
     history, landed, touchdown_info = run_simulation()
+
+    # ── Guidance diagnostics ──
+    ph   = history["phase"]
+    t    = history["time"]
+    aim  = history["aim"]
+    apn  = history["a_pn"]
+    n_sw = int(np.sum(ph[1:] != ph[:-1]))
+    i2   = int(np.argmax(ph == 2)) if np.any(ph == 2) else None
+    print(f"\nStart: drone {P_DRONE0.tolist()} m, truck x0={X_TRUCK0} m, "
+          f"v_T={TRUCK_SPEED} m/s")
+    print(f"Initial predicted aim point : ({aim[0,0]:.2f}, {aim[0,1]:.2f}, {aim[0,2]:.2f}) m")
+    if i2 is not None:
+        p_sw  = history["drone"][i2]
+        print(f"Phase 1 -> 2 switch at t={t[i2]:.2f}s, drone at "
+              f"({p_sw[0]:.2f}, {p_sw[1]:.2f}, {p_sw[2]:.2f}) m")
+        print(f"  last aim point (Phase 1)  : ({aim[i2-1,0]:.2f}, {aim[i2-1,1]:.2f}, "
+              f"{aim[i2-1,2]:.2f}) m")
+        print(f"  lateral miss at switch    : {history['lat_miss'][i2]:.3f} m")
+        print(f"  Δv_horiz at switch        : {history['dv_horiz'][i2]:.3f} m/s")
+        print(f"  |vz| at switch            : {history['vz'][i2]:.3f} m/s")
+    if i2 is not None:
+        lat2 = history["lat_miss"][i2:]
+        dv2  = history["dv_horiz"][i2:]
+        j0   = int(np.argmax(dv2 <= DV_MAX))
+        print(f"  Phase 2: max lateral miss {lat2.max():.3f} m; Δv first <= {DV_MAX} m/s "
+              f"after {t[i2 + j0] - t[i2]:.2f} s; max Δv after that {dv2[j0:].max():.3f} m/s")
+        print(f"  Phase 2 duration          : {t[-1] - t[i2]:.2f} s")
+    print(f"Number of phase changes     : {n_sw}")
+    p1 = ph == 1
+    print(f"PN steering |a_PN| in Phase 1: max {apn[p1].max():.3f} m/s², "
+          f"mean {apn[p1].mean():.3f} m/s²")
 
     if touchdown_info:
         td = touchdown_info
