@@ -56,8 +56,9 @@ MAX_TIME               = 20.0
 
 # Pursuer starts AHEAD of the evader, outside detection range (6.32 m) but
 # on the cone axis side (alpha = 18.4 deg), so a straight approach must pass
-# through the cone. (The card's (-4, 2, 2) is already behind the evader,
-# where a direct approach is never detected and both strategies coincide.)
+# through the cone. (The card's (-4, 2, 2) is already behind the evader, so
+# neither strategy is detected there and direct is slightly faster; the script
+# runs that case as a check.)
 INIT_PURSUER   = np.array([6.0, 2.0, 2.0])
 INIT_EVADER    = np.array([0.0, 0.0, 2.0])
 CARD_INIT_PURSUER = np.array([-4.0, 2.0, 2.0])   # card's start, run as a check
