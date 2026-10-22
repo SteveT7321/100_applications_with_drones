@@ -43,7 +43,9 @@ def straight_escape(pos_e, pos_p, v_max, t):
 
 
 def perpendicular_escape(pos_e, pos_p, v_max, t):
-    """Optimal: fly perpendicular to line-of-sight in the xy plane."""
+    """Fly perpendicular to line-of-sight in the xy plane (the card's "optimal" evasion;
+    against this pure-pursuit pursuer it is near-worst, since it adds nothing
+    to the range rate)."""
     r_xy = pos_e[:2] - pos_p[:2]
     r_hat = r_xy / (np.linalg.norm(r_xy) + 1e-8)
     perp = np.array([-r_hat[1], r_hat[0], 0.0])
@@ -51,7 +53,8 @@ def perpendicular_escape(pos_e, pos_p, v_max, t):
 
 
 def make_random_escape(seed=42):
-    """Returns a stateless random strategy with fixed seed for reproducibility."""
+    """Returns a random-direction strategy; the closure holds its own seeded RNG
+    (stateful: a new direction is drawn every call), so runs are reproducible."""
     rng = np.random.default_rng(seed)
 
     def _strategy(pos_e, pos_p, v_max, t):
