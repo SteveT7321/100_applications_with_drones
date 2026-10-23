@@ -528,7 +528,10 @@ def run_simulation():
     mc = []
     for s in MC_SEEDS:
         mi, mp, me = run_instance(s)
-        row = {"seed": s}
+        # does the 3D cost change the Nearest-Depot start that AO begins from?
+        row = {"seed": s,
+               "nd_changed": bool(np.any(nearest_depot_partition(mi, "2d")
+                                         != nearest_depot_partition(mi, "3d")))}
         for st in STRATS:
             f, t = me[("2d", st)], me[("3d", st)]
             row[st] = dict(
@@ -990,6 +993,20 @@ def report(res):
               f"{int((sv < -0.5).sum())}; objective (home cost + penalty) "
               f"wins/ties/losses {int((so > 0.5).sum())}/"
               f"{int((np.abs(so) <= 0.5).sum())}/{int((so < -0.5).sum())}")
+        nz = np.abs(sv)[sv != 0.0]
+        print(f"    exact wins/ties/losses (tie = diff exactly 0): "
+              f"{int((sv > 0).sum())}/{int((sv == 0).sum())}/"
+              f"{int((sv < 0).sum())}; nonzero diffs inside the 0.5 m-eq tie "
+              f"band {int(((sv != 0) & (np.abs(sv) <= 0.5)).sum())}"
+              + (f" (smallest |diff| {nz.min():.3f} m-eq)" if len(nz) else ""))
+        if s == "AO":
+            ndc = np.array([r["nd_changed"] for r in both])
+            for lbl, msk in [("losses (diff < -0.5)", sv < -0.5),
+                             ("objective losses", so < -0.5),
+                             ("wins (diff > 0.5)", sv > 0.5)]:
+                print(f"    AO {lbl}: {int(msk.sum())}, of which the 3D cost "
+                      f"changed the Nearest-Depot start in "
+                      f"{int((msk & ndc).sum())}")
         print(f"    customers reassigned: mean {mv.mean():.2f}, max {mv.max()},"
               f" layouts with any change {int((mv > 0).sum())}; mean D2 "
               f"(rooftop) deliveries flat {d2share:.2f} -> 3D {d3share:.2f}")

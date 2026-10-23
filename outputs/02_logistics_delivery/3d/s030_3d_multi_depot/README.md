@@ -113,8 +113,9 @@ The drones are flown on a 0.5 s grid at 14 m/s horizontally and 3 m/s vertically
 | $E_{stop} = 2\,m g (z_c - 1)$ per stop | only the re-climb is charged: $m g (z_c - 1)$ | the card's own arc-cost rule makes descents free; charging them twice is inconsistent. The card is corrected. |
 | Arc cost $d^{3D}_{ij}$ (straight line) plus a separate per-stop term and a $2(z_c-1)$ range term | cost and range computed on the actual altitude-zone path (vertical, horizontal, vertical) | this is the card's own altitude-zone routing model. It counts each vertical metre exactly once and covers depot legs, where the depot and cruise altitudes differ. |
 | Return choice: $d^{3D}_{last,m} + \alpha_E m g \max(z_m - 1, 0)$, nearest free slot drone by drone | joint slot assignment that maximises the total saving on the altitude-zone path cost, with a 3D range check | same rule as the fixed 2D S030 (joint assignment). The path cost includes the climb from the cruise layer to the depot. |
-| Vertical moves are instantaneous ("not time-penalised") | vertical moves at 3 m/s | instantaneous altitude changes would teleport the drone in the flight simulation and the GIF. This changes only the makespan, not the cost. |
+| Vertical moves are instantaneous ("not time-penalised") | vertical moves at 3 m/s | instantaneous altitude changes would teleport the drone in the flight simulation and the GIF. This changes only the makespan, not the cost. The card is corrected. |
 | K-Means "evaluated on 3D arc costs" | K-Means clusters 3D positions, then routes and scores on the 3D cost | K-Means is a geometric clustering; the 2D S030 balanced variant (size cap 5) is kept |
+| Route seeding by 3D Clarke-Wright savings, "executed exactly as in S030" | nearest-neighbour packing plus 2-opt on the 3D cost, with a first-fit-decreasing fallback for the fleet limit | the fixed 2D S030 does not use Clarke-Wright either (its README lists this deviation); keeping its route builder makes the flat-vs-3D comparison differ only in the cost model. The card now notes this. |
 | Service time, K-Means cap and iteration limit, fleet-limit packing | taken from the fixed 2D S030 | the 3D card says "as in S030" |
 | Per-drone "energy used" | climb energy $m g \Delta z^{+}$ (J) and energy-weighted cost (m-eq) | the card defines no cruise power model, only the climb energy |
 | Single showcase run | showcase seed 7 plus a 200-layout Monte-Carlo, plus a separation check against a single-layer counterfactual | one layout cannot show whether the 3D cost changes decisions in general |
@@ -123,7 +124,7 @@ The drones are flown on a 0.5 s grid at 14 m/s horizontally and 3 m/s vertically
 
 ## Simulation Results
 
-Both runs printed byte-identical output and produced byte-identical files. Runtime is about 3 min 20 s.
+Both runs printed byte-identical output and produced byte-identical files. Runtime is about 2 min 40 s.
 
 **Regression check.** Planned with the flat cost and scored with the 2D metric, the code reproduces 2D S030 exactly:
 
@@ -158,7 +159,7 @@ Only Nearest-Depot reacts on seed 7. Customer 13 is nearly equidistant between D
 
 ### Monte-Carlo, 200 customer layouts (same layout for every strategy and both planners)
 
-Saving = flat-plan cost − 3D-plan cost, both scored on the 3D open-return cost. Wins, ties and losses are counted for the 3D plan, with a tie meaning |diff| ≤ 0.5 m-eq.
+Saving = flat-plan cost − 3D-plan cost, both scored on the 3D open-return cost. Wins, ties and losses are counted for the 3D plan, with a tie meaning |diff| ≤ 0.5 m-eq. Counting only exact ties (diff = 0) gives the same split for Nearest-Depot (7/41/3) and Balanced K-Means (13/93/0) and 35/66/12 for AO: one AO layout falls inside the 0.5 m-eq band with a 0.244 m-eq gain for the 3D plan.
 
 | Strategy | Layouts compared | Mean ± std saving | Median | Min / max | Wins / ties / losses | Objective W/T/L | Layouts with any reassignment |
 |----------|------|------|------|------|------|------|------|
@@ -171,7 +172,7 @@ Every infeasible plan fails on the fleet limit. Summed over both planners, the d
 **Findings**
 
 - **The 3D tiers change the AO partition in only a minority of layouts, and the effect is small.** AO reassigns at least one customer in 38/113 comparable layouts and ties the flat plan in 67. The mean gain is 0.65% of the flown 3D cost. The direction is the expected one: rooftop D2 serves fewer customers (mean 4.52 → 4.32). The reason is scale: the largest per-stop altitude cost (79 m-eq at D2) is small next to the 400–2000 m sorties, so it only tips customers that are nearly equidistant between depots.
-- **The 3D-aware AO is not always better.** It loses on flown cost in 12 layouts (worst −708.6 m-eq) and on its own objective in 14. AO is a local search that starts from Nearest-Depot. When the 3D cost changes the Nearest-Depot start, AO can end in a worse local optimum than the flat run. This is a property of the heuristic, not of the 3D model.
+- **The 3D-aware AO is not always better.** It loses on flown cost in 12 layouts (worst −708.6 m-eq) and on its own objective in 14. AO is a local search that starts from Nearest-Depot, so the 3D run and the flat run can end in different local optima. A changed start explains only part of the losses: the 3D cost changes the Nearest-Depot start in 7 of the 12 flown-cost losses and 9 of the 14 objective losses (and in 15 of the 34 wins). In the other 5 flown-cost losses both runs start from the same partition; the different cost function then leads the greedy moves to a different local optimum, which happens to fly worse. Either way the losses come from the local search, which does not find the 3D optimum, not from the 3D cost model itself.
 - **Balanced K-Means is blind to the tiers.** Its partition never changes (0/106 layouts), because a 15–30 m height offset barely changes Euclidean distances of hundreds of metres. It gains a little (13 wins, +3.4 m-eq on average) only from the 3D-aware choice of landing depot.
 - **Most random layouts are infeasible under the S030 fleet limit.** One sortie per drone means depot $m$ can carry at most $F_m Q$ = 6–9 kg, and every recorded failure is a fleet-limit failure. Nearest-Depot is infeasible in 143 (flat) and 146 (3D) of 200 layouts. Comparisons therefore use only the layouts where both plans are feasible.
 

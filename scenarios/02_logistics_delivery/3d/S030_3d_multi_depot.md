@@ -29,9 +29,12 @@ and returns to the nearest depot (in 3D) with available docking capacity.
 - **Depots** $\mathcal{D} = \{d_1, d_2, d_3, d_4\}$: at positions
   $(x_m, y_m, z_m^{depot})$ where $z_m^{depot} \in \{0, 15, 30\}$ m (tier assignment fixed at
   scenario start); each depot retains its fleet size $F_m$ and inventory $I_m$ from S030.
-- **Drones** $\mathcal{K}$ (10 total): each cruises at the altitude of its originating depot
-  $z_k^{cruise} = z_{\delta(k)}^{depot}$; vertical transitions to/from customers are modelled
-  as instantaneous altitude changes at waypoints (energy-penalised, not time-penalised).
+- **Drones** $\mathcal{K}$ (10 total): each cruises at the altitude layer of its originating
+  depot (D2 30 m, D3 15 m; the two ground-tier fleets D1 and D4 at 2.5 m and 7.5 m, see the
+  correction below); vertical transitions to/from customers are energy-penalised. (Corrected
+  2026-10-24: the card modelled them as instantaneous and not time-penalised. The
+  implementation flies them at 3 m/s, so drones do not teleport in the flight simulation; this
+  changes only the timing, not the cost.)
 - **Customers** $\mathcal{C} = \{c_1, \ldots, c_{20}\}$: all at $z = 1$ m (landing/delivery
   altitude); demands $q_c \in [0.3, 1.8]$ kg as in S030.
 
@@ -126,6 +129,12 @@ $$S_{ij}^{(m)} = c_{d_m, i} + c_{d_m, j} - c_{ij}$$
 where each arc cost $c$ now uses $d^{3D}$ plus the altitude penalty. The savings-based merge is
 executed exactly as in S030 (decreasing order, subject to capacity and range).
 
+> **Note (implementation, 2026-10-24).** The fixed 2D S030 does not use Clarke-Wright seeding:
+> it builds each depot's sorties by nearest-neighbour packing plus 2-opt, with a
+> first-fit-decreasing fallback for the fleet limit. The 3D implementation keeps that route
+> builder (on 3D costs) so that the flat-vs-3D comparison isolates the altitude effect. The
+> savings formula above is therefore not executed.
+
 ### 3D Open-Route Return Selection
 
 After drone $k$ completes its last delivery at customer position $(x_{last}, y_{last}, 1)$,
@@ -176,7 +185,11 @@ Accept the reassignment when $\Delta_{m \to m'}^{3D} < 0$ and feasibility is pre
 - **Per-stop energy**: vertical descent + re-climb at each customer waypoint contributes to range budget
 - **Altitude-zone cruising**: each drone cruises at its depot's altitude tier, descends only at delivery waypoints
 - **3D open-route return**: best-return depot selected on 3D cost including return-climb penalty
-- **Vertical separation**: tiers at 15 m spacing guarantee $\geq 5$ m fleet separation without collision logic
+- **Vertical separation**: cruise layers at least 5 m apart separate *cruising* fleets
+  (corrected 2026-10-24: this is not separation "without collision logic". In the
+  implementation, every remaining loss of separation involves a drone outside its layer,
+  climbing, descending or hovering at 1 m to deliver, and D1's 2.5 m layer is within 5 m of
+  the delivery altitude)
 - **3D trajectory visualisation**: full `(x, y, z)` paths with altitude time-series per drone
 
 ---
@@ -188,7 +201,7 @@ Accept the reassignment when $\Delta_{m \to m'}^{3D} < 0$ and feasibility is pre
 | Operational volume | 1200 × 1200 × 35 m |
 | Depot altitudes | D1: 0 m, D2: 30 m, D3: 15 m, D4: 0 m |
 | Customer altitude | 1 m (ground delivery) |
-| Drone cruise altitude | equals originating depot's $z^{depot}$ |
+| Drone cruise altitude | D1 2.5 m, D2 30 m, D3 15 m, D4 7.5 m (corrected: the ground-tier fleets D1 and D4 cannot both cruise at their depot's 0 m) |
 | Drone mass $m_{drone}$ | 1.5 kg |
 | Gravitational acceleration $g$ | 9.81 m/s² |
 | Energy-to-distance factor $\alpha_E$ | 0.05 m/J |
