@@ -12,7 +12,9 @@ true 3-D:
     T_w = 9 s); the drone descends an 8 deg glideslope referenced to the
     deck, converges with the card's 3-D moving-deck PD law inside 15 m, holds
     0.5 m above the pad and touches down only when |dr| < eps_p,
-    |dv| < eps_v and the combined deck tilt < 5 deg;
+    |dv| < eps_v and the combined deck tilt < 5 deg; in the missions a deck
+    strike or a touch-down at >= eps_v triggers a go-around (climb back to
+    the hover, retry the gates), so only safe touch-downs dock;
   * a vertical Dryden gust (sigma 0.4 m/s, L 100 m) acts on every flying
     drone, and the power model adds k_vert v_z^2.
 
@@ -138,6 +140,7 @@ A_MAX       = 4.0                     # m/s^2 PD acceleration limit
 H_HOVER     = 0.5                     # m   hover height above the pad before touch-down
 V_TD        = 0.3                     # m/s commanded touch-down descent rate
 V_DOCK      = 3.0                     # m/s closing speed relative to the vessel at d_dock
+V_GA        = 2.0                     # m/s go-around climb rate relative to the deck (missions)
 A_DEC       = 1.0                     # m/s^2 braking deceleration before d_dock
 DECK_HALF   = (10.0, 5.0)             # m   vessel deck half-length / half-beam
 D_GS        = (Z_CRUISE - Z_REF) / TAN_GS   # glideslope intercept range (177.9 m)
@@ -276,7 +279,7 @@ def climb_profile(dr, xy):
 def new_approach(t):
     return dict(t_start=t, t_gs=None, t_dock=None, t_gate=None, t_contact=None,
                 tilt_hold=0.0, gs_n=0, gs_viol=0, gs_max=0.0, min_clear=np.inf,
-                contact='', v_impact=None, samples=[])
+                contact='', v_impact=None, samples=[], go_arounds=0, failed=[])
 
 
 def gs_sample(dr, t, sea):
@@ -400,9 +403,22 @@ def deck_gates(dr, t, sea):
 
 
 def approach_update(dr, t, xi_h, xi_z, sea, law, wind):
-    """One step of the final approach (modes 'final' and 'touch').
-    Returns (vertical air speed, contact-kind or None)."""
+    """One step of the final approach (modes 'final', 'touch' and, in missions,
+    'goaround'). Returns (vertical air speed, contact-kind or None)."""
     new, vg, vz = step_pd(dr, t, xi_h, xi_z, sea, law)
+    if dr.mode == 'goaround':
+        # climb back to the hover point: the PD law tracks the hover reference
+        # horizontally, the climb is forced to at least V_GA relative to the deck
+        _, ve, _ = deck_kinematics(sea, t + DT, 'card')
+        zs0 = sea.surface_z(t + DT, new[:2])
+        z_floor = sea.deck(t + DT)[2] if zs0 is None else zs0
+        if new[2] - z_floor < H_HOVER:
+            dr.v_ctrl[2] = min(V_Z_MAX, max(float(dr.v_ctrl[2]), float(ve[2]) + V_GA))
+            vg[2] = dr.v_ctrl[2] + xi_z
+            new[2] = dr.pos[2] + vg[2] * DT
+            vz = float(dr.v_ctrl[2])
+        else:
+            dr.mode = 'final'
     zs = sea.surface_z(t + DT, new[:2])
     contact = None
     if zs is not None and new[2] <= zs:
@@ -742,6 +758,8 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
         dr.assigned = []
         if deck_busy == dr.k:
             deck_busy = None
+        zs = sea.surface_z(t + DT, dr.pos[:2])
+        dr.ditch_over_deck = zs is not None and dr.pos[2] - zs < 2.0
         events.append((t, dr.k, 'ditched', None))
 
     n_steps = int(round(T_MAX / DT))
@@ -900,12 +918,26 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
                     new, vz = step_vessel_pursuit(dr, t, wind, xi_z, sea, law)
                     dr.vel = (new - dr.pos) / DT
                     dr.pos = new
-            if dr.mode in ('final', 'touch'):
+            if dr.mode in ('final', 'touch', 'goaround'):
                 flying = True
                 vz, contact = approach_update(dr, t, xi_h, xi_z, sea, law, wind)
-                if contact is not None:
+                if contact is not None and (contact == 'strike'
+                                            or dr.app['v_impact'] >= EPS_V):
+                    # unsafe contact: abort and go around (back to the 0.5 m
+                    # hover above the pad, then wait for the gates again)
+                    a = dr.app
                     if contact == 'strike':
                         events.append((t, dr.k, 'strike', None))
+                    events.append((t, dr.k, 'go_around', contact))
+                    a['go_arounds'] += 1
+                    a['failed'].append((contact, a['v_impact']))
+                    a['t_contact'], a['contact'], a['v_impact'] = None, '', None
+                    a['t_gate'] = None
+                    dr.mode = 'goaround'
+                    contact = None
+                if contact is not None:
+                    assert contact == 'touchdown' and dr.app['v_impact'] < EPS_V, \
+                        'unsafe touch-down counted as docked'
                     q = sea.frame(t + DT).T @ (dr.pos - sea.deck(t + DT))
                     dr.q_dock = np.array([q[0], q[1], 0.0])
                     dr.mode = 'docked'
@@ -929,7 +961,14 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
                     dr.mode = 'idle'
                     events.append((t, dr.k, 'swap', None))
             elif dr.mode == 'ditched':
-                dr.pos[2] = max(0.0, dr.pos[2] - V_Z_MAX * DT)   # falls into the sea
+                # falls at V_Z_MAX; a wreck above the vessel deck comes to rest on
+                # it (rising with the heave, never through it) until the vessel
+                # has moved on from under it, then falls into the sea
+                zs = sea.surface_z(t + DT, dr.pos[:2])
+                if zs is not None and dr.pos[2] >= zs - 1.0:
+                    dr.pos[2] = max(zs, dr.pos[2] - V_Z_MAX * DT)
+                else:
+                    dr.pos[2] = max(0.0, dr.pos[2] - V_Z_MAX * DT)
 
             if flying:
                 gs_sample(dr, t + DT, sea)
@@ -1131,7 +1170,9 @@ def print_mission(name, res):
               f'(min {min(x["min_soc"] for x in R) * 100:.1f} %), below reserve '
               f'{sum(x["min_soc"] < D_SAFETY for x in R)}/{len(R)}, ditched '
               f'{sum(x["ditched"] for x in R)}'
-              + (f', deck strikes {sum(x["strikes"] for x in R)}' if 'strikes' in R[0] else ''))
+              + (f', deck strikes {sum(x["strikes"] for x in R)}, go-arounds '
+                 f'{sum(a["go_arounds"] for x in R for a in x["approaches"])}'
+                 if 'strikes' in R[0] else ''))
         print(f'{"":<17} requests: {_req_outcomes(R, len(reqs))}')
     print(f'--- {name} instance: 3-D vs 2-D per seed (3-D planner) ---')
     for s in STRATEGIES:
@@ -1151,6 +1192,29 @@ def print_mission_landings(res):
           f'{sum(a["contact"] == "strike" for a in apps)} deck strikes; impact speed '
           f'{_fmt_rng([a["v_impact"] for a in apps])} m/s, '
           f'{sum(a["v_impact"] >= EPS_V for a in apps)} at or above eps_v')
+    allapps = [a for name in INSTANCES for s in STRATEGIES for x in res['runs3'][name][s]
+               for a in x['approaches']]
+    fail = [f for a in allapps for f in a['failed']]
+    print(f'Go-arounds (unsafe contact -> climb back to the {H_HOVER} m hover, retry): '
+          f'{len(fail)} in {sum(a["go_arounds"] > 0 for a in allapps)} approaches '
+          f'(max {max(a["go_arounds"] for a in allapps)} in one approach); '
+          f'{sum(f[0] == "strike" for f in fail)} deck strikes, '
+          f'{sum(f[0] == "touchdown" for f in fail)} hard touch-downs (>= eps_v), impact speed '
+          f'{_fmt_rng([f[1] for f in fail])} m/s')
+    open_dr = [dr for name in INSTANCES for s in STRATEGIES for x in res['runs3'][name][s]
+               for dr in x['drones'] if dr.app is not None and dr.app['t_dock'] is not None
+               and dr.app['t_contact'] is None]
+    print(f'Approaches past d_dock that never docked: '
+          f'{sum(dr.mode == "ditched" for dr in open_dr)} ended with an empty battery '
+          f'({sum(dr.mode == "ditched" and dr.app["go_arounds"] > 0 for dr in open_dr)} of them '
+          f'after a go-around; over the deck when the battery ran out: '
+          f'{sum(getattr(dr, "ditch_over_deck", False) for dr in open_dr)}), '
+          f'{sum(dr.mode != "ditched" for dr in open_dr)} still in progress at T_MAX')
+    for name in INSTANCES:
+        for s in STRATEGIES:
+            R = res['runs3'][name][s]
+            print(f'  {name:<9} {STRAT_LABEL[s]:<23} go-arounds per seed '
+                  f'{[sum(a["go_arounds"] for a in x["approaches"]) for x in R]}')
     print(f'd_dock -> contact {_fmt_rng([a["t_contact"] - a["t_dock"] for a in apps], ".1f")} s; '
           f'tilt-gate hold {sum(a["tilt_hold"] for a in apps):.1f} s in total; glideslope samples '
           f'outside +-0.03: {gs_v}/{gs_n} ({gs_v / max(gs_n, 1) * 100:.1f} %), max |eps| '
@@ -1488,7 +1552,7 @@ def plot_battery_soc(res, out_dir):
 
 
 MODE_COL = {'fly': '#4c72b0', 'descend': '#4c72b0', 'vessel': '#55a868', 'final': '#2ca02c',
-            'touch': '#2ca02c', 'vhold': '#c44e52', 'hold': '#c44e52', 'reland': '#c44e52',
+            'touch': '#2ca02c', 'goaround': '#2ca02c', 'vhold': '#c44e52', 'hold': '#c44e52', 'reland': '#c44e52',
             'docked': '#ffd92f', 'handle': '#8172b2', 'wait': '#bbbbbb', 'ditched': '#000000'}
 
 

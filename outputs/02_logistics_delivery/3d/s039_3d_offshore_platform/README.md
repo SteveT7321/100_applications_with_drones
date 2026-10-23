@@ -44,6 +44,7 @@ The deck orientation is $R_{ws} = R_z(\psi_v)R_y(\theta_p)R_x(\phi_r)$. The deck
 4. **Touch-down**: when $\|\Delta\mathbf{r}\| < \epsilon_p$, $\|\Delta\mathbf{v}\| < \epsilon_v$ (both measured to the true deck), the drone is over the pad and the tilt gate is open, the reference descends at 0.3 m/s until the drone meets the deck plane.
    - A **safe touch-down** is a commanded contact with a normal impact speed below $\epsilon_v$ = 0.5 m/s.
    - A contact before the touch-down command is a **deck strike**.
+   - In the missions, a deck strike or a touch-down at or above $\epsilon_v$ is not accepted. The drone **goes around**: it climbs back to the 0.5 m hover at least 2 m/s faster than the deck rises, then waits for the gates again. Only a safe touch-down docks (asserted). The go-around's time and energy are flown and charged like any other flight. The deck-approach study keeps a single attempt per approach, so its "safe" count measures first attempts.
 
 **Glideslope error** (evaluation only, against the true heaving deck): $\varepsilon_{gs} = (z - z_{deck} - d\tan\gamma_{gs})/d$ for 3.56 m ≤ d ≤ 177.9 m. Below 3.56 m the hover floor replaces the glideslope.
 
@@ -107,9 +108,10 @@ The 15 % energy reserve is unchanged.
 | "Deck-relative approach path $q^s_x$ vs $q^s_z$" | height above deck vs horizontal range | Drones approach from any bearing, so $q^s_x$ alone is not the approach axis. |
 | Planner unchanged from 2D | 3D planner charges climbs, descents and a calibrated approach overhead; the 2D planner is kept as an ablation | Needed for a fair use of the 15 % reserve in 3D. |
 | — | a downdraft at take-off or arrival cannot push a drone below its pad; the pad holds it (5 such steps in all runs) | ground-contact constraint |
-| — | a drone that empties its battery ditches and falls at 5 m/s to the sea | no flying on an empty battery (asserted) |
+| — | a drone that empties its battery ditches and falls at 5 m/s to the sea; above the vessel deck it comes to rest on the deck (never through it) until the vessel has moved on, then falls to the sea | no flying on an empty battery (asserted); the wreck is not carried by the vessel |
+| Touch-down "when all gates pass" | in missions, a strike or an impact ≥ $\epsilon_v$ = 0.5 m/s triggers a go-around (climb at ≥ 2 m/s relative to the deck back to the 0.5 m hover, then retry the gates); only safe touch-downs dock | The previous version docked every contact and counted 6 landings at 0.50–0.68 m/s as docked, which the study's own safe rule rejects. The 2 m/s climb rate is added. |
 | — | an idle drone with nothing queued after a swap flies to the nearest platform | In 2D it hovered for free at the vessel's old position. |
-| Approach plots per landing | the study uses 20 seeded approaches per law and sea state | The mission has only 44 vessel landings, all at the card sea state. |
+| Approach plots per landing | the study uses 20 seeded approaches per law and sea state | The mission has only 42 vessel landings, all at the card sea state. |
 
 ---
 
@@ -128,7 +130,7 @@ The script asserts these invariants:
 - nobody below sea level or inside a platform;
 - no step longer than 2.5 m.
 
-Runtime ≈ 5 min (266–317 s measured while other simulations shared the CPU; calibration, 220 approaches, 50 3D missions, 30 2D missions, plots, GIF). Two runs gave byte-identical output and files.
+Runtime ≈ 5 min (272–371 s measured while other simulations shared the CPU; calibration, 220 approaches, 50 3D missions, 30 2D missions, plots, GIF). Two runs gave byte-identical output and files.
 
 ---
 
@@ -198,9 +200,9 @@ Impact speeds of strikes are included in the impact column; "safe" counts only c
 |-------|----------|-------------|-------------------|-----------|---------|-------|------------------|-----------------|---------|-----|
 | 2D script | Greedy | 114.73 ± 4.18 | — | 2.0 | 1.6 | 3.0 | 11.6 % (5.6 %) | 4/5 | 0 | R3 5/5 (3 on time), R4 5/5 |
 | 2D script | Relay / Rolling | 62.23 ± 3.99 | — | 2.0 | 1.4 | 1.0 | 14.4 % (7.3 %) | 2/5 | 0 | R3 5/5 (2 on time), R4 5/5 |
-| 3D, 3D planner | Greedy | 120.71 ± 10.71 | 5.46 (4.5 %) | 1.6 | 1.4 | 2.6 | 2.1 % (0.0 %) | 5/5 | 3 | R3 3/5 (2 on time), R4 5/5 |
+| 3D, 3D planner | Greedy | 115.19 ± 9.09 | 5.21 (4.5 %) | 1.6 | 1.4 | 2.4 | 2.1 % (0.0 %) | 5/5 | 3 | R3 3/5 (2 on time), R4 5/5 |
 | 3D, 3D planner | Relay / Rolling | **17.16 ± 1.48** | 1.03 (6.0 %) | 1.0 | 1.0 | 0.0 | **42.3 % (34.1 %)** | **0/5** | 0 | R3 rejected, R4 5/5 |
-| 3D, 2D planner | Relay / Rolling | 66.97 ± 3.82 | 2.41 (3.6 %) | 2.0 | 1.0 | 1.0 | 7.5 % (0.9 %) | **5/5** | 0 | R3 5/5 (**0 on time**), R4 5/5 |
+| 3D, 2D planner | Relay / Rolling | 62.73 ± 8.26 | 2.32 (3.7 %) | 1.8 | 1.0 | 0.8 | 7.0 % (0.0 %) | **5/5** | 1 | R3 4/5 (**0 on time**), R4 5/5 |
 
 **Extended instance** (mean of 5 seeds):
 
@@ -209,21 +211,24 @@ Impact speeds of strikes are included in the impact column; "safe" counts only c
 | 2D script | Greedy | 194.87 ± 1.10 | — | 2.6 | 2.0 | 5.4 | 0.0 % | 5/5 | 6 | R3 5/5, R4 5/5, R5 3/5 |
 | 2D script | Relay | 104.42 ± 4.11 | — | 4.0 | 3.4 | 2.0 | 14.4 % (7.3 %) | 2/5 | 0 | R3–R6 5/5 (R3 2 on time) |
 | 2D script | Rolling | 101.62 ± 4.32 | — | 4.0 | 3.4 | 1.0 | 14.4 % (7.3 %) | 2/5 | 0 | R3–R6 5/5 (R3 2 on time) |
-| 3D, 3D planner | Greedy | 194.05 ± 13.22 | 10.34 (5.3 %) | 1.8 | 1.4 | 5.2 | 0.0 % | 5/5 | 9 | R3 3/5, R4 5/5, R5 1/5 |
-| 3D, 3D planner | Relay | 81.36 ± 2.46 | 5.40 (6.6 %) | 4.0 | **4.0** | 1.0 | 34.4 % (29.0 %) | **0/5** | 0 | R4, R5, R6, **R7** 5/5, all on time |
+| 3D, 3D planner | Greedy | 188.13 ± 14.06 | 10.03 (5.3 %) | 1.8 | 1.4 | 5.0 | 0.0 % | 5/5 | 9 | R3 3/5, R4 5/5, R5 1/5 |
+| 3D, 3D planner | Relay | 81.44 ± 2.43 | 5.40 (6.6 %) | 4.0 | **4.0** | 1.0 | 34.4 % (29.0 %) | **0/5** | 0 | R4, R5, R6, **R7** 5/5, all on time |
 | 3D, 3D planner | Rolling | **76.24 ± 2.60** | 4.62 (6.1 %) | 4.0 | **4.0** | 0.0 | 24.4 % (22.9 %) | **0/5** | 0 | R4, R5, R6, **R7** 5/5, all on time |
-| 3D, 2D planner | Relay | 114.14 ± 4.62 | 5.45 (4.8 %) | 4.0 | 3.0 | 2.0 | 7.5 % (0.9 %) | 5/5 | 0 | R3–R6 5/5 (R3 0 on time) |
-| 3D, 2D planner | Rolling | 109.01 ± 4.80 | 4.66 (4.3 %) | 4.0 | 3.0 | 1.0 | 7.5 % (0.9 %) | 5/5 | 0 | R3–R6 5/5 (R3 0 on time) |
+| 3D, 2D planner | Relay | 109.97 ± 8.85 | 5.36 (4.9 %) | 3.8 | 3.0 | 1.8 | 7.0 % (0.0 %) | 5/5 | 1 | R3 4/5 (0 on time), R4–R6 5/5 |
+| 3D, 2D planner | Rolling | 104.78 ± 8.89 | 4.57 (4.4 %) | 3.8 | 3.0 | 0.8 | 7.0 % (0.0 %) | 5/5 | 1 | R3 4/5 (0 on time), R4–R6 5/5 |
+
+**Go-arounds** (sum over 5 seeds): Greedy 4 (card) and 5 (extended); 3D-planner relay 0 and 1, rolling 0 and 0; 2D-planner relay 2 and 3, rolling 2 and 2. Deck strikes: 0 in every mission.
 
 Per seed, the 3D-planner relay and rolling delivered the same number as 2D on the extended instance and 1 fewer on the card instance. On time they did better than 2D in 3 of 5 extended seeds (+1 each) and worse in 2 of 5 card seeds (−1 each).
 
 **Vessel landings in all 3D missions** (3D planner, both instances, 5 seeds):
 
-- 44 landings: 44 commanded touch-downs and 0 deck strikes.
-- Impact speed 0.37 [0.12–0.68] m/s; 6 of 44 were at or above $\epsilon_v$. The mission still counts them as docked, and they are reported here.
-- 15 m → contact took 11.2 [8.4–27.8] s. A drone had to wait beside a busy deck 5 times. 3 landings entered the PD phase at under 1 m/s closing speed, i.e. from that wait, and took 27.4–27.8 s, because $T = 2d_0/v_0$ with $v_0$ floored at 1 m/s. The other landings took 8.4–11.1 s.
+- 42 docked landings, all safe: impact speed 0.35 [0.12–0.49] m/s, 0 at or above $\epsilon_v$.
+- 10 go-arounds in 6 approaches (at most 2 in one approach). All 10 were hard touch-downs at 0.61 [0.50–0.68] m/s; there were no deck strikes. Per seed: Greedy [2, 0, 0, 0, 2] (card) and [2, 0, 0, 1, 2] (extended); relay [0, 0, 0, 0, 1] on the extended instance; all others 0.
+- 6 approaches passed $d_{dock}$ but never docked: all 6 drones (all Greedy) ran out of battery above the deck, 2 of them after a go-around. None was still in progress at $T_{max}$.
+- 15 m → contact took 11.4 [8.4–27.8] s, including go-arounds. A drone had to wait beside a busy deck 4 times. 2 landings entered the PD phase at under 1 m/s closing speed, i.e. from that wait, and took 27.8 s, because $T = 2d_0/v_0$ with $v_0$ floored at 1 m/s. The other landings took 8.4–17.5 s.
 - Total tilt-gate hold: 0.0 s.
-- Glideslope samples outside ±0.03: 200/10402 (1.9 %), max $|\varepsilon|$ 0.060.
+- Glideslope samples outside ±0.03: 199/9696 (2.1 %), max $|\varepsilon|$ 0.060.
 - Minimum deck clearance before the touch-down command: 0.132 m.
 
 ### Key findings
@@ -234,7 +239,7 @@ Per seed, the 3D-planner relay and rolling delivered the same number as 2D on th
   - The level-deck law hovers 0.5 m above the *mean* deck, so the 0.8 m heave crest, plus the tilted deck under the drone, reaches it.
   - The level-deck law also violates the glideslope in 21.1 % of samples against 1.0 % for the card law, as the ±0.45 m tolerance at 15 m predicts.
 - **The card's gains need a glide reference.** Applying the PD law straight to the deck point from 15 m gives 10 strikes out of 20 at the card sea state. The underdamped gains ($\zeta$ = 0.45) overshoot the hover height.
-- **The tilt gate never binds at the card sea state**, which is card arithmetic: the 3° and 4° amplitudes cap the combined tilt at exactly 5°. Over 44 mission landings the hold time is 0.0 s.
+- **The tilt gate never binds at the card sea state**, which is card arithmetic: the 3° and 4° amplitudes cap the combined tilt at exactly 5°. Over 42 mission landings the hold time is 0.0 s.
   - Escalating the sea state makes it bind: mean hold 0.2 s at 1.5×, 0.9 s at 2× and 1.3 s at 2.5×.
   - At 3× the gate is closed all the time with the chosen phases: 14 time-outs and 6 strikes, 0 safe landings.
   - The card law also starts to strike at 2× (2 strikes) and 2.5× (4 strikes). The likely cause is that the deck now moves faster than the hover can follow: the heave amplitude reaches 1.6–2.0 m against the 0.5 m hover margin, the heave rate 1.1–1.4 m/s, and the deck plane under a drone offset from the centre tilts by up to 9–12°.
@@ -243,11 +248,15 @@ Per seed, the 3D-planner relay and rolling delivered the same number as 2D on th
   - the deck approach (11.86 s braking + PD convergence, 1339 J in total, 4.5 % of a battery).
 
   The 3D planner therefore rejects R3. In the extended instance it gives D3 R7 instead, which the 2D planner had always rejected.
-  - Result: relay and rolling deliver 4.0 / 8, all on time, against 3.4 on time in 2D, while using 81.36 and 76.24 kJ instead of 104.42 and 101.62.
+  - Result: relay and rolling deliver 4.0 / 8, all on time, against 3.4 on time in 2D. They use 81.44 and 76.24 kJ against 104.42 and 101.62 kJ in 2D, but this is **not a like-for-like energy saving**: the 3D plans serve R4–R7, the 2D plans R3–R6. The dropped R3 (P5 → P1 with a vessel swap) needs 140–142 % of a battery, while the added R7 needs 52–55 %. The like-for-like comparison is the 2D planner's request set flown in 3D (next point).
   - On the card instance they deliver 1 instead of 2, because R3 is dropped.
-- **Flying the 2D plan in the 3D world breaches the reserve every time.** With the 2D planner, R3 is still delivered (5/5) but late in every run, and the lowest SoC falls to 7.5 % on average (0.9 % worst) in 5 of 5 runs. The extra 3D cost is not budgeted.
-- **Greedy gets worse in 3D.** It ditches 3 drones on the card instance (2D: 0) and 9 on the extended instance (2D: 6). It delivers 1.6 and 1.8 requests against 2.0 and 2.6 in 2D. Its emergency rule is the 2D one with 3D leg costs. It still does not budget the vessel approach itself, so the extra 3D cost shows up as more empty batteries.
-- **Vertical energy is a small share.** It is 3.6–6.6 % of fleet energy (1.03–10.34 kJ). Heave-following is negligible: 0.78 W on average. The large effects of 3D come from feasibility and landing safety, not from the climb energy itself.
+- **Flying the 2D plan in the 3D world breaches the reserve every time.** With the 2D planner, the drone carrying R3 reaches the vessel with almost no reserve. The lowest SoC falls to 7.0 % on average in 5 of 5 runs.
+  - In seed 3 (on both instances) that drone touches down hard (≥ $\epsilon_v$), goes around, and its battery runs out: it ditches over the deck and R3 is lost.
+  - In the other 4 seeds R3 is delivered, late every time.
+  - On the same request set (R3–R6) as the 2D script, the 3D world costs 109.97 / 104.78 kJ (relay / rolling) against 104.42 / 101.62 kJ in 2D, with 0.2 fewer deliveries on average.
+  - The earlier version accepted that hard touch-down as a dock and swapped the battery, so it reported R3 delivered 5/5 with 0 ditches.
+- **Greedy gets worse in 3D.** It ditches 3 drones on the card instance (2D: 0) and 9 on the extended instance (2D: 6). It also needs 9 of the 10 go-arounds in the 3D-planner missions, because its drones reach the vessel nearly empty. It delivers 1.6 and 1.8 requests against 2.0 and 2.6 in 2D. Its emergency rule is the 2D one with 3D leg costs. It still does not budget the vessel approach itself, so the extra 3D cost shows up as more empty batteries.
+- **Vertical energy is a small share.** It is 3.7–6.6 % of fleet energy (1.03–10.03 kJ). Heave-following is negligible: 0.78 W on average. The large effects of 3D come from feasibility and landing safety, not from the climb energy itself.
 
 ---
 
@@ -273,13 +282,13 @@ Card sea state around the first mission deck contact. The combined tilt stays be
 
 ### Deck-Relative Approach Paths
 
-Left: all 44 mission landings track the glideslope band against the true heaving deck. Right: the study at the card sea state, first 8 seeds. The card law (red) settles at the 0.5 m hover; the level-deck law (blue) strikes the deck (×) at 4–8 m range:
+Left: all 42 docked mission landings track the glideslope band against the true heaving deck. Right: the study at the card sea state, first 8 seeds. The card law (red) settles at the 0.5 m hover; the level-deck law (blue) strikes the deck (×) at 4–8 m range:
 
 ![Deck approach](deck_approach.png)
 
 ### Convergence to the Deck
 
-$\|\Delta\mathbf{r}\|$ and $\|\Delta\mathbf{v}\|$ to the true deck after $d_{dock}$, for every mission landing. Dots mark where all gates pass. The 3 slow approaches started from rest beside a busy deck:
+$\|\Delta\mathbf{r}\|$ and $\|\Delta\mathbf{v}\|$ to the true deck after $d_{dock}$, for every docked mission landing. Dots mark where all gates pass. The 2 slow approaches started from rest beside a busy deck. The curves that climb back above 1 m after 10 s are go-arounds:
 
 ![Deck convergence](deck_convergence.png)
 
@@ -317,7 +326,7 @@ Extended instance, seed 0, all three strategies (151 frames):
 
 ## Extensions
 
-1. Predict the deck motion (AR(2) or Kalman, card extensions 2 and 5) to raise the hover margin and time the touch-down at heave troughs. This would cut the impact speeds above $\epsilon_v$ (6 of 44 mission landings).
+1. Predict the deck motion (AR(2) or Kalman, card extensions 2 and 5) to raise the hover margin and time the touch-down at heave troughs. This would cut the hard touch-downs that now force go-arounds (10 in the missions).
 2. Random-phase or spectral (JONSWAP) seas instead of one sinusoid, so the 3× result no longer hinges on the chosen phase offsets.
 3. Let the planner reserve the vessel deck in time, since drones waiting beside a busy deck take up to 27.8 s to land; a faster glide reference from rest would also help.
 4. Sweep $\gamma_{gs}$ in [4°, 15°] (card extension 3) against the vertical gust.
