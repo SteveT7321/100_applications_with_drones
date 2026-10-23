@@ -1,6 +1,6 @@
 # S010 3D Upgrade — Asymmetric Speed Bounded Arena Trapping
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S010 original](../S010_asymmetric_speed.md)
 
 ---
@@ -13,11 +13,11 @@ The original confines both agents to a flat 10×10 m square arena at z = 2.0 m f
 
 ## Problem Definition
 
-**Setup**: The evader ($v_E = 4.5$ m/s) is faster than the pursuer ($v_P = 3.0$ m/s, speed ratio $r = 0.67$). The arena is now a bounded cubic volume $[-5, 5]^3$ m. The pursuer tests four strategies:
+**Setup**: The evader ($v_E = 4.5$ m/s) is faster than the pursuer ($v_P = 3.0$ m/s, speed ratio $r = 0.67$). The arena is now a bounded volume: $x, y \in [-5, 5]$ m and $z \in [0.5, 5.5]$ m (a 10 × 10 m floor, 5 m tall). The pursuer tests four strategies:
 
 1. **Direct 3D pursuit** — pure pursuit in full 3D
-2. **Wall-and-ceiling herding** — blend toward nearest face of the cube (6 faces)
-3. **Corner-targeting** — aim at the 3D corner closest to the evader (8 corners)
+2. **Wall-and-ceiling herding** — blend toward the evader's projection onto its nearest face (6 faces)
+3. **Corner-targeting** — aim at the arena corner closest to the evader (8 corners)
 4. **Dive-boost** — dive steeply to gain speed, then pull up to intercept
 
 **Roles**:
@@ -32,21 +32,23 @@ The original confines both agents to a flat 10×10 m square arena at z = 2.0 m f
 
 The Apollonius sphere defines the set of points equidistant in travel time from pursuer and evader:
 
-$$R_{apo} = \frac{r \cdot d}{1 - r^2}, \qquad \text{centre offset from pursuer} = \frac{d}{1 - r^2}$$
+$$R_{apo} = \frac{r \cdot d}{1 - r^2}, \qquad \mathbf{c}_{apo} = \mathbf{p}_E + \frac{\mathbf{p}_P - \mathbf{p}_E}{d}\cdot\frac{d}{1 - r^2}$$
+
+(the centre lies on the line from the evader through the pursuer, at distance $d/(1-r^2)$ from the evader, beyond the pursuer)
 
 where $d = \|\mathbf{p}_E - \mathbf{p}_P\|_2$ (full 3D distance) and $r = v_P / v_E$.
 
-The capture guarantee region is the interior of this sphere centred along the pursuer-evader axis.
+Points inside the sphere (which contains the pursuer) are reached by the pursuer first; all points outside are reached by the evader first.
 
 ### 3D Wall-Herding Velocity
 
-Six faces of the cube define the wall-attraction targets. For each face $f$ with outward normal $\hat{\mathbf{n}}_f$:
+Six faces of the arena define the wall-attraction targets: $x = \pm 5$, $y = \pm 5$, $z = 0.5$ (floor) and $z = 5.5$ (ceiling). For each face $f$ with outward normal $\hat{\mathbf{n}}_f$ the evader's distance $d_f(\mathbf{p}_E)$ is measured to the real face position (e.g. $d_{ceiling} = 5.5 - z_E$, $d_{floor} = z_E - 0.5$).
 
-$$d_f(\mathbf{p}_E) = \left(5 - |\mathbf{p}_E \cdot \hat{\mathbf{n}}_f|\right)$$
+The nearest face $f^* = \arg\min_f d_f(\mathbf{p}_E)$ gives the wall-point, the evader's projection onto that face (moving **outward**):
 
-The nearest face $f^* = \arg\min_f d_f(\mathbf{p}_E)$ gives the wall-point:
+$$\mathbf{p}_{wall} = \mathbf{p}_E + d_{f^*} \cdot \hat{\mathbf{n}}_{f^*}$$
 
-$$\mathbf{p}_{wall} = \mathbf{p}_E - d_{f^*} \cdot \hat{\mathbf{n}}_{f^*} \cdot \text{sign}(\mathbf{p}_E \cdot \hat{\mathbf{n}}_{f^*})$$
+If several faces are equally near (edge or corner diagonal), the evader is projected onto all of them: $\mathbf{p}_{wall} = \mathbf{p}_E + \sum_{f \in F^*} d_f \hat{\mathbf{n}}_f$.
 
 $$\hat{\mathbf{r}}_{wall} = \frac{\mathbf{p}_{wall} - \mathbf{p}_P}{\|\mathbf{p}_{wall} - \mathbf{p}_P\|}$$
 
@@ -54,9 +56,9 @@ $$\mathbf{v}_{herd} = v_P \cdot \frac{\alpha \hat{\mathbf{r}}_{PE} + (1-\alpha)\
 
 ### 3D Corner-Targeting
 
-Eight corners of $[-5,5]^3$ are:
+Eight corners of the arena are:
 
-$$\mathcal{C} = \{-5, +5\}^3$$
+$$\mathcal{C} = \{-5, +5\} \times \{-5, +5\} \times \{0.5, 5.5\}$$
 
 $$\mathbf{p}_{target} = \arg\min_{\mathbf{c} \in \mathcal{C}} \|\mathbf{c} - \mathbf{p}_E\|$$
 
@@ -86,6 +88,10 @@ $$\mathbf{v}_E = v_E \cdot \frac{\mathbf{p}_E - \mathbf{p}_P + \beta [0, 0, \tex
 
 where $\beta = 1.5$ weights vertical escape.
 
+### Arena Boundary Rule (every player)
+
+At a face the velocity component pointing out of the arena is removed and the rest is renormalised to the player's speed, so the player slides along the face. A command pointing straight into a face, edge or corner leaves nothing, and the player stops there.
+
 ---
 
 ## Key 3D Additions
@@ -100,7 +106,7 @@ where $\beta = 1.5$ weights vertical escape.
 
 | Parameter | Value |
 |-----------|-------|
-| Arena | 10 × 10 × 10 m cube, z ∈ [0.5, 5.5] m |
+| Arena | x, y ∈ [−5, 5] m, z ∈ [0.5, 5.5] m (10 × 10 × 5 m) |
 | Pursuer cruise speed | 3.0 m/s |
 | Pursuer dive boost max | 4.2 m/s effective |
 | Evader speed | 4.5 m/s |
@@ -130,25 +136,38 @@ DIVE_ANGLE = np.radians(30)
 Z_MIN, Z_MAX = 0.5, 5.5
 DT = 0.05
 
-# 8 corners of the cube
+LO = np.array([-ARENA, -ARENA, Z_MIN])
+HI = np.array([ARENA, ARENA, Z_MAX])
+
+# 8 corners of the arena (z at the real floor and ceiling)
 CORNERS_3D = np.array([[sx, sy, sz]
                         for sx in [-5, 5]
                         for sy in [-5, 5]
-                        for sz in [-5, 5]], dtype=float)
+                        for sz in [Z_MIN, Z_MAX]], dtype=float)
 
-# 6 face normals
+# outward normals of the faces x=-5, x=+5, y=-5, y=+5, z=Z_MIN, z=Z_MAX
 FACE_NORMALS = np.array([
-    [1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]], dtype=float)
+    [-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]], dtype=float)
+
+def face_distances(e):
+    return np.array([e[0] - LO[0], HI[0] - e[0], e[1] - LO[1], HI[1] - e[1],
+                     e[2] - LO[2], HI[2] - e[2]])
+
+def wall_velocity(pos, d, speed):
+    """Arena rule for every player: drop outward components, renormalise."""
+    d = d.copy()
+    d[(pos >= HI - 1e-9) & (d > 0)] = 0.0
+    d[(pos <= LO + 1e-9) & (d < 0)] = 0.0
+    n = norm(d)
+    return speed * d / n if n > 1e-12 else np.zeros(3)
 
 def wall_herd_3d(pos_p, pos_e, v_max):
     r_pe = pos_e - pos_p
     r_pe /= norm(r_pe) + 1e-8
-    # Find nearest face to evader
-    face_dists = [5.0 - abs(pos_e @ n) for n in FACE_NORMALS]
-    nearest_idx = int(np.argmin(face_dists))
-    n_face = FACE_NORMALS[nearest_idx]
-    p_wall = pos_e.copy()
-    p_wall -= face_dists[nearest_idx] * n_face * np.sign(pos_e @ n_face)
+    # Project the evader outward onto its nearest face (all tied faces)
+    d = face_distances(pos_e)
+    tied = np.isclose(d, d.min())
+    p_wall = pos_e + (d[tied][:, None] * FACE_NORMALS[tied]).sum(axis=0)
     r_wall = p_wall - pos_p
     r_wall /= norm(r_wall) + 1e-8
     v_blend = ALPHA * r_pe + (1 - ALPHA) * r_wall
@@ -209,10 +228,10 @@ def simulate_3d(strategy="wall_herd"):
             v_p = V_PURSUER * d / (norm(d) + 1e-8)
 
         v_e = evader_escape_3d(pos_e, pos_p, V_EVADER)
-        pos_p = np.clip(pos_p + v_p * DT, -ARENA, ARENA)
-        pos_p[2] = np.clip(pos_p[2], Z_MIN, Z_MAX)
-        pos_e = np.clip(pos_e + v_e * DT, -ARENA, ARENA)
-        pos_e[2] = np.clip(pos_e[2], Z_MIN, Z_MAX)
+        v_p = wall_velocity(pos_p, v_p, norm(v_p))
+        v_e = wall_velocity(pos_e, v_e, V_EVADER)
+        pos_p = np.clip(pos_p + v_p * DT, LO, HI)
+        pos_e = np.clip(pos_e + v_e * DT, LO, HI)
 
         apo_radii.append(apollonius_sphere_radius(pos_p, pos_e, r))
         trajectories["pursuer"].append(pos_p.copy())
