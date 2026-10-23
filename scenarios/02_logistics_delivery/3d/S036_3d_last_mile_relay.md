@@ -1,6 +1,6 @@
 # S036 3D Upgrade — Last-Mile Relay
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S036 original](../S036_last_mile_relay.md)
 
 ---
@@ -36,7 +36,9 @@ Each drone carries the parcel for one leg, navigates a terrain-following altitud
 
 1. **Feasibility**: every 3D leg distance $d_k^{3D} = \|\mathbf{w}_k - \mathbf{w}_{k-1}\|_3$ satisfies the range constraint with altitude energy penalty:
 
-$$d_k^{3D} \leq R_{eff}, \qquad R_{eff} = R \cdot (1 - B_{reserve}) \cdot \eta_{alt}(z_k - z_{k-1})$$
+$$d_k^{3D} \leq R_{eff,k}, \qquad R_{eff,k} = \frac{R \cdot (1 - B_{reserve})}{\eta_{alt}(z_k - z_{k-1})}$$
+
+> **Correction (3D implementation)**: an earlier version multiplied by $\eta_{alt}$, which would *lengthen* the range of a climbing leg. Climbing costs energy, so the range is divided by $\eta_{alt} \ge 1$, as in the Mathematical Model below.
 
 2. **3D Bottleneck Minimisation**: place relay stations (horizontal position and altitude) to minimise the worst-case 3D leg length:
 
@@ -88,13 +90,15 @@ $$z_{fly}(s) = \max\!\bigl(z_{safe}(s),\; (1-s)\,z_{k-1} + s\,z_k\bigr)$$
 
 ### 3D Optimal Relay Station Placement
 
-For a collinear horizontal route of ground length $L_{2D}$ with terrain elevation change $\Delta H$, the optimal equal-spacing solution in 3D gives each leg a ground component $L_{2D}/K$ and an altitude component $\Delta H / K$:
+For a collinear horizontal route of ground length $L_{2D}$ with terrain elevation change $\Delta H$ **and a constant slope**, the optimal equal-spacing solution in 3D gives each leg a ground component $L_{2D}/K$ and an altitude component $\Delta H / K$ (with a hill on the route this no longer holds, because the legs over the hill climb more):
 
 $$d_k^{3D,*} = \sqrt{\left(\frac{L_{2D}}{K}\right)^2 + \left(\frac{\Delta H}{K}\right)^2}$$
 
 Minimum number of legs to cover the 3D route:
 
-$$K^* = \left\lceil \frac{\max_k d_k^{3D}}{R_{eff}} \right\rceil$$
+$$K^* \ge \left\lceil \frac{\|D_K - D_0\|_3}{R_{eff}} \right\rceil = \left\lceil \frac{120.15}{31.5} \right\rceil = 4$$
+
+> **Correction (3D implementation)**: the earlier formula $\lceil \max_k d_k^{3D} / R_{eff} \rceil$ divides a single leg by the range, which is 1 for any feasible plan. The number of legs comes from the whole route length. This is only a lower bound: it ignores the climb surcharge, the terrain detour and (if counted) the pad climb before each leg. The 3D script finds the true minimum $K$ by dynamic programming.
 
 For general terrain-following routes, relay station altitudes $\{z_k\}$ are jointly optimised with horizontal positions $\{(x_k, y_k)\}$ via the terrain constraint:
 
@@ -125,7 +129,7 @@ where `norm3` is the 3D Euclidean norm and `R_eff_k` accounts for the altitude e
 
 ### Battery State with Altitude Penalty
 
-Normalised battery consumption for leg $k$:
+Normalised battery consumption for leg $k$ (the 3D script evaluates it on the flown terrain-following path, with $d_k^{3D,path}$ in place of $d_k^{3D}$ and the cumulative climb along the path in place of the net $\Delta z_k$; it also prints this chord formula for comparison):
 
 $$B_k = \frac{d_k^{3D}}{R} \cdot \eta_{alt}(\Delta z_k) \in (0, 1]$$
 
@@ -198,7 +202,7 @@ where $\mathbf{p}_{fly}(s) = (p_x(s),\, p_y(s),\, z_{fly}(s))$.
 | Handoff capture radius $r_{handoff}$ | 0.5 m |
 | Altitude match tolerance $\delta_z$ | 0.5 m |
 | Handoff dwell time $\tau_h$ | 3.0 s |
-| Minimum legs required $K^*$ | 4 (3D), vs 4 (2D flat) |
+| Minimum legs required $K^*$ | 4 (3D), vs 4 (2D flat): lower bound $\lceil 120.15 / 31.5 \rceil$; the simulated minimum depends on relay placement and on whether the pad climb is counted (see the 3D README) |
 | Altitude bounds $z \in$ | [0.5, 20] m |
 | DEM resolution $\delta_{DEM}$ | 1.0 m |
 | Simulation timestep $\Delta t$ | 0.05 s |
