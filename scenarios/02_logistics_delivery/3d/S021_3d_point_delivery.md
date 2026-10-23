@@ -82,7 +82,7 @@ $$v_{gnd}(z_{cruise}) = w_\parallel + \sqrt{v_{max}^2 - w_\perp^2}$$
 
 and the air-velocity command is $\mathbf{v}_{air} = v_{gnd}\,\hat{\mathbf{d}}_{xy} - \mathbf{v}_{wind}$, with $\|\mathbf{v}_{air}\| = v_{max}$. The cruise starts from rest after the climb and accelerates at $a_{max}$ up to $v_{gnd}$.
 
-> **Correction (2026-10-24).** An earlier version of this card used $v_{gnd} = \sqrt{v_{max}^2 - v_{wind}^2}$ and the command $v_{max}\hat{\mathbf{d}}_{xy} - v_{wind}\hat{\mathbf{x}}$. That formula ignores the wind direction: it slows a tailwind leg (the depot→goal bearing here has a 0.95 tailwind component). The command also has an airspeed above $v_{max}$. The earlier version also changed velocity instantaneously at the start of the cruise. That is free kinetic energy, and it is inconsistent with the $a_{max}$ bound of the descent.
+> **Correction (2026-10-24).** An earlier version of this card used $v_{gnd} = \sqrt{v_{max}^2 - v_{wind}^2}$ and the command $v_{max}\hat{\mathbf{d}}_{xy} - v_{wind}\hat{\mathbf{x}}$. That formula ignores the wind direction: it slows a tailwind leg (the depot→goal bearing here has a 0.95 tailwind component). Read as a ground velocity, the command needs an airspeed of $\|v_{max}\hat{\mathbf{d}}_{xy} - 2v_{wind}\hat{\mathbf{x}}\|$. That exceeds $v_{max}$ on the headwind (goal→depot) bearing at every layer (5.716 m/s at $z$ = 0.5 m), but not on this card's tailwind bearing (4.295 m/s at 0.5 m, at most 4.541 m/s up to 6 m), where it only wastes airspeed. The earlier version also changed velocity instantaneously at the start of the cruise. That is free kinetic energy, and it is inconsistent with the $a_{max}$ bound of the descent.
 
 ### Phase 3 — Minimum-Time 3D Descent (Pontryagin)
 

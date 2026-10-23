@@ -499,6 +499,14 @@ def run_simulation():
         print(f"  z = {z:.1f} m: w = {wind_speed(z):.3f} m/s, tailwind leg {ground_speed_cap(z, card.dhat):.3f} m/s, "
               f"headwind leg {ground_speed_cap(z, -card.dhat):.3f} m/s, card formula {card_literal_vgnd(z):.3f} m/s")
     print()
+    # Card's cruise command v_cmd = V_MAX*dhat - w*x_hat read as a ground velocity:
+    # the airspeed it needs is |v_cmd - w*x_hat| = |V_MAX*dhat - 2w*x_hat|.
+    print("Airspeed needed by the card's literal cruise command V_MAX*dhat - w*x_hat (ground velocity):")
+    for z in (0.5, 2.0, 4.0, 6.0):
+        w2 = 2.0 * wind_vec(z)[:2]
+        print(f"  z = {z:.1f} m: tailwind leg {np.linalg.norm(V_MAX * card.dhat - w2):.3f} m/s, "
+              f"headwind leg {np.linalg.norm(-V_MAX * card.dhat - w2):.3f} m/s (V_MAX = {V_MAX:.1f})")
+    print()
 
     res = {"card": card, "long": long}
     for key, mis in (("card", card), ("long", long)):
