@@ -46,6 +46,7 @@ C_THRESH     = 0.15     # contact threshold (3 sigma_noise)
 C_INTERMIT   = 2.0      # intermittency scale: p_detect = 1 - exp(-C / C_INTERMIT)
 V_SURGE      = 1.5      # m/s, surge speed
 V_CAST       = 0.8      # m/s, cast speed
+V_DRIFT      = 0.2      # m/s, upwind drift while casting / gradient ascent out of contact (card)
 L_CAST       = 8.0      # m, first cast leg; leg k has length k * L_CAST
 T_CAST_MAX   = 30.0     # s, max cast duration before declaring lost
 ALPHA_UPWIND = 0.4      # upwind bias weight in surge command
@@ -172,7 +173,7 @@ class CastSurgeNavigator:
             self.cast_dir *= -1.0
             self.leg += 1
             self.leg_progress = 0.0
-        return V_CAST * np.array([0.0, self.cast_dir])
+        return V_CAST * np.array([0.0, self.cast_dir]) + V_DRIFT * UPWIND
 
 
 class ParticleFilter:
@@ -241,7 +242,8 @@ def run_one(strategy, src, seed, record=False):
             pf_est.append(m)
             pf_sd.append(sd)
         if strategy == 'gradient':
-            v_cmd = V_SURGE * g
+            # card: follow the gradient while in contact, otherwise drift slowly upwind
+            v_cmd = V_SURGE * g if z >= C_THRESH else V_DRIFT * UPWIND
             states.append('gradient')
         else:
             v_cmd = nav.command(pos, z, g)
@@ -386,9 +388,9 @@ def plot_concentration_map(data, out_dir):
 
 
 def plot_trajectories(data, out_dir):
-    fig, ax = plt.subplots(figsize=(9, 8))
+    from matplotlib.collections import LineCollection
+    fig, (ax, ax2) = plt.subplots(1, 2, figsize=(17, 7.5))
     im = _bg(ax, data, alpha=0.6)
-    plt.colorbar(im, ax=ax, label='Mean concentration (mg/m³, clipped at 20)')
     for s in STRATS:
         r = data[s]
         tr = r['traj']
@@ -398,13 +400,33 @@ def plot_trajectories(data, out_dir):
             ax.plot(*tr[-1], '*', color=COLORS[s], ms=14, mec='k', mew=0.8)
     pe = data['pf_guided']['pf_est']
     ax.plot(pe[:, 0], pe[:, 1], ':', color='darkgreen', lw=1, label='PF posterior mean (PF guided)')
-    ax.add_patch(plt.Circle(DEMO_SOURCE, R_CAPTURE, color='red', fill=False, lw=1.5, ls='--'))
-    ax.plot(*DEMO_SOURCE, 'r*', ms=16, zorder=10)
-    ax.plot(*POS_START, 'bs', ms=9, zorder=10)
+    for a in (ax, ax2):
+        a.add_patch(plt.Circle(DEMO_SOURCE, R_CAPTURE, color='red', fill=False, lw=1.5, ls='--'))
+        a.plot(*DEMO_SOURCE, 'r*', ms=16, zorder=10)
+        a.plot(*POS_START, 'bs', ms=9, zorder=10)
     ax.set_title('Trajectory comparison (demonstration run)')
     ax.legend(loc='upper left', fontsize=8)
+    # cast-and-surge path coloured by state
+    _bg(ax2, data, alpha=0.4)
+    r = data['cast_surge']
+    tr = r['traj']
+    st_cols = {'surge': 'dodgerblue', 'cast': 'gold', 'lost': 'tomato'}
+    segs = np.stack([tr[:-1], tr[1:]], axis=1)[:len(r['states'])]
+    lc = LineCollection(segs, colors=[st_cols[x] for x in r['states']], linewidths=2.2)
+    ax2.add_collection(lc)
+    for k, c in st_cols.items():
+        frac = 100 * r['states'].count(k) / len(r['states'])
+        ax2.plot([], [], color=c, lw=3, label=f'{k} ({frac:.1f}% of steps)')
+    for txt in list(ax2.texts):      # wind label lies outside the zoomed view
+        txt.remove()
+    ax2.set_xlim(45, 180)
+    ax2.set_ylim(85, 125)
+    ax2.set_aspect('auto')
+    ax2.set_title('Cast-and-surge path coloured by state (zoom on y = 85-125 m)')
+    ax2.legend(loc='upper left', fontsize=8)
+    plt.colorbar(im, ax=[ax, ax2], label='Mean concentration (mg/m³, clipped at 20)', shrink=0.8)
     path = os.path.join(out_dir, 'trajectories.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.savefig(path, dpi=130, bbox_inches='tight')
     plt.close()
     print(f'Saved: {path}')
 

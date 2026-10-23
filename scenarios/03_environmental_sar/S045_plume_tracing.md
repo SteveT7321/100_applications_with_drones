@@ -324,7 +324,7 @@ def run_simulation(strategy='cast_surge', seed=42):
 
         if strategy == 'gradient':
             grad_hat = estimate_gradient(pos, pos_source, rng)
-            v_cmd = V_SURGE * grad_hat if c_meas >= C_THRESH else np.array([0.2, 0.0])
+            v_cmd = V_SURGE * grad_hat if c_meas >= C_THRESH else np.array([-0.2, 0.0])  # slow upwind drift
 
         elif strategy == 'cast_surge':
             grad_hat = estimate_gradient(pos, pos_source, rng)

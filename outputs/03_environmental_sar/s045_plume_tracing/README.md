@@ -11,7 +11,7 @@
 **Objective**: Navigate from the initial position to within $r_{capture} = 3$ m of the true source in minimum time (timeout 600 s), using only local concentration readings and the known mean wind direction.
 
 **Comparison Strategies** (same drone dynamics, sensor and source positions per trial):
-1. **Pure gradient ascent** — always move at $v_{surge}$ along the finite-difference gradient estimate (no wind information)
+1. **Pure gradient ascent** — while in contact, move at $v_{surge}$ along the finite-difference gradient estimate; out of contact, drift slowly upwind at 0.2 m/s (card)
 2. **Cast-and-surge (chemotaxis)** — surge upwind (biased by the gradient) while in contact; cast crosswind with growing legs when contact is lost; return to the last contact point after 30 s without contact
 3. **Particle filter guided** — cast-and-surge blended 50/50 with the direction to the particle-filter posterior mean, once the posterior standard deviation is below 15 m
 
@@ -40,7 +40,7 @@ The drone is "in contact" when $C_{meas} \ge C_{thresh} = 0.15 = 3\sigma_{noise}
 | State | Condition | Action |
 |-------|-----------|--------|
 | **Surge** | $C_{meas} \geq C_{thresh}$ | $\mathbf{v} = v_{surge}\,\mathrm{unit}\bigl(\alpha\,\hat{\mathbf{u}}_{up} + (1-\alpha)\,\hat{\mathbf{g}}\bigr)$, $\hat{\mathbf{u}}_{up} = (-1, 0)$, $\alpha = 0.4$ |
-| **Cast** | Contact lost $\leq T_{cast}$ s | Crosswind at $v_{cast}$; leg $k$ has length $k\,L_{cast}$, direction alternates; first leg toward the side the last gradient pointed to |
+| **Cast** | Contact lost $\leq T_{cast}$ s | Crosswind at $v_{cast}$ plus a 0.2 m/s upwind drift (card); leg $k$ has length $k\,L_{cast}$, direction alternates; first leg toward the side the last gradient pointed to |
 | **Lost** | Contact lost $> T_{cast}$ s | Return to the last contact position, then restart casting |
 
 ### Particle Filter Source Localisation
@@ -68,6 +68,7 @@ Systematic resampling (seeded generator) when $N_{eff} < N_p/2$, followed by 1 m
 | Intermittency scale $C_{int}$ | 2.0 mg/m³ | $p_{detect} = 1 - e^{-C/C_{int}}$ |
 | Surge speed $v_{surge}$ | 1.5 m/s | |
 | Cast speed $v_{cast}$ | 0.8 m/s | |
+| Upwind drift (cast, and gradient ascent out of contact) | 0.2 m/s | card |
 | First cast leg $L_{cast}$ | 8.0 m | Leg $k$: $k \cdot 8$ m |
 | Max cast duration $T_{cast}$ | 30.0 s | |
 | Upwind bias $\alpha$ | 0.4 | |
@@ -119,33 +120,33 @@ At the start point the demonstration plume gives C = 1.240 mg/m³ (above $C_{thr
 
 | Strategy | Result | Time | Path | Steps in contact | Dropouts |
 |----------|--------|------|------|------------------|----------|
-| Gradient Ascent | found | 244.2 s | 167.6 m | 71.7 % | 691 |
-| Cast-and-Surge | found | 149.4 s | 129.3 m | 77.6 % | 335 |
-| PF Guided | found | 86.9 s | 116.1 m | 82.9 % | 149 |
+| Gradient Ascent | found | 240.2 s | 147.6 m | 72.4 % | 664 |
+| Cast-and-Surge | found | 134.6 s | 125.5 m | 78.7 % | 287 |
+| PF Guided | found | 85.2 s | 115.5 m | 83.1 % | 144 |
 
-Cast-and-surge states: surge 77.6 %, cast 22.4 %, lost 0.0 %. PF-guided final estimate (57.0, 106.6) m, error 2.0 m, posterior std 1.4 m (558 resamplings).
+Cast-and-surge states: surge 78.7 %, cast 21.3 %, lost 0.0 %. PF-guided final estimate (56.7, 106.7) m, error 1.7 m, posterior std 1.4 m (553 resamplings).
 
 ### Monte Carlo (20 random source positions)
 
 | Strategy | Found | Median time (found) | Median path (found) | Found when start is in the plume | Found when start is outside the plume |
 |----------|-------|---------------------|---------------------|----------------------------------|----------------------------------------|
-| Gradient Ascent | 14/20 | 287.6 s | 187.3 m | 10/10 | 4/10 |
-| Cast-and-Surge | 16/20 | 182.4 s | 154.9 m | 10/10 | 6/10 |
-| PF Guided | 16/20 | 121.6 s | 141.2 m | 10/10 | 6/10 |
+| Gradient Ascent | 7/20 | 226.3 s | 143.0 m | 7/10 | 0/10 |
+| Cast-and-Surge | 16/20 | 158.5 s | 141.5 m | 10/10 | 6/10 |
+| PF Guided | 16/20 | 112.8 s | 130.6 m | 10/10 | 6/10 |
 
-In 10 of the 20 trials the start point lies in the plume (mean C ≥ C_thresh). Closest approach in the failed trials: gradient 111.7, 105.3, 123.6, 127.6, 104.9, 114.7 m; cast-and-surge 111.7, 113.8, 121.9, 124.2 m; PF guided 79.7, 113.8, 121.9, 124.2 m. The failures never reached the plume.
+In 10 of the 20 trials the start point lies in the plume (mean C ≥ C_thresh). Closest approach in the failed trials: gradient 18.4, 35.6, 23.0, 24.6, 31.8, 39.0, 14.5, 23.0, 35.6, 29.0, 25.0, 27.4, 34.3 m; cast-and-surge and PF guided 77.6, 84.1, 87.6, 89.1 m (the same four trials).
 
 **Key findings**:
-- **The plume is now detectable and the source is found.** With the corrected geometry (plume downwind at x > x_s, drone starting downwind and surging toward −x) and a detectable concentration scale, every strategy finds the source whenever it starts inside the plume (10/10 each).
-- **Ranking: PF guided ≥ cast-and-surge > gradient ascent.** PF guided and cast-and-surge succeed equally often (16/20), but PF guided is faster (median 121.6 s vs 182.4 s) and flies shorter paths. Once the particle cloud has collapsed onto the source (posterior std 1.4 m at the end of the demonstration run), it pulls the drone straight up the plume, while cast-and-surge loses time casting after every dropout (22.4 % of the demonstration run). Gradient ascent is slowest (median 287.6 s): every intermittency dropout on one of the four probes produces a spurious gradient, so its path zig-zags.
-- **Starting outside the plume is the hard case.** Gradient ascent has no wind information and only wanders on noise (4/10 found). Cast-and-surge and PF guided cast crosswind and find the plume in 6/10. The remaining 4 fail because a source 30–40 m off the start line needs cast legs of up to ~80 m at 0.8 m/s, which takes most of the 600 s budget. Without contact the posterior stays broad, so the PF guidance never switches on and PF guided behaves like cast-and-surge.
-- The PF estimate is only as good as its measurement model: with the dropout-aware likelihood it converges near the source within the first 30 s of the demonstration run (see snapshots); a plain Gaussian likelihood would discard the true source on the first dropout.
+- **The plume is now detectable and the source is found.** With the corrected geometry (plume downwind at x > x_s, drone starting downwind and surging toward −x) and a detectable concentration scale, cast-and-surge and PF guided find the source whenever they start inside the plume (10/10 each).
+- **Ranking: PF guided ≥ cast-and-surge ≫ gradient ascent.** PF guided and cast-and-surge succeed equally often (16/20), but PF guided is faster (median 112.8 s vs 158.5 s) and flies shorter paths (130.6 m vs 141.5 m). Once the particle cloud has collapsed onto the source (posterior std 1.4 m at the end of the demonstration run), it pulls the drone straight up the plume, while cast-and-surge loses time casting after dropouts (21.3 % of the demonstration run). Gradient ascent finds only 7/20 and fails even in 3 of the 10 in-plume starts. Out of contact it only drifts upwind at 0.2 m/s with no crosswind search. Once it leaves the plume (after a run of dropouts or a wrong gradient estimate), nothing brings it back sideways. Its failures got within 14.5–39.0 m of the source but never within 3 m.
+- **Starting outside the plume is the hard case.** Gradient ascent never finds the plume from outside (0/10): the upwind drift alone does not move it sideways into the plume. Cast-and-surge and PF guided cast crosswind and find the plume in 6/10. The remaining 4 fail (closest approach 77.6–89.1 m) because a source 30–40 m off the start line needs cast legs of up to ~80 m at 0.8 m/s, which takes most of the 600 s budget. Without contact the posterior stays broad, so the PF guidance never switches on and PF guided behaves like cast-and-surge.
+- The PF estimate is only as good as its measurement model. With the dropout-aware likelihood it converges near the source within the first 30 s of the demonstration run (see snapshots); a plain Gaussian likelihood would discard the true source on the first dropout.
 
 **Concentration Map** — mean concentration (clipped at 20 mg/m³) for the demonstration source, ±1σ_y/±2σ_y lines, the $C = C_{thresh}$ contour, the Monte Carlo source region and the drone start:
 
 ![Concentration Map](./concentration_map.png)
 
-**Trajectory Comparison** — demonstration run, all three strategies plus the PF posterior-mean track:
+**Trajectory Comparison** — demonstration run, all three strategies plus the PF posterior-mean track (left), and the cast-and-surge path coloured by state, surge / cast / lost (right, zoomed crosswind):
 
 ![Trajectories](./trajectories.png)
 
@@ -153,7 +154,7 @@ In 10 of the 20 trials the start point lies in the plume (mean C ≥ C_thresh). 
 
 ![Concentration Time Series](./concentration_timeseries.png)
 
-**Particle Filter Snapshots** — particle cloud of the PF-guided demonstration run at t = 0 and 30 s; that run ends at 86.9 s, so the 90 s and 180 s panels show the final cloud:
+**Particle Filter Snapshots** — particle cloud of the PF-guided demonstration run at t = 0 and 30 s; that run ends at 85.2 s, so the 90 s and 180 s panels show the final cloud:
 
 ![PF Snapshots](./pf_snapshots.png)
 
@@ -179,7 +180,6 @@ In 10 of the 20 trials the start point lies in the plume (mean C ≥ C_thresh). 
 | $p_{detect} = 1 - e^{-C/C_{thresh}}$ | $1 - e^{-C/C_{int}}$, $C_{int} = 2.0$ | With the new scale, $C/C_{thresh}$ would make dropouts disappear; a separate intermittency scale keeps a meaningful dropout rate (p_detect 0.57 at 115 m). |
 | PF Gaussian likelihood, unseeded `np.random` resampling | Dropout-mixture likelihood, seeded systematic resampling + 1 m roughening | The Gaussian likelihood kills the true source on any dropout; the unseeded generator made runs non-reproducible. |
 | Cast legs of constant length 8 m | Leg k has length 8k m, alternating sides | Constant 8 m legs only sweep one side of the loss point. |
-| Cast with +0.2 m/s "upwind" drift | No along-wind drift while casting | The card's drift was actually downwind; casting in place around the loss point is the standard behaviour. |
 | PF guidance always blended | Blended only once posterior std < 15 m | Before convergence the posterior mean is the area centre and would pull the drone away from the plume. |
 | Single fixed source | Demonstration source + 20 random sources (crosswind offsets up to ±40 m) | Gives a discriminative comparison: half the trials start outside the plume. Runtime cut from > 10 min to ≈ 1 min by vectorising the PF and running it only for the PF-guided strategy. |
 
