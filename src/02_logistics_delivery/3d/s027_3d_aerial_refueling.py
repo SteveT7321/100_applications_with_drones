@@ -50,6 +50,7 @@ Z_T_LOITER  = 15.0      # m    tanker loiter altitude
 
 K_ALT       = 1.2       # 1/s  altitude-match gain
 V_Z_MAX     = 2.0       # m/s  max vertical speed in altitude match
+V_EMERG     = 2.0       # m/s  emergency descent speed after the battery is empty
 DELTA_Z_OK  = 1.0       # m    altitude-match tolerance (card delta_z)
 V_H_ALT     = 3.5       # m/s  horizontal speed during altitude match (0.7 V)
 
@@ -199,6 +200,11 @@ def simulate(refuel=True, soft_dock_ff=True):
             else:
                 vT, fsm_T = np.zeros(3), 'home'
                 ev['tanker_home'] = t
+        elif fsm_T == 'descending':
+            vT, aT = np.array([0.0, 0.0, -min(V_EMERG, pT[2] / DT)]), np.zeros(3)
+            if pT[2] <= 1e-9:
+                vT, fsm_T = np.zeros(3), 'landed'
+                ev['forced_landing_T'] = (t, pT.copy())
         elif fsm_T == 'landed':
             vT, aT = np.zeros(3), np.zeros(3)
 
@@ -243,6 +249,11 @@ def simulate(refuel=True, soft_dock_ff=True):
             else:
                 acc = -KP2 * dr - KD2 * dv + (aT if soft_dock_ff else 0.0)
             vR = clamp_speed(vR + acc * DT)
+        if fsm_R == 'descending':
+            vR = np.array([0.0, 0.0, -min(V_EMERG, pR[2] / DT)])
+            if pR[2] <= 1e-9:
+                vR, fsm_R = np.zeros(3), 'landed'
+                ev['forced_landing_R'] = (t, pR.copy())
         if fsm_R in ('home', 'landed'):
             vR = np.zeros(3)
 
@@ -256,19 +267,20 @@ def simulate(refuel=True, soft_dock_ff=True):
             pT = pT + vT * DT
         max_step_T = max(max_step_T, float(np.linalg.norm(pT - pT_old)))
 
-        # ---- battery: an empty battery is a forced landing --------------------
-        if fsm_R not in ('home', 'landed'):
+        # ---- battery: an empty battery forces an emergency descent -------------
+        # (kinematic straight-down descent at V_EMERG; no energy is drawn)
+        if fsm_R not in ('home', 'landed', 'descending'):
             ER -= battery_drain(np.linalg.norm(vR), DT)
             if ER <= 0.0:
                 ER = 0.0
-                fsm_R = 'landed'
-                ev['forced_landing_R'] = (t + DT, pR.copy())
-        if fsm_T not in ('at_base', 'home', 'landed'):
+                fsm_R = 'descending'
+                ev['battery_empty_R'] = (t + DT, pR.copy())
+        if fsm_T not in ('at_base', 'home', 'landed', 'descending'):
             ET -= battery_drain(np.linalg.norm(vT), DT)
             if ET <= 0.0:
                 ET = 0.0
-                fsm_T = 'landed'
-                ev['forced_landing_T'] = (t + DT, pT.copy())
+                fsm_T = 'descending'
+                ev['battery_empty_T'] = (t + DT, pT.copy())
 
     cols = list(zip(*log))
     h = {
@@ -323,9 +335,9 @@ def run_simulation():
                      ('receiver_home', 'Receiver home'), ('complete', 'Mission complete')]:
         if key in ev:
             print(f'  {lab:<20s}: t = {ev[key]:.2f} s')
-    for key, lab in [('forced_landing_R', 'Receiver'), ('forced_landing_T', 'Tanker')]:
+    for key, lab in [('battery_empty_R', 'Receiver'), ('battery_empty_T', 'Tanker')]:
         if key in ev:
-            print(f'  {lab} FORCED LANDING at t = {ev[key][0]:.2f} s, pos {np.round(ev[key][1], 2)}')
+            print(f'  {lab} BATTERY EMPTY at t = {ev[key][0]:.2f} s, pos {np.round(ev[key][1], 2)}')
     print(f'  Final energy        : Receiver {data["E_R"][-1]:.2f} J, Tanker {data["E_T"][-1]:.2f} J')
     print(f'  Receiver path flown : {data["path_len_R"]:.2f} m')
     print(f'  Max tanker step     : {data["max_step_T"]:.3f} m per {DT} s '
@@ -340,11 +352,14 @@ def run_simulation():
     base = simulate(refuel=False)
     bev = base['events']
     print('\nNo-refuel run:')
-    if 'forced_landing_R' in bev:
+    if 'battery_empty_R' in bev:
+        tb, pb = bev['battery_empty_R']
         tl, pl = bev['forced_landing_R']
-        print(f'  Receiver FORCED LANDING at t = {tl:.2f} s, pos ({pl[0]:.2f}, {pl[1]:.2f}, {pl[2]:.2f}) m, '
-              f'after {base["path_len_R"]:.2f} m of {ROUTE_LEN:.2f} m'
+        print(f'  Receiver BATTERY EMPTY at t = {tb:.2f} s, pos ({pb[0]:.2f}, {pb[1]:.2f}, {pb[2]:.2f}) m, '
+              f'after {base["path_len_R"] - pb[2]:.2f} m of {ROUTE_LEN:.2f} m'
               f'{"; package delivered" if "delivered" in bev else "; package NOT delivered"}')
+        print(f'  Emergency descent at {V_EMERG} m/s: FORCED LANDING at t = {tl:.2f} s, '
+              f'pos ({pl[0]:.2f}, {pl[1]:.2f}, {pl[2]:.2f}) m')
     else:
         print('  Receiver completed without refuel')
     data['no_refuel'] = base
@@ -359,7 +374,7 @@ def run_simulation():
         dk = np.nonzero(chk['phase_R'] == 'docking')[0]
         rel = np.linalg.norm(chk['pos_R'][dk] - chk['pos_T'][dk], axis=1)
         tail = rel[-int(round(20.0 / DT)):]
-        fl = cev.get('forced_landing_R')
+        fl = cev.get('battery_empty_R')
         print(f'  never docks: docking from t = {cev["dock_start"]:.2f} s until '
               f'{"the battery is empty at t = %.2f s" % fl[0] if fl else "T_MAX"}')
         print(f'  |dr| over the last 20 s of docking: {tail.min():.3f}-{tail.max():.3f} m '
@@ -405,6 +420,8 @@ def plot_trajectory_3d(data, out_dir):
     ax.plot(*nr['pos_R'].T, color='red', lw=1.0, ls='--', alpha=0.5,
             label='Receiver without refuel')
     if 'forced_landing_R' in nr['events']:
+        ax.scatter(*nr['events']['battery_empty_R'][1], color='red', marker='o', s=40,
+                   label='Battery empty (no refuel)')
         ax.scatter(*nr['events']['forced_landing_R'][1], color='red', marker='x', s=90,
                    label='Forced landing (no refuel)')
     if 'dock' in ev:
@@ -453,10 +470,10 @@ def plot_energy_levels(data, out_dir):
     ax.plot(times, data['E_T'], color='blue', lw=1.8, label='Tanker energy')
     ax.plot(nr['times'], nr['E_R'], color='red', lw=1.2, ls='--', alpha=0.6,
             label='Receiver without refuel')
-    if 'forced_landing_R' in nr['events']:
-        tl = nr['events']['forced_landing_R'][0]
+    if 'battery_empty_R' in nr['events']:
+        tl = nr['events']['battery_empty_R'][0]
         ax.scatter([tl], [0.0], color='red', marker='x', s=80, zorder=5,
-                   label=f'Forced landing (no refuel), t = {tl:.1f} s')
+                   label=f'Battery empty (no refuel), t = {tl:.1f} s')
     _mark_events(ax, ev)
     if 'dock' in ev:
         k = ev['dock'][3]

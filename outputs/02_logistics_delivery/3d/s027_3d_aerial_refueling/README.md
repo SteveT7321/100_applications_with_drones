@@ -13,7 +13,7 @@ A delivery drone (Receiver, red) flies a 3D waypoint mission: climb-out to a 10 
 3. It soft-docks in all three axes, receives energy and resumes its waypoint mission.
 4. The Tanker returns to base.
 
-A second run without refuelling shows the forced landing that the trigger predicts. An empty battery stops a drone (forced landing).
+A second run without refuelling shows the forced landing that the trigger predicts. When a drone's battery is empty it stops drawing energy and makes an emergency descent straight down at 2 m/s to the ground (forced landing).
 
 ---
 
@@ -62,6 +62,7 @@ The dock succeeds when $\|\Delta\mathbf{r}\| < \epsilon_p$ and $\|\Delta\mathbf{
 | $d_{dock}$ / $\epsilon_p$ / $\epsilon_v$ | 0.5 m / 0.20 m / 0.08 m/s |
 | Approach gains $(K_p, K_d)$ / soft-dock gains $(K_{p2}, K_{d2})$ | (2.0, 1.5) / (4.0, 2.5) |
 | Waypoint arrival radius | 0.5 m |
+| Emergency descent speed (empty battery) | 2.0 m/s |
 
 ### Deviations from the scenario card
 
@@ -72,6 +73,7 @@ The dock succeeds when $\|\Delta\mathbf{r}\| < \epsilon_p$ and $\|\Delta\mathbf{
 | Refuel trigger timing | "requests refueling when predicted range falls below threshold" during the mission | fires at t = 0 | with these energies the full route is out of range from the start (100 m < 141.5 m incl. margin), so the trigger launches the Tanker at take-off, as the card's "launches simultaneously" setup implies |
 | Tanker start | same base | pad at (0, 2, 0) m | 2 m beside the Receiver so the two tracks stay distinguishable |
 | Receiver speed during docking | not specified | clipped to $V$ = 5 m/s | same limit as every other phase |
+| Empty battery | not specified | the drone stops drawing energy and descends straight down at 2 m/s (kinematic) to z = 0 | a simplification: a real multirotor with an empty battery would fall or rely on a reserve; this shows where it ends up instead of freezing it in mid-air |
 
 ---
 
@@ -95,14 +97,14 @@ Console output of `python src/02_logistics_delivery/3d/s027_3d_aerial_refueling.
 | Receiver home | t = 30.35 s, final energy 65.48 J, 139.31 m flown |
 | Min range margin after refuel ($d_{rem}$ − need, need includes 5 m) | 34.60 m |
 | Max Tanker step | 0.250 m per 0.05 s = V·Δt (no teleport) |
-| **Without refuelling** | forced landing at t = 20.00 s at (29.06, 0, 9.85) m after 100.00 m of 136.50 m (package delivered, on the way home) |
+| **Without refuelling** | battery empty at t = 20.00 s at (29.06, 0, 9.85) m after 100.00 m of 136.50 m (package delivered, on the way home); emergency descent at 2 m/s, forced landing at t = 24.95 s at (29.06, 0, 0) m |
 | **Without the a_T feed-forward** | never docks: the Receiver docks from 7.05 s until its battery is empty at 64.75 s, with a steady \|Δr\| of 0.268 m (> ε_p) |
 
 **Energy checks**
 
 - **Tanker at dock.** The pad-to-entry leg is √(26² + 2² + 15²) = 30.1 m, which costs 48.1 J at 1.6 J/m. Five seconds of orbiting at 2 m/s costs 5.0 s × 1.7 W = 8.5 J. That leaves 320 − 48.1 − 8.5 = 263.4 J ✓. After the transfer: 263.43 − 120 × 1.05 = 137.43 J ✓.
 - **Tanker home.** The return leg costs 137.43 − 78.77 = 58.66 J, which is 36.7 m at 1.6 J/m. At 5 m/s that takes 7.3 s, consistent with 11.05 → 18.40 s ✓.
-- **Receiver without refuelling.** 160 J / 1.6 J/m = 100 m. The outbound route to the delivery point is 75.3 m, so the drone lands about 25 m back along the return cruise, at x = 29 m ✓.
+- **Receiver without refuelling.** 160 J / 1.6 J/m = 100 m. The outbound route to the delivery point is 75.3 m, so the battery runs out about 25 m back along the return cruise, at x = 29 m ✓. The 9.85 m descent at 2 m/s takes 4.9 s, matching the landing at 24.95 s ✓.
 - **Refuelled Receiver.** It ends with 65.48 J, less than it started with, and its range margin never drops below 34.60 m.
 
 **Docking.** The receiver starts the altitude match 12 m before the RVZ, while still at its cruise altitude. It climbs at up to 2 m/s while closing horizontally, and switches to the docking law when it is within δ_z = 1 m of 15 m. The PD law with Tanker-acceleration feed-forward then removes the remaining 2.2 m offset and 3.4 m/s velocity difference in 4.0 s. The velocity tolerance (0.08 m/s) is the binding condition. In `docking_detail.png`, |Δr| is below ε_p about 1.5 s before |Δv| drops below ε_v at 11.05 s. By then |Δr| is 0.025 m.
@@ -115,7 +117,7 @@ Console output of `python src/02_logistics_delivery/3d/s027_3d_aerial_refueling.
 
 ### 3D Trajectory
 
-The Receiver is red and the Tanker blue; the gold segment is the docking approach. The dashed red line is the Receiver without refuelling, ending at its forced landing (×):
+The Receiver is red and the Tanker blue; the gold segment is the docking approach. The dashed red line is the Receiver without refuelling: its battery empties at the red dot, and it descends vertically to its forced landing (×):
 
 ![Trajectory](trajectory_3d.png)
 
