@@ -208,7 +208,7 @@ How to read the table:
 | Hover single tuck, force-only | **6.84°** at t = 5.66 s | 2.82° (constant) | 2.100 N | 0 | 2.184, 2.184, 2.471, 2.414 N |
 
 - Right after the tuck the wrench allocator does what the statics predict. At t = 5.50 s it has shifted the load onto pair 1–2 (f = 4.650, 4.650, 0.197, 0.215 N) and the tilt is 0.18°.
-- The closed loop then drifts to a slightly tilted equilibrium (1.86° at t = 6.00 s) with pair 3–4 carrying about 1.7 N again, rather than staying at the level, unloaded solution. I did not isolate the cause; the drones are soft position-controlled points, and the allocator re-solves on the tilted geometry every step. It stays below 5° throughout.
+- The closed loop then drifts to a slightly tilted equilibrium (1.86° at t = 6.00 s) with pair 3–4 carrying 0.47 N at t = 6.00 s and about 1.7 N by the end, rather than staying at the level, unloaded solution. The independent review traced the residual tilt to the swing-damping gain K_η: the allocator balances forces on whatever tilted geometry it sees, so the only levelling action is the proportional K_η term, which leaves a steady-state error (in the review's gain test, K_η = 0 gives 5.11°, 0.3 gives 1.87°, 0.9 gives 0.82°; 10× cable stiffness only moves it to 1.41°). Those test values are not printed by this script. It stays below 5° throughout.
 - The force-only allocator ignores the roll moment. It overshoots to 6.84° and settles at 2.82°.
 
 **Route** (single-drone tuck, from the printed asymmetry analysis):
