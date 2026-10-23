@@ -13,6 +13,8 @@ isolated estimate, as in the 2D-folder S050):
               voxels in its 10 m altitude band (out-of-band gain x 0.2)
   * 'flat'  - 2D-constrained baseline: all drones locked at z = 5 m, frontier
               chosen in the horizontal plane (same 3D sensor and filter)
+Both logs of a seed draw their motion and measurement noise from the same
+pre-generated tables (common random numbers, indexed by step, drone and landmark).
 On each log two estimators are run on the SAME measurements:
   * isolated    - one 3D EKF-SLAM per drone, no communication
   * distributed - same, plus pairwise SE(3) map merging within r_comm = 50 m
@@ -421,7 +423,7 @@ def frontier_target(grid, pos, others, band, flat):
 def quality(L, true_lm):
     if len(L) == 0:
         return dict(found=np.zeros(len(true_lm), bool), rms=np.nan, vrms=np.nan, hrms=np.nan,
-                    n_est=0, err=np.full((len(true_lm), 3), np.nan))
+                    vrms_all=np.nan, hrms_all=np.nan, n_est=0, err=np.full((len(true_lm), 3), np.nan))
     D = np.linalg.norm(true_lm[:, None] - L[None], axis=2)
     jn = D.argmin(1); dmin = D.min(1)
     found = dmin < SUCCESS_R
@@ -430,7 +432,10 @@ def quality(L, true_lm):
     return dict(found=found, n_est=len(L), err=np.where(found[:, None], err, np.nan),
                 rms=float(np.sqrt(np.mean(dmin[f] ** 2))) if f.any() else np.nan,
                 vrms=float(np.sqrt(np.mean(err[f, 2] ** 2))) if f.any() else np.nan,
-                hrms=float(np.sqrt(np.mean(np.sum(err[f, :2] ** 2, 1)))) if f.any() else np.nan)
+                hrms=float(np.sqrt(np.mean(np.sum(err[f, :2] ** 2, 1)))) if f.any() else np.nan,
+                # untruncated: nearest estimate of every true landmark, no 1.5 m cut
+                vrms_all=float(np.sqrt(np.mean(err[:, 2] ** 2))),
+                hrms_all=float(np.sqrt(np.mean(np.sum(err[:, :2] ** 2, 1)))))
 
 
 # -- Simulation ------------------------------------------------------------------------------
@@ -438,6 +443,9 @@ def quality(L, true_lm):
 def run_log(mode, seed, true_lm, record):
     """One flight log ('band' or 'flat'); isolated and distributed filters on the same data."""
     rng = np.random.default_rng(seed)
+    # common random numbers: the same noise table drives both flight logs of a seed
+    W_MOT = rng.standard_normal((N_STEPS, N_DRONES, 4))
+    W_MEAS = rng.standard_normal((N_STEPS, N_DRONES, M_LANDMARKS, 3))
     flat = mode == 'flat'
     starts = STARTS.copy()
     truth = starts.copy()
@@ -472,10 +480,10 @@ def run_log(mode, seed, true_lm, record):
             omega = float(np.clip(wrap(ang - nav[3]) / DT, -OMEGA_MAX, OMEGA_MAX))
             vz = float(np.clip(K_ZCMD * (targets[k][2] - nav[2]), -VZ_MAX, VZ_MAX))
             psi = truth[k, 3]
-            truth[k] += [V_FWD * DT * np.cos(psi) + rng.normal(0, SIG_AX * DT),
-                         V_FWD * DT * np.sin(psi) + rng.normal(0, SIG_AY * DT),
-                         vz * DT + rng.normal(0, SIG_AZ * DT),
-                         omega * DT + rng.normal(0, SIG_OMEGA * DT)]
+            truth[k] += [V_FWD * DT * np.cos(psi) + SIG_AX * DT * W_MOT[step, k, 0],
+                         V_FWD * DT * np.sin(psi) + SIG_AY * DT * W_MOT[step, k, 1],
+                         vz * DT + SIG_AZ * DT * W_MOT[step, k, 2],
+                         omega * DT + SIG_OMEGA * DT * W_MOT[step, k, 3]]
             truth[k, 3] = wrap(truth[k, 3])
             assert truth[k, 2] > 0.0, 'drone below ground'
             iso[k].predict(V_FWD, vz, omega)
@@ -485,9 +493,9 @@ def run_log(mode, seed, true_lm, record):
             r = np.linalg.norm(d, axis=1)
             n_revisit, n_upd = 0, 0
             for j in np.flatnonzero(r <= R_SENSE):
-                zm = np.array([r[j] + rng.normal(0, SIG_RHO),
-                               wrap(np.arctan2(d[j, 1], d[j, 0]) - truth[k, 3] + rng.normal(0, SIG_PHI)),
-                               np.arcsin(d[j, 2] / r[j]) + rng.normal(0, SIG_EPS)])
+                zm = np.array([r[j] + SIG_RHO * W_MEAS[step, k, j, 0],
+                               wrap(np.arctan2(d[j, 1], d[j, 0]) - truth[k, 3] + SIG_PHI * W_MEAS[step, k, j, 1]),
+                               np.arcsin(d[j, 2] / r[j]) + SIG_EPS * W_MEAS[step, k, j, 2]])
                 iso[k].process(zm)
                 kind, jl = dist[k].process(zm)
                 if kind == 'upd':
@@ -541,6 +549,8 @@ def run_log(mode, seed, true_lm, record):
                            rms=float(np.nanmean([x['rms'] for x in q])),
                            vrms=float(np.nanmean([x['vrms'] for x in q])),
                            hrms=float(np.nanmean([x['hrms'] for x in q])),
+                           hrms_all=float(np.nanmean([x['hrms_all'] for x in q])),
+                           vrms_all=float(np.nanmean([x['vrms_all'] for x in q])),
                            pose=float(np.sqrt(np.mean([np.sum((fl[k].pose[:3] - truth[k, :3]) ** 2)
                                                        for k in range(N_DRONES)]))),
                            n_est=[x['n_est'] for x in q],
@@ -717,8 +727,10 @@ def plot_vertical_heatmap(data):
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
     for ax, mode in zip(axes, ('band', 'flat')):
         q = data['res'][(mode, SHOW_SEED)]['final']['dist']['q']
-        err = np.nanmean(np.array([np.abs(x['err'][:, 2]) for x in q]), axis=0)
-        found = ~np.isnan(err)
+        E = np.array([np.abs(x['err'][:, 2]) for x in q])
+        found = np.any(~np.isnan(E), axis=0)                  # found by at least one drone
+        err = np.full(len(L), np.nan)
+        err[found] = np.nanmean(E[:, found], axis=0)
         sc = ax.scatter(L[found, 0], L[found, 1], c=err[found], cmap='coolwarm', vmin=0, vmax=1.5,
                         s=60, edgecolors='k')
         ax.scatter(L[~found, 0], L[~found, 1], marker='x', c='k', s=30, label='not found by any drone')
@@ -776,7 +788,8 @@ def report(data):
     print(f'\n-- Final values at t = {T_MAX:.0f} s, {N_MC} seeds: mean [min, max] --')
     keys = [('cov', 'coverage (mean per-drone map) %', 100), ('union', 'team union %', 100),
             ('rms', '3D RMS found (m)', 1), ('hrms', 'horizontal RMS (m)', 1),
-            ('vrms', 'vertical RMS (m)', 1), ('pose', 'pose RMSE (m)', 1)]
+            ('vrms', 'vertical RMS (m)', 1), ('hrms_all', 'horizontal RMS all landmarks, untruncated (m)', 1),
+            ('vrms_all', 'vertical RMS all landmarks, untruncated (m)', 1), ('pose', 'pose RMSE (m)', 1)]
     for (mode, name) in STRATS:
         parts = []
         for key, lab, sc in keys:

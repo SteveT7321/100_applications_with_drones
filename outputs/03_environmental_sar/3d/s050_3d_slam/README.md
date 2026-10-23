@@ -16,7 +16,7 @@
 | **3D bands** (card policy) | altitude-separated 3D frontier: drone $i$ prefers frontier voxels in its 10 m band (0–10, 10–20, 20–30, 30–40 m); out-of-band gain × 0.2 |
 | **flat 5 m** (card's 2D-constrained baseline) | all drones locked at z = 5 m; frontier in the horizontal plane; **same 3D sensor and filter** |
 
-**Estimators**, run on the same measurements of each log: **isolated** (no communication) and **distributed** (pairwise SE(3) map merging within 50 m). This gives four strategies, compared over **10 noise seeds** (the same landmark map).
+**Estimators**, run on the same measurements of each log: **isolated** (no communication) and **distributed** (pairwise SE(3) map merging within 50 m). This gives four strategies, compared over **10 noise seeds** (the same landmark map). Within a seed, both flight logs take their motion and measurement noise from the same pre-generated tables, indexed by step, drone and landmark (common random numbers), so the band and flat runs see the same noise draws even though their trajectories differ.
 
 **Objective (card)**: fraction of landmarks mapped within 1.5 m, 3D and vertical RMS of the mapped landmarks, pose error.
 
@@ -72,7 +72,7 @@ $\partial\epsilon/\partial\delta_x = -\delta_x\delta_z/(\rho_{xy}\rho^2)$, $\par
 | 2 m voxels (200 000), log-odds updated by landmark observations | 5 m binary "explored" voxels (12 800) marked within $r_{sense}$ of the drone | the 2 m grid makes the 20 000-step simulation too slow for a 10-seed Monte Carlo; the card's log-odds rule (voxels change only when a landmark is seen) leaves empty space unexplored for ever |
 | Full SO(3) hypothesis search | yaw-only hypotheses, full SVD SO(3) refinement on the inliers | roll and pitch are observable from gravity on a multirotor; the refinement still uses the card's SVD |
 | 2D-constrained baseline "missing all elevated landmarks above its sensing plane" | flat baseline with the same 3D sensor; the planar-sensor case is reported as a bound | with a planar range-bearing sensor the landmark height is not estimated at all, so only the 4 of 50 landmarks within 1.5 m of the 5 m plane could ever count — a bound by construction, not a simulation result |
-| Altitude bounds 0.5–35 m | commands clipped to [0.5, 35] m; the true altitude reached 35.19 m on seed 0 (process noise) | the bound is enforced on the command, not on the noisy truth |
+| Altitude bounds 0.5–35 m | commands clipped to [0.5, 35] m; the true altitude reached 35.24 m on seed 0 (process noise) | the bound is enforced on the command, not on the noisy truth |
 | Centralised filter (2D-folder S050) | not run | not part of the 3D card |
 | Trajectory panel coloured by time with uncertainty ellipsoids; GIF with communication links | single-colour paths with matched-pair lines; GIF shows explored slices and drones only | readability of the 3D panels; the link structure is shown in `merge_events.png` |
 | Output path `outputs/03_environmental_sar/s050_3d_slam/` | `outputs/03_environmental_sar/3d/s050_3d_slam/` | 3D variants live under `3d/` |
@@ -90,7 +90,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s050_3d_slam.py
 ```
 
-Runtime ≈ 260 s (20 flight logs × 4 000 steps, run in 10 worker processes, single-threaded BLAS). Each run seeds its own generator, so the result does not depend on scheduling; two runs printed byte-identical output and produced identical files.
+Runtime ≈ 255 s (20 flight logs × 4 000 steps, run in 10 worker processes, single-threaded BLAS). Each run builds its noise tables from its own seed, so the result does not depend on scheduling; two runs printed byte-identical output and produced identical files.
 
 ---
 
@@ -100,33 +100,35 @@ Landmark heights: 0.6–29.1 m (17 below 10 m, 20 at 10–20 m, 13 above 20 m).
 
 ### Monte Carlo, final values at t = 800 s (10 seeds: mean [min, max])
 
-| Strategy | Coverage (mean per-drone map) | Team union | 3D RMS (found) | Horizontal RMS | Vertical RMS | Pose RMSE | Coverage by landmark height < 10 / 10–20 / ≥ 20 m |
-|---|---|---|---|---|---|---|---|
-| 3D bands, isolated | **34.00 %** [11.50, 60.50] | **86.40 %** [30, 100] | 0.83 m | 0.83 m | 0.07 m | **5.10 m** [2.45, 7.59] | 27.9 / 39.1 / 34.0 % |
-| 3D bands, distributed | 27.75 % [4.50, 56.50] | 59.80 % [6, 100] | 0.93 m | 0.91 m | 0.12 m | 6.59 m [2.43, 12.79] | 21.2 / 34.1 / 26.5 % |
-| flat 5 m, isolated | 23.25 % [5.50, 42.00] | 60.60 % [8, 100] | 0.88 m | 0.87 m | 0.09 m | 7.02 m [4.35, 8.92] | 16.9 / 29.4 / 22.1 % |
-| flat 5 m, distributed | 25.40 % [6.00, 53.00] | 58.60 % [10, 100] | 0.89 m | 0.88 m | 0.13 m | 6.16 m [2.94, 8.64] | 17.9 / 32.8 / 23.8 % |
+"Found" RMS values use only the landmarks mapped within the 1.5 m success radius (truncated); the "all landmarks" values use the nearest estimate of every true landmark, without truncation.
 
-Per seed (coverage %, band iso / band dist / flat iso / flat dist): s0 12/45/29/53; s1 29/30/42/20; s2 52/5/6/8; s3 43/5/6/6; s4 28/21/15/6; s5 60/57/30/14; s6 27/20/40/47; s7 32/50/30/36; s8 17/14/7/31; s9 41/32/27/32.
+| Strategy | Coverage (mean per-drone map) | Team union | 3D RMS (found) | Horizontal RMS (found) | Vertical RMS (found) | Horizontal RMS, all landmarks | Vertical RMS, all landmarks | Pose RMSE | Coverage by height < 10 / 10–20 / ≥ 20 m |
+|---|---|---|---|---|---|---|---|---|---|
+| 3D bands, isolated | 27.65 % [9.50, 52.50] | 67.80 % [20, 100] | 0.88 m | 0.88 m | 0.08 m | 4.25 m [3.35, 5.13] | 0.54 m [0.10, 1.00] | 5.24 m [2.52, 7.42] | 21.2 / 33.8 / 26.7 % |
+| 3D bands, distributed | 31.60 % [5.50, 66.00] | **74.80 %** [8, 100] | 0.84 m | 0.82 m | 0.13 m | 4.97 m [2.01, 6.80] | 1.01 m [0.31, 1.85] | 6.76 m [2.40, 10.94] | 26.8 / 35.8 / 31.5 % |
+| flat 5 m, isolated | **37.35 %** [7.50, 67.00] | 71.60 % [8, 100] | 0.89 m | 0.88 m | 0.10 m | 6.98 m [5.12, 8.53] | 1.79 m [1.24, 2.53] | 5.37 m [1.63, 8.53] | 29.7 / 44.8 / 36.0 % |
+| flat 5 m, distributed | 26.10 % [8.00, 48.00] | 64.60 % [12, 100] | 0.88 m | 0.86 m | 0.15 m | 4.08 m [2.56, 5.30] | 0.65 m [0.15, 1.49] | **4.60 m** [1.35, 7.61] | 18.5 / 33.1 / 25.2 % |
 
-Head-to-head on the same seeds (better / worse / tie):
+Per seed (coverage %, band iso / band dist / flat iso / flat dist): s0 28/35/46/16; s1 23/7/46/20; s2 14/11/42/32; s3 52/6/16/35; s4 10/29/8/10; s5 20/29/58/48; s6 34/38/67/8; s7 32/52/32/18; s8 50/66/18/46; s9 13/46/40/28.
+
+Head-to-head on the same seeds and noise (better / worse / tie):
 
 | Comparison | Coverage | Pose RMSE |
 |---|---|---|
-| 3D bands vs flat, isolated | 7 / 3 / 0 | 9 / 1 / 0 |
-| 3D bands vs flat, distributed | 4 / 6 / 0 | — |
-| distributed vs isolated, 3D bands | 3 / 7 / 0 | 4 / 6 / 0 |
+| 3D bands vs flat, isolated | 3 / 7 / 0 | 5 / 5 / 0 |
+| 3D bands vs flat, distributed | 6 / 4 / 0 | — |
+| distributed vs isolated, 3D bands | 7 / 3 / 0 | 1 / 9 / 0 |
 
-Merging: 918 executed merges, 120 with too few common landmarks and 4 rejected as coplanar on the band logs (953 / 154 / 29 on the flat logs), 778 and 822 landmarks transferred. On seed 0 the executed merges used 35.8 common landmarks on average with an alignment residual of 0.63 m RMS (max 1.28 m) and a 2.95° mean rotation. Revisit events (band, distributed, all seeds): 2 616, mean EKF pose correction 0.05 m (max 3.74 m); the true pose error went down in 1 321 of them (mean change +0.002 m). Smallest covariance eigenvalue in any filter: 1.170e-04 (all stayed positive definite).
+Merging: 880 executed merges, 120 with too few common landmarks and 4 rejected as coplanar on the band logs (928 / 164 / 36 on the flat logs), 818 and 837 landmarks transferred. On seed 0 the executed band merges used 35.0 common landmarks on average with an alignment residual of 0.64 m RMS (max 1.19 m) and a 2.78° mean rotation. Revisit events (band, distributed, all seeds): 2 499, mean EKF pose correction 0.06 m (max 2.69 m); the true pose error went down in 1 359 of them (mean change +0.007 m). Smallest covariance eigenvalue in any filter: 1.149e-04 (all stayed positive definite).
 
 **Key findings**
 
-- **Altitude-separated exploration helps the isolated filters, modestly and not reliably.** With isolated filters the 3D band policy beats the flat 5 m baseline on coverage in 7 of 10 seeds (34.00 % vs 23.25 % mean) and on pose error in 9 of 10 (5.10 vs 7.02 m). The spread between seeds (11.5–60.5 %) is far larger than the difference.
-- **The card's expectation for the flat baseline does not hold.** It does not "plateau early because it cannot detect elevated landmarks": with a 30 m spherical sensor a drone at 5 m sees landmarks up to 30 m high, and the flat runs are lower at every height by a similar factor (16.9 / 29.4 / 22.1 % vs 27.9 / 39.1 / 34.0 % for isolated filters), not specifically for elevated landmarks. The card's picture applies to a planar sensor, which could estimate at most 4 of 50 landmarks (those within 1.5 m of the 5 m plane) — a bound by construction.
-- **Distributed merging does not help** (band: worse coverage in 7 of 10 seeds, worse pose in 6 of 10; flat: mixed), the same result as the 2D-folder S050: an alignment that fits 36 common landmarks to 0.63 m still imports the visitor's drifted map, and the host then localises on it. The extreme cases are seeds 2 and 3 (band coverage 52 % / 43 % isolated → 5 % / 5 % distributed, pose 12.79 m on seed 3).
-- **Vertical error is not the weak axis.** The card expected the vertical RMS to dominate; it is 0.07–0.13 m against 0.83–0.91 m horizontally. Height drift comes only from the small $\sigma_{az}$ noise, while the horizontal error is driven by heading drift (pose RMSE 5–7 m), which the elevation noise does not affect.
-- **Revisits do not correct the drift.** Re-observing old landmarks moves the pose estimate by 0.05 m on average and reduces the true error in only half of the events — consistent with an overconfident EKF after 800 s of heading drift.
-- **Absolute numbers are low** (mean coverage 23–34 % at 1.5 m) because pose errors of 5–7 m shift whole maps; coverage within the success radius is a strict metric in a GPS-denied run of this length.
+- **No strategy is reliably better; the seed-to-seed spread dominates.** Per-drone coverage ranges from 5.5 % to 67 % within every strategy. With common random numbers, altitude-separated exploration loses to the flat baseline for isolated filters on 7 of 10 seeds (27.65 % vs 37.35 % mean) and ties on pose (5 / 5); with distributed filters it wins 6 of 10. An earlier version of this README, with independent noise streams for the two logs, reported the opposite isolated result (7 / 3 for the bands) — a sign that 10 seeds cannot separate these strategies.
+- **The card's expectation for the flat baseline does not hold.** It does not "plateau early because it cannot detect elevated landmarks": with a 30 m spherical sensor a drone at 5 m sees landmarks up to 30 m high, and the flat isolated runs map landmarks above 20 m as well as the band runs (36.0 % vs 26.7 %). The card's picture applies to a planar sensor, which could estimate at most 4 of 50 landmarks (those within 1.5 m of the 5 m plane) — a bound by construction.
+- **Merging trades pose accuracy for map completeness.** Distributed filters cover more in 7 of 10 band seeds (team union 74.80 % vs 67.80 %) but have a larger pose error in 9 of 10 (6.76 vs 5.24 m), the same mechanism as in the 2D-folder S050: an alignment that fits ≈ 35 common landmarks to 0.64 m still imports the visitor's drifted map, and the host then localises on it.
+- **Vertical error is smaller than horizontal error, also without truncation.** The card expected the vertical RMS to dominate. For landmarks within the 1.5 m success radius it is 0.08–0.15 m against 0.82–0.88 m horizontally, but that cut bounds both components. Over all 50 landmarks (nearest estimate, no cut) it is 0.54–1.79 m against 4.08–6.98 m horizontally, so the conclusion holds: height drift comes only from the small $\sigma_{az}$ noise, while the horizontal error is driven by heading drift (pose RMSE 4.6–6.8 m), which the elevation noise does not affect.
+- **Revisits do not correct the drift.** Re-observing old landmarks moves the pose estimate by 0.06 m on average and reduces the true error in only about half of the events (1 359 of 2 499).
+- **Absolute numbers are low** (mean coverage 26–37 % at 1.5 m) because pose errors of 5–7 m shift whole maps; coverage within the success radius is a strict metric in a GPS-denied run of this length.
 
 ### Figures
 
