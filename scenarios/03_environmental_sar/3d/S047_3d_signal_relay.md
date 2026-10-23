@@ -1,6 +1,6 @@
 # S047 3D Upgrade — Signal Relay Enhancement
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S047 original](../S047_signal_relay.md)
 
 ---
@@ -63,7 +63,9 @@ subject to:
 - $(x_i, y_i)$ within the 2D operating bounding box $[0, 1000]^2$ m
 
 **Comparison strategies**:
-1. **2D uniform baseline** — relay altitudes fixed at 20 m, horizontal positions equally spaced.
+1. **2D uniform baseline** — relay altitudes fixed at 20 m **above ground**, horizontal positions
+   equally spaced (an absolute 20 m would be inside the hills: the terrain under the uniform
+   positions is 34.2, 66.8 and 35.0 m with the ridge centres used in the implementation).
 2. **Altitude-only optimisation** — horizontal positions fixed at uniform spacing; optimise $z_i$
    only to minimise terrain shadowing.
 3. **Full 3D gradient ascent** — joint $(x_i, y_i, z_i)$ optimisation of the bottleneck SNR
@@ -225,9 +227,10 @@ preceding node, operating on the full 3D displacement vector.
 | Number of relay drones | 3 |
 | Ridge count $N_s$ | 3 |
 | Ridge peak heights $H_j$ | 40 m, 55 m, 45 m |
+| Ridge centres $(c_{x,j}, c_{y,j})$ | (350, 480), (500, 520), (650, 460) m (the 2D shadow-zone centres; added) |
 | Ridge $\sigma$ (horizontal spread) | 80 m each axis |
 | LOS ray sample count | 50 points |
-| Altitude bounds $[z_{min}, z_{max}]$ | 5 m – 120 m |
+| Altitude bounds $[z_{min}, z_{max}]$ | 5 m – 120 m above the local terrain |
 | Soft-min temperature $\alpha$ | 0.5 |
 | Altitude penalty weight $\lambda$ | 0.05 dB m$^{-2}$ |
 | Gradient ascent step $\eta$ | 5 m / iteration |
@@ -235,7 +238,7 @@ preceding node, operating on the full 3D displacement vector.
 | Operating 2D area | 1000 x 1000 m |
 | Base station position | (100, 500, 1.5) m |
 | Rescue team position | (900, 500, 1.5) m |
-| Initial relay altitude (baseline) | 20 m |
+| Initial relay altitude (baseline) | 20 m above the local terrain |
 
 ---
 
@@ -247,7 +250,9 @@ preceding node, operating on the full 3D displacement vector.
 - **Top-down 2D projection**: horizontal relay positions overlaid on a filled-contour terrain
   height map, mirroring the S047 terrain-map plot but with ridge contours replacing rectangles.
 - **Altitude convergence plot**: $z_1(t), z_2(t), z_3(t)$ vs gradient ascent iteration; shows
-  each relay climbing from 20 m to its ridge-clearance altitude, then stabilising.
+  each relay climbing from 20 m to its ridge-clearance altitude, then stabilising. (Not observed:
+  20 m AGL already clears every ridge, so the relays descend; the gradient ascent then oscillates
+  across the 15 dB shadow step, which its finite-difference gradient sees only within 1 m.)
 - **SNR chain bar chart (3 strategies)**: grouped bars for all four links under (1) 2D uniform
   baseline, (2) altitude-only optimisation, (3) full 3D optimisation; dashed line at
   $\text{SNR}_{min} = 10$ dB; bottleneck link highlighted.
