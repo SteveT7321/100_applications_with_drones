@@ -205,7 +205,7 @@ def plot_snr_over_time(times, true_pos, handoff_times, out_dir):
     for i, (snr_data, color) in enumerate(zip(snr_logs, SENSOR_COLORS)):
         ax.plot(times, snr_data, color=color, linewidth=1.8, label=f'Sensor {i+1}')
     ax.axhline(HANDOFF_THRESH, color='grey', linestyle='--', linewidth=1.0,
-               label=f'Handoff threshold ({HANDOFF_THRESH})')
+               label=f'Active-sensor threshold ({HANDOFF_THRESH})')
     for ht in handoff_times:
         ax.axvline(ht, color='orange', linestyle=':', linewidth=1.2, alpha=0.7)
     if handoff_times:
@@ -305,7 +305,9 @@ if __name__ == '__main__':
           f'offset {gaps.min():+.2f} to {gaps.max():+.2f} s, |offset| >= {np.abs(gaps).min():.2f} s; '
           f'bearing crossing angle {min(angles):.1f}-{max(angles):.1f} deg')
     print(f'Steps with two sensors above the {HANDOFF_THRESH} threshold: '
-          f'{int(np.sum(active_counts >= 2))} of {len(active_counts)}')
+          f'{int(np.sum(active_counts >= 2))} of {len(active_counts)} '
+          f'(one sensor: {int(np.sum(active_counts == 1))}); '
+          f'steps with no estimate (det guard): {int(np.sum(np.isnan(est_pos[:, 0])))}')
     print(f'Lowest best-sensor SNR along the orbit: '
           f'{min(max(snr(s, p) for s in SENSOR_POS) for p in true_pos):.4f}')
 
