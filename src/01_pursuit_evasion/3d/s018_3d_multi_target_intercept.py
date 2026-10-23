@@ -357,7 +357,7 @@ def save_animation(card, out_dir):
     runs = [card['res'][k] for k in keys]
     max_len = max(len(r['traj']) for r in runs)
     step = 2
-    frames = (max_len - 1) // step + 2
+    frames = int(np.ceil((max_len - 1) / step)) + 1   # last frame = final sample, no duplicate
     fig = plt.figure(figsize=(16, 6))
     arts = []
     for k, (key, r) in enumerate(zip(keys, runs)):
@@ -368,7 +368,7 @@ def save_animation(card, out_dir):
         arts.append((ax, key, r, ln, dot))
 
     def update(f):
-        si = f * step
+        si = min(f * step, max_len - 1)
         out = []
         for ax, key, r, ln, dot in arts:
             n = min(si + 1, len(r['traj']))
