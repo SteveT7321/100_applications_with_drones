@@ -25,25 +25,25 @@ Pursuer minimizes capture time $T$; evader maximizes it.
 
 ### Hamilton-Jacobi-Isaacs (HJI) Equation
 
-$$\frac{\partial V}{\partial t} + H\left(\mathbf{s}, \nabla V\right) = 0$$
+For the minimum-time game the value $V(\mathbf{s})$ is the capture time under optimal play. It satisfies the **stationary** HJI equation (along optimal play $dV/dt = -1$):
 
-Hamiltonian:
+$$\min_{\hat{u}_P} \max_{\hat{u}_E} \left[ \nabla V^T (v_E \hat{u}_E - v_P \hat{u}_P) \right] + 1 = 0, \qquad V = 0 \text{ on } \|\mathbf{s}\| \le r_{capture}$$
 
-$$H(\mathbf{s}, p) = \min_{\hat{u}_P} \max_{\hat{u}_E} \left[ p^T (v_E \hat{u}_E - v_P \hat{u}_P) \right] - 1$$
+where $\hat{u}_P, \hat{u}_E \in \mathbb{S}^2$ (unit sphere direction vectors). Evaluating the min-max gives
 
-where $\hat{u}_P, \hat{u}_E \in \mathbb{S}^2$ (unit sphere direction vectors).
+$$(v_P - v_E)\,\|\nabla V\| = 1 \quad\Rightarrow\quad V(\mathbf{s}) = \frac{\|\mathbf{s}\| - r_{capture}}{v_P - v_E} \quad (v_P > v_E,\ \text{no walls})$$
 
 Optimal strategies:
 
-$$\hat{u}_P^* = \frac{p}{\|p\|}, \quad \hat{u}_E^* = \frac{p}{\|p\|}$$
+$$\hat{u}_P^* = \frac{\nabla V}{\|\nabla V\|}, \quad \hat{u}_E^* = \frac{\nabla V}{\|\nabla V\|}$$
 
-(both agents move along the $p = \nabla V$ direction)
+(both agents move along the $\nabla V$ direction: the pursuer toward the evader, the evader straight away)
 
 ### Analytical Solution for Equal Speeds
 
-When speeds are equal, the Lion cannot guarantee capture in finite time (unless the initial distance is zero).
+In open space (relative coordinates, no walls) with $v_P = v_E$ the equation has no finite solution: $V = \infty$ outside the capture set, and the Man escapes by running straight away. In a **bounded** arena the walls matter: with capture radius 0 the Man can avoid capture forever (Besicovitch), but with any positive capture radius the Lion can capture in finite time (e.g. with the radius strategy).
 
-**Numerical verification**: solve HJI using finite difference method.
+**Numerical verification**: solve the HJI equation with a finite-difference scheme.
 
 ---
 
@@ -51,38 +51,39 @@ When speeds are equal, the Lion cannot guarantee capture in finite time (unless 
 
 ```python
 import numpy as np
-from scipy.interpolate import RegularGridInterpolator
 
-# Grid setup (2D simplified version, then extend to 3D)
+# Grid setup (2D simplified version, then extend to 3D);
+# relative state s = p_E - p_P spans twice the arena
 N = 50
-x = np.linspace(-5, 5, N)
-y = np.linspace(-5, 5, N)
-X, Y = np.meshgrid(x, y)
+x = np.linspace(-10, 10, N)
+dx = x[1] - x[0]
+X, Y = np.meshgrid(x, x, indexing='ij')
+R = np.sqrt(X**2 + Y**2)
+vP, vE, r_c = 5.0, 3.0, 0.15
 
-# Initial value function (terminal condition)
-# V(s) = 0 when |s| < capture_radius
-V = np.sqrt(X**2 + Y**2)   # initial guess: straight-line distance
+# Start from V = 0 and let the capture-time front grow outward.
+# Nodes next to the (sub-grid) capture circle are fixed to the exact value.
+fixed = R < r_c + dx
+V = np.zeros_like(R)
+V[fixed] = np.maximum(R[fixed] - r_c, 0) / (vP - vE)
 
-# Value iteration (simplified)
-dt = 0.01
-for iteration in range(200):
-    # Compute gradient
-    dVdx = np.gradient(V, x, axis=1)
-    dVdy = np.gradient(V, y, axis=0)
-    grad_norm = np.sqrt(dVdx**2 + dVdy**2) + 1e-8
+tau = 0.9 * dx / (2 * (vP - vE))           # CFL-limited pseudo-time step
+for iteration in range(2000):
+    # Upwind (Godunov) gradient norm
+    Vp = np.pad(V, 1, mode='edge')
+    gx = np.maximum(np.maximum((V - Vp[:-2, 1:-1]) / dx, -(Vp[2:, 1:-1] - V) / dx), 0)
+    gy = np.maximum(np.maximum((V - Vp[1:-1, :-2]) / dx, -(Vp[1:-1, 2:] - V) / dx), 0)
+    grad_norm = np.sqrt(gx**2 + gy**2)
 
-    # HJI right-hand side: H = (vE - vP) * |∇V| - 1 (equal speeds)
-    vP, vE = 4.0, 4.0
-    H = (vE - vP) * grad_norm - 1.0
+    # Pseudo-time update toward (vP - vE)|grad V| = 1
+    V_new = V + tau * (1.0 - (vP - vE) * grad_norm)
+    V_new[fixed] = V[fixed]
 
-    # Update
-    V_new = V - dt * H
-    V_new[np.sqrt(X**2 + Y**2) < 0.15] = 0.0   # terminal condition
-
-    if np.max(np.abs(V_new - V)) < 1e-4:
+    if np.max(np.abs(V_new - V)) < 1e-6:
         print(f"Converged at iteration {iteration}")
         break
     V = V_new
+# For vP == vE the update is V += tau everywhere: V grows without bound (V = inf).
 ```
 
 ### Extracting Optimal Strategy from Value Function
@@ -112,7 +113,7 @@ def optimal_pursuer_action(pos_p, pos_e, V_interp, grid):
 ## Expected Output
 
 - 2D value function contour plot (showing capture time distribution)
-- Optimal trajectory plot: at equal speeds the Man can maintain distance indefinitely
+- Optimal trajectory plot: at equal speeds in open space the Man keeps his distance indefinitely; in the bounded arena with a positive capture radius the Lion captures in finite time
 - Value function convergence curve
 
 ---
