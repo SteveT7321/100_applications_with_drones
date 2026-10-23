@@ -72,7 +72,9 @@ where $\mathbf{a}_T$ is the Tanker's known acceleration (feedforward).
 
 **Phase 2 — Soft Dock** ($\|\Delta\mathbf{r}\| \leq d_{dock}$): velocity matching with gentle final closure
 
-$$\mathbf{u}_R = -K_{d2}\,\Delta\mathbf{v} - K_{p2}\,\Delta\mathbf{r}$$
+$$\mathbf{u}_R = -K_{d2}\,\Delta\mathbf{v} - K_{p2}\,\Delta\mathbf{r} + \mathbf{a}_T$$
+
+The Tanker feed-forward $\mathbf{a}_T$ is needed here as well: without it, the orbiting Tanker's centripetal acceleration $V_{T,orb}^2/R_{orb} = 4/3$ m/s² leaves a steady lag of $\approx (4/3)/K_{p2} = 0.33$ m, which is larger than $\epsilon_p = 0.15$ m, so docking could never be declared (corrected from the first version of this card).
 
 Docking declared successful when:
 
@@ -105,9 +107,9 @@ V_T_ORB     = 2.0    # m/s tanker loiter speed
 R_ORB       = 3.0    # m  loiter radius
 K_FLIGHT    = 0.3    # W·s²/m²  flight power coeff
 K_HOVER     = 0.5    # W        baseline drain
-E0_R        = 40.0   # J  Receiver initial battery
-E0_T        = 80.0   # J  Tanker initial battery
-E_XFER      = 30.0   # J  energy transferred at dock
+E0_R        = 120.0  # J  Receiver initial battery (range 75 m < 120 m round trip)
+E0_T        = 240.0  # J  Tanker initial battery
+E_XFER      = 90.0   # J  energy transferred at dock
 ETA_LOSS    = 0.05   # transfer loss fraction
 D_DOCK      = 0.4    # m  docking engagement radius
 EPS_P       = 0.15   # m  position tolerance (success)
@@ -131,7 +133,7 @@ def docking_control(dr, dv, a_tanker, phase):
     if phase == "approach":
         return -KP * dr - KD * dv + a_tanker
     else:  # soft_dock
-        return -KP2 * dr - KD2 * dv
+        return -KP2 * dr - KD2 * dv + a_tanker
 
 # Main simulation loop
 phase = "fly_to_rvz"   # Receiver FSM state
@@ -190,9 +192,9 @@ for step in range(MAX_STEPS):
 | Loiter radius $R_{orb}$ | 3.0 m |
 | Flight power coefficient $k_f$ | 0.3 W·s²/m² |
 | Hover baseline drain $k_h$ | 0.5 W |
-| Receiver initial battery $E_{0,R}$ | 40 J |
-| Tanker initial battery $E_{0,T}$ | 80 J |
-| Energy transferred $\Delta E_{xfer}$ | 30 J |
+| Receiver initial battery $E_{0,R}$ | 120 J |
+| Tanker initial battery $E_{0,T}$ | 240 J |
+| Energy transferred $\Delta E_{xfer}$ | 90 J |
 | Transfer loss fraction $\eta_{loss}$ | 5 % |
 | Docking engagement radius $d_{dock}$ | 0.4 m |
 | Position dock tolerance $\epsilon_p$ | 0.15 m |
@@ -201,6 +203,8 @@ for step in range(MAX_STEPS):
 | Soft-dock PD gains $(K_{p2}, K_{d2})$ | (4.0, 2.5) |
 | Rendezvous fraction $\alpha$ | 0.5 (midpoint) |
 | Base-to-target distance | 60.0 m |
+
+Energy check: cruise power $k_f V^2 + k_h = 0.3 \times 25 + 0.5 = 8.0$ W, i.e. 1.6 J/m, so the 120 m round trip needs 192 J. The first version of this card used 40 / 80 / 30 J, which gives the Receiver only 25 m of range (it could not even reach the RVZ at 30 m). All three energies were scaled ×3 (ratios kept): 120 J gives 75 m (refuelling is required), and 120 + 90 J gives 131 m (the mission is feasible).
 
 ---
 
