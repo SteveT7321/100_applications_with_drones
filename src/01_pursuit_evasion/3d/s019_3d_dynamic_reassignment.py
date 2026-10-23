@@ -1,585 +1,535 @@
 """
 S019 3D Upgrade — Dynamic Target Reassignment
+=============================================
+3 pursuers vs 3 evaders in 3D (the card's scenario).  Evader behaviours (3.5 m/s):
+  straight — fixed 3D heading, away from the pursuers' centroid at t = 0
+  spiral   — the card's helix: horizontal circle (omega = 0.5 rad/s) plus a
+             vertical component A_z sin(2 omega t), normalised to v_E
+  random   — the card's 3D random walk: direction += N(0, 0.3^2) per step, renormalised
+Evaders stay in the card's altitude band z in [0.8, 5.0] m: a step that would
+leave it has its vertical velocity mirrored, and the evader keeps the mirrored
+vertical sense (a bounce, not a slide along the limit).  Evaders do not react to
+the pursuers, so every method faces exactly the same evader paths (common random
+numbers).
+
+Pursuers use the card's decoupled guidance: horizontal pure pursuit at 5 m/s
+plus vertical tracking at up to 2.5 m/s.  Three methods (card):
+  static  — 3D Hungarian at t = 0, never re-optimised.
+  dynamic — 3D Hungarian re-optimised every T_CHECK = 1 s; the new assignment is
+            adopted if the improvement in summed time-to-go exceeds the card's
+            altitude-aware switching cost dC_base + w_z |z_E,new - z_P| / v_z.
+  greedy  — every step each pursuer chases its 3D-nearest live evader.
+Captured evaders are never assigned; a pursuer whose evader is captured joins
+the nearest live evader (static and dynamic alike, so they differ only by the
+periodic re-optimisation).  With fewer live evaders than pursuers the Hungarian
+matrix repeats each live column.  Any pursuer within CAPTURE_R captures; the
+test uses the closest approach inside each step.
+
+Experiments: the card scenario and a wide "crossing" scenario (the S019 2D fix's
+layout lifted to 3D: the straight evader runs across the other lanes while
+climbing), each with a 200-trial seeded Monte Carlo (jittered starts, random
+strategy-to-evader mapping, random-walk seeds, spiral phases; random straight
+headings on the crossing layout) and a switching-cost sweep.
+
 Usage:
     conda activate drones
     python src/01_pursuit_evasion/3d/s019_3d_dynamic_reassignment.py
 """
-import sys, os, numpy as np, matplotlib
+import os
+import numpy as np
+import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa
+from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from matplotlib.animation import FuncAnimation, PillowWriter
+from matplotlib.colors import ListedColormap
 from scipy.optimize import linear_sum_assignment
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', '..', 'outputs', '01_pursuit_evasion', '3d', 's019_3d_dynamic_reassignment')
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = os.path.normpath(os.path.join(
+    os.path.dirname(__file__), '..', '..', '..',
+    'outputs', '01_pursuit_evasion', '3d', 's019_3d_dynamic_reassignment'))
 
-# ── Parameters ─────────────────────────────────
-M           = 3       # pursuers
-N           = 2       # evaders (start with 2; one disappears, one new appears)
-V_PURSUER   = 5.0     # m/s pursuer speed
-V_EVADER    = 3.5     # m/s evader speed
-CAPTURE_R   = 0.30    # m
-DT          = 0.05    # s
-T_MAX       = 20.0    # s
-T_DISAPPEAR = 5.0     # s: evader 1 disappears
-T_APPEAR    = 8.0     # s: new evader appears
+# ── Parameters (card) ─────────────────────────────────────────────────────────
+M, N       = 3, 3
+V_XY       = 5.0
+V_Z_MAX    = 2.5
+V_EVADER   = 3.5
+CAPTURE_R  = 0.15
+DT         = 0.02
+T_MAX      = 40.0
+T_CHECK    = 1.0
+CHECK_EVERY = int(round(T_CHECK / DT))
+DC_BASE    = 0.5
+W_Z        = 0.5
+Z_MIN, Z_MAX = 0.8, 5.0
+SPIRAL_OMEGA = 0.5
+SPIRAL_AZ    = 0.3
+RANDOM_SIGMA = 0.3
+CARD_SEED    = 42      # random-walk seed in the card scenario
 
-RNG = np.random.default_rng(42)
-
-# Initial state (from spec)
-PURSUER_STARTS = np.array([[-5., -3., 1.0],
-                             [-5.,  0., 3.0],
-                             [-5.,  3., 5.0]], dtype=float)
-EVADER_STARTS  = np.array([[20.,  6., 2.0],
-                             [20., -6., 4.0]], dtype=float)
-
-# New evader random position (fixed seed for reproducibility)
-_rng_ev = np.random.default_rng(7)
-NEW_EVADER_POS = np.array([
-    _rng_ev.uniform(10, 20),
-    _rng_ev.uniform(-5, 5),
-    _rng_ev.uniform(0.5, 6.0)
-])
-
-PURSUER_COLORS = ['crimson', 'tomato', 'firebrick']
-EVADER_COLORS  = ['royalblue', 'steelblue', 'navy', 'deepskyblue']
-STRATEGY_COLORS = {'static': 'darkorange', 'hungarian_reassign': 'seagreen', 'altitude_aware': 'mediumpurple'}
+def _unit(v):
+    v = np.asarray(v, float)
+    return v / np.linalg.norm(v)
 
 
-# ── Cost matrix helpers ─────────────────────────────────
-def cost_matrix_3d(pos_p, pos_e, alt_weight=2.0):
-    """Altitude-aware cost matrix (used only for altitude_aware strategy)."""
-    C = np.zeros((len(pos_p), len(pos_e)))
-    for i, pp in enumerate(pos_p):
-        for j, pe in enumerate(pos_e):
-            C[i, j] = np.linalg.norm(pp - pe) + alt_weight * abs(pp[2] - pe[2])
-    return C
+# heading None = straight evader flees the pursuers' centroid at t = 0
+SCENARIOS = {
+    'card': {
+        'P': np.array([[-5.0, -2.0, 1.0], [-5.0, 0.0, 2.5], [-5.0, 2.0, 4.0]]),
+        'E': np.array([[2.0, -2.0, 1.5], [2.0, 0.0, 3.0], [2.0, 2.0, 4.5]]),
+        'strats': ['straight', 'spiral', 'random'], 'phi0': [0.0, 0.5, 0.0],
+        'heading': None, 'jitter': (1.0, 0.5),
+    },
+    # Wide layout (S019 2D fix, lifted to 3D): the straight evader E1 runs down
+    # across the other lanes while climbing from the low to the high layer.
+    'crossing': {
+        'P': np.array([[0.0, 12.0, 1.0], [0.0, 0.0, 2.5], [0.0, -12.0, 4.0]]),
+        'E': np.array([[20.0, 12.0, 1.5], [20.0, 0.0, 3.0], [20.0, -12.0, 4.5]]),
+        'strats': ['straight', 'random', 'spiral'], 'phi0': [0.0, 0.0, 0.5],
+        'heading': _unit([0.0, -1.0, 0.2]), 'jitter': (2.0, 0.5),
+    },
+}
+SCEN_NAMES = list(SCENARIOS)
+
+MC_TRIALS = 200
+MC_SEED   = 19
+MC_ELEV_MAX = np.radians(20.0)   # crossing MC: straight heading elevation in +-20 deg
+SWEEP = [(0.0, W_Z), (0.1, W_Z), (0.25, W_Z), (0.5, W_Z), (0.5, 0.0)]   # (dC_base, w_z)
+
+METHODS = ['static', 'dynamic', 'greedy']
+P_COLORS = ['#e63946', '#f77f00', '#9d0208']
+E_COLORS = ['#023e8a', '#0096c7', '#48cae4']
 
 
-def cost_matrix_euclidean(pos_p, pos_e):
-    """Standard 3D Euclidean cost matrix."""
-    C = np.zeros((len(pos_p), len(pos_e)))
-    for i, pp in enumerate(pos_p):
-        for j, pe in enumerate(pos_e):
-            C[i, j] = np.linalg.norm(pp - pe)
-    return C
+# ── Assignment helpers ───────────────────────────────────────────────────────
+
+def cost_matrix(P, E):
+    """Card: C[i, j] = |p_Pi - p_Ej|_3D / v_P."""
+    return np.linalg.norm(P[:, None] - E[None], axis=2) / V_XY
 
 
-def hungarian(C):
-    """Return full assignment array of length nrows (mapped to available cols)."""
-    rows, cols = linear_sum_assignment(C)
-    return dict(zip(rows.tolist(), cols.tolist()))
+def hungarian_live(P, E, captured):
+    live = [j for j in range(N) if not captured[j]]
+    C = cost_matrix(P, E[live])
+    rows, cols = linear_sum_assignment(np.tile(C, (1, int(np.ceil(M / len(live))))))
+    return {int(r): live[int(c) % len(live)] for r, c in zip(rows, cols)}
 
 
-# ── Simulation ─────────────────────────────────
-def run_simulation(strategy):
-    """
-    strategy: 'static' | 'hungarian_reassign' | 'altitude_aware'
-    Returns dict with trajectories, events, assignments.
-    """
-    pursuers = PURSUER_STARTS.copy()
-    # Start with 2 evaders; evader indices: 0,1 initially; after disappear/appear index map changes
-    # We maintain a dynamic list of active evader positions
-    evader_list = list(EVADER_STARTS.copy())  # each entry: np.array shape (3,)
-    evader_active = [True, True]              # whether each initial evader is active
-    # Extra slot for new evader (index 2)
-    new_evader_pos = NEW_EVADER_POS.copy()
-    new_evader_active = False
-    new_evader_appeared = False
+def nearest_live(p, E, captured):
+    live = [j for j in range(N) if not captured[j]]
+    return live[int(np.argmin([np.linalg.norm(p - E[j]) for j in live]))]
 
-    # Assignment: pursuer_i -> evader_slot_j (0,1 initially; 2 = new evader)
-    # Build initial cost matrix over active evaders
-    active_idx = [j for j in range(len(evader_list)) if evader_active[j]]
-    pos_e_active = np.array([evader_list[j] for j in active_idx])
 
-    if strategy == 'altitude_aware':
-        C0 = cost_matrix_3d(pursuers, pos_e_active)
-    else:
-        C0 = cost_matrix_euclidean(pursuers, pos_e_active)
+def switching_cost(p, e_new, dc_base, w_z):
+    return dc_base + w_z * abs(e_new[2] - p[2]) / V_Z_MAX
 
-    raw_assign = hungarian(C0)  # pursuer_i -> index into active list (only assigned pursuers)
-    # Convert to global evader slot index; unassigned pursuers get nearest evader
-    assignment = {}
-    for i in range(M):
-        if i in raw_assign:
-            assignment[i] = active_idx[raw_assign[i]]
+
+# ── Agents ───────────────────────────────────────────────────────────────────
+
+class Evader:
+    def __init__(self, pos, strategy, centroid, seed, phi0=0.0, heading=None):
+        self.pos = np.asarray(pos, float).copy()
+        self.strategy, self.phi0, self.t = strategy, phi0, 0.0
+        self.rng = np.random.default_rng(seed)
+        self.dir = _unit(self.pos - centroid) if heading is None else _unit(heading)
+        self.bounces = 0
+        self.zsign = 1.0      # spiral: vertical sense, flipped at each band bounce
+
+    def step(self):
+        if self.strategy == 'spiral':
+            w = SPIRAL_OMEGA
+            d = np.array([np.cos(w * self.t + self.phi0), np.sin(w * self.t + self.phi0),
+                          self.zsign * SPIRAL_AZ * np.sin(2 * w * self.t)])
+            d /= np.linalg.norm(d)
+        elif self.strategy == 'random':
+            d = self.dir + self.rng.normal(0.0, RANDOM_SIGMA, 3)
+            d /= np.linalg.norm(d)
+            self.dir = d
         else:
-            # Assign to nearest active evader
-            assignment[i] = active_idx[int(np.argmin([np.linalg.norm(pursuers[i] - pos_e_active[k]) for k in range(len(active_idx))]))]
+            d = self.dir
+        v = V_EVADER * d
+        z_new = self.pos[2] + v[2] * DT
+        if z_new < Z_MIN or z_new > Z_MAX:       # mirror the vertical velocity
+            v[2] = -v[2]
+            self.bounces += 1
+            if self.strategy == "spiral":
+                self.zsign = -self.zsign
+            else:
+                self.dir = self.dir * np.array([1.0, 1.0, -1.0])
+        self.pos = self.pos + v * DT
+        self.t += DT
 
-    n_reassignments = 0
-    disappear_event_time = None
-    appear_event_time = None
 
-    # Evader escape directions (initialized away from nearest pursuer)
-    ev_dirs = []
-    for j in range(len(evader_list)):
-        d = evader_list[j] - pursuers[np.argmin([np.linalg.norm(pursuers[i] - evader_list[j]) for i in range(M)])]
-        n = np.linalg.norm(d) + 1e-8
-        ev_dirs.append(d / n)
-    ev_dirs.append(np.array([1., 0., 0.]))  # placeholder for new evader
+def pursuer_velocity(p, e):
+    """Card: horizontal pure pursuit at v_xy plus vertical tracking at <= v_z."""
+    v = np.zeros(3)
+    dxy = e[:2] - p[:2]
+    n = np.linalg.norm(dxy)
+    if n > 1e-9:
+        v[:2] = dxy / n * min(V_XY, n / DT)
+    v[2] = np.clip((e[2] - p[2]) / DT, -V_Z_MAX, V_Z_MAX)
+    return v
 
-    # Capture tracking
-    captured_slots = set()
-    capture_times = {}
 
-    # Trajectory storage
-    p_traj = [pursuers.copy()]
-    e_traj_slots = [[evader_list[j].copy()] for j in range(len(evader_list))]
-    e_traj_slots.append([new_evader_pos.copy()])  # slot 2 (not active yet)
-    assign_hist = [assignment.copy()]
-    event_times = []  # (time, event_type)
-    distance_hist = []  # per-step: [dist p0-assigned, p1-assigned, p2-assigned]
+def min_dist_in_step(p0, p1, e0, e1):
+    r0, d = e0 - p0, (e1 - p1) - (e0 - p0)
+    a = np.dot(d, d)
+    s = 0.0 if a < 1e-15 else float(np.clip(-np.dot(r0, d) / a, 0.0, 1.0))
+    return np.linalg.norm(r0 + s * d)
 
-    max_steps = int(T_MAX / DT)
 
-    def get_all_active_evader_positions():
-        """Return dict slot_idx -> pos for all active evaders."""
-        pos = {}
-        for j in range(len(evader_list)):
-            if evader_active[j] and j not in captured_slots:
-                pos[j] = evader_list[j].copy()
-        if new_evader_active and 2 not in captured_slots:
-            pos[2] = new_evader_pos.copy()
-        return pos
+# ── Simulation ───────────────────────────────────────────────────────────────
 
-    def reassign(current_assignment, pursuers, strategy_name):
-        """Compute new Hungarian assignment over currently active evaders."""
-        active_pos_dict = get_all_active_evader_positions()
-        if not active_pos_dict:
-            return current_assignment
-        slots = sorted(active_pos_dict.keys())
-        pos_e = np.array([active_pos_dict[s] for s in slots])
-
-        if strategy_name == 'altitude_aware':
-            C = cost_matrix_3d(pursuers, pos_e)
-        else:
-            C = cost_matrix_euclidean(pursuers, pos_e)
-
-        raw = hungarian(C)
-        new_assign = current_assignment.copy()
+def simulate(P0, E0, strats, seeds, phi0s, heading, method, dc_base=DC_BASE, w_z=W_Z, record=True):
+    P = np.asarray(P0, float).copy()
+    centroid = P.mean(axis=0)
+    evs = [Evader(E0[j], strats[j], centroid, seeds[j], phi0s[j], heading) for j in range(N)]
+    captured = [False] * N
+    cap_t, capturer = [None] * N, [None] * N
+    E = np.array([e.pos for e in evs])
+    assignment = hungarian_live(P, E, captured)
+    initial = dict(assignment)
+    switches, best_impr = [], -np.inf
+    tp, te, ah = [P.copy()], [E.copy()], [[assignment[i] for i in range(M)]]
+    n_steps = int(round(T_MAX / DT))
+    t_end = T_MAX
+    for step in range(n_steps):
+        E = np.array([e.pos for e in evs])
+        live = [j for j in range(N) if not captured[j]]
+        if method == 'dynamic' and step > 0 and step % CHECK_EVERY == 0:
+            new = hungarian_live(P, E, captured)
+            C = cost_matrix(P, E)
+            impr = sum(C[i, assignment[i]] for i in range(M)) - sum(C[i, new[i]] for i in range(M))
+            best_impr = max(best_impr, impr)
+            changed = [i for i in range(M) if new[i] != assignment[i]]
+            if changed:
+                thr = min(switching_cost(P[i], E[new[i]], dc_base, w_z) for i in changed)
+                if impr > thr:
+                    switches.append((step * DT, dict(assignment), dict(new), impr, thr))
+                    assignment = new
+        if method == 'greedy':
+            assignment = {i: nearest_live(P[i], E, captured) for i in range(M)}
+        P_old, E_old = P.copy(), E.copy()
         for i in range(M):
-            if i in raw:
-                new_assign[i] = slots[raw[i]]
-            else:
-                # Assign to nearest active evader
-                new_assign[i] = slots[int(np.argmin([np.linalg.norm(pursuers[i] - active_pos_dict[s]) for s in slots]))]
-        return new_assign
-
-    for step in range(max_steps):
-        t = step * DT
-
-        # ── Evader 1 disappears at T_DISAPPEAR
-        if not new_evader_appeared and t >= T_DISAPPEAR and evader_active[1] and 1 not in captured_slots:
-            evader_active[1] = False
-            disappear_event_time = t
-            event_times.append((t, 'disappear'))
-            # For reassign strategies: pursuer assigned to slot 1 holds position
-            # (no action needed — pursuer simply won't move toward captured/inactive target)
-            if strategy in ('hungarian_reassign', 'altitude_aware'):
-                assignment = reassign(assignment, pursuers, strategy)
-                n_reassignments += 1
-
-        # ── New evader appears at T_APPEAR
-        if not new_evader_appeared and t >= T_APPEAR:
-            new_evader_active = True
-            new_evader_appeared = True
-            appear_event_time = t
-            event_times.append((t, 'appear'))
-            # Direction: away from nearest pursuer
-            nearest_p = pursuers[np.argmin([np.linalg.norm(pursuers[i] - new_evader_pos) for i in range(M)])]
-            d = new_evader_pos - nearest_p
-            n = np.linalg.norm(d) + 1e-8
-            ev_dirs[2] = d / n
-            if strategy in ('hungarian_reassign', 'altitude_aware'):
-                assignment = reassign(assignment, pursuers, strategy)
-                n_reassignments += 1
-
-        # ── Move evaders
-        active_pos_dict = get_all_active_evader_positions()
-        for slot, pos in active_pos_dict.items():
-            # Find pursuer assigned to this slot
-            assigned_pursuers = [i for i in range(M) if assignment.get(i) == slot]
-            if assigned_pursuers:
-                nearest_p_pos = pursuers[assigned_pursuers[0]]
-            else:
-                # No pursuer assigned: escape from nearest pursuer
-                nearest_p_pos = pursuers[np.argmin([np.linalg.norm(pursuers[i] - pos) for i in range(M)])]
-            away = pos - nearest_p_pos
-            n = np.linalg.norm(away) + 1e-8
-            ev_dirs[slot] = away / n
-            new_pos = pos + ev_dirs[slot] * V_EVADER * DT
-            new_pos[2] = np.clip(new_pos[2], 0.3, 7.0)
-            if slot < len(evader_list):
-                evader_list[slot] = new_pos
-            else:
-                new_evader_pos[:] = new_pos
-
-        # ── Move pursuers
-        for i in range(M):
-            j = assignment.get(i, -1)
-            # Check if assigned target is active
-            target_active = (
-                (j < len(evader_list) and evader_active[j] and j not in captured_slots) or
-                (j == 2 and new_evader_active and 2 not in captured_slots)
-            )
-            if not target_active:
-                # For static: just hold; for reassign: find new target
-                if strategy == 'static':
-                    continue  # hold position
-                else:
-                    active_pos_d = get_all_active_evader_positions()
-                    if active_pos_d:
-                        j_new = min(active_pos_d.keys(), key=lambda jj: np.linalg.norm(pursuers[i] - active_pos_d[jj]))
-                        assignment[i] = j_new
-                        j = j_new
-                    else:
-                        continue
-
-            if j < len(evader_list):
-                target_pos = evader_list[j].copy()
-            else:
-                target_pos = new_evader_pos.copy()
-
-            diff = target_pos - pursuers[i]
-            dist = np.linalg.norm(diff) + 1e-8
-            step_size = min(V_PURSUER * DT, dist)
-            pursuers[i] = pursuers[i] + (diff / dist) * step_size
-
-        # ── Capture check
-        for i in range(M):
-            j = assignment.get(i, -1)
-            if j in captured_slots:
-                continue
-            target_active = (
-                (j < len(evader_list) and evader_active[j]) or
-                (j == 2 and new_evader_active)
-            )
-            if not target_active:
-                continue
-            if j < len(evader_list):
-                target_pos = evader_list[j].copy()
-            else:
-                target_pos = new_evader_pos.copy()
-            if np.linalg.norm(pursuers[i] - target_pos) <= CAPTURE_R:
-                captured_slots.add(j)
-                capture_times[j] = t
-
-        # ── Record distances
-        dists = []
-        for i in range(M):
-            j = assignment.get(i, -1)
-            target_active = (
-                (j >= 0 and j < len(evader_list) and evader_active[j] and j not in captured_slots) or
-                (j == 2 and new_evader_active and 2 not in captured_slots)
-            )
-            if target_active:
-                if j < len(evader_list):
-                    tp = evader_list[j].copy()
-                else:
-                    tp = new_evader_pos.copy()
-                dists.append(np.linalg.norm(pursuers[i] - tp))
-            else:
-                dists.append(np.nan)
-        distance_hist.append(dists)
-
-        # ── Record trajectories
-        p_traj.append(pursuers.copy())
-        for j in range(len(evader_list)):
-            e_traj_slots[j].append(evader_list[j].copy())
-        e_traj_slots[2].append(new_evader_pos.copy())
-        assign_hist.append(assignment.copy())
-
-    return {
-        'p_traj': np.array(p_traj),
-        'e_traj_slots': [np.array(sl) for sl in e_traj_slots],
-        'assign_hist': assign_hist,
-        'distance_hist': np.array(distance_hist),
-        'event_times': event_times,
-        'n_reassignments': n_reassignments,
-        'capture_times': capture_times,
-        'T_DISAPPEAR': disappear_event_time,
-        'T_APPEAR': appear_event_time,
-        'new_evader_pos': NEW_EVADER_POS.copy(),
-    }
-
-
-# ── Plotting ─────────────────────────────────
-
-def plot_trajectories_3d(data_dict):
-    fig = plt.figure(figsize=(18, 6))
-    strategies = ['static', 'hungarian_reassign', 'altitude_aware']
-    titles = ['Static\n(Fixed at t=0)', 'Hungarian Reassign\n(Re-run on event)', 'Altitude-Aware\n(Hungarian + alt penalty)']
-
-    for col, (strat, title) in enumerate(zip(strategies, titles)):
-        d = data_dict[strat]
-        ax = fig.add_subplot(1, 3, col + 1, projection='3d')
-
-        p_traj = d['p_traj']
-        e_traj_slots = d['e_traj_slots']
-        n_steps = len(p_traj)
-        t_dis = d['T_DISAPPEAR']
-        t_app = d['T_APPEAR']
-        t_dis_idx = int(t_dis / DT) if t_dis else n_steps
-        t_app_idx = int(t_app / DT) if t_app else n_steps
-
-        # Pursuer trajectories
-        for i in range(M):
-            ax.plot(p_traj[:, i, 0], p_traj[:, i, 1], p_traj[:, i, 2],
-                    color=PURSUER_COLORS[i], lw=1.5, alpha=0.9, label=f'P{i}' if col == 0 else '')
-            ax.scatter(*p_traj[0, i], color=PURSUER_COLORS[i], s=60, marker='D', zorder=5)
-            ax.scatter(*p_traj[-1, i], color=PURSUER_COLORS[i], s=60, marker='s', zorder=5)
-
-        # Evader 0 (always active)
-        ax.plot(e_traj_slots[0][:, 0], e_traj_slots[0][:, 1], e_traj_slots[0][:, 2],
-                color=EVADER_COLORS[0], lw=1.5, linestyle='--', alpha=0.8)
-        ax.scatter(*e_traj_slots[0][0], color=EVADER_COLORS[0], s=60, marker='^', zorder=5)
-
-        # Evader 1 (disappears at T_DISAPPEAR)
-        ax.plot(e_traj_slots[1][:t_dis_idx, 0], e_traj_slots[1][:t_dis_idx, 1], e_traj_slots[1][:t_dis_idx, 2],
-                color=EVADER_COLORS[1], lw=1.5, linestyle='--', alpha=0.8)
-        ax.scatter(*e_traj_slots[1][0], color=EVADER_COLORS[1], s=60, marker='^', zorder=5)
-        # Mark disappearance
-        ax.scatter(*e_traj_slots[1][min(t_dis_idx, len(e_traj_slots[1]) - 1)],
-                   color='red', s=120, marker='x', zorder=7)
-
-        # New evader (slot 2, appears at T_APPEAR)
-        ax.plot(e_traj_slots[2][t_app_idx:, 0], e_traj_slots[2][t_app_idx:, 1], e_traj_slots[2][t_app_idx:, 2],
-                color=EVADER_COLORS[3], lw=1.5, linestyle='-.', alpha=0.9)
-        ax.scatter(*e_traj_slots[2][t_app_idx], color=EVADER_COLORS[3], s=120, marker='*', zorder=7)
-
-        ax.set_title(f'{title}\nReassigns: {d["n_reassignments"]}', fontsize=8)
-        ax.set_xlabel('X (m)', fontsize=7)
-        ax.set_ylabel('Y (m)', fontsize=7)
-        ax.set_zlabel('Z (m)', fontsize=7)
-        ax.tick_params(labelsize=6)
-
-    # Legend handles
-    from matplotlib.lines import Line2D
-    handles = [
-        Line2D([0], [0], color='gray', lw=1.5, label='Pursuer'),
-        Line2D([0], [0], color=EVADER_COLORS[0], lw=1.5, linestyle='--', label='Evader 0 (active)'),
-        Line2D([0], [0], color=EVADER_COLORS[1], lw=1.5, linestyle='--', label='Evader 1 (disappears)'),
-        Line2D([0], [0], color=EVADER_COLORS[3], lw=1.5, linestyle='-.', label='New Evader (appears)'),
-        Line2D([0], [0], marker='x', color='red', lw=0, markersize=8, label='Disappear event'),
-        Line2D([0], [0], marker='*', color=EVADER_COLORS[3], lw=0, markersize=10, label='Appear event'),
-    ]
-    fig.legend(handles=handles, loc='lower center', ncol=6, fontsize=7, bbox_to_anchor=(0.5, -0.02))
-    fig.suptitle('S019 3D Dynamic Reassignment — Trajectories', fontsize=12, y=1.02)
-    plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, 'trajectories_3d.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
-
-
-def plot_assignment_heatmap(data_dict):
-    """For each strategy: which pursuer tracks which evader over time."""
-    strategies = ['static', 'hungarian_reassign', 'altitude_aware']
-    titles = ['Static', 'Hungarian Reassign', 'Altitude-Aware']
-    fig, axes = plt.subplots(3, 1, figsize=(13, 9))
-
-    for ax, strat, title in zip(axes, strategies, titles):
-        d = data_dict[strat]
-        assign_hist = d['assign_hist']
-        n_steps = len(assign_hist)
-        # Build matrix: rows=3 pursuers, cols=time, value=evader slot
-        A = np.zeros((M, n_steps))
-        for t_idx, asgn in enumerate(assign_hist):
+            P[i] = P[i] + pursuer_velocity(P[i], E[assignment[i]]) * DT
+        for j in live:
+            evs[j].step()
+        E = np.array([e.pos for e in evs])
+        t = (step + 1) * DT
+        for j in live:
             for i in range(M):
-                A[i, t_idx] = asgn.get(i, -1)
-
-        times = np.linspace(0, n_steps * DT, n_steps)
-        im = ax.imshow(A, aspect='auto', cmap='tab10', vmin=-1, vmax=3,
-                       extent=[0, n_steps * DT, M - 0.5, -0.5])
-
-        # Mark events
-        if d['T_DISAPPEAR']:
-            ax.axvline(d['T_DISAPPEAR'], color='red', lw=2, linestyle='--', alpha=0.9, label=f'Disappear t={d["T_DISAPPEAR"]:.1f}s')
-        if d['T_APPEAR']:
-            ax.axvline(d['T_APPEAR'], color='lime', lw=2, linestyle='--', alpha=0.9, label=f'Appear t={d["T_APPEAR"]:.1f}s')
-
-        ax.set_title(f'{title} — Reassignments: {d["n_reassignments"]}', fontsize=9)
-        ax.set_xlabel('Time (s)', fontsize=8)
-        ax.set_ylabel('Pursuer', fontsize=8)
-        ax.set_yticks([0, 1, 2])
-        ax.set_yticklabels(['P0', 'P1', 'P2'], fontsize=8)
-        ax.legend(loc='upper right', fontsize=7)
-        cbar = fig.colorbar(im, ax=ax, ticks=[-1, 0, 1, 2])
-        cbar.ax.set_yticklabels(['None', 'E0', 'E1', 'E2(new)'], fontsize=7)
-
-    fig.suptitle('S019 3D — Assignment Heatmap over Time', fontsize=11)
-    plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, 'assignment_heatmap.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+                if min_dist_in_step(P_old[i], P[i], E_old[j], E[j]) < CAPTURE_R:
+                    captured[j], cap_t[j], capturer[j] = True, t, i
+                    break
+        if all(captured):
+            t_end = t
+        elif any(captured[assignment[i]] for i in range(M)):
+            for i in range(M):     # freed pursuers join the nearest live evader
+                if captured[assignment[i]]:
+                    assignment[i] = nearest_live(P[i], E, captured)
+        if record:
+            tp.append(P.copy()); te.append(E.copy())
+            ah.append([assignment[i] if not all(captured) else -1 for i in range(M)])
+        if all(captured):
+            break
+    done = all(captured)
+    return {'capture_times': cap_t, 'capturer': capturer, 'initial': initial,
+            'mission_time': t_end if done else np.nan, 'switches': switches,
+            'best_impr': best_impr, 'traj_p': np.array(tp), 'traj_e': np.array(te),
+            'assign': np.array(ah), 'bounces': [e.bounces for e in evs]}
 
 
-def plot_distance_time(data_dict):
-    """Pursuer-to-assigned-evader distance for all 3 strategies."""
-    strategies = ['static', 'hungarian_reassign', 'altitude_aware']
-    labels = ['Static', 'Hungarian Reassign', 'Altitude-Aware']
-    colors = [STRATEGY_COLORS[s] for s in strategies]
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    for ax, strat, label, color in zip(axes, strategies, labels, colors):
-        d = data_dict[strat]
-        dist_hist = d['distance_hist']  # shape (n_steps, 3)
-        n_steps = len(dist_hist)
-        times = np.arange(n_steps) * DT
-
-        for i in range(M):
-            ax.plot(times, dist_hist[:, i], color=PURSUER_COLORS[i],
-                    lw=1.5, alpha=0.85, label=f'P{i}')
-
-        if d['T_DISAPPEAR']:
-            ax.axvline(d['T_DISAPPEAR'], color='red', lw=1.5, linestyle='--', alpha=0.8, label='Disappear')
-        if d['T_APPEAR']:
-            ax.axvline(d['T_APPEAR'], color='lime', lw=1.5, linestyle='--', alpha=0.8, label='Appear')
-        ax.axhline(CAPTURE_R, color='gold', lw=1.0, linestyle=':', label=f'Capture r={CAPTURE_R}m')
-
-        ax.set_title(f'{label}\nReassigns: {d["n_reassignments"]}', fontsize=9)
-        ax.set_xlabel('Time (s)', fontsize=8)
-        ax.set_ylabel('Distance to Assigned Evader (m)', fontsize=8)
-        ax.legend(fontsize=7)
-        ax.grid(True, alpha=0.3)
-
-    fig.suptitle('S019 3D — Pursuer-to-Assigned-Evader Distance over Time', fontsize=11)
-    plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, 'distance_time.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+def scenario_args(name):
+    s = SCENARIOS[name]
+    return s['P'], s['E'], s['strats'], [CARD_SEED + j for j in range(N)], s['phi0'], s['heading']
 
 
-def save_animation(data_dict):
-    """Animate altitude_aware strategy in 3D."""
-    d = data_dict['altitude_aware']
-    p_traj = d['p_traj']
-    e_traj_slots = d['e_traj_slots']
-    n_steps = len(p_traj)
-    t_app_idx = int(d['T_APPEAR'] / DT) if d['T_APPEAR'] else n_steps
-    t_dis_idx = int(d['T_DISAPPEAR'] / DT) if d['T_DISAPPEAR'] else n_steps
+def run_fixed():
+    res = {}
+    for name in SCEN_NAMES:
+        s = SCENARIOS[name]
+        print(f'Scenario {name}: ' + ', '.join(f'E{j+1} {s["strats"][j]}' for j in range(N)) +
+              f' (random-walk seeds {CARD_SEED}-{CARD_SEED + N - 1})')
+        for m in METHODS:
+            r = simulate(*scenario_args(name), m)
+            res[(name, m)] = r
+            caps = ', '.join(f'E{j+1} {r["capture_times"][j]:.2f}s (P{r["capturer"][j]+1})'
+                             for j in np.argsort(r['capture_times']))
+            init = ', '.join(f'P{i+1}->E{j+1}' for i, j in sorted(r['initial'].items()))
+            ez = r['traj_e'][:, :, 2]
+            bi = '' if m != 'dynamic' else f' | best check improvement {r["best_impr"]:.3f} s'
+            print(f'  {m:8s} | T_mission {r["mission_time"]:.2f} s | init {init} | {caps} | '
+                  f'switches {len(r["switches"])}{bi} | evader z {ez.min():.2f}-{ez.max():.2f} m, '
+                  f'z-band bounces {r["bounces"]}')
+            for (ts, old, new, impr, thr) in r['switches']:
+                o = ', '.join(f'P{i+1}->E{j+1}' for i, j in sorted(old.items()))
+                n = ', '.join(f'P{i+1}->E{j+1}' for i, j in sorted(new.items()))
+                print(f'      switch at {ts:.2f} s: [{o}] -> [{n}], improvement {impr:.3f} s > cost {thr:.3f} s')
+    return res
 
-    step_dec = max(1, n_steps // 80)
 
-    fig = plt.figure(figsize=(8, 7))
-    ax = fig.add_subplot(111, projection='3d')
-
-    all_pts = np.concatenate([p_traj.reshape(-1, 3)] + [sl.reshape(-1, 3) for sl in e_traj_slots], axis=0)
-    margin = 2.0
-    ax.set_xlim(all_pts[:, 0].min() - margin, all_pts[:, 0].max() + margin)
-    ax.set_ylim(all_pts[:, 1].min() - margin, all_pts[:, 1].max() + margin)
-    ax.set_zlim(max(0, all_pts[:, 2].min() - margin), all_pts[:, 2].max() + margin)
-    ax.set_xlabel('X (m)', fontsize=7)
-    ax.set_ylabel('Y (m)', fontsize=7)
-    ax.set_zlabel('Z (m)', fontsize=7)
-
-    p_lines = [ax.plot([], [], [], color=PURSUER_COLORS[i], lw=1.5)[0] for i in range(M)]
-    p_dots  = [ax.plot([], [], [], 'o', color=PURSUER_COLORS[i], ms=7)[0] for i in range(M)]
-    e0_line, = ax.plot([], [], [], color=EVADER_COLORS[0], lw=1.5, linestyle='--')
-    e0_dot,  = ax.plot([], [], [], '^', color=EVADER_COLORS[0], ms=7)
-    e1_line, = ax.plot([], [], [], color=EVADER_COLORS[1], lw=1.5, linestyle='--')
-    e1_dot,  = ax.plot([], [], [], '^', color=EVADER_COLORS[1], ms=7)
-    e2_line, = ax.plot([], [], [], color=EVADER_COLORS[3], lw=1.5, linestyle='-.')
-    e2_dot,  = ax.plot([], [], [], '*', color=EVADER_COLORS[3], ms=9)
-    time_text = ax.text2D(0.02, 0.95, '', transform=ax.transAxes, fontsize=8)
-
-    all_artists = p_lines + p_dots + [e0_line, e0_dot, e1_line, e1_dot, e2_line, e2_dot, time_text]
-
-    sub_p  = p_traj[::step_dec]
-    sub_e0 = e_traj_slots[0][::step_dec]
-    sub_e1 = e_traj_slots[1][::step_dec]
-    sub_e2 = e_traj_slots[2][::step_dec]
-    n_frames = len(sub_p)
-    t_dis_sub = t_dis_idx // step_dec
-    t_app_sub = t_app_idx // step_dec
-
-    def init():
-        for art in all_artists[:-1]:
-            art.set_data([], [])
-            art.set_3d_properties([])
-        time_text.set_text('')
-        return all_artists
-
-    def update(frame):
-        fp = min(frame, n_frames - 1)
-        t_cur = fp * step_dec * DT
-        for i in range(M):
-            p_lines[i].set_data(sub_p[:fp+1, i, 0], sub_p[:fp+1, i, 1])
-            p_lines[i].set_3d_properties(sub_p[:fp+1, i, 2])
-            p_dots[i].set_data([sub_p[fp, i, 0]], [sub_p[fp, i, 1]])
-            p_dots[i].set_3d_properties([sub_p[fp, i, 2]])
-
-        e0_line.set_data(sub_e0[:fp+1, 0], sub_e0[:fp+1, 1])
-        e0_line.set_3d_properties(sub_e0[:fp+1, 2])
-        e0_dot.set_data([sub_e0[fp, 0]], [sub_e0[fp, 1]])
-        e0_dot.set_3d_properties([sub_e0[fp, 2]])
-
-        # E1 only shown up to disappear
-        end1 = min(fp+1, t_dis_sub)
-        if end1 > 0:
-            e1_line.set_data(sub_e1[:end1, 0], sub_e1[:end1, 1])
-            e1_line.set_3d_properties(sub_e1[:end1, 2])
-            e1_dot.set_data([sub_e1[min(fp, t_dis_sub-1), 0]], [sub_e1[min(fp, t_dis_sub-1), 1]])
-            e1_dot.set_3d_properties([sub_e1[min(fp, t_dis_sub-1), 2]])
+def run_monte_carlo(name):
+    s = SCENARIOS[name]
+    rng = np.random.default_rng(MC_SEED + SCEN_NAMES.index(name))
+    configs = [('static', None), ('greedy', None)] + [('dynamic', c) for c in SWEEP]
+    out = {c: {'T': [], 'sw': []} for c in configs}
+    bounce_runs, bounces = 0, []
+    jxy, jz = s['jitter']
+    jit = np.array([jxy, jxy, jz])
+    for _ in range(MC_TRIALS):
+        P = s['P'] + rng.uniform(-1, 1, (M, 3)) * jit
+        E = s['E'] + rng.uniform(-1, 1, (N, 3)) * jit
+        P[:, 2] = np.clip(P[:, 2], Z_MIN, Z_MAX); E[:, 2] = np.clip(E[:, 2], Z_MIN, Z_MAX)
+        strats = [s['strats'][k] for k in rng.permutation(N)]
+        seeds = [int(x) for x in rng.integers(0, 2 ** 31, N)]
+        phi0s = list(rng.uniform(0, 2 * np.pi, N))
+        if s['heading'] is None:
+            heading = None
         else:
-            e1_line.set_data([], [])
-            e1_line.set_3d_properties([])
-            e1_dot.set_data([], [])
-            e1_dot.set_3d_properties([])
+            az, el = rng.uniform(0, 2 * np.pi), rng.uniform(-MC_ELEV_MAX, MC_ELEV_MAX)
+            heading = np.array([np.cos(el) * np.cos(az), np.cos(el) * np.sin(az), np.sin(el)])
+        for c in configs:
+            m, sw = c
+            kw = {} if sw is None else {'dc_base': sw[0], 'w_z': sw[1]}
+            r = simulate(P, E, strats, seeds, phi0s, heading, m, record=False, **kw)
+            out[c]['T'].append(r['mission_time']); out[c]['sw'].append(len(r['switches']))
+            if c == ('static', None):
+                bounces.append(sum(r['bounces'])); bounce_runs += sum(r['bounces']) > 0
+    for c in out:
+        out[c] = {k: np.array(v, float) for k, v in out[c].items()}
+    tol = 1e-9
+    st = out[('static', None)]['T']
+    head = 'flee heading' if s['heading'] is None else 'random straight heading (elevation +-20 deg)'
+    print(f'\nMonte Carlo, {name} layout: {MC_TRIALS} trials (seed {MC_SEED + SCEN_NAMES.index(name)}); '
+          f'start jitter +-{jxy} m (x, y), +-{jz} m (z); random strategy mapping, random-walk seeds, '
+          f'spiral phases, {head}')
+    print(f'  static runs with a z-band bounce: {bounce_runs}/{MC_TRIALS}, '
+          f'mean {np.mean(bounces):.2f} bounces per run')
+    for c in configs:
+        T, sw = out[c]['T'], out[c]['sw']
+        lab = c[0] if c[1] is None else f'dynamic dC={c[1][0]:.2f} w_z={c[1][1]:.1f}'
+        line = (f'  {lab:28s} | all captured {np.sum(~np.isnan(T))}/{MC_TRIALS} | mean {np.nanmean(T):.3f} s '
+                f'median {np.nanmedian(T):.3f} min {np.nanmin(T):.2f} max {np.nanmax(T):.2f}')
+        if c[0] != 'static':
+            both = ~np.isnan(T) & ~np.isnan(st)
+            line += (f' | vs static faster {np.sum(T < st - tol)}, tie {np.sum(np.abs(T - st) <= tol)}, '
+                     f'slower {np.sum(T > st + tol)}, mean (static - this) {np.mean(st[both] - T[both]):+.3f} s')
+        if c[0] == 'dynamic':
+            line += f' | switches/trial {sw.mean():.2f}, trials with a switch {int(np.sum(sw > 0))}'
+        print(line)
+    return out
 
-        # E2 only shown after appear
-        if fp >= t_app_sub:
-            start2 = t_app_sub
-            e2_line.set_data(sub_e2[start2:fp+1, 0], sub_e2[start2:fp+1, 1])
-            e2_line.set_3d_properties(sub_e2[start2:fp+1, 2])
-            e2_dot.set_data([sub_e2[fp, 0]], [sub_e2[fp, 1]])
-            e2_dot.set_3d_properties([sub_e2[fp, 2]])
-        else:
-            e2_line.set_data([], [])
-            e2_line.set_3d_properties([])
-            e2_dot.set_data([], [])
-            e2_dot.set_3d_properties([])
 
-        time_text.set_text(f't = {t_cur:.1f}s')
-        ax.set_title(f'S019 3D Altitude-Aware (t={t_cur:.1f}s)', fontsize=9)
-        return all_artists
+def run_simulation():
+    print('S019 3D Dynamic Target Reassignment — Simulation Results')
+    print('=' * 70)
+    fixed = run_fixed()
+    return {'fixed': fixed, 'mc': {name: run_monte_carlo(name) for name in SCEN_NAMES}}
 
-    ani = FuncAnimation(fig, update, frames=n_frames, init_func=init, blit=False, interval=80)
+
+# ── Plots ────────────────────────────────────────────────────────────────────
+
+LIMS = {'card': ((-6, 10), (-8, 8)), 'crossing': ((-2, 24), (-16, 16))}
+M_COLORS = {'static': '#adb5bd', 'dynamic': '#2a9d8f', 'greedy': '#f4a261'}
+
+
+def plot_trajectories_3d(fixed, out_dir):
+    fig = plt.figure(figsize=(19, 13))
+    for row, name in enumerate(SCEN_NAMES):
+        strats = SCENARIOS[name]['strats']
+        for k, m in enumerate(METHODS):
+            r = fixed[(name, m)]
+            ax = fig.add_subplot(2, 3, row * 3 + k + 1, projection='3d')
+            tp, te, ah = r['traj_p'], r['traj_e'], r['assign']
+            for j in range(N):
+                ct = r['capture_times'][j]
+                end = int(round(ct / DT)) + 1 if ct is not None else len(te)
+                ax.plot(te[:end, j, 0], te[:end, j, 1], te[:end, j, 2], color=E_COLORS[j], ls='--',
+                        lw=1.4, label=f'E{j+1} ({strats[j]})')
+                ax.scatter(*te[0, j], color=E_COLORS[j], marker='^', s=50, edgecolors='black')
+                ax.scatter(*te[end - 1, j], color=E_COLORS[j], marker='x', s=80, linewidths=2)
+            for i in range(M):
+                cuts = [0] + [s for s in range(1, len(ah)) if ah[s][i] != ah[s - 1][i]] + [len(tp) - 1]
+                for a, b in zip(cuts[:-1], cuts[1:]):   # path coloured by the assigned evader
+                    j = ah[a][i]
+                    ax.plot(tp[a:b + 1, i, 0], tp[a:b + 1, i, 1], tp[a:b + 1, i, 2],
+                            color=E_COLORS[j] if j >= 0 else 'grey', lw=2.2, alpha=0.8)
+                ax.scatter(*tp[0, i], color=P_COLORS[i], s=60, marker='o', edgecolors='black')
+                ax.text(*tp[0, i], f' P{i+1}', fontsize=7)
+            for (ts, *_rest) in r['switches']:
+                s = int(round(ts / DT))
+                ax.scatter(tp[s, :, 0], tp[s, :, 1], tp[s, :, 2], color='black', marker='s', s=25)
+            (x0, x1), (y0, y1) = LIMS[name]
+            ax.set_xlim(x0, x1); ax.set_ylim(y0, y1); ax.set_zlim(0, 6)
+            ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
+            ax.set_title(f'{name} — {m}: T = {r["mission_time"]:.2f} s, {len(r["switches"])} switches',
+                         fontsize=10)
+            ax.legend(fontsize=7, loc='upper left')
+    fig.suptitle('S019 3D — pursuer path coloured by the evader it is chasing (circle = pursuer start, '
+                 'triangle = evader start, x = capture, black square = re-optimisation switch)', fontsize=11)
+    plt.tight_layout(rect=(0, 0, 1, 0.96))
+    path = os.path.join(out_dir, 'trajectories_3d.png')
+    plt.savefig(path, dpi=110); plt.close(); print(f'Saved: {path}')
+
+
+def plot_altitude_time(fixed, out_dir):
+    fig, axes = plt.subplots(2, 3, figsize=(18, 9), sharey=True)
+    for row, name in enumerate(SCEN_NAMES):
+        strats = SCENARIOS[name]['strats']
+        for ax, m in zip(axes[row], METHODS):
+            r = fixed[(name, m)]
+            t = np.arange(len(r['traj_p'])) * DT
+            for i in range(M):
+                ax.plot(t, r['traj_p'][:, i, 2], color=P_COLORS[i], lw=1.8, label=f'P{i+1}')
+            for j in range(N):
+                ct = r['capture_times'][j]
+                end = int(round(ct / DT)) + 1 if ct is not None else len(t)
+                ax.plot(t[:end], r['traj_e'][:end, j, 2], color=E_COLORS[j], ls='--', lw=1.8,
+                        label=f'E{j+1} ({strats[j]})')
+                if ct is not None:
+                    ax.axvline(ct, color=E_COLORS[j], ls=':', lw=1)
+            ax.axhspan(0, Z_MIN, color='grey', alpha=0.15); ax.axhspan(Z_MAX, 6, color='grey', alpha=0.15)
+            ax.set_title(f'{name} — {m} (dotted = capture)', fontsize=10)
+            ax.grid(True, alpha=0.3); ax.set_ylim(0, 6)
+            if row == 1:
+                ax.set_xlabel('Time (s)')
+        axes[row, 0].set_ylabel('z (m)'); axes[row, 0].legend(fontsize=7, ncol=2)
+    fig.suptitle('S019 3D — altitude vs time (grey = outside the evader band 0.8–5.0 m)', fontsize=11)
     plt.tight_layout()
-    path = os.path.join(OUTPUT_DIR, 'animation.gif')
-    ani.save(path, writer=PillowWriter(fps=12), dpi=100)
-    plt.close()
-    print(f'Saved: {path}')
+    path = os.path.join(out_dir, 'altitude_time.png')
+    plt.savefig(path, dpi=120); plt.close(); print(f'Saved: {path}')
 
 
-# ── Main ─────────────────────────────────
+def plot_assignment_heatmap(fixed, out_dir):
+    cmap = ListedColormap(['#dee2e6'] + E_COLORS)
+    fig, axes = plt.subplots(6, 1, figsize=(13, 10))
+    for row, name in enumerate(SCEN_NAMES):
+        t_last = max(len(fixed[(name, m)]['assign']) for m in METHODS) * DT
+        for k, m in enumerate(METHODS):
+            ax = axes[row * 3 + k]
+            a = fixed[(name, m)]['assign'].T + 1
+            ax.imshow(a, aspect='auto', cmap=cmap, vmin=0, vmax=3, interpolation='nearest',
+                      extent=[0, len(a[0]) * DT, M - 0.5, -0.5])
+            for (ts, *_r) in fixed[(name, m)]['switches']:
+                ax.axvline(ts, color='black', lw=1.5)
+            ax.set_yticks(range(M)); ax.set_yticklabels([f'P{i+1}' for i in range(M)], fontsize=7)
+            ax.set_xlim(0, t_last)
+            ax.set_title(f'{name} — {m}: T = {fixed[(name, m)]["mission_time"]:.2f} s', fontsize=8)
+    axes[-1].set_xlabel('Time (s)')
+    handles = [plt.Rectangle((0, 0), 1, 1, color=E_COLORS[j]) for j in range(N)]
+    axes[0].legend(handles, [f'E{j+1}' for j in range(N)], fontsize=7, loc='upper right', ncol=3)
+    fig.suptitle('S019 3D — assigned evader over time (colour); black line = re-optimisation switch',
+                 fontsize=10)
+    plt.tight_layout()
+    path = os.path.join(out_dir, 'assignment_heatmap.png')
+    plt.savefig(path, dpi=120); plt.close(); print(f'Saved: {path}')
+
+
+def plot_mission_comparison(fixed, mc, out_dir):
+    fig, axes = plt.subplots(2, 3, figsize=(19, 10))
+    for row, name in enumerate(SCEN_NAMES):
+        ax = axes[row, 0]
+        vals = [fixed[(name, m)]['mission_time'] for m in METHODS]
+        bars = ax.bar(METHODS, vals, color=[M_COLORS[m] for m in METHODS], edgecolor='black')
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.05, f'{v:.2f} s', ha='center')
+        ax.set_ylabel('T_mission (s)'); ax.grid(True, alpha=0.3, axis='y')
+        ax.set_title(f'{name} scenario', fontsize=10)
+        ax = axes[row, 1]
+        keys = [('static', None), ('dynamic', (DC_BASE, W_Z)), ('greedy', None)]
+        data = [mc[name][k]['T'][~np.isnan(mc[name][k]['T'])] for k in keys]
+        bp = ax.boxplot(data, patch_artist=True, showmeans=True,
+                        meanprops=dict(marker='D', markerfacecolor='white', markeredgecolor='black'))
+        for p, m in zip(bp['boxes'], METHODS):
+            p.set_facecolor(M_COLORS[m])
+        for k, v in enumerate(data):
+            ax.text(k + 1.1, np.mean(v), f'{np.mean(v):.2f}', fontsize=8)
+        ax.set_xticks([1, 2, 3]); ax.set_xticklabels(['static', 'dynamic (card cost)', 'greedy'])
+        ax.set_ylabel('T_mission (s)'); ax.grid(True, alpha=0.3, axis='y')
+        ax.set_title(f'{name} Monte Carlo, {MC_TRIALS} trials (diamond = mean)', fontsize=10)
+        ax = axes[row, 2]
+        st = mc[name][('static', None)]['T']
+        labels, gain, sw = [], [], []
+        for s in SWEEP:
+            T = mc[name][('dynamic', s)]['T']
+            both = ~np.isnan(T) & ~np.isnan(st)
+            labels.append(f'dC={s[0]:g}\nw_z={s[1]:g}')
+            gain.append(np.mean(st[both] - T[both])); sw.append(mc[name][('dynamic', s)]['sw'].mean())
+        x = np.arange(len(SWEEP))
+        ax.bar(x, gain, color='#2a9d8f', edgecolor='black', label='mean (static - dynamic) T_mission')
+        ax.axhline(0, color='black', lw=0.8)
+        ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=8)
+        ax.set_ylabel('Mean time saved vs static (s)')
+        ax2 = ax.twinx()
+        ax2.plot(x, sw, 'ko-', label='switches per trial'); ax2.set_ylabel('Switches per trial')
+        h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+        ax.legend(h1 + h2, l1 + l2, fontsize=8, loc='lower left')
+        ax.set_title(f'{name}: switching-cost sweep (same trials)', fontsize=10)
+    fig.suptitle('S019 3D — mission time (last capture)', fontsize=11)
+    plt.tight_layout()
+    path = os.path.join(out_dir, 'mission_comparison.png')
+    plt.savefig(path, dpi=120); plt.close(); print(f'Saved: {path}')
+
+
+ANIM_SCEN = 'crossing'
+
+
+def save_animation(fixed, out_dir):
+    runs = [fixed[(ANIM_SCEN, m)] for m in METHODS]
+    max_len = max(len(r['traj_p']) for r in runs)
+    step = 8
+    frames = (max_len - 1) // step + 2
+    fig = plt.figure(figsize=(16, 6))
+    arts = []
+    (x0, x1), (y0, y1) = LIMS[ANIM_SCEN]
+    for k, (m, r) in enumerate(zip(METHODS, runs)):
+        ax = fig.add_subplot(1, 3, k + 1, projection='3d')
+        ax.set_xlim(x0, x1); ax.set_ylim(y0, y1); ax.set_zlim(0, 6)
+        ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
+        pl = [ax.plot([], [], [], color=P_COLORS[i], lw=1.2)[0] for i in range(M)]
+        pd = [ax.plot([], [], [], 'o', color=P_COLORS[i], mec='black', ms=6)[0] for i in range(M)]
+        el = [ax.plot([], [], [], '--', color=E_COLORS[j], lw=1.2)[0] for j in range(N)]
+        ed = [ax.plot([], [], [], '^', color=E_COLORS[j], mec='black', ms=7)[0] for j in range(N)]
+        al = [ax.plot([], [], [], ':', color='black', lw=0.8)[0] for i in range(M)]
+        arts.append((ax, m, r, pl, pd, el, ed, al))
+
+    def update(f):
+        si = f * step
+        out = []
+        for ax, m, r, pl, pd, el, ed, al in arts:
+            n = min(si + 1, len(r['traj_p']))
+            tp, te, ah = r['traj_p'][:n], r['traj_e'][:n], r['assign'][n - 1]
+            for i in range(M):
+                pl[i].set_data_3d(tp[:, i, 0], tp[:, i, 1], tp[:, i, 2])
+                pd[i].set_data_3d([tp[-1, i, 0]], [tp[-1, i, 1]], [tp[-1, i, 2]])
+                j = ah[i]
+                if j >= 0:
+                    al[i].set_data_3d([tp[-1, i, 0], te[-1, j, 0]], [tp[-1, i, 1], te[-1, j, 1]],
+                                      [tp[-1, i, 2], te[-1, j, 2]])
+                else:
+                    al[i].set_data_3d([], [], [])
+            for j in range(N):
+                ct = r['capture_times'][j]
+                nj = n if ct is None else min(n, int(round(ct / DT)) + 1)
+                el[j].set_data_3d(te[:nj, j, 0], te[:nj, j, 1], te[:nj, j, 2])
+                ed[j].set_data_3d([te[nj - 1, j, 0]], [te[nj - 1, j, 1]], [te[nj - 1, j, 2]])
+                ed[j].set_marker('x' if ct is not None and (n - 1) * DT >= ct - 1e-9 else '^')
+            ax.set_title(f'{ANIM_SCEN} — {m}   t = {(n - 1) * DT:.2f} s', fontsize=9)
+            out += pl + pd + el + ed + al
+        return out
+
+    ani = FuncAnimation(fig, update, frames=frames, interval=60, blit=False)
+    path = os.path.join(out_dir, 'animation.gif')
+    ani.save(path, writer=PillowWriter(fps=16), dpi=70)
+    plt.close(); print(f'Saved: {path}  ({frames} frames)')
+
 
 if __name__ == '__main__':
-    print('Running S019 3D Dynamic Reassignment simulations...')
-    data = {}
-    for strat in ['static', 'hungarian_reassign', 'altitude_aware']:
-        print(f'  Strategy: {strat}')
-        data[strat] = run_simulation(strat)
-        d = data[strat]
-        print(f'    Reassignments: {d["n_reassignments"]}  |  Captures: {d["capture_times"]}')
-
-    print('\n' + '='*60)
-    print('S019 3D Dynamic Reassignment — Summary')
-    print('='*60)
-    for strat in ['static', 'hungarian_reassign', 'altitude_aware']:
-        d = data[strat]
-        print(f'{strat:20s}  reassigns={d["n_reassignments"]:2d}  captures={d["capture_times"]}')
-    print('='*60)
-
-    print('\nGenerating plots...')
-    plot_trajectories_3d(data)
-    plot_assignment_heatmap(data)
-    plot_distance_time(data)
-    save_animation(data)
-    print('All outputs saved to:', OUTPUT_DIR)
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    data = run_simulation()
+    plot_trajectories_3d(data['fixed'], OUTPUT_DIR)
+    plot_altitude_time(data['fixed'], OUTPUT_DIR)
+    plot_assignment_heatmap(data['fixed'], OUTPUT_DIR)
+    plot_mission_comparison(data['fixed'], data['mc'], OUTPUT_DIR)
+    save_animation(data['fixed'], OUTPUT_DIR)
+    print('Done.')
