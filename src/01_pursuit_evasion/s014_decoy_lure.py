@@ -385,7 +385,7 @@ def save_animation(results_dict, out_dir):
         return arts
 
     ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=60, blit=True)
-    fig.suptitle('S014 Decoy & Lure (blue=pursuer, royalblue=evader, green=decoy)', fontsize=10)
+    fig.suptitle('S014 Decoy & Lure (pursuer colour per panel, royal blue = evader, green dashed = decoy)', fontsize=10)
     plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
