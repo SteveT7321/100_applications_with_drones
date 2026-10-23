@@ -1,6 +1,6 @@
 # S044 3D Upgrade — Wall Crack Inspection
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S044 original](../S044_wall_crack.md)
 
 ---
@@ -98,7 +98,8 @@ $$h_{strip} = d_{standoff} \cdot \tan(\alpha),\quad \alpha = 30°$$
 
 $$h_{strip} = 1.5 \cdot \tan(30°) \approx 0.866\ \text{m}$$
 
-Vertical step per half-orbit (azimuth $\Delta\phi = \pi$, direction reversal):
+Vertical step per full orbit (the helix pitch; an earlier version of this card said "per half-orbit
+with direction reversal", which contradicts the helix formula below):
 
 $$\Delta z = 2\, h_{strip}\,(1 - \rho_{ov}),\quad \rho_{ov} = 0.20 \implies \Delta z \approx 1.386\ \text{m}$$
 
@@ -113,6 +114,14 @@ $$\mathbf{p}_{helix}(\theta) = \begin{pmatrix} r_{orbit}\cos\theta \\ r_{orbit}\
 Total helix arc length:
 
 $$L_{helix} = \int_0^{2\pi N_{pass}} \sqrt{r_{orbit}^2 + \left(\tfrac{\Delta z}{2\pi}\right)^2}\; d\theta = 2\pi N_{pass} \sqrt{r_{orbit}^2 + \left(\tfrac{\Delta z}{2\pi}\right)^2}$$
+
+**Correction (implementation)**: with $z_{start} = 0.5$ m, 15 turns of pitch 1.386 m end at
+$0.5 + 15 \times 1.386 = 21.3$ m, above the 19.5 m altitude limit, and a pure helix leaves a
+wedge at the bottom (and top) that no pass covers: at azimuth $\phi$ the lowest pass is at
+$0.5 + 1.386\,\phi/2\pi$ m. The implemented "bounded helix" flies a level orbit at 0.5 m,
+$\lceil (19.5 - 0.5)/1.386 \rceil = 14$ turns of pitch $19/14 = 1.357$ m, and a level orbit at 19.5 m
+(16 orbits, 553 m). The card helix above, clipped at 19.5 m, covers 98.4–98.7 % of the surface,
+below the 99 % objective.
 
 ### Cylindrical Surface Coverage Metric
 
