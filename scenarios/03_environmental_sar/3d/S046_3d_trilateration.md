@@ -113,7 +113,12 @@ components of $\hat{\tilde{\mathbf{x}}}$.
 
 Given any initial estimate $\mathbf{x}_0$ (from LLS or TDOA Stage 1), iterate:
 
-$$\mathbf{H}_k = \left[\frac{\mathbf{p}_i - \mathbf{x}_k}{\|\mathbf{p}_i - \mathbf{x}_k\|}\right]_{i=1}^N \in \mathbb{R}^{N \times 3}$$
+$$\mathbf{H}_k = \left[\frac{\mathbf{x}_k - \mathbf{p}_i}{\|\mathbf{x}_k - \mathbf{p}_i\|}\right]_{i=1}^N \in \mathbb{R}^{N \times 3}$$
+
+(Corrected: $\mathbf{H}_k$ is the Jacobian of the predicted range $h_i(\mathbf{x}) = \|\mathbf{x} - \mathbf{p}_i\|$, i.e.
+unit vectors from the drones to the estimate. An earlier version used $(\mathbf{p}_i - \mathbf{x}_k)/\|\cdot\|$,
+which with the "+" update below steps away from the solution — the same sign error that was fixed in the
+2D S046 card.)
 
 $$\mathbf{f}(\mathbf{x}_k) = \bigl[r_i - \|\mathbf{p}_i - \mathbf{x}_k\|\bigr]_{i=1}^N$$
 
