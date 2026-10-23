@@ -1,6 +1,6 @@
 # S041 3D Upgrade — Wildfire Boundary Scan
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S041 original](../S041_wildfire_boundary.md)
 
 ---
@@ -73,8 +73,9 @@ The terrain elevation is a smooth ridge function:
 
 $$z_{terrain}(x, y) = A_{ridge} \cdot \exp\!\left(-\frac{(x - x_c)^2}{2\sigma_x^2}\right) \cdot \cos\!\left(\frac{\pi (y - y_c)}{L_y}\right)$$
 
-with $A_{ridge} = 8$ m, $\sigma_x = 40$ m, $L_y = 200$ m, so terrain relief spans approximately
-$\pm 8$ m across the arena.
+with $A_{ridge} = 8$ m, $\sigma_x = 40$ m, $L_y = 200$ m and the ridge centred on the ignition
+point, $(x_c, y_c) = (100, 100)$ m. Inside the arena $|y - y_c| \le 100$ m $= L_y/2$, so the cosine
+is never negative and the terrain spans 0 to 8 m (not $\pm 8$ m, as an earlier version of this card said).
 
 ### Volumetric Fire Front
 
@@ -138,7 +139,9 @@ commanded velocity:
 $$\dot{\mathbf{p}}_k = \begin{pmatrix} \dot{x}_k \\ \dot{y}_k \\ \dot{z}_k \end{pmatrix} = \begin{pmatrix} v_{cruise}\,\hat{t}_{k,x} + K_\phi\,\phi_k\,\hat{n}_{k,x} \\ v_{cruise}\,\hat{t}_{k,y} + K_\phi\,\phi_k\,\hat{n}_{k,y} \\ (z_{cmd,k} - z_k)/\tau_z \end{pmatrix}$$
 
 The horizontal speed is clipped to $v_{cruise}$ before applying; the vertical channel is
-independent and not speed-clipped (vertical dynamics are typically slower than horizontal patrol).
+independent of it and is clipped separately to $|\dot{z}_{max}| = 2.0$ m/s (see the safe-approach
+angle below; an earlier version of this card said the vertical channel was not clipped, which
+contradicted the $|\dot{z}_{max}|$ parameter).
 
 ### Safe-Approach Angle Constraint
 
