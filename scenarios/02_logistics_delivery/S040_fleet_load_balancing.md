@@ -151,10 +151,10 @@ M_BODY        = 1.5          # kg
 M_PAYLOAD     = 0.3          # kg
 G             = 9.81         # m/s²
 E_CAP         = 1.0          # normalised battery capacity
-ALPHA         = 1.5e-4       # discharge coefficient (1/m)
+ALPHA         = 1.5e-5       # discharge coefficient (1/m)
 P_CHG         = 0.20         # charge rate (E_cap/s)
 BETA_SAFE     = 0.05         # safety SoC reserve
-D_RANGE       = E_CAP / (ALPHA * (M_BODY + M_PAYLOAD) * G)  # ~3560 m full-range
+D_RANGE       = E_CAP / (ALPHA * (M_BODY + M_PAYLOAD) * G)  # 1/(1.5e-5*1.8*9.81) = 3775 m full-range
 F_NORM        = D_RANGE * 0.5  # normalisation for flight distance
 
 # Load-index weights
@@ -415,10 +415,10 @@ def run_simulation(strategy: str = 'load_index', seed: int = 42) -> dict:
 | Total orders $M$ | 40 |
 | Simulation horizon $T_{sim}$ | 400 s |
 | Cruise speed $v$ | 8.0 m/s |
-| Discharge coefficient $\alpha$ | $1.5 \times 10^{-4}$ m$^{-1}$ |
+| Discharge coefficient $\alpha$ | $1.5 \times 10^{-5}$ m$^{-1}$ |
 | Body mass $m_{body}$ | 1.5 kg |
 | Payload mass $m_p$ | 0.3 kg |
-| Full-battery range $D_{range}$ | ~3560 m |
+| Full-battery range $D_{range}$ | 3775 m, from 1 / (1.5e-5 x 1.8 x 9.81); the earlier alpha = 1.5e-4 gave only 377 m |
 | Charging rate $P_{chg}$ | 0.20 $E_{cap}$/s |
 | Safety SoC reserve $\beta_{safe}$ | 0.05 |
 | Load-index weights $(\phi_w, \phi_f, \phi_s)$ | (0.5, 0.3, 0.2) |
@@ -468,7 +468,7 @@ def run_simulation(strategy: str = 'load_index', seed: int = 42) -> dict:
 ## Related Scenarios
 
 - Prerequisites: [S029](S029_urban_logistics_scheduling.md), [S032](S032_charging_queue.md), [S033](S033_online_order_insertion.md)
-- Follow-ups: [S041](../03_environmental_sar/S041_area_coverage.md) (swarm coverage, multi-agent coordination)
+- Follow-ups: [S041](../03_environmental_sar/S041_wildfire_boundary.md) (next domain: multi-drone coordination)
 - Algorithmic cross-reference: [S036](S036_last_mile_relay.md) (relay chain, battery-constrained routing), [S019](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time Hungarian reassignment)
 
 ## References
