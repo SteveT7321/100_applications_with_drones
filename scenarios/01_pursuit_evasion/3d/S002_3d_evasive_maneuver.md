@@ -1,6 +1,6 @@
 # S002 3D Upgrade — Evasive Maneuver
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Done
 **Based on**: [S002 original](../S002_evasive_maneuver.md)
 
 ---
