@@ -1,6 +1,6 @@
 # S046 3D Upgrade — Trilateration with Altitude
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S046 original](../S046_trilateration.md)
 
 ---
@@ -13,9 +13,9 @@ baseline scenario treats anchor positions as fixed by a designer-chosen heuristi
 at 120° azimuth, one overhead) and only measures slant ranges (RSSI/acoustic). This 3D upgrade
 adds three orthogonal challenges:
 
-1. **Fourth anchor constraint**: with $N = 3$ anchors in 3D, the range equations define a
-   unique point only when the three sphere surfaces intersect at exactly one point — a condition
-   that is geometrically fragile. With $N \geq 4$ non-coplanar anchors the system is
+1. **Fourth anchor constraint**: with $N = 3$ anchors in 3D, three sphere surfaces generically
+   intersect in two points (mirror images across the plane of the three anchors), so the
+   solution is ambiguous unless a prior (e.g. on altitude) removes the mirror. With $N \geq 4$ non-coplanar anchors the system is
    over-determined and the solution is unique and robust to noise. This variant enforces a
    minimum of $N = 4$ drones that span full 3D volume (not just different altitudes on a single
    circle).
@@ -24,8 +24,9 @@ adds three orthogonal challenges:
    GDOP are tracked separately.
 3. **3D TDOA hyperbolic localisation**: in addition to one-way range measurements, time-
    difference-of-arrival (TDOA) between drone pairs is modelled, converting range differences
-   into hyperboloids whose intersection gives the beacon location; this is strictly a 3D
-   construction because TDOA hyperboloids are degenerate in a 2D plane.
+   into hyperboloids whose intersection gives the beacon location (the 2D analogue uses
+   hyperbolas; in 3D the vertical observability of TDOA depends on the elevation spread of the
+   drones as seen from the beacon).
 
 ---
 
@@ -103,7 +104,9 @@ $$g_i = \|\mathbf{p}_i\|^2 - \|\mathbf{p}_1\|^2 - d_{i1}^2$$
 
 $$\hat{\tilde{\mathbf{x}}} = (\mathbf{C}^T \mathbf{W}_d \mathbf{C})^{-1} \mathbf{C}^T \mathbf{W}_d \mathbf{g}$$
 
-where $\mathbf{W}_d = \text{diag}(1/(2\sigma_r^2))$ and $\hat{\mathbf{x}}$ is the first three
+where $\mathbf{W}_d = \text{diag}(1/(2\sigma_r^2))$ (the differences against a shared
+reference are actually correlated, $\mathbf{Q} = \sigma_r^2(\mathbf{I} + \mathbf{1}\mathbf{1}^T)$;
+a scaled identity weight makes this stage ordinary LS) and $\hat{\mathbf{x}}$ is the first three
 components of $\hat{\tilde{\mathbf{x}}}$.
 
 ### 3D Gauss-Newton Refinement
@@ -163,7 +166,11 @@ to prevent the optimiser from collapsing all drones to a single altitude.
 
 For the TDOA estimator, the Fisher information matrix takes the form:
 
-$$\mathbf{I}_{TDOA}(\mathbf{x}^*) = \frac{1}{2\sigma_r^2} \tilde{\mathbf{H}}^T \tilde{\mathbf{H}}$$
+$$\mathbf{I}_{TDOA}(\mathbf{x}^*) = \tilde{\mathbf{H}}^T \mathbf{Q}^{-1} \tilde{\mathbf{H}}, \qquad \mathbf{Q} = \sigma_r^2(\mathbf{I} + \mathbf{1}\mathbf{1}^T)$$
+
+(Corrected: the earlier form $\tilde{\mathbf{H}}^T\tilde{\mathbf{H}}/(2\sigma_r^2)$ ignores the
+correlation through the shared reference drone and is not a valid bound — in the implementation it
+is too optimistic for some layouts and too pessimistic for others.)
 
 where $\tilde{\mathbf{H}} \in \mathbb{R}^{(N-1) \times 3}$ has rows:
 
@@ -178,14 +185,17 @@ $$\text{Var}(\hat{x}_j) \geq \bigl[\mathbf{I}_{TDOA}^{-1}\bigr]_{jj}$$
 ## Key 3D Additions
 
 - **Minimum 4-drone uniqueness proof**: with $N < 4$ non-coplanar anchors the range system has
-  a 1D family of solutions (a circle intersection); $N = 4$ guarantees a unique solution and
+  two mirror-image solutions (three spheres meet in two points); $N = 4$ non-coplanar anchors
+  give a unique solution and
   $N = 5$ provides one degree of freedom for GDOP optimisation.
 - **TDOA hyperbolic localisation**: each TDOA measurement constrains the beacon to a
   hyperboloid in 3D space; the two-stage linearised solver yields a closed-form first estimate
   without iterating, suitable for real-time embedded deployment.
 - **Altitude diversity constraint**: the GDOP optimisation enforces a minimum vertical spread
   of 20 m so that VDOP remains bounded regardless of beacon altitude; without this, L-BFGS-B
-  collapses all drones to a horizontal ring, reproducing the coplanar worst case.
+  collapses all drones to a horizontal ring, reproducing the coplanar worst case. (Not observed
+  in the implementation: the range-GDOP optimum is degenerate, the unconstrained optimum already
+  has a 21 m spread, and a coplanar layout at 45 m reaches the same GDOP 1.342.)
 - **Separate VDOP/HDOP tracking**: simulation reports VDOP and HDOP as functions of the
   altitude spread parameter $\Delta z$, demonstrating the quadratic degradation in VDOP as all
   drones approach coplanarity ($\Delta z \to 0$).
@@ -213,9 +223,9 @@ $$\text{Var}(\hat{x}_j) \geq \bigl[\mathbf{I}_{TDOA}^{-1}\bigr]_{jj}$$
 | Max GN iterations $K_{max}$ | 100 |
 | Monte Carlo trials per configuration | 500 |
 | Noise sweep range $\sigma_r$ | 0.1 – 3.0 m |
-| GDOP target (optimised layout, $N=5$) | $\leq 1.2$ |
-| VDOP coplanar config | $\approx 8.0$ (severely degraded) |
-| VDOP optimised 3D config | $\approx 1.4$ |
+| GDOP target (optimised layout, $N=5$) | $\geq \sqrt{9/5} = 1.342$ is the lower bound for any 5 drones (the earlier "$\leq 1.2$" is impossible); 1.342 is reached |
+| VDOP coplanar config | 10.87 (5 drones on an 80 m ring at 5 m, beacon at 2 m) |
+| VDOP optimised 3D config | 0.775 (range-GDOP optimum) |
 
 ---
 
@@ -227,7 +237,9 @@ $$\text{Var}(\hat{x}_j) \geq \bigl[\mathbf{I}_{TDOA}^{-1}\bigr]_{jj}$$
   coplanar baseline.
 - **VDOP/HDOP vs altitude spread**: two curves showing how VDOP and HDOP change as
   $\Delta z = z_{max} - z_{min}$ increases from 0 (coplanar) to 40 m; VDOP collapses
-  rapidly once $\Delta z > 10$ m while HDOP remains nearly constant.
+  rapidly once $\Delta z > 10$ m while HDOP remains nearly constant. (Measured for drones in
+  $[5, 5 + \Delta z]$ m: range VDOP 0.982 at $\Delta z = 0$ and 0.775 from 10 m on — the large
+  coplanar VDOP comes from a distant ring close to the beacon's height, not from coplanarity.)
 - **TDOA hyperboloid visualisation**: 3D rendering of three TDOA hyperboloids (for $N = 4$
   drones with one reference) and their intersection point at $\mathbf{x}^*$; coloured
   translucent surfaces illustrate the geometry of the 3D uniqueness condition.
