@@ -29,7 +29,7 @@ What 3D adds:
 $$\mathbf{p}_{deck}(t) = \begin{bmatrix} p_{v,x}(t) \\ p_{v,y}(t) \\ z_{ref} + A_h \sin(\omega_w t + \phi_h)\end{bmatrix},\quad
 \theta_p = \Theta_p \sin(\omega_w t + \phi_p),\quad \phi_r = \Phi_r \sin(\omega_w t + \phi_r^{(0)})$$
 
-The deck orientation is $R_{ws} = R_z(\psi_v)R_y(\theta_p)R_x(\phi_r)$. The deck normal is $\hat{\mathbf{n}} = R_{ws}\hat{\mathbf{z}}$, and the ship-body coordinates of the drone are $\mathbf{q}^s = R_{ws}^T(\mathbf{p} - \mathbf{p}_{deck})$. The 3D card had the heading and tilt rotations in the wrong order; the card is corrected. The drone is over the 2 × 2 m pad when $|q^s_x|, |q^s_y| < 1.0$ m. The deck surface is the plane through $\mathbf{p}_{deck}$ with normal $\hat{\mathbf{n}}$, 20 m long and 10 m wide. Every drone position is checked against it.
+The deck orientation is $R_{ws} = R_z(\psi_v)R_y(\theta_p)R_x(\phi_r)$. The deck normal is $\hat{\mathbf{n}} = R_{ws}\hat{\mathbf{z}}$, and the ship-body coordinates of the drone are $\mathbf{q}^s = R_{ws}^T(\mathbf{p} - \mathbf{p}_{deck})$. The 3D card had the heading and tilt rotations in the wrong order; the card is corrected. The drone is over the 2 × 2 m pad when $|q^s_x|, |q^s_y| < 1.0$ m. The deck surface is the plane through $\mathbf{p}_{deck}$ with normal $\hat{\mathbf{n}}$, 20 m long and 10 m wide. Every drone position, at every step and in every mode (approach, docked, swap, take-off, cruise, wreck), is asserted to be on or above this plane whenever the drone is over the deck, in the missions and in the deck-approach study. An independent post-hoc check recomputes the plane from the card formulas for every logged position of all 50 mission runs: 9774 samples over the deck, none below it.
 
 **Tilt gate**: $|\phi_{combined}| = \sqrt{\theta_p^2 + \phi_r^2} < \phi_{max} = 5°$. For any phases, $|\phi_{combined}| \le \sqrt{\Theta_p^2 + \Phi_r^2} = \sqrt{3^2+4^2} = 5°$, so **at the card sea state the gate can never close**. The script prints this bound, and the card now notes it. The gate only binds when the sea state is escalated (card extension 1).
 
@@ -108,6 +108,7 @@ The 15 % energy reserve is unchanged.
 | "Deck-relative approach path $q^s_x$ vs $q^s_z$" | height above deck vs horizontal range | Drones approach from any bearing, so $q^s_x$ alone is not the approach axis. |
 | Planner unchanged from 2D | 3D planner charges climbs, descents and a calibrated approach overhead; the 2D planner is kept as an ablation | Needed for a fair use of the 15 % reserve in 3D. |
 | — | a downdraft at take-off or arrival cannot push a drone below its pad; the pad holds it (5 such steps in all runs) | ground-contact constraint |
+| — | a drone taking off from the heaving deck after a swap, whose climb is slower than the deck's rise plus a downdraft, is carried up by the deck (35 steps with the 3D planner, 13 with the 2D planner) | deck-contact constraint; the previous version let such drones dip up to 0.163 m below the deck plane |
 | — | a drone that empties its battery ditches and falls at 5 m/s to the sea; above the vessel deck it comes to rest on the deck (never through it) until the vessel has moved on, then falls to the sea | no flying on an empty battery (asserted); the wreck is not carried by the vessel |
 | Touch-down "when all gates pass" | in missions, a strike or an impact ≥ $\epsilon_v$ = 0.5 m/s triggers a go-around (climb at ≥ 2 m/s relative to the deck back to the 0.5 m hover, then retry the gates); only safe touch-downs dock | The previous version docked every contact and counted 6 landings at 0.50–0.68 m/s as docked, which the study's own safe rule rejects. The 2 m/s climb rate is added. |
 | — | an idle drone with nothing queued after a swap flies to the nearest platform | In 2D it hovered for free at the vessel's old position. |
@@ -128,9 +129,10 @@ The script asserts these invariants:
 
 - no flight on an empty battery;
 - nobody below sea level or inside a platform;
+- nobody below the vessel deck surface while over the 20 × 10 m deck (every step, every mode; the post-hoc check finds a minimum clearance of 0.000 m, i.e. drones resting on the deck);
 - no step longer than 2.5 m.
 
-Runtime ≈ 5 min (272–371 s measured while other simulations shared the CPU; calibration, 220 approaches, 50 3D missions, 30 2D missions, plots, GIF). Two runs gave byte-identical output and files.
+Runtime ≈ 4–5 min (250–292 s; calibration, 220 approaches, 50 3D missions, 30 2D missions, plots, GIF). Two runs gave byte-identical output and files.
 
 ---
 

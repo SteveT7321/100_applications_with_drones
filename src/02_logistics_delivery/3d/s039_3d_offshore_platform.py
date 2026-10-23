@@ -503,6 +503,8 @@ def approach_trial(law, scale, seed, gusty=True):
             vz, contact = approach_update(dr, t, xi_h, xi_z, sea, law, wind)
         burn(dr, wind, vz)
         assert dr.pos[2] > 0.0
+        zs_c = sea.surface_z(t + DT, dr.pos[:2])
+        assert zs_c is None or dr.pos[2] >= zs_c - 1e-9, 'below the vessel deck'
         gs = gs_sample(dr, t + DT, sea)
         pd_ = sea.deck(t + DT)
         track.append((t + DT - t0, gs[0] if gs else 0.0, dr.pos[2] - pd_[2], dr.mode))
@@ -646,6 +648,7 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
     events, pad_log = [], []
     hold_time = 0.0
     pad_contacts = 0
+    deck_lifts = 0
 
     def give(dr, steps, r_ids):
         dr.queue = list(steps)
@@ -970,6 +973,17 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
                 else:
                     dr.pos[2] = max(0.0, dr.pos[2] - V_Z_MAX * DT)
 
+            # take-off from (or any other flight over) the moving deck: a drone
+            # whose climb is slower than the deck's heave plus a downdraft is
+            # carried up by the deck instead of passing through it.  The final
+            # approach handles deck contact itself (approach_update), a docked
+            # drone moves with the deck and a wreck rests on it (below).
+            if dr.mode not in ('final', 'touch', 'goaround', 'docked', 'ditched'):
+                zs_l = sea.surface_z(t + DT, dr.pos[:2])
+                if zs_l is not None and dr.pos[2] < zs_l:
+                    dr.pos[2] = zs_l
+                    deck_lifts += 1
+
             if flying:
                 gs_sample(dr, t + DT, sea)
                 if not burn(dr, wind, vz):
@@ -984,6 +998,9 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
             for m in range(N_PLATFORMS):
                 if on_pad(dr.pos[:2], m):
                     assert dr.pos[2] >= Z_PLATFORM - 1e-9, ('inside a platform', dr.mode, dr.pos, p_prev, t)
+            zs_c = sea.surface_z(t + DT, dr.pos[:2])
+            assert zs_c is None or dr.pos[2] >= zs_c - 1e-9, \
+                ('below the vessel deck', dr.mode, dr.pos, zs_c, t)
             assert np.linalg.norm(dr.pos - p_prev) <= 25.0 * DT, 'teleport'
             dr.min_soc = min(dr.min_soc, dr.energy / BATTERY_FULL)
             dr.log_pos.append(dr.pos.copy())
@@ -1005,7 +1022,7 @@ def run_strategy3d(strategy, seed, reqs, plan3d=True, sea=SEA_CARD, law='card'):
                 min_soc=min(dr.min_soc for dr in drones),
                 ditched=sum(1 for e in events if e[2] == 'ditched'),
                 strikes=sum(1 for e in events if e[2] == 'strike'), approaches=apps,
-                pad_contacts=pad_contacts)
+                pad_contacts=pad_contacts, deck_lifts=deck_lifts)
 
 
 # ── Experiment driver ───────────────────────────────────────────────────────
@@ -1231,6 +1248,58 @@ def print_mission_landings(res):
     pc = sum(x['pad_contacts'] for name in INSTANCES for s in STRATEGIES
              for x in res['runs3'][name][s])
     print(f'Take-off / arrival steps where a downdraft held a drone on its pad: {pc}')
+    all_runs = [x for name in INSTANCES for s in STRATEGIES for x in res['runs3'][name][s]] + \
+        [x for name in INSTANCES for s in ('relay', 'rolling') for x in res['runs_ab'][name][s]]
+    dl3 = sum(x['deck_lifts'] for name in INSTANCES for s in STRATEGIES
+              for x in res['runs3'][name][s])
+    dlab = sum(x['deck_lifts'] for name in INSTANCES for s in ('relay', 'rolling')
+               for x in res['runs_ab'][name][s])
+    print(f'Steps where the rising deck carried a drone up (take-off slower than the heave '
+          f'plus a downdraft): {dl3} with the 3-D planner, {dlab} with the 2-D planner')
+    n_over, n_bad, cmin = 0, 0, np.inf
+    for x in all_runs:
+        n, b, c = deck_clearance_posthoc(x)
+        n_over, n_bad, cmin = n_over + n, n_bad + b, min(cmin, c)
+    print(f'Post-hoc deck check (independent plane formula, every logged position of every '
+          f'drone in all {len(all_runs)} mission runs): {n_over} samples over the deck, '
+          f'{n_bad} below it (tolerance 1e-9 m), min clearance {max(cmin, 0.0):.3f} m')
+    assert n_bad == 0
+
+
+def deck_clearance_posthoc(x, scale=1.0):
+    """Independent check of all logged positions of one mission run against the
+    deck plane, written out from the card formulas (not via SeaState). Sample i
+    is the position at t = (i + 1) DT. Returns (samples over the deck,
+    samples below it, min clearance over the deck)."""
+    n_over, n_bad, cmin = 0, 0, np.inf
+    for dr in x['drones']:
+        P = np.array(dr.log_pos)
+        t = (np.arange(len(P)) + 1) * DT
+        a = OMEGA_W * t
+        heave = Z_REF + A_H * scale * np.sin(a + PH_H)
+        th = THETA_P * scale * np.sin(a + PH_P)
+        ph = PHI_R * scale * np.sin(a + PH_R)
+        vxy = np.array([S2.vessel_position(ti) for ti in t])
+        psi = np.array([vessel_heading(ti) for ti in t])
+        c, s = np.cos(psi), np.sin(psi)
+        # normal n = Rz Ry Rx e_z, ship axes ex = Rz Ry Rx e_x, ey = Rz Ry Rx e_y
+        sx, sy = np.sin(th) * np.cos(ph), -np.sin(ph)
+        n = np.stack([c * sx - s * sy, s * sx + c * sy, np.cos(th) * np.cos(ph)], 1)
+        ex = np.stack([c * np.cos(th), s * np.cos(th), -np.sin(th)], 1)
+        ey = np.stack([c * np.sin(th) * np.sin(ph) - s * np.cos(ph),
+                       s * np.sin(th) * np.sin(ph) + c * np.cos(ph),
+                       np.cos(th) * np.sin(ph)], 1)
+        dx, dy = P[:, 0] - vxy[:, 0], P[:, 1] - vxy[:, 1]
+        zs = heave - (n[:, 0] * dx + n[:, 1] * dy) / n[:, 2]
+        d = np.stack([dx, dy, zs - heave], 1)
+        over = (np.abs((d * ex).sum(1)) <= DECK_HALF[0]) & \
+            (np.abs((d * ey).sum(1)) <= DECK_HALF[1])
+        clear = P[over, 2] - zs[over]
+        n_over += int(over.sum())
+        n_bad += int((clear < -1e-9).sum())
+        if clear.size:
+            cmin = min(cmin, float(clear.min()))
+    return n_over, n_bad, cmin
 
 
 # ── Plots ───────────────────────────────────────────────────────────────────
