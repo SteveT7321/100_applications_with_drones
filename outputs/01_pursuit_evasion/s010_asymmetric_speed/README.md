@@ -13,17 +13,17 @@
 | Strategy | Logic |
 |----------|-------|
 | **Direct Pursuit** | Pure pursuit — head straight at the evader |
-| **Wall Herding (α = 0.5)** | Blend: α × (unit vector toward the evader) + (1 − α) × (outward normal of the wall nearest the evader) |
+| **Wall Herding (α = 0.5)** | Blend: α × (unit vector toward the evader) + (1 − α) × (outward normal of the wall nearest the evader; if two walls are equally near, i.e. the evader is on a corner diagonal, the normalised sum of both normals) |
 | **Corner Trap** | Always head for the corner closest to the evader |
 
 **Evader strategies**:
 
 | Evader | Logic |
 |--------|-------|
-| **Flee (card)** | Run straight away from the pursuer. At a wall the outward part of its velocity is lost, so it presses into the wall or corner |
-| **Wall-aware** (added) | Flee direction plus a repulsion from every wall closer than 1.5 m (weight $(1.5 - \delta)/1.5$, gain 2). At a wall it slides along it at full speed, and in a corner it turns along a free wall |
+| **Flee (card)** | Run straight away from the pursuer |
+| **Wall-aware** (added) | Flee direction plus a repulsion from every wall closer than 1.5 m (weight $(1.5 - \delta)/1.5$, gain 2). If its desired direction is blocked completely (straight into a wall or corner) it turns 90° counter-clockwise and slides along a free wall |
 
-**Arena rule (both players)**: a velocity component pointing out of the arena at a wall is removed, and positions are clipped to ±5 m.
+**Arena rule (identical for every player)**: at a wall the velocity component pointing out of the arena is removed and the remainder is renormalised to the player's full speed, so it slides along the wall. A command pointing straight into a wall or corner leaves nothing to slide with, and the player stops. Positions are clipped to ±5 m.
 
 ---
 
@@ -90,7 +90,9 @@ Check printed by the script: the t = 0 Apollonius circle has centre (−1.600, �
 | Strategy | vs Flee evader (card) | vs Wall-aware evader |
 |----------|----------------------|----------------------|
 | **Direct Pursuit** | captured **2.333 s** at (5.00, 5.00) | captured **1.854 s** at (3.96, 4.05) |
-| **Wall Herding (α = 0.5)** | captured **2.896 s** at (5.00, 5.00) | ❌ no capture in 60 s |
+| **Wall Herding (α = 0.5)** | captured **2.479 s** at (5.00, 5.00) | ❌ no capture in 60 s |
+
+Pursuer path length vs the card's evader: direct 7.00 m, wall herding 7.44 m, corner trap 6.94 m. Only the herding pursuer touches a wall (0.167 s).
 | **Corner Trap** | captured **2.312 s** at (5.00, 5.00) | captured **1.854 s** at (3.99, 3.99) |
 
 Wall herding vs the wall-aware evader, last 10 s: distance 0.37–6.68 m, path length pursuer 30.0 m and evader 45.0 m. Both fly at full speed the whole time ($3 \times 10$ and $4.5 \times 10$ m); this is a continuing chase, not a deadlock.
@@ -99,16 +101,16 @@ Wall herding vs the wall-aware evader, last 10 s: distance 0.37–6.68 m, path l
 
 | α | 0.00 | 0.05 | 0.10 | 0.20 | 0.30 | 0.40 | 0.50 | 0.60 | 0.70 | 0.80 | 0.90 | 1.00 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Flee evader | – | 23.54 | 11.94 | 6.08 | 4.29 | 3.44 | 2.90 | 2.60 | 2.46 | 2.38 | 2.35 | 2.33 |
+| Flee evader | 2.77 | 2.73 | 2.69 | 2.62 | 2.58 | 2.54 | 2.48 | 2.42 | 2.38 | 2.35 | 2.33 | 2.33 |
 | Wall-aware evader | – | – | – | – | – | – | – | – | – | – | – | 1.85 |
 
-(Selected columns. The script prints all 21 values. Flee evader: captured for 20/21 α values, every α ≥ 0.05. Wall-aware evader: captured only at α = 1.00.)
+(Selected columns. The script prints all 21 values. Flee evader: captured for all 21 α values. Wall-aware evader: captured only at α = 1.00.)
 
 **Key Findings**:
 
-- **Against the card's fleeing evader every strategy captures, and the walls do the work.** Running straight away from a pursuer that starts below-left of it takes the evader to the +x wall and then into the (5, 5) corner. There it presses into both walls and stops, and the pursuer only has to fly there. The pursuer needs about $\|(5, 5)\| / 3 = 7.07/3 = 2.36$ s, consistent with 2.312–2.333 s for direct pursuit and corner trap. Corner trap is 0.021 s faster because it heads for the corner from the start.
-- **Wall herding works once its controller bug is fixed.** The old version pointed the wall term at the wall's *midpoint*. With the evader in the (5, 5) corner and the pursuer on the +x wall, that vector was exactly opposite to the pursuit term, so at α = 0.5 the command was zero and the pursuer sat at (5, 1.43) for the rest of the run. With the wall's outward normal the two terms cannot cancel. Herding now captures at 2.896 s, slightly slower than direct pursuit because the wall term bends its path.
-- **α sweep (flee evader): capture for every α ≥ 0.05, faster as α grows** (23.54 s at α = 0.05 → 2.33 s at α = 1). Only α = 0 fails: the pursuer then flies along the wall normal into the wall and stays there. The previous README's "capture only for α ≈ 0.7–1.0" was wrong; the old sweep already captured for every α ≥ 0.55.
+- **Against the card's fleeing evader every strategy captures, and the walls do the work.** Running straight away from a pursuer that starts below-left of it takes the evader to the +x wall and then into the (5, 5) corner. It slides along the wall at full speed into the corner; there both of its velocity components point out of the arena, nothing is left after the wall rule, and it stops. The pursuer only has to fly there. The pursuer needs about $\|(5, 5)\| / 3 = 7.07/3 = 2.36$ s, consistent with 2.312–2.333 s for direct pursuit and corner trap. Corner trap is 0.021 s faster because it heads for the corner from the start.
+- **Wall herding works once its controller bug is fixed.** The old version pointed the wall term at the wall's *midpoint*. With the evader in the (5, 5) corner and the pursuer on the +x wall, that vector was exactly opposite to the pursuit term, so at α = 0.5 the command was zero and the pursuer sat at (5, 1.43) for the rest of the run. With the wall's outward normal the two terms cannot cancel. Herding now captures at 2.479 s, 0.146 s after direct pursuit (2.333 s). The difference is the longer path: the wall term bends the herding pursuer toward the +x wall (7.44 m vs 7.00 m), and $(7.44 - 7.00)/3 = 0.147$ s. An intermediate version (2.896 s) was slower for a different reason. Once the evader sat in the corner, the nearest-wall choice tied and picked the +x wall, and the pursuer rode that wall. The outward part of its command was removed *without* renormalising, so it slid at reduced speed. Renormalising (the same rule as the evader) plus the corner tie-break removed that.
+- **α sweep (flee evader): capture for every α, slightly faster as α grows** (2.77 s at α = 0 → 2.33 s at α = 1). Even α = 0 (wall normal only) captures. Once the evader sits in the (5, 5) corner, the tie-break turns the wall term into the corner diagonal. The pursuer then slides along the +x wall into the corner. The previous README's "capture only for α ≈ 0.7–1.0" was wrong; the old sweep already captured for every α ≥ 0.55.
 - **A wall-aware evader exposes the difference between the strategies.** It avoids pressing into walls, but its flee and repulsion terms cancel near a corner when the pursuer comes straight from the centre. By hand: flee ≈ (0.707, 0.707), repulsion $2(1.5 - \delta)/1.5$ per axis, equal when $\delta = 1.5(1 - 0.354) = 0.97$ m, i.e. at about (4.03, 4.03). Direct pursuit and corner trap approach along that diagonal and catch it there (1.854 s at (3.96, 4.05) / (3.99, 3.99)). The herding pursuer approaches off the diagonal. That tilts the flee direction, so the evader slides out of the equilibrium and escapes along the arena diagonal for the full 60 s, for every α < 1.
 - **So none of these simple strategies traps a faster evader by itself.** Captures happen when the evader's own rule stops it (in a corner, or at a flee/repulsion balance point). This matches the Apollonius picture: with r < 1 the pursuer-first region is a circle around the pursuer, so the evader always has free space unless walls block it.
 
@@ -120,7 +122,7 @@ Wall herding vs the wall-aware evader, last 10 s: distance 0.37–6.68 m, path l
 
 ![Apollonius Snapshots](apollonius_snapshots.png)
 
-**Capture Time vs Blend Factor α** — blue: flee evader (captured for α ≥ 0.05); purple: wall-aware evader (captured only at α = 1); X markers at 60 s = no capture:
+**Capture Time vs Blend Factor α** — blue: flee evader (captured for every α); purple: wall-aware evader (captured only at α = 1); markers at 60 s = no capture:
 
 ![Alpha Sensitivity](alpha_sensitivity.png)
 
@@ -141,7 +143,8 @@ Wall herding vs the wall-aware evader, last 10 s: distance 0.37–6.68 m, path l
 | Roles: one evader (straight escape) | Card evader + an added wall-aware evader | With the card evader every strategy wins because the evader corners itself; the second evader tests whether the strategies trap an evader that avoids walls |
 | "Direct pursuit fails when r < 1" | Not met: direct pursuit captures both evaders | It fails in open space, but in the arena the evaders' own rules stop them in or near a corner |
 | Expected "herding behaviour driving evader into corners" | Not observed as a herding effect: the flee evader runs into the corner by itself, and the herding pursuer does not drive the wall-aware evader into one | Reported as observed |
-| Arena walls not specified | Outward velocity removed at walls, positions clipped; the wall-aware evader renormalises to full speed along walls | Same wall rule for both players |
+| Arena walls not specified | At a wall the outward velocity component is removed and the rest renormalised to full speed (slide); positions clipped | One rule for every player. The intermediate version renormalised only the wall-aware evader, which slowed the herding pursuer on the wall |
+| Nearest-wall choice not defined for ties | On a corner diagonal the wall term is the normalised sum of both walls' normals | Avoids an arbitrary pick of one wall when the evader sits in a corner |
 | — | 2-D only (card: z = 2 m fixed) | Altitude is constant in the card |
 
 ---

@@ -8,18 +8,22 @@ walls and corners.
 Pursuer strategies:
   1. direct      — pure pursuit
   2. wall_herd   — blend: α·(unit vector to evader) + (1-α)·(outward normal of
-                   the wall nearest the evader), normalised to v_P
+                   the wall nearest the evader; if two walls are equally near,
+                   i.e. the evader is on a corner diagonal, the normalised sum
+                   of both normals), normalised to v_P
   3. corner_trap — aim at the corner closest to the evader
 
 Evader strategies:
-  - flee  (card) — straight away from the pursuer; at a wall the outward part
-                   of the velocity is lost (it presses into the wall)
+  - flee  (card) — straight away from the pursuer
   - aware        — flee direction plus repulsion from walls closer than
-                   D_SAFE (gain K_REPEL); at a wall it slides along the wall at
-                   full speed (in a corner it turns along a free wall)
+                   D_SAFE (gain K_REPEL); if its desired direction is blocked
+                   completely (straight into a wall or corner) it turns 90°
+                   counter-clockwise and slides along a free wall
 
-Arena rule (both players): a velocity component pointing out of the arena at
-a wall is removed; the 'aware' evader renormalises what is left.
+Arena rule (identical for all players): at a wall the velocity component
+pointing out of the arena is removed and the rest is renormalised to the
+player's full speed (it slides along the wall).  A command pointing straight
+into a wall or corner leaves nothing to slide with, and the player stops.
 
 Also produces:
   - Apollonius (equal-time) circle snapshots
@@ -96,8 +100,17 @@ def dir_direct(p, e, alpha=ALPHA):
 
 
 def nearest_wall_normal(e):
-    d = [e[0] + ARENA, ARENA - e[0], e[1] + ARENA, ARENA - e[1]]
-    return WALL_NORMALS[int(np.argmin(d))]
+    """Outward normal of the wall nearest the evader; on a tie (corner
+    diagonal) the normalised sum of the tied walls' normals."""
+    d = np.array([e[0] + ARENA, ARENA - e[0], e[1] + ARENA, ARENA - e[1]])
+    tied = np.isclose(d, d.min(), atol=1e-9)
+    return unit(WALL_NORMALS[tied].sum(axis=0))
+
+
+def wall_velocity(pos, d, speed):
+    """Arena rule for every player: remove the outward component at a wall,
+    renormalise the rest to full speed (zero if nothing is left)."""
+    return speed * unit(remove_outward(pos, d))
 
 
 def dir_wall_herd(p, e, alpha=ALPHA):
@@ -134,12 +147,9 @@ def evader_velocity(p, e, kind):
         d = unit(d + K_REPEL * wall_repulsion(e))
         if np.linalg.norm(d) < 1e-12:
             d = unit(e - p)
-    v = remove_outward(e, d)
-    if kind == 'aware':
-        if np.linalg.norm(v) < 1e-9:                  # pushing straight into wall/corner
-            v = remove_outward(e, np.array([-d[1], d[0]]))
-        v = unit(v)                                   # slide along walls at full speed
-    return V_EVADER * v
+    if kind == 'aware' and np.linalg.norm(remove_outward(e, d)) < 1e-9:
+        d = np.array([-d[1], d[0]])                   # blocked: turn along a free wall
+    return wall_velocity(e, d, V_EVADER)
 
 
 # ── Apollonius circle ─────────────────────────────────────────
@@ -181,7 +191,7 @@ def run_simulation(strategy, evader='flee', alpha=ALPHA):
     p_list, e_list = [p.copy()], [e.copy()]
     captured, cap_time = False, None
     for k in range(int(round(MAX_TIME / DT))):
-        vp = V_PURSUER * remove_outward(p, PURSUERS[strategy](p, e, alpha))
+        vp = wall_velocity(p, PURSUERS[strategy](p, e, alpha), V_PURSUER)
         ve = evader_velocity(p, e, evader)
         p = np.clip(p + vp * DT, -ARENA, ARENA)
         e = np.clip(e + ve * DT, -ARENA, ARENA)
@@ -197,7 +207,11 @@ def run_simulation(strategy, evader='flee', alpha=ALPHA):
 def describe(r):
     """Short text summary of how a run ended."""
     if r['captured']:
-        return f'captured @ {r["cap_time"]:.3f} s at ({r["e"][-1, 0]:.2f}, {r["e"][-1, 1]:.2f})'
+        steps = np.linalg.norm(np.diff(r['p'], axis=0), axis=1)
+        on_wall = (np.abs(r['p'][1:]) >= ARENA - 1e-9).any(axis=1)
+        return (f'captured @ {r["cap_time"]:.3f} s at ({r["e"][-1, 0]:.2f}, '
+                f'{r["e"][-1, 1]:.2f}) | pursuer path {steps.sum():.2f} m, '
+                f'on a wall {on_wall.sum() * DT:.3f} s')
     last = r['d'][r['t'] >= MAX_TIME - 10]
     n10 = int(round(10 / DT))
     plen = np.sum(np.linalg.norm(np.diff(r['p'][-n10 - 1:], axis=0), axis=1))
@@ -285,8 +299,11 @@ def plot_alpha_sensitivity(sweep, out_dir):
         ax.plot(ALPHAS[ok], caps[ok], marker=mk, color=col, linewidth=1.5,
                 label=f'{EV_LABELS[ev]}: captured')
         if (~ok).any():
-            ax.scatter(ALPHAS[~ok], np.full((~ok).sum(), MAX_TIME), marker='X', s=70,
-                       color=col, label=f'{EV_LABELS[ev]}: no capture in {MAX_TIME:.0f} s')
+            big = ev == 'flee'                     # big X behind, small + on top
+            ax.scatter(ALPHAS[~ok], np.full((~ok).sum(), MAX_TIME),
+                       marker='X' if big else 'P', s=160 if big else 45,
+                       color=col, zorder=3 if big else 4,
+                       label=f'{EV_LABELS[ev]}: no capture in {MAX_TIME:.0f} s')
     ax.axvline(ALPHA, color='grey', linestyle='--', label=f'Default α={ALPHA}')
     ax.set_yscale('log')
     ax.set_xlabel('Blend factor α  (0 = wall normal only, 1 = pure pursuit)')
