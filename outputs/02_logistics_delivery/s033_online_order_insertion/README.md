@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: 4 drones leave the depot at t = 0 on pre-planned routes (12 random waypoints each, then back to the depot) in a 1000 × 1000 m arena. Between t = 10 s and 80 s, 8 new online orders arrive. Each order has a deadline = arrival time + nearest-drone ETA + 30 s. The dispatcher splices each order into one drone's remaining route without stopping any drone, subject to battery range and deadline feasibility. If no drone can meet the deadline, the order is **queued**: it is appended (before the final depot return) to the drone that will finish its route earliest and has enough battery, and is served late. The simulation runs until every drone is back at the depot. Four assignment strategies are compared.
+**Setup**: 4 drones leave the depot at t = 0 on pre-planned routes (12 random waypoints each, then back to the depot) in a 1000 × 1000 m arena. Every pre-planned route fits its drone's battery; if the 12 waypoints plus the return do not fit, the planner drops trailing waypoints until they do. Between t = 10 s and 80 s, 8 new online orders arrive. Each order has a deadline = arrival time + nearest-drone ETA + 30 s. The dispatcher splices each order into one drone's remaining route without stopping any drone, subject to battery range and deadline feasibility. If no drone can meet the deadline, the order is **queued**: it is appended (before the final depot return) to the drone that will finish its route earliest and has enough battery, and is served late. The simulation runs until every drone is back at the depot. Four assignment strategies are compared.
 
 **Key question**: Which online insertion strategy minimises the added flight distance while delivering the most orders on time?
 
@@ -22,7 +22,7 @@ $$\Delta_{k,i} = \|\mathbf{w}_i - \mathbf{q}\| + \|\mathbf{q} - \mathbf{w}_{i+1}
 
 ### Feasibility
 
-- Battery: $L_k + \Delta_{k,i} \le B_k^{rem}$ ($L_k$ = remaining route length; $B_k^{rem}$ is reduced only by distance actually flown)
+- Battery: $L_k + \Delta_{k,i} \le B_k^{rem}$ ($L_k$ = remaining route length; $B_k^{rem}$ is reduced only by distance actually flown). The same test applies to queued orders and to every strategy, and it also holds for the pre-planned route at t = 0 ($L_k \le B_k^{rem}$). The code asserts after every insertion that the route still fits, and after every step that $B_k^{rem} \ge 0$.
 - Deadline: $t_{now} + \big(\sum_{j<i}\|\mathbf{w}_{j+1}-\mathbf{w}_j\| + \|\mathbf{w}_i - \mathbf{q}\|\big)/v \le t_{deadline}$
 - $t_{deadline} = t_{arrive} + \min_k \|\mathbf{p}_k^{plan}(t_{arrive}) - \mathbf{q}\|/v + 30$ s, using drone positions on the *planned* routes so every strategy gets the same deadlines
 
@@ -46,7 +46,7 @@ Insertion detour $\sum \Delta$; added flown distance = total flown − total pla
 | Parameter | Value |
 |-----------|-------|
 | Fleet size K | 4 drones |
-| Pre-planned waypoints per drone | 12 (+ return to depot) |
+| Pre-planned waypoints per drone | 12 (+ return to depot); trailing ones dropped if the plan exceeds the battery (seeds 11, 12, 14, 19: 6 waypoints in total) |
 | Online orders | 8, arrival U(10, 80) s |
 | Deadline | arrival + nearest-drone ETA + 30 s |
 | Drone speed v | 8.0 m/s |
@@ -70,7 +70,7 @@ conda activate drones
 python src/02_logistics_delivery/s033_online_order_insertion.py
 ```
 
-Runtime ≈ 32 s (84 full simulations + a 150-frame GIF).
+Runtime ≈ 55 s (84 full simulations + a 150-frame GIF).
 
 ---
 
@@ -91,19 +91,32 @@ Planned routes 6472–6896 m per drone (≈ 810–860 s of flight), so the run l
 
 | Strategy | Detour (m), mean ± std | On time (of 8) | Late | Queued | Rejected | Makespan (s) |
 |----------|---:|---:|---:|---:|---:|---:|
-| Cheapest Insertion | 1838.3 ± 593.6 | 6.20 | 1.80 | 0.30 | 0.00 | 984.7 |
-| Nearest Drone | 2207.4 ± 628.3 | 5.90 | 2.10 | 0.25 | 0.00 | 997.9 |
-| Least Loaded | 3681.2 ± 1254.2 | 5.65 | 2.35 | 0.30 | 0.00 | 1037.6 |
-| Random Feasible | 3624.7 ± 893.5 | 5.20 | 2.80 | 0.25 | 0.00 | 1043.8 |
+| Cheapest Insertion | 1777.0 ± 596.0 | 6.25 | 1.75 | 0.30 | 0.00 | 969.8 |
+| Nearest Drone | 2207.4 ± 661.5 | 5.95 | 2.05 | 0.25 | 0.00 | 981.7 |
+| Least Loaded | 3717.8 ± 997.9 | 5.65 | 2.35 | 0.30 | 0.00 | 1028.8 |
+| Random Feasible | 3620.9 ± 751.3 | 5.25 | 2.75 | 0.25 | 0.00 | 1033.3 |
 
-Cheapest insertion had a detour no larger than Nearest Drone in 18/20 instances, Least Loaded in 20/20 and Random Feasible in 19/20. In every run the added flown distance equals the insertion detour exactly (battery is debited only by flying).
+Cheapest insertion had a detour no larger than Nearest Drone in 19/20 instances, Least Loaded in 20/20 and Random Feasible in 20/20. In every run the added flown distance equals the insertion detour exactly (battery is debited only by flying).
+
+### Battery constraint (20 instances × 8 orders = 160 orders per strategy)
+
+"Active" means the battery test removed a drone's deadline-feasible candidate or moved it to another slot (online dispatch), or excluded a drone from the queue fallback. "Changed the decision" means the same rule, applied to the same state with the battery test switched off, would have picked a different (drone, slot). This is a one-step counterfactual, not a re-run. It is undefined for Random Feasible.
+
+| Strategy | Battery active (orders) | Instances with ≥ 1 active | Changed the decision | Rejected | Lowest remaining range over all runs (m) |
+|----------|---:|---:|---:|---:|---:|
+| Cheapest Insertion | 31 / 160 | 10 / 20 | 5 / 160 | 0 | 30.3 |
+| Nearest Drone | 34 / 160 | 10 / 20 | 9 / 160 | 0 | 30.3 |
+| Least Loaded | 40 / 160 | 12 / 20 | 23 / 160 | 0 | 30.3 |
+| Random Feasible | 41 / 160 | 14 / 20 | n/a | 0 | 40.9 |
+
+Before this fix, in seeds 11, 12, 14 and 19 one drone's 12-waypoint plan was already longer than its initial battery (by 1324, 249, 454 and 499 m). That drone flew the plan anyway and ended at −1324 / −249 / −454 / −499 m of range under every strategy. The insertion test was correct but cannot repair a plan that is infeasible at t = 0. Trimming those plans (2 + 1 + 1 + 2 waypoints) leaves the other 16 instances, including seed 0 and all its plots, unchanged.
 
 **Key Findings**:
-- **Over many instances, cheapest insertion is best on both criteria**: 17 % less detour than Nearest Drone and about half that of Least Loaded / Random, and the most on-time deliveries (6.20 of 8).
+- **Over many instances, cheapest insertion is best on both criteria**: 19 % less detour than Nearest Drone and about half that of Least Loaded / Random, and the most on-time deliveries (6.25 of 8).
 - **On a single instance it can lose.** On seed 0, Nearest Drone needed 143 m less detour than Cheapest Insertion. Greedy one-order-at-a-time insertion is myopic: the cheapest slot for an early order can make later orders infeasible, and Cheapest Insertion had to queue 2 orders (appended at the end of a route, which is long and late) against 1 for Nearest Drone.
 - **"Feasible at insertion" does not guarantee "on time".** The deadline check covers only the new order; later insertions placed ahead of it on the same route delay it. On seed 0, Cheapest Insertion assigned 6 orders online but delivered only 5 on time (the 2 queued orders are late by construction). An extension would re-check deadlines of already-inserted orders.
-- **Least Loaded and Random** ignore geometry and pay for it in distance (≈ 3.6–3.7 km per instance) and makespan (≈ 50–60 s longer); on seed 0, Random Feasible left one drone with only 336 m of range.
-- Battery was never the binding constraint (0 rejections in any run): with 7.5–10 km of range and ≈ 6.5–6.9 km routes, the deadline is what makes orders infeasible.
+- **Least Loaded and Random** ignore geometry and pay for it in distance (≈ 3.6–3.7 km per instance) and makespan (≈ 60 s longer); on seed 0, Random Feasible left one drone with only 336 m of range.
+- **The battery does bind, but it rarely decides.** It never forced a rejection (another drone always had the range). But it was active for 31–41 of 160 orders, in 10–14 of 20 instances. It changed Cheapest Insertion's choice for 5 orders, Nearest Drone's for 9 and Least Loaded's for 23. Least Loaded is hit hardest because it picks a drone by waypoint count alone, ignoring both detour and range. The drone it prefers is therefore more often one that cannot absorb the detour. With 7.5–10 km of range and ≈ 6.5–7 km plans, drones end with as little as 30 m left.
 
 **Route Map** (cheapest insertion, seed 0; dashed = planned, solid = flown to completion; green star = on time, red = late):
 
@@ -135,6 +148,7 @@ Cheapest insertion had a detour no larger than Nearest Drone in 18/20 instances,
 | Single instance | Seed 0 for plots + 20-instance means | One instance of 8 orders is too small to rank strategies (seed 0 ranks Nearest Drone first). |
 | — | Run continues until all drones return (cap 3000 s) | The old 230 s cap stopped the run while routes still needed ≈ 800 s, so the route map showed partial paths. |
 | Insertion position may be any segment | Never after the final depot return | The route must end at the depot. |
+| Card is silent on whether the pre-planned route fits the battery | If 12 waypoints + return exceed $B_k^{rem}$, trailing pre-planned waypoints are dropped until it fits (seeds 11, 12, 14, 19) | Without this, one drone in each of those seeds flew to −249 … −1324 m of range. The card's constraint $L_k + \delta_k \le B_k^{rem}$ assumes $L_k \le B_k^{rem}$ to begin with. The 3D variant skips such seeds instead. |
 | Each order has an urgency weight $w$ | Not modelled; all orders are equally urgent | The card defines $w$ but its own dispatcher rule ($k^* = \arg\min \delta_k$ over feasible drones) never uses it, so it would not change any decision. Using it is listed as Extension 1. |
 
 ---

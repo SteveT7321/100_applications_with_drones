@@ -7,7 +7,9 @@ Each order has a deadline = arrival time + nearest-drone ETA + 30 s. The dispatc
 splices every order into one drone's remaining route, subject to battery range and
 deadline feasibility. If no drone can meet the deadline, the order is queued: it is
 appended to the drone that finishes its route earliest (served late) if that drone has
-the battery for it, otherwise it is rejected.
+the battery for it, otherwise it is rejected. Every route, including the pre-planned
+one at t = 0, satisfies remaining length <= remaining battery (asserted), so the
+battery never goes negative.
 
 Strategies compared (same fleet and orders for every strategy):
   cheapest_insertion - global minimum detour over all feasible drones / positions
@@ -118,9 +120,12 @@ class Drone:
     def remaining_length(self) -> float:
         return route_length(self.full_pts())
 
-    def best_insertion(self, q, t_now, t_deadline) -> Optional[Tuple[int, float]]:
+    def best_insertion(self, q, t_now, t_deadline,
+                       use_battery=True) -> Optional[Tuple[int, float]]:
         """Cheapest (insert_idx, delta) that is battery- and deadline-feasible, or None.
 
+        use_battery=False drops the battery test; it is used only to measure how often
+        the battery constraint changes a candidate, never to make a decision.
         Insertion never goes after the final depot return (last waypoint)."""
         pts = self.full_pts()
         n_seg = len(pts) - 1
@@ -134,7 +139,8 @@ class Drone:
                 prefix += float(np.linalg.norm(pts[idx] - pts[idx - 1]))
             delta = insertion_delta(pts[idx], q, pts[idx + 1])
             t_arr = t_now + (prefix + float(np.linalg.norm(pts[idx] - q))) / self.speed
-            if L + delta <= self.battery_rem and t_arr <= t_deadline and delta < best_delta:
+            bat_ok = (L + delta <= self.battery_rem) or not use_battery
+            if bat_ok and t_arr <= t_deadline and delta < best_delta:
                 best_idx, best_delta = idx, delta
         return None if best_idx is None else (best_idx, best_delta)
 
@@ -166,6 +172,7 @@ class Drone:
                 self.flown += budget
                 self.battery_rem -= budget
                 budget = 0.0
+        assert self.battery_rem >= -1e-6, f'drone {self.id} battery {self.battery_rem:.3f} m < 0'
 
     @property
     def route_done(self) -> bool:
@@ -176,13 +183,26 @@ class Drone:
 
 def make_instance(seed):
     """Fleet + online orders. Deadlines use the nearest drone on the *planned* routes
-    at the arrival time, so they are identical for every strategy."""
+    at the arrival time, so they are identical for every strategy.
+
+    The pre-planned route must itself be battery-feasible (L_k <= B_k^rem at t = 0):
+    12 random waypoints are ~6.5-7 km but the battery is U(0.75, 1) x 10 km, so a few
+    draws do not fit. The planner then drops trailing pre-planned waypoints (they go
+    to a later sortie) until the route plus the depot return fits. The random draws
+    are unchanged, so every other instance is identical to the untrimmed one.
+    Returns (fleet, orders, dropped) with dropped[k] = waypoints removed from drone k."""
     rng = np.random.default_rng(seed)
-    fleet = []
+    fleet, dropped = [], []
     for k in range(K):
         wps = [rand_wp(rng) for _ in range(N_WP_INIT)] + [DEPOT.copy()]
         bat = B_FULL * rng.uniform(B_INIT_LO, 1.0)
+        n_drop = 0
+        while route_length([DEPOT] + wps) > bat and len(wps) > 1:
+            wps.pop(-2)                               # last customer before the depot
+            n_drop += 1
+        assert route_length([DEPOT] + wps) <= bat, 'planned route exceeds battery'
         fleet.append((wps, bat))
+        dropped.append(n_drop)
     arrivals = np.sort(rng.uniform(T_ORDER_LO, T_ORDER_HI, N_INSERTIONS))
     orders = []
     for n, t_a in enumerate(arrivals):
@@ -190,7 +210,7 @@ def make_instance(seed):
         eta = min(np.linalg.norm(point_along([DEPOT] + wps, V_DRONE * t_a) - loc)
                   for wps, _ in fleet) / V_DRONE
         orders.append(Order(n, loc, float(t_a), float(t_a + eta + DEADLINE_SLACK)))
-    return fleet, orders
+    return fleet, orders, dropped
 
 
 def build_drones(fleet):
@@ -205,17 +225,18 @@ def build_drones(fleet):
 
 # ── Dispatch strategies ────────────────────────
 
-def _feasible(drones, order, t_now):
+def _feasible(drones, order, t_now, use_battery=True):
     out = []
     for d in drones:
-        res = d.best_insertion(order.loc, t_now, order.t_deadline)
+        res = d.best_insertion(order.loc, t_now, order.t_deadline, use_battery)
         if res is not None:
             out.append((d, res[0], res[1]))
     return out
 
 
-def dispatch(strategy, drones, order, t_now, rng):
-    feas = _feasible(drones, order, t_now)
+def _choose(strategy, feas, order, rng):
+    """Pick one (drone, idx, delta) from the candidate list; every strategy gets the
+    same battery- and deadline-feasible list."""
     if not feas:
         return None
     if strategy == 'cheapest_insertion':
@@ -229,29 +250,59 @@ def dispatch(strategy, drones, order, t_now, rng):
     return min(feas, key=key)
 
 
+def dispatch(strategy, drones, order, t_now, rng):
+    """Returns (choice or None, battery_active, battery_changed).
+
+    battery_active : the battery test removed or moved at least one drone's
+                     deadline-feasible candidate slot for this order.
+    battery_changed: the (drone, slot) decision differs from the one the same rule
+                     would take with the battery test off (None for random_feasible,
+                     whose counterfactual draw is not defined)."""
+    feas = _feasible(drones, order, t_now, True)
+    feas_nb = _feasible(drones, order, t_now, False)
+    sig = lambda fs: sorted((f[0].id, f[1]) for f in fs)
+    active = sig(feas) != sig(feas_nb)
+    choice = _choose(strategy, feas, order, rng)
+    if strategy == 'random_feasible':
+        changed = None
+    else:
+        alt = _choose(strategy, feas_nb, order, None)
+        key = lambda c: None if c is None else (c[0].id, c[1])
+        changed = key(choice) != key(alt)
+    return choice, active, changed
+
+
 def queue_fallback(drones, order):
     """Infeasible order: append before the depot return of the drone that finishes its
-    route earliest among those with enough battery. Returns (drone, idx, delta) or None."""
-    cands = []
+    route earliest among those with enough battery. Returns ((drone, idx, delta) or
+    None, battery_active, battery_changed): active = a drone was excluded for battery,
+    changed = the excluded drone is the one that would otherwise have been chosen."""
+    cands, all_cands = [], []
     for d in drones:
         if not d.route:
             continue
         idx = len(d.route) - 1                        # slot before the final depot return
         pts = d.full_pts()
         delta = insertion_delta(pts[idx], order.loc, pts[idx + 1])
+        c = (d.remaining_length() / d.speed, d.id, d, idx, delta)
+        all_cands.append(c)
         if d.remaining_length() + delta <= d.battery_rem:
-            cands.append((d.remaining_length() / d.speed, d.id, d, idx, delta))
-    if not cands:
-        return None
-    _, _, d, idx, delta = min(cands, key=lambda c: (c[0], c[1]))
-    return d, idx, delta
+            cands.append(c)
+    pick = lambda cs: min(cs, key=lambda c: (c[0], c[1])) if cs else None
+    best, best_nb = pick(cands), pick(all_cands)
+    active = len(cands) < len(all_cands)
+    changed = (best is None) != (best_nb is None) or (best is not None and best[1] != best_nb[1])
+    if best is None:
+        return None, active, changed
+    _, _, d, idx, delta = best
+    return (d, idx, delta), active, changed
 
 
 # ── Simulation ─────────────────────────────────
 
 def run_simulation(strategy='cheapest_insertion', seed=SEED0, record=False):
     """Run one strategy on one instance until all drones are back at the depot."""
-    fleet, orders = make_instance(seed)
+    fleet, orders, dropped = make_instance(seed)
     drones = build_drones(fleet)
     rng_pick = np.random.default_rng(seed + 10_000)   # random_feasible choices
     planned_len = sum(route_length(d.initial_route) for d in drones)
@@ -261,21 +312,28 @@ def run_simulation(strategy='cheapest_insertion', seed=SEED0, record=False):
     rejected = []
     deliveries = {}
     events = []                  # (t, drone id, delta, mode)
+    bat_active, bat_changed = 0, 0   # orders where the battery test was active / decisive
     t = 0.0
     times = []
     while (any(not d.route_done for d in drones) or pending) and t < T_CAP:
         while pending and pending[0].t_arrive <= t + 1e-9:
             o = pending.pop(0)
-            res = dispatch(strategy, drones, o, t, rng_pick)
+            res, active, changed = dispatch(strategy, drones, o, t, rng_pick)
             mode = 'online'
             if res is None:
-                res = queue_fallback(drones, o)
+                res, q_active, q_changed = queue_fallback(drones, o)
+                active = active or q_active
+                changed = None if changed is None else (changed or q_changed)
                 mode = 'queued'
+            bat_active += int(active)
+            bat_changed += int(bool(changed))
             if res is None:
                 rejected.append(o.oid)
                 continue
             d, idx, _ = res
             delta = d.insert_order(o.loc, idx, o.oid)
+            assert d.remaining_length() <= d.battery_rem + 1e-6, \
+                f'insertion makes drone {d.id} route exceed its battery'
             assign[o.oid] = (d.id, mode, delta)
             events.append((t, d.id, delta, mode))
         if record:
@@ -308,6 +366,9 @@ def run_simulation(strategy='cheapest_insertion', seed=SEED0, record=False):
         'detour_planned': float(sum(v[2] for v in assign.values())),
         'added_flown': flown - planned_len, 'makespan': t,
         'min_battery': min(d.battery_rem for d in drones),
+        'battery_final': [d.battery_rem for d in drones],   # = per-drone minimum
+        'bat_active': bat_active, 'bat_changed': bat_changed,
+        'n_dropped': int(sum(dropped)),
         'per_drone': per_drone, 'times': np.array(times) if record else None,
     }
 
@@ -470,7 +531,7 @@ if __name__ == '__main__':
     os.makedirs(out_dir, exist_ok=True)
 
     seed0 = {s: run_simulation(s, SEED0, record=(s == 'cheapest_insertion')) for s in STRATEGIES}
-    fleet, orders = make_instance(SEED0)
+    fleet, orders, _ = make_instance(SEED0)
     print('Seed-0 instance:')
     for k, (wps, bat) in enumerate(fleet):
         print(f'  D{k + 1}: planned route {route_length([DEPOT] + wps):7.1f} m, '
@@ -485,7 +546,7 @@ if __name__ == '__main__':
               f"online={r['n_online']} queued={r['n_queued']} rejected={r['n_rejected']}  "
               f"on_time={r['on_time']}/{N_INSERTIONS} late={r['late']}  "
               f"makespan={r['makespan']:6.1f} s  min_battery={r['min_battery']:7.1f} m  "
-              f"per_drone={r['per_drone']}")
+              f"battery_active={r['bat_active']} per_drone={r['per_drone']}")
 
     mc = {s: [run_simulation(s, SEED0 + i) for i in range(N_SEEDS)] for s in STRATEGIES}
     print(f'\n=== Mean over {N_SEEDS} seeds ===')
@@ -500,6 +561,25 @@ if __name__ == '__main__':
     for s in STRATEGIES[1:]:
         o = np.array([r['detour_planned'] for r in mc[s]])
         print(f'  cheapest detour <= {s} in {int(np.sum(ci <= o + 1e-9))}/{N_SEEDS} seeds')
+
+    print(f'\n=== Battery: lowest remaining range per drone D1..D{K} (m), every seed ===')
+    for i in range(N_SEEDS):
+        cells = [' '.join(f"{b:5.0f}" for b in mc[s][i]['battery_final']) for s in STRATEGIES]
+        print(f"  seed {SEED0 + i:2d} dropped_wp={mc[STRATEGIES[0]][i]['n_dropped']}  "
+              + '  |  '.join(cells))
+    trimmed = [SEED0 + i for i in range(N_SEEDS) if mc[STRATEGIES[0]][i]['n_dropped'] > 0]
+    print(f"  pre-planned routes trimmed to fit the battery in seeds {trimmed} "
+          f"({sum(mc[STRATEGIES[0]][i]['n_dropped'] for i in range(N_SEEDS))} waypoints dropped)")
+    n_ord = N_SEEDS * N_INSERTIONS
+    for s in STRATEGIES:
+        rs = mc[s]
+        act = sum(r['bat_active'] for r in rs)
+        seeds_act = sum(1 for r in rs if r['bat_active'] > 0)
+        chg = sum(r['bat_changed'] for r in rs)
+        chg_txt = '   n/a' if s == 'random_feasible' else f'{chg:3d}/{n_ord}'
+        print(f"  {s:20s} battery active for {act:3d}/{n_ord} orders ({seeds_act}/{N_SEEDS} seeds), "
+              f"changed the decision for {chg_txt}, rejected {sum(r['n_rejected'] for r in rs)}, "
+              f"min battery over all runs {min(r['min_battery'] for r in rs):7.1f} m")
 
     plot_route_map(seed0['cheapest_insertion'], out_dir)
     plot_battery_timeline(seed0['cheapest_insertion'], out_dir)
