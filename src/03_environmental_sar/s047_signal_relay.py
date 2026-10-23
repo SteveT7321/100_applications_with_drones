@@ -5,24 +5,22 @@ Three relay drones are positioned to form a communication chain between a ground
 base station and a rescue team deep in a mountain valley where direct line-of-sight
 is blocked by terrain. The goal is to find relay positions that maximise the minimum
 (bottleneck) single-hop SNR across all four links in the chain. Three strategies are
-compared: uniform spacing, greedy hop-by-hop, and gradient ascent on soft-min SNR.
+compared: uniform spacing, greedy hop-by-hop (each relay maximises its own hop SNR
+given the previous node, under a fixed progress requirement), and gradient ascent on
+the soft-min SNR.
 
 Usage:
     conda activate drones
     python src/03_environmental_sar/s047_signal_relay.py
 """
 
-import sys
 import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-from matplotlib.patches import FancyArrowPatch
 import matplotlib.animation as animation
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ────────────────────────────────────────────────────────────────
 N_RELAYS     = 3          # number of relay drones
@@ -38,6 +36,8 @@ DELTA_SHADOW = 15.0       # dB  — terrain shadowing penalty
 ALPHA_SOFT   = 0.5        # soft-min temperature
 ETA          = 5.0        # m   — gradient ascent step size
 N_ITER       = 2000       # gradient ascent iterations
+RECORD_EVERY = 20         # store relay positions every N ascent steps (animation)
+GREEDY_GRID  = 1.0        # m   — candidate-grid resolution of the greedy search
 
 # Fixed endpoints
 BS   = np.array([100.0, 500.0])   # base station
@@ -54,8 +54,6 @@ OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '03_environmental_sar', 's047_signal_relay',
 )
-
-RNG = np.random.default_rng(0)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -112,50 +110,78 @@ def uniform_spacing():
     ], dtype=float)
 
 
-# ── Simulation ────────────────────────────────────────────────────────────────
+# ── Strategies ────────────────────────────────────────────────────────────────
 
-def run_simulation():
+def enforce_range(relays):
     """
-    Run all three relay-placement strategies and return results + convergence
-    history.  Returns (results_dict, relay_trajectory, history).
+    Project relay positions so that every hop of BS-R1-R2-R3-TEAM is at most
+    D_MAX: a forward pass clips each relay to D_MAX from its predecessor, a
+    backward pass clips each relay to D_MAX from its successor (this also
+    covers the last hop R3 -> TEAM).
     """
-    init = uniform_spacing()
+    nodes = np.vstack([BS, relays, TEAM])
+    for i in range(1, N_RELAYS + 1):                 # forward pass
+        v = nodes[i] - nodes[i - 1]; d = float(np.linalg.norm(v))
+        if d > D_MAX:
+            nodes[i] = nodes[i - 1] + v / d * D_MAX
+    for i in range(N_RELAYS, 0, -1):                 # backward pass
+        v = nodes[i] - nodes[i + 1]; d = float(np.linalg.norm(v))
+        if d > D_MAX:
+            nodes[i] = nodes[i + 1] + v / d * D_MAX
+    return nodes[1:N_RELAYS + 1].copy()
 
-    # ── Strategy 1: Uniform spacing (no optimisation) ──────────────────────
-    snrs_uniform = chain_snrs(np.vstack([BS, init, TEAM]))
 
-    # ── Strategy 2: Greedy hop-by-hop ──────────────────────────────────────
-    # Place each relay at the midpoint of its assigned span on the BS→TEAM line.
-    # This minimises each individual hop distance independently.
-    greedy = uniform_spacing()   # for a collinear chain, uniform IS greedy
-    # Perturb slightly to illustrate the concept: each relay maximises its own
-    # link by moving toward the midpoint of its two neighbours.
-    for _ in range(300):
-        all_nodes = np.vstack([BS, greedy, TEAM])
-        new_greedy = greedy.copy()
-        for i in range(N_RELAYS):
-            # Relay i connects nodes i and i+2 in the full chain (indices 0-based)
-            prev_node = all_nodes[i]        # node before relay i+1
-            next_node = all_nodes[i + 2]    # node after relay i+1
-            midpt = 0.5 * (prev_node + next_node)
-            new_greedy[i] = midpt
-        if np.max(np.abs(new_greedy - greedy)) < 1e-6:
-            break
-        greedy = new_greedy
-    snrs_greedy = chain_snrs(np.vstack([BS, greedy, TEAM]))
+def _snr_vec(p_a, cand):
+    """Vectorised SNR (dB) from point p_a to every candidate point cand (M x 2)."""
+    d = np.maximum(np.linalg.norm(cand - p_a, axis=1), 1e-3)
+    mid = 0.5 * (cand + p_a)
+    shadow = np.zeros(len(cand), dtype=bool)
+    for (cx, cy, hw, hh) in SHADOW_ZONES:
+        shadow |= (np.abs(mid[:, 0] - cx) <= hw) & (np.abs(mid[:, 1] - cy) <= hh)
+    pl = L0 + 10.0 * N_LOSS * np.log10(d / D_0) + DELTA_SHADOW * shadow
+    return P_TX - pl - N_FLOOR
 
-    # ── Strategy 3: Gradient ascent on soft-min SNR ─────────────────────────
+
+def greedy_hop_by_hop():
+    """
+    Greedy hop-by-hop placement: relays are placed one at a time from the BS
+    side.  Relay i is put at the grid point that maximises the SNR of its own
+    hop (previous node -> relay i), ignoring all downstream hops, subject to
+      * a progress requirement |p_i - TEAM| <= |TEAM - BS| (1 - i / (N+1))
+        (without it the current-hop SNR is maximised by not moving at all), and
+      * the range limit |p_i - p_{i-1}| <= D_MAX.
+    The last hop R3 -> TEAM is never optimised; it is whatever results.
+    """
+    xs = np.arange(0.0, 1000.0 + GREEDY_GRID / 2, GREEDY_GRID)
+    gx, gy = np.meshgrid(xs, xs)
+    cand = np.column_stack([gx.ravel(), gy.ravel()])
+    d_total = float(np.linalg.norm(TEAM - BS))
+    prev = BS.copy()
+    relays = []
+    for i in range(1, N_RELAYS + 1):
+        r_max = d_total * (1.0 - i / (N_RELAYS + 1))
+        ok = ((np.linalg.norm(cand - TEAM, axis=1) <= r_max + 1e-9) &
+              (np.linalg.norm(cand - prev, axis=1) <= D_MAX))
+        c = cand[ok]
+        snr = _snr_vec(prev, c)
+        best = c[int(np.argmax(snr))]
+        relays.append(best)
+        prev = best
+    return np.array(relays)
+
+
+def gradient_ascent():
+    """
+    Gradient ascent on the soft-min SNR from the uniform layout (central
+    differences, eps = 1 m), step ETA, N_ITER iterations, range projection and
+    operating-area clipping after every step.
+    """
     relays = uniform_spacing()
     history = []
-    relay_traj = [relays.copy()]  # store positions every few iterations
-    record_every = 20
-
+    relay_traj = [relays.copy()]
     for it in range(N_ITER):
-        positions = np.vstack([BS, relays, TEAM])
-        snrs = chain_snrs(positions)
+        snrs = chain_snrs(np.vstack([BS, relays, TEAM]))
         history.append(float(np.min(snrs)))
-
-        # Numerical gradient via central differences
         eps = 1.0
         grad = np.zeros_like(relays)
         for i in range(N_RELAYS):
@@ -165,34 +191,33 @@ def run_simulation():
                 J_fwd = soft_min(chain_snrs(np.vstack([BS, r_fwd, TEAM])))
                 J_bwd = soft_min(chain_snrs(np.vstack([BS, r_bwd, TEAM])))
                 grad[i, j] = (J_fwd - J_bwd) / (2.0 * eps)
-
-        relays = relays + ETA * grad
-
-        # Enforce max-comm-range constraints (sequential clipping along chain)
-        all_nodes = np.vstack([BS, relays, TEAM])
-        for i in range(1, 4):
-            hop_vec  = all_nodes[i] - all_nodes[i - 1]
-            hop_dist = float(np.linalg.norm(hop_vec))
-            if hop_dist > D_MAX:
-                all_nodes[i] = all_nodes[i - 1] + hop_vec / hop_dist * D_MAX
-        relays = all_nodes[1:4].copy()
-
-        # Clip to operating area
-        relays = np.clip(relays, 0.0, 1000.0)
-
-        if (it + 1) % record_every == 0:
+        relays = np.clip(enforce_range(relays + ETA * grad), 0.0, 1000.0)
+        if (it + 1) % RECORD_EVERY == 0:
             relay_traj.append(relays.copy())
+    history.append(float(np.min(chain_snrs(np.vstack([BS, relays, TEAM])))))
+    return relays, np.array(relay_traj), np.array(history)
 
-    opt_relays = relays
-    snrs_opt   = chain_snrs(np.vstack([BS, opt_relays, TEAM]))
 
-    results = {
-        'uniform':   {'positions': init,        'snrs': snrs_uniform},
-        'greedy':    {'positions': greedy,       'snrs': snrs_greedy},
-        'optimised': {'positions': opt_relays,   'snrs': snrs_opt},
-    }
-    relay_traj = np.array(relay_traj)  # shape: (frames, 3, 2)
-    return results, relay_traj, np.array(history)
+# ── Simulation ────────────────────────────────────────────────────────────────
+
+def run_simulation():
+    """
+    Run all three relay-placement strategies.
+    Returns (results_dict, relay_trajectory of the gradient ascent, history),
+    where history[k] is the bottleneck SNR after k ascent steps.
+    """
+    uniform = uniform_spacing()
+    greedy = greedy_hop_by_hop()
+    opt_relays, relay_traj, history = gradient_ascent()
+    results = {}
+    for name, pos in (('uniform', uniform), ('greedy', greedy), ('optimised', opt_relays)):
+        chain = np.vstack([BS, pos, TEAM])
+        results[name] = {
+            'positions': pos,
+            'snrs': chain_snrs(chain),
+            'hops': np.linalg.norm(np.diff(chain, axis=0), axis=1),
+        }
+    return results, relay_traj, history
 
 
 # ── Plot helpers ──────────────────────────────────────────────────────────────
@@ -225,6 +250,9 @@ def _draw_terrain(ax):
     ax.plot(*TEAM, '^', color='green',  markersize=10, zorder=5, label='Rescue Team')
 
 
+LABEL_DY = {'uniform': 15, 'greedy': 15, 'optimised': -35}   # SNR label offsets (m)
+
+
 def plot_terrain_map(results, out_dir):
     """2D terrain map showing relay positions and link lines for each strategy."""
     fig, ax = plt.subplots(figsize=(10, 7))
@@ -244,7 +272,7 @@ def plot_terrain_map(results, out_dir):
                     color=color, linewidth=1.8, alpha=0.7, zorder=3)
             # Annotate with SNR
             mid_x = 0.5 * (chain[k, 0] + chain[k + 1, 0])
-            mid_y = 0.5 * (chain[k, 1] + chain[k + 1, 1]) + 15
+            mid_y = 0.5 * (chain[k, 1] + chain[k + 1, 1]) + LABEL_DY[strategy]
             ax.text(mid_x, mid_y, f'{snrs[k]:.1f} dB',
                     fontsize=7, color=color, ha='center', zorder=6,
                     bbox=dict(facecolor='white', alpha=0.5, edgecolor='none', pad=1))
@@ -254,8 +282,8 @@ def plot_terrain_map(results, out_dir):
                    color=color, s=80, zorder=5, marker='o',
                    edgecolors='white', linewidths=0.8, label=label)
         for i, (rx, ry) in enumerate(relays):
-            ax.text(rx + 12, ry + 12, f'R{i+1}', fontsize=7,
-                    color=color, zorder=6)
+            ax.text(rx + 8, ry + (12 if LABEL_DY[strategy] > 0 else -28), f'R{i+1}',
+                    fontsize=7, color=color, zorder=6)
 
     ax.set_xlim(-30, 1030)
     ax.set_ylim(250, 750)
@@ -275,7 +303,6 @@ def plot_terrain_map(results, out_dir):
 
 def plot_snr_bar_chart(results, out_dir):
     """Grouped bar chart of per-link SNR for each strategy."""
-    strategies = list(results.keys())
     n_links = 4
     x = np.arange(n_links)
     width = 0.25
@@ -289,17 +316,23 @@ def plot_snr_bar_chart(results, out_dir):
                        label=STRATEGY_LABELS[strategy],
                        color=color, alpha=0.85, edgecolor='white', linewidth=0.6)
         # Highlight bottleneck link with red outline
-        bot_idx = int(np.argmin(snrs))
-        bars[bot_idx].set_edgecolor('red')
-        bars[bot_idx].set_linewidth(2.0)
+        for bot_idx in np.flatnonzero(snrs <= snrs.min() + 1e-6):   # all tied minima
+            bars[bot_idx].set_edgecolor('red')
+            bars[bot_idx].set_linewidth(2.0)
 
     ax.axhline(SNR_MIN, color='red', linewidth=1.5, linestyle='--',
                label=f'SNR_min = {SNR_MIN} dB')
+    handles = [mpatches.Patch(color=STRATEGY_COLORS[s_], label=STRATEGY_LABELS[s_])
+               for s_ in results]
+    handles.append(mpatches.Patch(facecolor='white', edgecolor='red', linewidth=2,
+                                  label='bottleneck link'))
+    handles.append(plt.Line2D([], [], color='red', ls='--', label=f'SNR_min = {SNR_MIN} dB'))
     ax.set_xticks(x)
     ax.set_xticklabels([f'Link {k} (hop {k}→{k+1})' for k in range(n_links)])
     ax.set_ylabel('SNR (dB)')
     ax.set_title('Per-Link SNR — Strategy Comparison')
-    ax.legend(fontsize=8)
+    ax.legend(handles=handles, fontsize=8, loc='upper center', ncol=3,
+              bbox_to_anchor=(0.5, -0.12))
     ax.grid(True, axis='y', linestyle='--', alpha=0.3)
     ax.set_ylim(bottom=min(0, ax.get_ylim()[0]) - 2)
 
@@ -346,6 +379,7 @@ def plot_bottleneck_comparison(results, out_dir):
     for bar, val in zip(bars, bottlenecks):
         ax.text(val + 0.3, bar.get_y() + bar.get_height() / 2,
                 f'{val:.2f} dB', va='center', fontsize=9)
+    ax.set_xlim(0, max(bottlenecks) * 1.15)
     ax.set_xlabel('Bottleneck SNR (dB)')
     ax.set_title('Bottleneck SNR — Strategy Summary')
     ax.legend(fontsize=8)
@@ -358,7 +392,7 @@ def plot_bottleneck_comparison(results, out_dir):
     print(f'Saved: {path}')
 
 
-def save_animation(relay_traj, out_dir):
+def save_animation(relay_traj, history, out_dir):
     """
     Animate how relay positions migrate across the terrain during gradient ascent.
     relay_traj shape: (frames, 3, 2)
@@ -408,7 +442,7 @@ def save_animation(relay_traj, out_dir):
                 [chain[k, 1], chain[k + 1, 1]],
             )
 
-        iter_text.set_text(f'Iteration: {frame * 20}')
+        iter_text.set_text(f'Iteration: {frame * RECORD_EVERY}  bottleneck {history[frame * RECORD_EVERY]:.2f} dB')
         return trail_lines + relay_markers + link_lines + [iter_text]
 
     ani = animation.FuncAnimation(
@@ -430,23 +464,28 @@ if __name__ == '__main__':
     print('\n=== S047 Signal Relay Enhancement — Results ===')
     for strategy, data in results.items():
         snrs = data['snrs']
-        bot  = float(np.min(snrs))
-        label = STRATEGY_LABELS[strategy]
-        print(f'  [{label}]')
-        for k, s in enumerate(snrs):
-            viable = 'OK' if s >= SNR_MIN else 'FAIL'
-            print(f'    Link {k}: {s:6.2f} dB  [{viable}]')
-        print(f'    Bottleneck SNR: {bot:.2f} dB')
+        chain = np.vstack([BS, data['positions'], TEAM])
+        print(f'  [{STRATEGY_LABELS[strategy]}]')
+        print('    Relays: ' + ', '.join(f'R{i+1}=({p[0]:.1f}, {p[1]:.1f})'
+                                       for i, p in enumerate(data['positions'])))
+        for k, s_k in enumerate(snrs):
+            viable = 'OK' if s_k >= SNR_MIN else 'FAIL'
+            sh = 'shadowed' if in_shadow(0.5 * (chain[k] + chain[k + 1])) else 'clear'
+            print(f'    Link {k}: {s_k:6.2f} dB  d = {data["hops"][k]:6.1f} m  {sh:8s} [{viable}]')
+        print(f'    Bottleneck SNR: {np.min(snrs):.2f} dB   max hop {data["hops"].max():.1f} m '
+              f'(limit {D_MAX:.0f} m)')
         print()
 
-    print(f'  Gradient ascent: {len(history)} iterations')
+    print(f'  Gradient ascent: {N_ITER} iterations')
     print(f'  Initial bottleneck SNR: {history[0]:.2f} dB')
+    print(f'  Best bottleneck SNR:    {history.max():.2f} dB (after {int(np.argmax(history))} steps)')
     print(f'  Final bottleneck SNR:   {history[-1]:.2f} dB')
-    print(f'  Improvement:            {history[-1] - history[0]:.2f} dB')
+    print(f'  Improvement (final - initial): {history[-1] - history[0]:.2f} dB')
+    print(f'  Animation frames: {len(relay_traj)}')
 
     out = os.path.normpath(OUTPUT_DIR)
     plot_terrain_map(results, out)
     plot_snr_bar_chart(results, out)
     plot_convergence(history, out)
     plot_bottleneck_comparison(results, out)
-    save_animation(relay_traj, out)
+    save_animation(relay_traj, history, out)
