@@ -76,7 +76,7 @@ TAU_S       = LAT_STEPS * DT
 Z_LIM       = (0.0, 20.0)          # m   altitude range
 
 # ── Added parameters (not in the card; see README) ────────────────────────────
-Z_DECK_MEAN = 2.0      # m   mean deck height above sea level (keeps the deck inside z >= 0)
+Z_DECK_MEAN = 2.0      # m   mean deck height above sea level (keeps the pad centre above z = 0)
 DECK_HALF_L = 6.0      # m   deck half-length (body x)
 DECK_HALF_W = 3.0      # m   deck half-width  (body y)
 P_DRONE0    = np.array([-20.0, 8.0, 15.0])   # shore-station start (2-D S023 start), at rest
@@ -439,6 +439,35 @@ def report(show, mc, nocomp):
               f"{max(abs(r['dh_tilt']) for r in rf) * 100:.2f} cm, max | |dvz|pad - |dvz|contact pt | "
               f"{max(abs(r['dvz'] - r['dvz_pt']) for r in rf):.4f} m/s, "
               f"max deck-normal speed {max(r['vn'] for r in rf):.3f} m/s")
+
+    # Deck geometry vs sea level (z = 0).  The deck is a rigid plane with a
+    # fixed 2 m mean freeboard; its corners are lowest at -|theta| L - |phi| W.
+    print("\nDeck height above sea level (z = 0) during each run (t = 0 .. latest touchdown):")
+    for a_h in A_H_SWEEP:
+        min_corner, n_awash, t_awash, min_contact = np.inf, 0, 0.0, np.inf
+        for sd in range(N_MC):
+            ph = sea_phases(sd)
+            t_end = max(mc[a_h][s][sd]["t"] for s in STRATS)
+            tt = np.arange(0.0, t_end + DT / 2, DT)
+            zc = (Z_DECK_MEAN + a_h * np.sin(W_H * tt + ph[0])
+                  - np.abs(A_THETA * np.sin(W_TH * tt + ph[1])) * DECK_HALF_L
+                  - np.abs(A_PHI * np.sin(W_R * tt + ph[2])) * DECK_HALF_W)
+            min_corner = min(min_corner, float(zc.min()))
+            if zc.min() < 0.0:
+                n_awash += 1
+                t_awash += float(np.sum(zc < 0.0)) * DT
+            for s in STRATS:
+                r = mc[a_h][s][sd]
+                z_contact = Z_DECK_MEAN + r["zp"] + r["dh_tilt"]   # deck plane under the drone
+                min_contact = min(min_contact, z_contact)
+        z_pad_min = Z_DECK_MEAN - a_h
+        assert z_pad_min > 0.0, "pad centre below sea level"
+        assert min_contact > 0.0, "contact point below sea level"
+        print(f"  A_h = {a_h} m: pad centre >= {z_pad_min:.2f} m; lowest deck corner "
+              f"{min_corner:+.3f} m (bound {Z_DECK_MEAN - a_h - A_THETA * DECK_HALF_L - A_PHI * DECK_HALF_W:+.3f} m); "
+              f"a corner below sea level in {n_awash}/{N_MC} runs "
+              f"({t_awash:.1f} s in total); lowest deck point under a touching-down drone {min_contact:.3f} m")
+
     m_c = np.array([r["miss"] for r in mc[A_H]["rel_ff"]])
     m_n = np.array([r["miss"] for r in nocomp])
     print(f"\n  Latency compensation (rel_ff, A_h = {A_H}): lateral miss mean "

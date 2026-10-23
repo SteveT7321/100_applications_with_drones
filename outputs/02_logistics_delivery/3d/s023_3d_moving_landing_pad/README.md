@@ -52,7 +52,7 @@ Guidance has three latched phases:
 - $|\dot z_D - \dot z_p| \le v_{land,max}$;
 - $\|\dot{\mathbf{p}}_{xy,D} - \dot{\mathbf{p}}_{xy,V}\| \le \Delta v_{max}$.
 
-**Asserted invariants** (every step): the drone is never below the deck or sea surface, $0 \le z \le 20$ m, $\|\mathbf{v}\| \le v_{max}$ and $\gamma \ge \gamma_{min}$. Every Monte-Carlo run touches down, always in Phase 3. The Phase-3 entry time is identical for all four strategies on every seed.
+**Asserted invariants** (every step): the drone is never below the deck or sea surface, $0 \le z \le 20$ m, $\|\mathbf{v}\| \le v_{max}$ and $\gamma \ge \gamma_{min}$. Every Monte-Carlo run touches down, always in Phase 3. The Phase-3 entry time is identical for all four strategies on every seed. The pad centre and the deck point under every touching-down drone stay above sea level (asserted). The deck corners are only reported, not asserted: they go below sea level at $A_h$ = 1.8 m (see the diagnostics).
 
 ---
 
@@ -77,7 +77,7 @@ Guidance has three latched phases:
 | Sensor latency $\tau_s$ | 0.04 s (2 steps) | card |
 | Time step | 0.02 s (50 Hz) | card |
 | Altitude range | 0–20 m (asserted) | card |
-| Mean deck height $\bar z_{deck}$ | 2.0 m above sea level | added: the card's $z_p$ has zero mean, and the deck must stay inside $z \ge 0$ |
+| Mean deck height $\bar z_{deck}$ | 2.0 m above sea level | added: the card's $z_p$ has zero mean, so the pad needs a freeboard; 2 m keeps the pad centre above $z = 0$ in every sea state (lowest 0.20 m at $A_h$ = 1.8 m). The tilted deck *corners* still dip below sea level at 1.8 m (see diagnostics). |
 | Deck footprint | 12 m × 6 m around the pad | added |
 | Drone start | (−20, 8, 15) m, at rest; vessel starts at x = 0 | added (2-D S023 start) |
 | Phase-1 aim point | 4 m astern of the predicted pad, $z$ = 7.5 m | added |
@@ -102,6 +102,8 @@ Guidance has three latched phases:
 | Phase-3 hold height $z_{hold}$, $r_{flare}$, gains, start position | Values listed in the parameter table as "added" | The card gives no values |
 | Pad offset $\mathbf{d}_{offset}$ | 0: the pad is at the rotation centre | This is what the card's $\dot{\mathbf{p}}_{pad} = (v_V, 0, \dot z_p)$ assumes. With it, pitch and roll only tilt the deck, and their measured effect on contact is negligible (see results). |
 | "the flare controller … risks a hard contact during a **downward** heave cycle" | Measured: every hard contact happens with the deck **rising** | 93/93, 92/92, 99/99 and 98/98 hard contacts have $\dot z_p > 0$ |
+| 2-D flare baseline (the 2-D S023 law) | Uses the 3D card's constants: $v_{land}$ = 0.8 m/s (the 3D $v_{land,max}$) and tanh scale 2.5 m ($z_{flare,rel}$). The fixed 2-D S023 uses 1.0 m/s and $z_{flare}$ = 2.0 m. | Same rate limit and flare scale for all four laws, so only the reference height and the feed-forward differ. With the 2-D constants the baseline would command a faster descent and would not be a like-for-like comparison. |
+| Deck geometry (not specified) | 12 m × 6 m rigid deck plane, 2 m mean freeboard | At $A_h$ = 1.8 m (a stress sea state beyond the card's 0.6 m) the tilted deck corners dip to −0.531 m, below sea level. The pad and every contact point stay above it (asserted). See the diagnostics. |
 | Single scenario run | Showcase seed + 100-seed Monte-Carlo × 3 sea states; two baselines (2-D flare, no FF) and the gate on/off | Needed to test the card's FF and gate claims fairly |
 | Output files (card list) | The deck-motion plot and the motion-window timing bar share `deck_motion.png`; relative velocity and lateral miss share `relative_velocity.png`; `monte_carlo.png` is added | Layout |
 
@@ -165,17 +167,23 @@ Head-to-head on the same seeds:
 - **Gated hold before commit.** The mean is 0.56 s, 1.49 s and 2.18 s; the maximum is 2.32 s, 3.68 s and 4.16 s. At $A_h$ = 1.8 m, in 3/100 runs the gate never opened before the deck rose into the *holding* drone. All three contacts were soft (max 0.139 m/s) and pass the criteria.
 - **Deck tilt (FF runs).** The deck-plane height differs from the pad-centre height by at most 0.07 cm, 0.14 cm and 0.33 cm. The relative vertical speed against the contact point differs from the speed against the pad centre by at most 0.0003, 0.0007 and 0.0015 m/s. The maximum deck-normal speed is 0.167, 0.314 and 0.460 m/s.
 - **Latency compensation (FF, 0.6 m).** The mean lateral miss is 0.003 m with compensation and 0.157 m without it, matching $v_V\tau_s$ = 0.16 m.
+- **Deck height above sea level.** These numbers are taken from $t = 0$ to the latest touchdown of each seed.
+  - The pad centre never goes below $2 - A_h$ = 1.40, 0.80 and 0.20 m.
+  - The lowest deck corner is +0.669, +0.069 and **−0.531 m**. The bound is $2 - A_h - A_\theta L_{half} - A_\phi W_{half}$ = +0.667, +0.067 and −0.533 m.
+  - At $A_h$ = 1.8 m a corner is below sea level in 100/100 runs, for 350.9 s in total.
+  - This is a limitation of the model. The deck is a rigid plane with a fixed 2 m freeboard, and 1.8 m of heave plus 4° pitch over the 6 m half-length plus 6° roll over the 3 m half-width exceeds that freeboard. A real hull would ship water at the corners or have more freeboard. There is no sea-surface interaction in the model.
+  - It does not affect the landing results. The lowest deck point under any touching-down drone is 1.400, 0.800 and 0.200 m, which equals the pad centre's lowest height. Every contact is within 0.604 m of the pad centre (the largest miss of any law), far from the corners 6.7 m away.
 
 ### Key findings
 
 - **Heave feed-forward: the card's claim holds, but not at the card's own sea state.** At $A_h$ = 0.6 m every strategy lands, including the 2-D law that ignores the heave. The heave rate (0.377 m/s at most) is under half of the 0.8 m/s limit. The FF still lowers the relative contact speed from about 0.43 to 0.14 m/s (96/100 and 99/100 head-to-head wins). The FF becomes **critical** once the heave rate approaches the limit: at 1.2 m the success rate is 100/100 with FF against 7–8/100 without it, and at 1.8 m it is 100/100 against 1–2/100.
 - **Why the non-FF laws fail: the deck rises into the drone.** Both non-FF laws command a descent rate that goes to zero near the deck, so the drone almost hovers. The contact speed is then roughly the deck's rise rate plus a small residual descent: 0.434 / 0.836 / 1.216 m/s against maximum heave rates of 0.377 / 0.754 / 1.131 m/s. Every hard contact (93, 92, 99 and 98 of them) occurs with $\dot z_p > 0$. This contradicts the card's "downward heave cycle" wording.
 - **Tracking the live deck height alone does not help.** "Deck-relative, no FF" is no better than the 2-D flare: it beats it on contact speed in only 18, 11 and 10 of 100 seeds. The relative height is the right *reference*, but without the rate feed-forward the rate loop cannot follow the deck.
-- **The FF residual grows with the heave.** It is 0.139, 0.279 and 0.427 m/s. The first-order rate loop ($K_{z,r}$ = 2 s⁻¹) lags a sinusoidal command. The lag error is about $\dot z_{p,max}\,\omega/\sqrt{K^2+\omega^2}$ = 0.11, 0.23 and 0.34 m/s, which accounts for most of the residual. Adding a $\ddot z_p$ feed-forward would remove it (extension 2).
+- **The FF residual grows with the heave.** It is 0.139, 0.279 and 0.427 m/s. The first-order rate loop ($K_{z,r}$ = 2 s⁻¹) lags a sinusoidal command. The lag error is about $\dot z_{p,max}\,\omega/\sqrt{K^2+\omega^2}$ = 0.11, 0.23 and 0.34 m/s, which accounts for most of the residual. Adding a $\ddot z_p$ feed-forward would remove it (extension 1).
 - **The FF is slower at the card's sea state.** It takes 17.96 s against 15.04–15.26 s. Near the deck, the tanh command is small and the FF lag error keeps $h_{rel}$ at about 0.15–0.3 m for several seconds (see `altitude_tracking.png`). The FF is faster at the larger sea states (61–75/100 head-to-head wins), where the other laws are struck by the deck early.
 - **The motion-window gate gives no real benefit.** At the card's sea state it is slightly *worse* on contact speed: it beats the plain FF law in only 3/100 seeds and lands 0.59 s later on average. At 1.8 m it wins 66/100, but the mean gain is 0.010 m/s (0.417 vs 0.427), and it lands 5.1 s later. The gate times the *start* of the flare, not the touchdown. The flare lasts 5.6–8.8 s (mean, by sea state), about one heave period, so the gate does not choose the contact phase directly. It does push more contacts into the window: from 73 to 80 of 100 at 0.6 m and from 29 to 77 at 1.8 m. The contact speed hardly changes, though, because with the FF the heave phase at contact hardly matters.
 - **An absolute vertical-speed criterion would be wrong in 3D.** The FF law's absolute $|\dot z_D|$ reaches 1.034 m/s at 1.8 m, which would fail the 2-D S023 limit (1.0 m/s) even though the relative contact speed is at most 0.461 m/s. The failing 2-D-flare contacts have an absolute speed of at most 0.526 m/s and would pass it. Only the relative criterion separates soft landings from hard ones.
-- **Pitch and roll are inert here.** The pad is at the rotation centre and the lateral miss is ≤ 0.05 m for the FF law. The tilt therefore changes the contact height by ≤ 0.33 cm and the contact-point speed by ≤ 0.0015 m/s. The tilt-related claims in the card (a sloped surface that changes the acceptable contact velocity) have no measurable effect in this setup. An off-centre pad (extension 4) would be needed to see one.
+- **Pitch and roll are inert here.** The pad is at the rotation centre and the lateral miss is ≤ 0.05 m for the FF law. The tilt therefore changes the contact height by ≤ 0.33 cm and the contact-point speed by ≤ 0.0015 m/s. The tilt-related claims in the card (a sloped surface that changes the acceptable contact velocity) have no measurable effect in this setup. An off-centre pad (extension 3) would be needed to see one.
 - **The 6° minimum approach angle never binds.** The entry cone ($z \le 8$ m, $d_{xy} \le 5$ m) gives ramps of 38.6–56.7°.
 
 ---
