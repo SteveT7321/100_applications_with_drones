@@ -36,8 +36,6 @@ $$\mathbf{u}_R = -K_p\,\Delta\mathbf{r} - K_d\,\Delta\mathbf{v} + \mathbf{a}_T$$
 
 $$\mathbf{u}_R = -K_{p2}\,\Delta\mathbf{r} - K_{d2}\,\Delta\mathbf{v} + \mathbf{a}_T$$
 
-The commanded acceleration is limited to 15 m/s².
-
 **Energy transfer** (5% loss):
 
 $$E_R \mathrel{+}= \Delta E_{xfer}, \qquad E_T \mathrel{-}= \Delta E_{xfer}(1 + \eta_{loss})$$
@@ -64,7 +62,6 @@ $$E_R \mathrel{+}= \Delta E_{xfer}, \qquad E_T \mathrel{-}= \Delta E_{xfer}(1 + 
 | Velocity dock tolerance $\epsilon_v$ | 0.05 m/s |
 | Approach PD gains $(K_p, K_d)$ | (2.0, 1.5) |
 | Soft-dock PD gains $(K_{p2}, K_{d2})$ | (4.0, 2.5) |
-| Receiver acceleration limit while docking | 15 m/s² |
 | Range safety margin $d_{margin}$ | 5.0 m |
 | Docking phase entry | Receiver within $2R_{orb} = 6$ m of the RVZ and Tanker on orbit |
 | Rendezvous fraction $\alpha$ | 0.5 (midpoint, RVZ = (30, 0, 10) m) |

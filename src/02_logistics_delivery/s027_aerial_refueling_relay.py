@@ -48,7 +48,6 @@ EPS_P     = 0.15     # m    dock position tolerance
 EPS_V     = 0.05     # m/s  dock velocity tolerance
 KP,  KD   = 2.0, 1.5     # approach gains
 KP2, KD2  = 4.0, 2.5     # soft-dock gains
-A_MAX     = 15.0     # m/s² Receiver acceleration limit while docking
 MARGIN    = 5.0      # m    range safety margin
 ALPHA     = 0.5      # rendezvous fraction along base -> target
 BASE_DIST = 60.0     # m
@@ -189,9 +188,6 @@ def run_simulation(refuel=True, soft_dock_ff=True):
                 acc = -KP * dr - KD * dv + aT
             else:
                 acc = -KP2 * dr - KD2 * dv + (aT if soft_dock_ff else 0.0)
-            n = np.linalg.norm(acc)
-            if n > A_MAX:
-                acc *= A_MAX / n
             vR = vR + acc * DT
         elif fsm_R == "deliver":
             if np.linalg.norm(pos_target - pR) > ARRIVE_R:
