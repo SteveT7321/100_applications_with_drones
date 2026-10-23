@@ -91,9 +91,9 @@ Check printed by the script: the t = 0 Apollonius circle has centre (−1.600, �
 |----------|----------------------|----------------------|
 | **Direct Pursuit** | captured **2.333 s** at (5.00, 5.00) | captured **1.854 s** at (3.96, 4.05) |
 | **Wall Herding (α = 0.5)** | captured **2.479 s** at (5.00, 5.00) | ❌ no capture in 60 s |
+| **Corner Trap** | captured **2.312 s** at (5.00, 5.00) | captured **1.854 s** at (3.99, 3.99) |
 
 Pursuer path length vs the card's evader: direct 7.00 m, wall herding 7.44 m, corner trap 6.94 m. Only the herding pursuer touches a wall (0.167 s).
-| **Corner Trap** | captured **2.312 s** at (5.00, 5.00) | captured **1.854 s** at (3.99, 3.99) |
 
 Wall herding vs the wall-aware evader, last 10 s: distance 0.37–6.68 m, path length pursuer 30.0 m and evader 45.0 m. Both fly at full speed the whole time ($3 \times 10$ and $4.5 \times 10$ m); this is a continuing chase, not a deadlock.
 
