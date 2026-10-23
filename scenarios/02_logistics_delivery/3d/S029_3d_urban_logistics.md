@@ -1,6 +1,6 @@
 # S029 3D Upgrade — Urban Logistics Scheduling
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S029 original](../S029_urban_logistics_scheduling.md)
 
 ---
@@ -41,7 +41,10 @@ budget, and time-window constraints.
 **Objective**: Minimise total weighted tardiness plus total 3D energy cost, re-solved with
 Clarke-Wright savings using the 3D energy metric.
 
-**Comparison**: 2D Clarke-Wright (flat z = 30 m) vs 3D altitude-aware Clarke-Wright.
+**Comparison**: 2D Clarke-Wright (flat z = 30 m) vs 3D altitude-aware Clarke-Wright. Both use savings, which cannot
+see time windows. A third strategy, a time-window-aware insertion heuristic with relocate local search, minimises
+$J = \alpha\,\text{TWT} + (1-\alpha)\,E_{3D}$ directly. Every drone sortie starts and ends at its depot, so the
+payload and energy limits apply per sortie.
 
 ---
 
