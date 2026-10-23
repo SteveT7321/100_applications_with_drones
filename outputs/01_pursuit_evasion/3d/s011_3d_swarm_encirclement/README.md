@@ -114,6 +114,6 @@ Sweep over N = 4, 6, 8, 10, 12 pursuers across 10 random evader seeds. Each dot 
 
 ## Related Scenarios
 
-- Original 2D version: [S011 2D](../../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
-- [S012 3D Relay Pursuit](../s012_3d_relay_pursuit/README.md)
-- [S005 3D Stealth Approach](../s005_3d_stealth_approach/README.md)
+- Original 2D version: [S011 Swarm Encirclement](../../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
+- [S012 3D Upgrade — Relay Pursuit](../s012_3d_relay_pursuit/README.md)
+- [S005 3D Upgrade — Stealth Approach](../s005_3d_stealth_approach/README.md)

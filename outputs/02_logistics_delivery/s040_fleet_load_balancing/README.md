@@ -183,6 +183,6 @@ Load-Index has the lowest mean service time on 19 of 20 streams (Round-Robin 1).
 
 ## Related Scenarios
 
-- Prerequisites: [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md), [S032](../../../scenarios/02_logistics_delivery/S032_charging_queue.md)
+- Prerequisites: [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md), [S032 Charging Queue](../../../scenarios/02_logistics_delivery/S032_charging_queue.md)
 - Follow-ups: Domain 3 (Environmental & SAR)
-- Algorithmic cross-reference: [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (online task insertion), [S035](../../../scenarios/02_logistics_delivery/S035_utm_simulation.md) (UTM coordination)
+- Algorithmic cross-reference: [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (online task insertion), [S035 UTM Simulation](../../../scenarios/02_logistics_delivery/S035_utm_simulation.md) (UTM coordination)

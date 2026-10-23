@@ -174,5 +174,5 @@ All sweep runs capture.
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Follow-up: [S008](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Follow-up: [S008 Stochastic Pursuit — Kalman Filter Tracking](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md)

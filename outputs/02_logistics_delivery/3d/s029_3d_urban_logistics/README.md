@@ -130,6 +130,6 @@ python src/02_logistics_delivery/3d/s029_3d_urban_logistics.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
-- Follow-ups: [S030](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md), [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md)
-- Parent scenario: [S029 (2D)](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Prerequisites: [S021 Point Delivery](../../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](../../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
+- Follow-ups: [S030 Multi-Depot Delivery](../../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md), [S031 Path De-confliction](../../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md)
+- Parent scenario: [S029 Urban Logistics Scheduling](../../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)

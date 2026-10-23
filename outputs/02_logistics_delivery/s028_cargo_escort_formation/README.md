@@ -160,6 +160,6 @@ Case C, top-down, 140 frames at 12 fps sampled evenly over the 19.79 s flight; s
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S026](../../../scenarios/02_logistics_delivery/S026_cooperative_heavy_lift.md) — multi-drone load
-- Follow-ups: [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md) — multi-drone routing, [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — multi-drone conflict avoidance
-- Domain 1 analogue: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md) — virtual-structure coordination pattern
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S026 Cooperative Heavy Lift](../../../scenarios/02_logistics_delivery/S026_cooperative_heavy_lift.md) — multi-drone load
+- Follow-ups: [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md) — multi-drone routing, [S031 Path De-confliction](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — multi-drone conflict avoidance
+- Domain 1 analogue: [S011 Swarm Encirclement](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md) — virtual-structure coordination pattern

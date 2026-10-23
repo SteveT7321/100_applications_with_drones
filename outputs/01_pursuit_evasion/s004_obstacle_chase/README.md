@@ -160,8 +160,8 @@ Dominant obstacle (largest single repulsion term) over time: #1 0.04–2.02 s, #
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S003](../../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Next: [S005](../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Next: [S005 Stealth Approach](../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
 
 ## References
 

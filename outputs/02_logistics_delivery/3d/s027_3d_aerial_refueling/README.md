@@ -47,4 +47,4 @@ Two drones operate in 3D space: a low-battery Receiver at 10 m altitude and a Ta
 
 ## Related Scenarios
 
-- Original: [S027 Aerial Refueling Relay](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md)
+- Original: [S027 Aerial Refueling Relay](../../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md)

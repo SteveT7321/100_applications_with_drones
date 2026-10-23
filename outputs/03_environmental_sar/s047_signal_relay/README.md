@@ -120,6 +120,6 @@ python src/03_environmental_sar/s047_signal_relay.py
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S046 3D Trilateration](../../../scenarios/03_environmental_sar/S046_trilateration.md)
-- Follow-ups: [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S051 Post-Disaster Comm Network](../../../scenarios/03_environmental_sar/S051_post_disaster_comm.md)
-- Algorithmic cross-reference: [S059 Underwater Target Sonar Marking](../../../scenarios/03_environmental_sar/S059_sonar_relay.md), [S049 Dynamic Zone Assignment](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md) (multi-agent positioning)
+- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S046 Multi-Drone 3D Trilateration](../../../scenarios/03_environmental_sar/S046_trilateration.md)
+- Follow-ups: [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S051 Post-Disaster Communication Network Restoration](../../../scenarios/03_environmental_sar/S051_post_disaster_comm.md)
+- Algorithmic cross-reference: [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](../../../scenarios/03_environmental_sar/S059_sonar_relay.md), [S049 Dynamic Zone Search](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md) (multi-agent positioning)

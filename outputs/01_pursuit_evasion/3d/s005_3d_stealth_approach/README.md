@@ -116,8 +116,8 @@ Bar chart comparing capture times for all four strategies. Vertical approaches (
 
 ## Related Scenarios
 
-- Original 2D version: [S005 2D](../../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
+- Original 2D version: [S005 Stealth Approach](../../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
 - [S001 Basic Intercept](../../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
 - [S003 Low-Altitude Tracking](../../../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md)
-- [S006 3D Energy Race](../s006_3d_energy_race/README.md)
-- [S007 3D Jamming Blind Pursuit](../s007_3d_jamming_blind_pursuit/README.md)
+- [S006 3D Upgrade — Energy Race](../s006_3d_energy_race/README.md)
+- [S007 3D Upgrade — Jamming & Blind Pursuit](../s007_3d_jamming_blind_pursuit/README.md)

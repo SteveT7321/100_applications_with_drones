@@ -177,5 +177,5 @@ Over all 35 elevations: optimal test 20/35 interceptable (−10° to +85°), PN 
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S005](../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
-- Follow-ups: [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md), [S018](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S005 Stealth Approach](../../../scenarios/01_pursuit_evasion/S005_stealth_approach.md)
+- Follow-ups: [S017 Swarm vs Swarm](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md), [S018 Multi-Target Intercept](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md)

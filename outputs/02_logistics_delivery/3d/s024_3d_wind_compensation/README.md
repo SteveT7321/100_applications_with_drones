@@ -134,6 +134,6 @@ python src/02_logistics_delivery/3d/s024_3d_wind_compensation.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022](../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
-- Base 2D version: [S024](../../scenarios/02_logistics_delivery/S024_wind_compensation.md)
-- Follow-ups: [S025](../../scenarios/02_logistics_delivery/S025_payload_cog_offset.md), [S034](../../scenarios/02_logistics_delivery/S034_weather_rerouting.md)
+- Prerequisites: [S021 Point Delivery](../../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](../../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
+- Base 2D version: [S024 Wind Compensation](../../../../scenarios/02_logistics_delivery/S024_wind_compensation.md)
+- Follow-ups: [S025 Payload CoG Offset](../../../../scenarios/02_logistics_delivery/S025_payload_cog_offset.md), [S034 Weather Rerouting](../../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md)

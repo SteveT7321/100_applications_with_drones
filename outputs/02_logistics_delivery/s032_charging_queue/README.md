@@ -164,6 +164,6 @@ Recorded single runs (seed 42, used for the traces, Gantt chart, queue plot and 
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- See also: [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (airborne battery replenishment analogue)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- See also: [S027 Aerial Refueling Relay](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (airborne battery replenishment analogue)

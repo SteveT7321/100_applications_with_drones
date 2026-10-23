@@ -163,6 +163,6 @@ All 9 AO sorties flown simultaneously, coloured by origin depot: 130 frames at 1
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md) — single-depot VRP
-- Follow-ups: [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — airspace deconfliction, [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) — online order insertion
-- Range-constrained: [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) — aerial refueling, [S036](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md) — last-mile relay
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md) — single-depot VRP
+- Follow-ups: [S031 Path De-confliction](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — airspace deconfliction, [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) — online order insertion
+- Range-constrained: [S027 Aerial Refueling Relay](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) — aerial refueling, [S036 Last-Mile Relay](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md) — last-mile relay

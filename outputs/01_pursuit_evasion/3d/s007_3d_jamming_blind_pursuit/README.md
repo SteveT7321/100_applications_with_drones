@@ -126,7 +126,7 @@ All combinations of 4 pursuit strategies × 2 evader tactics (horizontal escape 
 
 ## Related Scenarios
 
-- Original 2D version: [S007 2D](../../../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md)
-- [S005 3D Stealth Approach](../s005_3d_stealth_approach/README.md)
-- [S006 3D Energy Race](../s006_3d_energy_race/README.md)
-- [S011 3D Swarm Encirclement](../s011_3d_swarm_encirclement/README.md)
+- Original 2D version: [S007 Jamming & Blind Pursuit](../../../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md)
+- [S005 3D Upgrade — Stealth Approach](../s005_3d_stealth_approach/README.md)
+- [S006 3D Upgrade — Energy Race](../s006_3d_energy_race/README.md)
+- [S011 3D Upgrade — Swarm Encirclement](../s011_3d_swarm_encirclement/README.md)

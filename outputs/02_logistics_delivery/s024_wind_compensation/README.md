@@ -133,5 +133,5 @@ Top-down view of the seed-42 run (118 frames — every 2nd of the 235 samples of
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — baseline delivery
-- Follow-ups: [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) — dynamic rerouting around storm zones
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — baseline delivery
+- Follow-ups: [S034 Weather Rerouting](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) — dynamic rerouting around storm zones

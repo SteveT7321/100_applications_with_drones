@@ -158,6 +158,6 @@ Mean J over the 30 instances: CW 1880.6 → 2-opt 1880.6 → Or-opt 1814.7. The 
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S038](../../../scenarios/02_logistics_delivery/S038_disaster_relief_drop.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S030](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) (multi-depot VRP), [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (online insertion)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S038 Disaster Relief Drop](../../../scenarios/02_logistics_delivery/S038_disaster_relief_drop.md), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S030 Multi-Depot Delivery](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) (multi-depot VRP), [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (online insertion)

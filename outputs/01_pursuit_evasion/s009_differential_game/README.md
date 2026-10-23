@@ -182,5 +182,5 @@ Both players stay inside the arena in all four games.
 
 ## Related Scenarios
 
-- Prerequisites: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Follow-ups: [S010](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S020](../../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)
+- Prerequisites: [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Follow-ups: [S010 Asymmetric Speed — Bounded Arena Trapping](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S020 Pursuit-Evasion Game (RL Capstone)](../../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)

@@ -128,5 +128,5 @@ Runtime ≈ 20 s (GIF: every 3rd step, 138 frames).
 
 ## Related Scenarios
 
-- Prerequisites: [S006](../../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
-- Follow-ups: [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md), [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)
+- Prerequisites: [S006 Energy Race](../../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S011 Swarm Encirclement](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
+- Follow-ups: [S013 Pincer Movement](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md), [S017 Swarm vs Swarm](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)

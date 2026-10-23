@@ -161,5 +161,5 @@ Head-to-head on the same starts:
 
 ## Related Scenarios
 
-- Prerequisites: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
-- Follow-ups: [S018](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md), [S019](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)
+- Prerequisites: [S011 Swarm Encirclement](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013 Pincer Movement](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Follow-ups: [S018 Multi-Target Intercept](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md), [S019 Dynamic Target Reassignment](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)

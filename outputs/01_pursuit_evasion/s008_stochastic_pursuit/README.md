@@ -182,5 +182,5 @@ KF mean velocity error in run 0 (KF + lead run): 0.634 m/s.
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S007](../../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md)
-- Follow-ups: [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S019](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S007 Jamming & Blind Pursuit](../../../scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md)
+- Follow-ups: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S019 Dynamic Target Reassignment](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)

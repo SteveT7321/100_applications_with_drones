@@ -151,6 +151,6 @@ Cheapest insertion had a detour no larger than Nearest Drone in 18/20 instances,
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S030](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) (multi-depot routing), [S037](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S034 Weather Rerouting](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S030 Multi-Depot Delivery](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) (multi-depot routing), [S037 Reverse Logistics](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW)

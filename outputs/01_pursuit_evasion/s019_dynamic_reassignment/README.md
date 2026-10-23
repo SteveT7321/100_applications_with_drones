@@ -168,5 +168,5 @@ Assignment changes actually made (static and dynamic are identical in both scena
 
 ## Related Scenarios
 
-- Prerequisites: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)
-- Follow-ups: [S020](../../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)
+- Prerequisites: [S011 Swarm Encirclement](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S017 Swarm vs Swarm](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)
+- Follow-ups: [S020 Pursuit-Evasion Game (RL Capstone)](../../../scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md)

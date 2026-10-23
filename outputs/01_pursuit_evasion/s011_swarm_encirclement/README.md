@@ -149,5 +149,5 @@ Heading-aligned ring: 120.0° (t=0) → 226.2° (1 s) → 243.9° (2 s) → 242.
 
 ## Related Scenarios
 
-- Prerequisites: [S010](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md)
-- Follow-ups: [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Prerequisites: [S010 Asymmetric Speed — Bounded Arena Trapping](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md)
+- Follow-ups: [S012 Relay Pursuit](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md), [S013 Pincer Movement](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)

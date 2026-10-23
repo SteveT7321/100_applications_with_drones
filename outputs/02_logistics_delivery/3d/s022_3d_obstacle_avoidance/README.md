@@ -34,4 +34,4 @@
 
 ## Related Scenarios
 
-- Original: [S022](../../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)
+- Original: [S022 Obstacle Avoidance Delivery](../../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md)

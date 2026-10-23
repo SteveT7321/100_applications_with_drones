@@ -169,6 +169,6 @@ SA progress: drones start at random positions (red = disconnected), join the net
 
 ## Related Scenarios
 
-- Prerequisites: [S047 Signal Relay Enhancement](../../../scenarios/03_environmental_sar/S047_signal_relay.md), [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S049 Dynamic Zone Assignment](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
-- Follow-ups: [S052 Glacier Area Monitoring](../../../scenarios/03_environmental_sar/S052_glacier.md)
-- Cross-reference: [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md), [S015 Communication Relay Tracking](../../../scenarios/01_pursuit_evasion/S015_relay_tracking.md)
+- Prerequisites: [S047 Base Station Signal Relay](../../../scenarios/03_environmental_sar/S047_signal_relay.md), [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S049 Dynamic Zone Search](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
+- Follow-ups: [S052 Glacier Melt Area Measurement](../../../scenarios/03_environmental_sar/S052_glacier.md)
+- Cross-reference: [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md), [S015 Relay Tracking](../../../scenarios/01_pursuit_evasion/S015_relay_tracking.md)

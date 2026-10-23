@@ -116,7 +116,7 @@ None. The scenario card was previously an empty stub; it has been filled in from
 ## Related Scenarios
 
 - Prerequisites: none (entry-level scenario)
-- Next: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
+- Next: [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
 
 ## References
 

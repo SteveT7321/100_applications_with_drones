@@ -156,6 +156,6 @@ Top-down view of the refuelled mission: 138 frames at 12 fps, sampled more dense
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S024](../../../scenarios/02_logistics_delivery/S024_wind_compensation.md) — wind disturbance compensation
-- Follow-ups: [S028](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) — cargo escort formation, [S036](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md) — last-mile relay
-- Cross-domain: [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md) — relay handoff state machine pattern
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S024 Wind Compensation](../../../scenarios/02_logistics_delivery/S024_wind_compensation.md) — wind disturbance compensation
+- Follow-ups: [S028 Cargo Escort Formation](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) — cargo escort formation, [S036 Last-Mile Relay](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md) — last-mile relay
+- Cross-domain: [S012 Relay Pursuit](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md) — relay handoff state machine pattern

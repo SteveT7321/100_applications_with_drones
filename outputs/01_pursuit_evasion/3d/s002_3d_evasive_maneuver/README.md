@@ -72,5 +72,5 @@ The dive_and_run strategy provides a ~2.3× extension of survival time vs the 2D
 
 ## Related Scenarios
 
-- Original: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- 3D Card: [S002 3D](../../../scenarios/01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original: [S002 Evasive Maneuver](../../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- 3D Card: [S002 3D Upgrade — Evasive Maneuver](../../../../scenarios/01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

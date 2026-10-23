@@ -124,5 +124,5 @@ Top-down and 3D views of the flight (150 frames, sub-sampled from 429 trajectory
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — obstacle-free baseline
-- Follow-ups: [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — multi-drone conflict avoidance, [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) — dynamic replanning
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — obstacle-free baseline
+- Follow-ups: [S031 Path De-confliction](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — multi-drone conflict avoidance, [S034 Weather Rerouting](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) — dynamic replanning

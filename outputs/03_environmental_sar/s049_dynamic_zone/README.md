@@ -137,6 +137,6 @@ Jain fairness index remains approximately **0.999** across all strategies throug
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S042 Missing Person Search](../../../scenarios/03_environmental_sar/S042_missing_person.md), [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
-- Follow-ups: [S050 Swarm SLAM](../../../scenarios/03_environmental_sar/S050_slam.md), [S054 Minefield Detection](../../../scenarios/03_environmental_sar/S054_minefield.md)
-- Algorithmic cross-reference: [S018 Multi-Target Interception](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian assignment), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md) (Jain fairness, load redistribution)
+- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S042 Missing Person Localization](../../../scenarios/03_environmental_sar/S042_missing_person.md), [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Follow-ups: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../../../scenarios/03_environmental_sar/S050_slam.md), [S054 Minefield Detection](../../../scenarios/03_environmental_sar/S054_minefield.md)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian assignment), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md) (Jain fairness, load redistribution)

@@ -147,8 +147,8 @@ Reference: straight-line path to capture is 7.850 m (1.570 s at 5 m/s).
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Next: [S004](../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Next: [S004 Obstacle-Course Chase](../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
 
 ## References
 

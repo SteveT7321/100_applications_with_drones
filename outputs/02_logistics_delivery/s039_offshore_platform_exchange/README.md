@@ -187,6 +187,6 @@ Seed 0, per drone (extended instance): Greedy D1 53.29 / D2 54.77 / D3 56.10 / D
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S023](../../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md), [S036](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md)
-- Follow-ups: [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S023](../../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md) (moving platform landing), [S032](../../../scenarios/02_logistics_delivery/S032_charging_queue.md) (charging queue management)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S023 Moving Landing Pad](../../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md), [S036 Last-Mile Relay](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md)
+- Follow-ups: [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S023 Moving Landing Pad](../../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md) (moving platform landing), [S032 Charging Queue](../../../scenarios/02_logistics_delivery/S032_charging_queue.md) (charging queue management)

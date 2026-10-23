@@ -134,6 +134,6 @@ Time check: straight 120 / 5 + 3 × 3 = 24 + 9 = 33.00 s; bent 140.27 / 5 + 4 ×
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md)
-- Follow-ups: [S037](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md), [S039](../../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md)
-- Algorithmic cross-reference: [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (aerial relay), [S032](../../../scenarios/02_logistics_delivery/S032_charging_queue.md) (battery management)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S027 Aerial Refueling Relay](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md)
+- Follow-ups: [S037 Reverse Logistics](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md), [S039 Offshore Platform Exchange](../../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md)
+- Algorithmic cross-reference: [S027 Aerial Refueling Relay](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) (aerial relay), [S032 Charging Queue](../../../scenarios/02_logistics_delivery/S032_charging_queue.md) (battery management)

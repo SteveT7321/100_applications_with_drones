@@ -101,7 +101,7 @@ Pursuer altitudes (dotted lines = home tier targets) and evader altitude cycling
 
 ## Related Scenarios
 
-- Original 2D version: [S012 2D](../../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
-- [S011 3D Swarm Encirclement](../s011_3d_swarm_encirclement/README.md)
-- [S006 3D Energy Race](../s006_3d_energy_race/README.md)
-- [S005 3D Stealth Approach](../s005_3d_stealth_approach/README.md)
+- Original 2D version: [S012 Relay Pursuit](../../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
+- [S011 3D Upgrade — Swarm Encirclement](../s011_3d_swarm_encirclement/README.md)
+- [S006 3D Upgrade — Energy Race](../s006_3d_energy_race/README.md)
+- [S005 3D Upgrade — Stealth Approach](../s005_3d_stealth_approach/README.md)

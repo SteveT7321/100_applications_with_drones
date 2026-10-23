@@ -31,4 +31,4 @@ Cargo drone flies 3D waypoint mission with varying altitude. Four escort drones 
 
 ## Related Scenarios
 
-- Original: [S028](../../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md)
+- Original: [S028 Cargo Escort Formation](../../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md)

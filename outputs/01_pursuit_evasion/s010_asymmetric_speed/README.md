@@ -159,5 +159,5 @@ Wall herding vs the wall-aware evader, last 10 s: distance 0.37–6.68 m, path l
 
 ## Related Scenarios
 
-- Prerequisites: [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
-- Follow-ups: [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Prerequisites: [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
+- Follow-ups: [S011 Swarm Encirclement](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md), [S013 Pincer Movement](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)

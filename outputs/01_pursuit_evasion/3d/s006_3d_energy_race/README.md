@@ -114,7 +114,7 @@ Heatmap of whether capture succeeds across a grid of initial horizontal distance
 
 ## Related Scenarios
 
-- Original 2D version: [S006 2D](../../../../scenarios/01_pursuit_evasion/S006_energy_race.md)
-- [S005 3D Stealth Approach](../s005_3d_stealth_approach/README.md)
-- [S012 3D Relay Pursuit](../s012_3d_relay_pursuit/README.md)
+- Original 2D version: [S006 Energy Race](../../../../scenarios/01_pursuit_evasion/S006_energy_race.md)
+- [S005 3D Upgrade — Stealth Approach](../s005_3d_stealth_approach/README.md)
+- [S012 3D Upgrade — Relay Pursuit](../s012_3d_relay_pursuit/README.md)
 - [S001 Basic Intercept](../../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)

@@ -152,5 +152,5 @@ Feasibility band printed by the script:
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
-- Follow-ups: [S010](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S012](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
+- Follow-ups: [S010 Asymmetric Speed — Bounded Arena Trapping](../../../scenarios/01_pursuit_evasion/S010_asymmetric_speed.md), [S012 Relay Pursuit](../../../scenarios/01_pursuit_evasion/S012_relay_pursuit.md)

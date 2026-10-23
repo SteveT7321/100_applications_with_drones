@@ -67,5 +67,5 @@ The full 3D APF allows the pursuer to fly over the elevated Sphere 2 (centre at 
 
 ## Related Scenarios
 
-- Original: [S004](../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
-- 3D Card: [S004 3D](../../../scenarios/01_pursuit_evasion/3d/S004_3d_obstacle_chase.md)
+- Original: [S004 Obstacle-Course Chase](../../../../scenarios/01_pursuit_evasion/S004_obstacle_chase.md)
+- 3D Card: [S004 3D Upgrade — Obstacle-Course Chase](../../../../scenarios/01_pursuit_evasion/3d/S004_3d_obstacle_chase.md)

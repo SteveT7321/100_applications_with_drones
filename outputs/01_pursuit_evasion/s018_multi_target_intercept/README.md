@@ -125,5 +125,5 @@ The exact expectation of a uniformly random ordering is the mean over all 24 ord
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S011](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
-- Follow-ups: [S019](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S011 Swarm Encirclement](../../../scenarios/01_pursuit_evasion/S011_swarm_encirclement.md)
+- Follow-ups: [S019 Dynamic Target Reassignment](../../../scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md)

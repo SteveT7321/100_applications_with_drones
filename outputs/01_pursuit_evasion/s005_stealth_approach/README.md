@@ -147,5 +147,5 @@ Capture bearing (pursuer relative to the evader's heading at capture): stealth 1
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
-- Follow-ups: [S006](../../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S016](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md), [S002 Evasive Maneuver](../../../scenarios/01_pursuit_evasion/S002_evasive_maneuver.md)
+- Follow-ups: [S006 Energy Race](../../../scenarios/01_pursuit_evasion/S006_energy_race.md), [S016 Airspace Defense](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)

@@ -158,5 +158,5 @@ In this run the real evader is on track 1. The first classifier update at t = 0.
 
 ## Related Scenarios
 
-- Prerequisites: [S008](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md), [S013](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
-- Follow-ups: [S015](../../../scenarios/01_pursuit_evasion/S015_relay_tracking.md), [S017](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)
+- Prerequisites: [S008 Stochastic Pursuit — Kalman Filter Tracking](../../../scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md), [S013 Pincer Movement](../../../scenarios/01_pursuit_evasion/S013_pincer_movement.md)
+- Follow-ups: [S015 Relay Tracking](../../../scenarios/01_pursuit_evasion/S015_relay_tracking.md), [S017 Swarm vs Swarm](../../../scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md)

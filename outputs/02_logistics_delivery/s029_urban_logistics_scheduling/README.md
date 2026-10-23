@@ -161,6 +161,6 @@ TW insertion on the tight instance: 120 frames at 10 fps covering the 247 s of f
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic A-to-B delivery, [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) — RRT* path planning
-- Follow-ups: [S030](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) — multi-depot partition, [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — airspace deconfliction, [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) — online VRP
-- Algorithmic cross-reference: [S018](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) — TSP/Hungarian assignment
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic A-to-B delivery, [S022 Obstacle Avoidance Delivery](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) — RRT* path planning
+- Follow-ups: [S030 Multi-Depot Delivery](../../../scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) — multi-depot partition, [S031 Path De-confliction](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) — airspace deconfliction, [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) — online VRP
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) — TSP/Hungarian assignment

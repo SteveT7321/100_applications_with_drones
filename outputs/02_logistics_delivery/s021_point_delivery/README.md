@@ -112,6 +112,6 @@ Altitude holds at 2 m during cruise then drops linearly; speed is constant at 5 
 
 - Prerequisites: none (entry-level logistics scenario)
 - Follow-ups:
-  - [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) — RRT* obstacle avoidance
-  - [S023](../../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md) — Moving landing pad
-  - [S024](../../../scenarios/02_logistics_delivery/S024_wind_compensation.md) — Wind disturbance compensation
+  - [S022 Obstacle Avoidance Delivery](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) — RRT* obstacle avoidance
+  - [S023 Moving Landing Pad](../../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md) — Moving landing pad
+  - [S024 Wind Compensation](../../../scenarios/02_logistics_delivery/S024_wind_compensation.md) — Wind disturbance compensation

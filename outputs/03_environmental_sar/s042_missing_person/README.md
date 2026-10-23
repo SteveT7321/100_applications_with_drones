@@ -178,6 +178,6 @@ The seed-0 person is at (116.75, 126.75) m.
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
-- Follow-ups: [S043 Confined Space Exploration](../../../scenarios/03_environmental_sar/S043_confined_space.md), [S049 Dynamic Zone Assignment](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Follow-ups: [S043 Confined Space Exploration](../../../scenarios/03_environmental_sar/S043_confined_space.md), [S049 Dynamic Zone Search](../../../scenarios/03_environmental_sar/S049_dynamic_zone.md)
 - Algorithmic cross-reference: [S045 Chemical Plume Tracing](../../../scenarios/03_environmental_sar/S045_plume_tracing.md) (particle filter source estimation)

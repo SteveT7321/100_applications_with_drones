@@ -198,5 +198,5 @@ Mean angle between the pursuer's command and the LOS: RL 93.0–99.0°, PP 1.8�
 
 ## Related Scenarios
 
-- Prerequisites: [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S016](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
-- This is the capstone of Domain 1 — next domain: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md)
+- Prerequisites: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../../scenarios/01_pursuit_evasion/S009_differential_game.md), [S016 Airspace Defense](../../../scenarios/01_pursuit_evasion/S016_airspace_defense.md)
+- This is the capstone of Domain 1 — next domain: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md)

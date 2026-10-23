@@ -175,6 +175,6 @@ LP total delay was lower than FCFS in 2/10 sets, equal in 8/10 and higher in 0/1
 
 ## Related Scenarios
 
-- Prerequisites: [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S036](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S031](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) (CPA conflict detection), [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) (dynamic rerouting)
+- Prerequisites: [S031 Path De-confliction](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md), [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S036 Last-Mile Relay](../../../scenarios/02_logistics_delivery/S036_last_mile_relay.md), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S031 Path De-confliction](../../../scenarios/02_logistics_delivery/S031_path_deconfliction.md) (CPA conflict detection), [S034 Weather Rerouting](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md) (dynamic rerouting)

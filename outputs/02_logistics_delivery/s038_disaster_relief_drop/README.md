@@ -174,6 +174,6 @@ ILS is best on 9/10 instances: it beats Greedy on 10/10 and Regret on 9/10. Regr
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S034](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md)
-- Follow-ups: [S039](../../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md), [S040](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
-- Algorithmic cross-reference: [S037](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW), [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (dynamic insertion)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S034 Weather Rerouting](../../../scenarios/02_logistics_delivery/S034_weather_rerouting.md)
+- Follow-ups: [S039 Offshore Platform Exchange](../../../scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md), [S040 Fleet Load Balancing](../../../scenarios/02_logistics_delivery/S040_fleet_load_balancing.md)
+- Algorithmic cross-reference: [S037 Reverse Logistics](../../../scenarios/02_logistics_delivery/S037_reverse_logistics.md) (VRPTW), [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md) (dynamic insertion)

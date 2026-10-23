@@ -185,5 +185,5 @@ QP (left) and pseudo-inverse (right), 4 N gust: 125 frames sampled evenly from t
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S025](../../../scenarios/02_logistics_delivery/S025_payload_cog_offset.md) — payload attitude compensation
-- Follow-ups: [S027](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) — aerial refueling, [S028](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) — escort formation
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md) — basic delivery, [S025 Payload CoG Offset](../../../scenarios/02_logistics_delivery/S025_payload_cog_offset.md) — payload attitude compensation
+- Follow-ups: [S027 Aerial Refueling Relay](../../../scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) — aerial refueling, [S028 Cargo Escort Formation](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) — escort formation

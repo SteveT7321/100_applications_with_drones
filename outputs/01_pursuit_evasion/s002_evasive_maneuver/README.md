@@ -131,8 +131,8 @@ Analytical check (printed by the script, $r_0 = 4$ m, $r_{capture} = 0.15$ m):
 
 ## Related Scenarios
 
-- Prerequisites: [S001](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
-- Next: [S003](../../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md), [S009](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
+- Prerequisites: [S001 Basic Intercept](../../../scenarios/01_pursuit_evasion/S001_basic_intercept.md)
+- Next: [S003 Low-Altitude Tracking](../../../scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../../scenarios/01_pursuit_evasion/S009_differential_game.md)
 
 ## References
 

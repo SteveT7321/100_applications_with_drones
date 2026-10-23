@@ -154,6 +154,6 @@ All 8 drones reached their goals in every run. Lowest commanded speed under stra
 
 ## Related Scenarios
 
-- Prerequisites: [S021](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md), [S029](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
-- Follow-ups: [S032](../../../scenarios/02_logistics_delivery/S032_charging_queue.md), [S033](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md)
-- Algorithmic cross-reference: [S028](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) (formation separation), [S022](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (obstacle avoidance)
+- Prerequisites: [S021 Point Delivery](../../../scenarios/02_logistics_delivery/S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md), [S029 Urban Logistics Scheduling](../../../scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md)
+- Follow-ups: [S032 Charging Queue](../../../scenarios/02_logistics_delivery/S032_charging_queue.md), [S033 Online Order Insertion](../../../scenarios/02_logistics_delivery/S033_online_order_insertion.md)
+- Algorithmic cross-reference: [S028 Cargo Escort Formation](../../../scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) (formation separation), [S022 Obstacle Avoidance Delivery](../../../scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (obstacle avoidance)

@@ -198,6 +198,6 @@ In 10 of the 20 trials the start point lies in the plume (mean C ≥ C_thresh). 
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S042 Missing Person Search](../../../scenarios/03_environmental_sar/S042_missing_person.md)
-- Follow-ups: [S055 Oil Spill Tracking](../../../scenarios/03_environmental_sar/S055_oil_spill.md), [S056 Radiation Hotspot Detection](../../../scenarios/03_environmental_sar/S056_radiation.md)
-- Algorithmic cross-reference: [S048 Lawnmower Coverage](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S046 3D Trilateration](../../../scenarios/03_environmental_sar/S046_trilateration.md)
+- Prerequisites: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md), [S042 Missing Person Localization](../../../scenarios/03_environmental_sar/S042_missing_person.md)
+- Follow-ups: [S055 Coastline Oil Spill Tracking](../../../scenarios/03_environmental_sar/S055_oil_spill.md), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../../../scenarios/03_environmental_sar/S056_radiation.md)
+- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md), [S046 Multi-Drone 3D Trilateration](../../../scenarios/03_environmental_sar/S046_trilateration.md)
