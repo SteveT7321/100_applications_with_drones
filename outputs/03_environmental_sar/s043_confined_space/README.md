@@ -127,11 +127,13 @@ All designed doorways are 2.0–2.5 m wide, far above $g_{min} = 0.35$ m, so the
 
 ### Extended horizon 1200 s (supplementary)
 
-| Strategy | Coverage 600 / 1200 s | Time to 50 / 80 / 90 % | Frontiers exhausted | Blacklisted goals | Unmapped reachable cells |
-|----------|----------------------|------------------------|---------------------|-------------------|--------------------------|
-| Random Walk | 21.0 / 26.1 % | — / — / — | — | 0 | 2276 |
-| Frontier-Nearest | 84.5 / 90.6 % | 352.1 / 574.8 / 694.1 s | 1032.6 s | 24 | 290 |
-| Frontier + Bug2 | 61.7 / 88.8 % | 410.4 / 1057.1 / — s | never | 28 | 344 |
+| Strategy | Coverage 600 / 1200 s | Time to 50 / 80 / 90 % | Frontiers exhausted | Blocked (rejected) moves | Blacklisted goals | Unmapped reachable cells |
+|----------|----------------------|------------------------|---------------------|--------------------------|-------------------|--------------------------|
+| Random Walk | 21.0 / 26.1 % | — / — / — | — | 0 | 0 | 2276 |
+| Frontier-Nearest | 84.5 / 90.6 % | 352.1 / 574.8 / 694.1 s | 1032.6 s | 12 | 24 | 290 |
+| Frontier + Bug2 | 61.7 / 88.8 % | 410.4 / 1057.1 / — s | never | 0 | 28 | 344 |
+
+In the 1200 s Frontier-Nearest run the safety check rejected 12 moves (the next step along the planned path would have violated the map clearance or touched a true wall). Each rejection blacklists that goal and triggers a replan, so the drone never touched a wall; the 300 s runs had no rejected moves.
 
 **Key Findings**:
 - **Exploration now works for both frontier strategies**: they fly the full 150 m in 300 s, pass through several doorways, and keep mapping new space. Frontier-Nearest maps 42.1 % of the reachable space in 300 s and Frontier + Bug2 33.0 %. The 300 s horizon itself is the main limit: at 0.5 m/s the drone flies only 150 m, and a 4 m wide lidar swath over 150 m sweeps at most about 600 m² of the 770 m² reachable area, even without overlap or detours.
