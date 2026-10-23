@@ -1,6 +1,6 @@
 # S050 3D Upgrade — Swarm SLAM
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S050 original](../S050_slam.md)
 
 ---
@@ -123,9 +123,13 @@ Partial derivatives of $\rho$ with respect to drone pose position and landmark p
 standard 3D range gradients. Partial derivatives of $\epsilon$ require the chain rule on the
 $\arcsin$ term; letting $\rho_{xy} = \sqrt{\delta_x^2 + \delta_y^2}$:
 
-$$\frac{\partial \epsilon}{\partial \delta_z} = \frac{1}{\rho_{xy}}, \qquad
+$$\frac{\partial \epsilon}{\partial \delta_z} = \frac{\rho_{xy}}{\rho_k^2}, \qquad
 \frac{\partial \epsilon}{\partial \delta_x} = -\frac{\delta_x \delta_z}{\rho_{xy} \rho_k^2}, \qquad
 \frac{\partial \epsilon}{\partial \delta_y} = -\frac{\delta_y \delta_z}{\rho_{xy} \rho_k^2}$$
+
+(Corrected: an earlier version had $\partial\epsilon/\partial\delta_z = 1/\rho_{xy}$, which is wrong by the
+factor $\rho_{xy}^2/\rho_k^2$; from $\epsilon = \arcsin(\delta_z/\rho_k)$,
+$\partial\epsilon/\partial\delta_z = (\rho_k/\rho_{xy})(1/\rho_k - \delta_z^2/\rho_k^3) = \rho_{xy}/\rho_k^2$.)
 
 The measurement noise covariance is
 $\mathbf{R} = \mathrm{diag}(\sigma_\rho^2, \sigma_\phi^2, \sigma_\epsilon^2)$.
@@ -303,7 +307,9 @@ horizontal uncertainty when sensor elevation angle noise $\sigma_\epsilon$ domin
   25 m) updated at 5 fps; unexplored voxels in grey, explored in white, drone positions as coloured
   spheres, communication links as lines.
 - **Coverage vs time**: $M_{found}(t)/M_{true}$ for 3D swarm, isolated 3D, and 2D-constrained
-  baseline; the 2D baseline plateaus early as it cannot detect elevated landmarks.
+  baseline; the 2D baseline plateaus early as it cannot detect elevated landmarks. (Holds only for a
+  planar sensor; with the 30 m spherical sensor a drone at 5 m sees landmarks up to 30 m high and the
+  flat baseline does not plateau — see the implementation README.)
 - **3D RMS and vertical RMS vs time**: two curves per strategy; vertical RMS expected to converge
   more slowly than horizontal RMS due to elevation angle noise amplification at long range.
 - **SE(3) merge event log**: timeline of pairwise merge events; each event annotated with number of
