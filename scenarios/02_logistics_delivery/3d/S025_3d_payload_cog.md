@@ -20,11 +20,15 @@ In full 3D the offset becomes a 3-vector
 $\Delta\mathbf{r} = [\Delta r_x,\, \Delta r_y,\, \Delta r_z]^T$, where
 $\Delta r_z \ne 0$ occurs whenever the payload is suspended below or above the
 motor plane (e.g. a dense battery slung under the belly, or a tall mast mounted
-above the frame). A non-zero $\Delta r_z$ couples into all three rotational
-axes simultaneously: it shifts the effective thrust line away from the body
-z-axis, producing thrust-induced roll, pitch, and — once the drone tilts — a
-yaw moment that grows with tilt angle. The 2D PID cannot decouple these cross
-terms and diverges for any meaningful $\Delta r_z$.
+above the frame). This card originally expected a non-zero $\Delta r_z$ to
+couple into all three rotational axes, adding a yaw moment that grows with tilt
+angle and making the 2D PID diverge. **The 3D implementation found neither
+effect** (corrected 2026-10-24). $\Delta r_z$ does not appear in the yaw
+component of the offset torque and reaches yaw only through the small products
+of inertia. Peak yaw changes by a factor of 1.00–1.01 between $\Delta r_z = 0$
+and $-0.06$ m in free flight, and no controller diverges down to
+$\Delta r_z = -0.15$ m. In the card's payload-weight model, $\Delta r_z$ acts on
+roll and pitch as a pendulum stiffness.
 
 This upgrade adds:
 
@@ -39,7 +43,9 @@ This upgrade adds:
   waypoints at different altitudes, so attitude disturbances act in a changing
   gravity-projection frame throughout the mission
 - **Yaw drift analysis**: quantify yaw error accumulation (absent in S025) and
-  show that a yaw-integrator term is required when $\Delta r_z \ne 0$
+  test whether a yaw-integrator term is required when $\Delta r_z \ne 0$
+  (result: it is not; the yaw integrator raises peak yaw and leaves the final
+  yaw within 0.01° of the run without it)
 
 ---
 
@@ -123,9 +129,13 @@ $$\tau_{dist,y} = +0.80 \times 9.81 \times 0.12 = +0.942 \text{ N·m}$$
 
 ### 6-DOF Rigid Body Dynamics
 
-**Translational equations of motion** (world frame, small-angle thrust projection):
+**Translational equations of motion** (world frame, thrust along the body z-axis $R\,\hat{\mathbf{e}}_z$, shown at $\psi = 0$):
 
-$$m\,\ddot{\mathbf{p}} = T\,\begin{bmatrix}-\sin\theta \\ \sin\phi\cos\theta \\ \cos\phi\cos\theta\end{bmatrix} - mg\,\hat{\mathbf{z}}$$
+$$m\,\ddot{\mathbf{p}} = T\,\begin{bmatrix}\cos\phi\sin\theta \\ -\sin\phi \\ \cos\phi\cos\theta\end{bmatrix} - mg\,\hat{\mathbf{z}}$$
+
+(Corrected 2026-10-24: the vector was printed as $(-\sin\theta,\ \sin\phi\cos\theta,\ \cos\phi\cos\theta)$.
+That is $R^T\hat{\mathbf{e}}_z$, the world z-axis seen in the body frame, not the thrust
+direction in the world frame.)
 
 **Rotational equations of motion** (body frame, Euler's equation):
 
@@ -203,12 +213,20 @@ A PD position controller generates desired roll, pitch, and thrust commands:
 
 $$\mathbf{a}_{cmd}^{xy} = K_{p,pos}(\mathbf{p}_{ref}^{xy} - \mathbf{p}^{xy}) + K_{d,pos}(-\mathbf{v}^{xy})$$
 
-$$\theta_{ref} = -\frac{m\,a_{cmd,x}}{T}, \qquad \phi_{ref} = +\frac{m\,a_{cmd,y}}{T}$$
+$$\theta_{ref} = +\frac{m\,a_{cmd,x}}{T}, \qquad \phi_{ref} = -\frac{m\,a_{cmd,y}}{T}$$
+
+(Corrected 2026-10-24: the signs were printed as $-$ / $+$, consistent with the earlier
+wrong thrust vector. With $R\,\hat{\mathbf{e}}_z$ at $\psi = 0$, positive pitch accelerates
+the drone toward $+x$ and positive roll toward $-y$. The implementation uses the exact form
+$\theta_{ref} = \operatorname{atan2}(b_x, b_z)$, $\phi_{ref} = \arcsin(-b_y/\lVert\mathbf{b}\rVert)$ with
+$\mathbf{b} = \mathbf{a}_{cmd} + g\hat{\mathbf{z}}$.)
 
 $$\psi_{ref} = 0 \quad \text{(fixed heading)}$$
 
-These are handed to the attitude PID. The 3D PID integrator on yaw prevents the
-state-dependent yaw moment from accumulating into a heading drift.
+These are handed to the attitude PID. The card expected the yaw integrator to
+stop a state-dependent yaw moment from building up into heading drift. The
+implementation found no such $\Delta r_z$-driven moment (see the correction
+above), and the yaw integrator raises peak yaw instead of lowering it.
 
 ---
 
@@ -217,7 +235,8 @@ state-dependent yaw moment from accumulating into a heading drift.
 - **3D CoG offset vector** $\Delta\mathbf{r} = (+0.12, +0.08, -0.06)$ m including
   vertical component; 2D original uses $\Delta r_z = 0$
 - **State-dependent yaw disturbance**: $\tau_{dist,z}$ is proportional to
-  current tilt angle, coupling roll/pitch errors into yaw — not present in S025
+  current tilt angle (corrected: it does not depend on $\Delta r_z$, whose only
+  path into yaw is through the products of inertia; the effect is negligible)
 - **Full Euler-angle kinematics matrix**: replaces the S025 small-angle
   approximation $\dot{\boldsymbol{\eta}} \approx \boldsymbol{\omega}$; required
   for correct yaw propagation off-axis
@@ -264,15 +283,18 @@ state-dependent yaw moment from accumulating into a heading drift.
   orange, PID: green) with 3D waypoints shown as gold stars; reveals lateral and
   vertical drift under no-comp and feedforward
 - **Attitude time series** ($\phi$, $\theta$, $\psi$ vs time): three subplots,
-  one per Euler angle; yaw panel shows yaw drift growing proportionally to tilt
-  magnitude — the key observable absent in S025
+  one per Euler angle; the yaw panel was expected to show yaw drift growing with
+  tilt (result: peak yaw is at most 2.11° in every run, and in free flight it
+  changes by a factor of only 1.00–1.01 between $\Delta r_z = 0$ and $-0.06$ m)
 - **3D attitude error magnitude** $\Theta_{err}(t)$: scalar time series for all
   three controllers; dashed 3° success threshold line
-- **Yaw error comparison bar chart**: final yaw deviation for each controller;
-  feedforward has nonzero yaw error (cannot compensate state-dependent term),
-  full PID drives it to near zero
+- **Yaw error comparison bar chart**: peak and final yaw deviation for each
+  controller (result: contrary to the original expectation, feedforward ends
+  with zero yaw error, and the PID's yaw integrator does not lower it)
 - **Thrust saturation events**: stem plot showing timesteps where $T > T_{sat}$;
-  expected to appear during the climb leg when tilt disturbance peaks
+  expected during the climb leg (result: only in the first 0.44 s of the climb
+  to WP1, caused by the vertical position command and identical with and
+  without $\Delta r_z$ in the free-flight model)
 - **Waypoints reached table**: printout showing which controller completes all 5
   waypoints and the time to completion
 
