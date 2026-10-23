@@ -4,7 +4,7 @@ S042 3D Upgrade — Missing Person Search
 The S042 search (Gaussian + diffusion prior, sigma0 = 19.7 m, shared Bayesian
 belief map, binary hit/miss observation after a 1 s dwell, Pd = 0.90,
 Pfa = 0.02, 5 m/s kinematic legs, 1800 s cutoff) is moved onto a synthetic
-mountain DEM (4 sin*cos octaves, 1.25 - 38.75 m).  Every observation now uses
+mountain DEM (4 sin*cos octaves on a 20 m base; this DEM spans 5.48 - 33.31 m).  Every observation now uses
 the 3D sensor geometry of the card:
   * a downward thermal cone of half-angle 11.3 deg: a ground cell is inside the
     cone when its nadir angle psi = atan(horizontal distance / (z_d - z_dem))
@@ -20,7 +20,7 @@ Strategies (same person per trial, same sensor stream, same starts):
   1. greedy      terrain-aware greedy: highest-belief cell with slope <= 1,
                  terrain-following at 10 m AGL                       (card 1)
   2. lm_flat     boustrophedon of the S042 +/-2 sigma0 box at a fixed altitude
-                 that clears every ridge (48.75 m MSL)                (card 2)
+                 that clears every ridge (max DEM + 10 m = 43.31 m MSL)                (card 2)
   3. valley      greedy on the valley-biased prior P0 exp(-z/15 m)   (card 3)
   4. lm_terrain  the same boustrophedon, terrain-following at 10 m AGL (control:
                  separates "lawnmower vs greedy" from "flat vs terrain-following")
@@ -670,7 +670,7 @@ def save_animation(res, out_dir):
 
     ani = FuncAnimation(fig, update, frames=len(frames), interval=100, blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer=PillowWriter(fps=10), dpi=70)
+    ani.save(path, writer=PillowWriter(fps=10), dpi=60)
     plt.close()
     print(f'Saved: {path}  ({len(frames)} frames)')
 

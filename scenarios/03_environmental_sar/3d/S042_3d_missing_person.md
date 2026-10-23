@@ -230,7 +230,7 @@ where $\mathcal{G}_{safe} = \{(x,y) : \|\nabla z_{dem}(x,y)\| \leq 1.0,\; (x,y) 
 | Brownian diffusion coefficient $D$ | 0.02 m²/s |
 | Time since LKP $\Delta t$ | 7200 s (2 hours) |
 | Prior spread $\sigma_0$ | $\approx$ 19.7 m |
-| DEM elevation range | 0 – 40 m |
+| DEM elevation range | within 0 – 40 m (20 m base ± 18.75 m octave sum, clipped to [0, 40] m; the seed-7 DEM spans 5.48 – 33.31 m) |
 | DEM Perlin octaves $K$ | 4 |
 | DEM base wavelength $L_1$ | 80 m |
 | Valley affinity temperature $\tau_{valley}$ | 15 m |
