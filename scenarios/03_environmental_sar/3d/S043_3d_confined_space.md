@@ -1,6 +1,6 @@
 # S043 3D Upgrade — Confined Space Exploration
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S043 original](../S043_confined_space.md)
 
 ---
@@ -26,7 +26,7 @@ at $\Delta = 0.5$ m resolution. Each floor is approximately 2.5 m high (5 voxel 
 four nominal floors (F0–F3), connected by stairwells of width $\geq g_{min} = 0.4$ m and height
 clearance $\geq h_{min} = 0.6$ m. Rubble piles block portions of each floor and may partially
 obstruct vertical passages. The drone carries a 3D lidar with hemispherical sensing radius
-$r_s = 2.0$ m, casting $N_b = 128$ beams distributed uniformly over the upper hemisphere plus
+$r_s = 2.0$ m, casting $N_b = 128$ beams distributed uniformly over the full sphere (see below) plus
 a horizontal ring, each with Gaussian range noise $w \sim \mathcal{N}(0, \sigma_r^2)$.
 
 The drone body is modelled as a cylinder of radius $r_d = 0.15$ m and height $h_d = 0.20$ m.
@@ -42,6 +42,9 @@ $g_{min}$ in both horizontal directions and $h_{min}$ in the vertical direction.
 **Objective**: Maximise the fraction of **3D reachable free voxels** mapped within mission horizon
 $T_{max} = 600$ s, while never entering a voxel whose occupancy probability exceeds $p_{occ} = 0.65$
 and never squeezing through a passage narrower than $g_{min}$ or lower than $h_{min}$.
+(Note: at $v_d = 0.5$ m/s the 600 s horizon allows at most 300 m of flight, which is not enough
+to map even the ground floor of this building (the 2D S043 needed about 700 s for one floor).
+The implementation reports the card horizon and a 3600 s extended horizon.)
 
 **Exploration strategies** (three compared):
 1. **2D-slice baseline** — frontier search restricted to the current floor slice; no floor
@@ -81,7 +84,9 @@ A voxel is **occupied** if $p(v) > 0.65$, **free** if $p(v) < 0.35$, **unknown**
 
 ### 3D Lidar Beam Directions
 
-Beams are distributed over a hemisphere ($\theta \in [0°, 180°]$, $\phi \in [0°, 360°)$) using
+Beams are distributed over the full sphere ($\theta \in [0°, 180°]$, $\phi \in [0°, 360°)$; an earlier
+version of this card said "hemisphere", but $\theta$ up to 180° is the full sphere, and downward beams
+are needed to map the stairwell openings below the drone) using
 the Fibonacci lattice method for near-uniform angular spacing, plus a dense horizontal ring
 ($\theta = 90°$, $N_{ring} = 36$ beams). For beam $b$ with direction
 $\hat{\mathbf{d}}_b = (\sin\theta_b \cos\phi_b,\; \sin\theta_b \sin\phi_b,\; \cos\theta_b)$,
