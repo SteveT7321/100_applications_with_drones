@@ -31,6 +31,7 @@ P_CRUISE  = 150.0   # W  — motor power during level cruise
 P_HOVER   = 200.0   # W  — elevated motor power during heading reversals
 T_TURN    = 4.0     # s  — time to execute one 180° heading reversal
 DT        = 0.5     # s  — position update step (footprint is swept between steps)
+FINE_RES  = 0.2     # m  — cell size of the fine-grid cross-check of the overlap metrics
 ANIM_MAX_FRAMES = 150  # GIF frame budget
 
 # Three comparison configurations: (label, overlap_ratio rho = 1 - d / (2 r_s), strip_d_m)
@@ -150,6 +151,20 @@ def compute_metrics(n_strips, strip_d, area_h, passes, v_cruise=V_CRUISE,
     return L, E, cov, mean_ov, mean_ov_scanned, multi
 
 
+def fine_grid_metrics(waypoints, area_w, area_h, r_sensor, res=FINE_RES):
+    """Coverage / distinct-pass metrics on a finer res x res grid.  Each straight
+    leg is swept as one capsule (exact for straight-line flight), so this is
+    cheap even for a 0.2 m grid.  Returns (coverage %, mean passes, % cells >= 2)."""
+    xs = np.arange(res / 2, area_h, res)
+    ys = np.arange(res / 2, area_w, res)
+    cx, cy = np.meshgrid(xs, ys)
+    passes = np.zeros(cx.shape, dtype=np.int16)
+    for a, b in zip(waypoints[:-1], waypoints[1:]):
+        passes += _capsule_mask(cx, cy, np.array(a, float), np.array(b, float), r_sensor)
+    return (100.0 * np.mean(passes > 0), float(np.mean(passes)),
+            100.0 * np.mean(passes >= 2))
+
+
 # ── Simulation ─────────────────────────────────────────────────────────────────
 
 def run_simulation():
@@ -177,6 +192,7 @@ def run_simulation():
             "mean_overlap":   mean_ov,
             "mean_overlap_scanned": mean_ov_sc,
             "multi_pass_pct": multi,
+            "fine": fine_grid_metrics(waypoints, AREA_W, AREA_H, R_SENSOR),
             "flight_time_s":  L / V_CRUISE + T_TURN * (n_strips - 1),
         })
         short_label = label.replace("\n", " ")
@@ -185,6 +201,9 @@ def run_simulation():
         print(f"  Coverage: {cov:.2f}%  |  uncovered cells: {int(np.sum(grid == 0))}")
         print(f"  Mean passes per cell (all cells): {mean_ov:.3f}  |  "
               f"per scanned cell: {mean_ov_sc:.3f}  |  cells seen by >=2 passes: {multi:.2f}%")
+        fc, fm, fmu = results[-1]["fine"]
+        print(f"  {FINE_RES} m grid check: coverage {fc:.2f}%  |  mean passes {fm:.3f}  |  "
+              f"cells seen by >=2 passes: {fmu:.2f}%")
         print(f"  Max passes on one cell: {int(grid.max())}  |  "
               f"distance to reach final coverage: {dist_log[np.argmax(cov_log >= cov_log[-1] - 1e-9)]:.0f} m")
         print()

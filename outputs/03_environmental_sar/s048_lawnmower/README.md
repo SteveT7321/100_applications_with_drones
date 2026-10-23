@@ -62,7 +62,7 @@ Each straight leg between two waypoints (a scan strip or a turn leg) is one *pas
 | Cruise power $P_{cruise}$ | 150 W | |
 | Hover/turn power $P_{hover}$ | 200 W | |
 | Turn time per reversal $t_{turn}$ | 4 s | energy model only |
-| Grid cell size | 1 × 1 m | 40,000 cells |
+| Grid cell size | 1 × 1 m | 40,000 cells; overlap also cross-checked on a 0.2 × 0.2 m grid (1,000,000 cells) |
 | Position update step $\Delta t$ | 0.5 s (5 m) | footprint swept between updates |
 | Under-lap strip spacing $d$ | 12 m | $\rho = -20\%$, 2 m gap |
 | Optimal strip spacing $d^*$ | 10 m | $\rho = 0$, tangent |
@@ -99,11 +99,11 @@ Runtime ≈ 21 s. Deterministic (no random sources).
 
 ## Results
 
-| Configuration | Strips | Path length | Energy | Coverage | Uncovered cells | Mean passes (all cells) | Mean passes (scanned cells) | Cells with ≥ 2 passes |
-|---------------|--------|-------------|--------|----------|-----------------|-----------------|-----------------|---------|
-| Under-lap ($d=12$ m) | 17 | 3,592 m | **57.08 kJ** | **83.90%** | 6,440 | 0.875 | 1.043 | 3.57% |
-| Optimal ($d=10$ m) | 20 | 4,190 m | **66.65 kJ** | **100.00%** | 0 | 1.043 | 1.043 | 4.28% |
-| Over-lap ($d=7$ m, 30%) | 29 | 5,996 m | **95.54 kJ** | **100.00%** | 0 | 1.611 | 1.611 | 58.11% |
+| Configuration | Strips | Path length | Energy | Coverage | Uncovered cells | Mean passes (all cells) | Mean passes (scanned cells) | Cells with ≥ 2 passes | 0.2 m grid: coverage / mean passes / ≥ 2 passes |
+|---------------|--------|-------------|--------|----------|-----------------|-----------------|-----------------|---------|---------|
+| Under-lap ($d=12$ m) | 17 | 3,592 m | **57.08 kJ** | **83.90%** | 6,440 | 0.875 | 1.043 | 3.57% | 83.90% / 0.875 / 3.56% |
+| Optimal ($d=10$ m) | 20 | 4,190 m | **66.65 kJ** | **100.00%** | 0 | 1.043 | 1.043 | 4.28% | 100.00% / 1.043 / 4.25% |
+| Over-lap ($d=7$ m, 30%) | 29 | 5,996 m | **95.54 kJ** | **100.00%** | 0 | 1.611 | 1.611 | 58.11% | 100.00% / 1.472 / 44.85% |
 
 Energy check ($E = 150 \cdot L/10 + 50 \cdot 4 \cdot (N-1)$): under-lap 53,880 + 3,200 = 57,080 J; optimal 62,850 + 3,800 = 66,650 J; over-lap 89,940 + 5,600 = 95,540 J.
 
@@ -111,7 +111,7 @@ Energy check ($E = 150 \cdot L/10 + 50 \cdot 4 \cdot (N-1)$): under-lap 53,880 +
 
 **Under-lap** saves 9.57 kJ (14.4 %, 66.65 − 57.08 = 9.57 kJ) but leaves 6,440 cells (16.10 %) unscanned, visible as white lines in the coverage map: 16 two-metre gaps between strip footprints (2 cell rows each) plus the bottom 1 m row (the first strip centre at y = 6 m covers only y ≥ 1 m). Check: 16 strips × 10 rows + 7 rows of the last strip (centre y = 198 m) = 167 of 200 rows = 33,400 cells; the turn legs close 16 gaps × 2 rows × 5 columns = 160 more cells near the edges, giving 33,560 / 40,000 = 83.90 % (uncovered: 33 rows × 200 − 160 = 6,440 cells).
 
-**Over-lap** also covers 100 % but needs 43.3 % more energy than optimal (95.54 / 66.65 = 1.433) and sees 58.11 % of the cells two or more times (max 4 passes). Its mean of 1.611 passes is above the continuum value $w/d = 10/7 = 1.43$ because the strip centres (y = 3.5 + 7i) lie on cell-centre rows, so the inclusive $\le r_s$ test gives each strip 11 rows instead of 10: (29 × 11 − 7 truncated rows at the two edges) / 200 = 312 / 200 = 1.56, plus ≈ 0.05 from the 28 turn legs. It reaches 100 % at 5,991 m, just before the end of its last strip.
+**Over-lap** also covers 100 % but needs 43.3 % more energy than optimal (95.54 / 66.65 = 1.433). Its overlap figures depend on the grid: on the 1 m grid it sees 58.11 % of the cells two or more times (max 4 passes) with a mean of 1.611 passes, but on the 0.2 m cross-check grid only 44.85 % of the cells are seen twice or more, with a mean of 1.472 passes. The 1 m values are inflated because the strip centres (y = 3.5 + 7i) lie exactly on cell-centre rows, so the inclusive $\le r_s$ test gives each strip 11 rows instead of 10: (29 × 11 − 7 truncated rows at the two edges) / 200 = 312 / 200 = 1.56, plus ≈ 0.05 from the 28 turn legs. The 0.2 m value is close to the continuum value $w/d = 10/7 = 1.43$ plus the turn legs, so 1.472 / 44.85 % are the figures to quote; the under-lap and optimal values are the same on both grids (within 0.03 percentage points). It reaches 100 % at 5,991 m, just before the end of its last strip.
 
 **Coverage Maps** — distinct passes per cell (white = 0, light blue = 1, dark = 2–3+), flight path in orange, representative footprint circles (gold dashed); white stripes = under-lap gaps, dark bands at the left/right edges = turn legs:
 
@@ -129,7 +129,7 @@ Energy check ($E = 150 \cdot L/10 + 50 \cdot 4 \cdot (N-1)$): under-lap 53,880 +
 
 ![Coverage vs Distance](./coverage_vs_distance.png)
 
-**Mean Overlap** — mean distinct passes per cell (over all 40,000 cells, so the under-lap value 0.875 includes its unscanned cells):
+**Mean Overlap** — mean distinct passes per cell (over all 40,000 cells, so the under-lap value 0.875 includes its unscanned cells; 1 m grid — on the 0.2 m grid the over-lap bar would be 1.472):
 
 ![Mean Overlap](./mean_overlap.png)
 
