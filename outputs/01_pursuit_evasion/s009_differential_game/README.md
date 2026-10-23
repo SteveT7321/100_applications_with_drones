@@ -99,7 +99,23 @@ Runtime ≈ 30 s. The script has no random elements.
 
 Angle between the numerical $\nabla V$ and the exact direction $\mathbf{s}/\|\mathbf{s}\|$ (2-D, $\|\mathbf{s}\| > 1$ m): mean 2.57°, max 7.14°.
 
-**Asymmetric game played from the numerical $\nabla V$** (both players): captured at **2.938 s**. Analytic optimum: $(6 - 0.15)/(5 - 3) = 2.925$ s. The simulation needs $\lceil 2.925 \times 48 \rceil = 141$ steps of 1/48 s, i.e. 2.9375 s. The evader ends at x = 11.81 m: this open-space game ignores the arena.
+Grid error near the axes and diagonals (2-D; N = 50 is even, so no node lies exactly on an axis):
+
+| Region (\|s\| > 1 m) | Mean \|V − V_analytic\| | Max |
+|---|---|---|
+| Grid rows nearest the axes (\|x\| or \|y\| = 0.2041 m) | 0.0395 s | 0.0412 s |
+| Within 5° of an axis (216 nodes) | 0.0435 s | — |
+| Within 5° of a diagonal (396 nodes) | 0.1880 s | — |
+
+**Asymmetric game played from the numerical $\nabla V$** (both players), from three evader starts 6 m from the pursuer at (−3, 0):
+
+| Evader start (angle from the x-axis) | Captured | Evader's largest sideways deviation from its initial escape line | Net heading error | Evader end point |
+|---|---|---|---|---|
+| 0° — (3.000, 0.000), on a grid axis | **2.938 s** | 0.000 m | 0.00° | (11.81, 0.00) |
+| 22.5° — (2.543, 2.296) | **2.938 s** | 0.318 m | 0.31° | (10.64, 5.70) |
+| 45° — (1.243, 4.243), on the grid diagonal | **2.938 s** | 0.000 m | 0.00° | (7.47, 10.47) |
+
+Analytic optimum: $(6 - 0.15)/(5 - 3) = 2.925$ s. The simulation needs $\lceil 2.925 \times 48 \rceil = 141$ steps of 1/48 s, i.e. 2.9375 s. The evader ends outside the ±5 m box in every case: this open-space game ignores the arena.
 
 ### Part B — Equal-speed Lion & Man in the ±5 m arena
 
@@ -113,14 +129,15 @@ Both players stay inside the arena in all four games.
 **Key Findings**:
 
 - **The corrected HJI scheme converges to the analytic value.** With the sign fixed, the iteration grows $V$ outward from the capture set and stops changing once $(v_P - v_E)|\nabla V| = 1$ holds everywhere: 119 iterations in 2-D, 145 in 3-D. The front reaches the 2-D corner after about $6.996 / \tau = 6.996 / 0.0918 \approx 76$ iterations ($\tau = 0.9 \times 0.4082 / (2 \times 2) = 0.0918$ s), matching the knee of the convergence curve.
-- **The remaining error is the first-order grid error.** It is zero along the grid axes and largest along the diagonals: a 4-neighbour upwind stencil measures diagonal distances as too long. The largest 2-D error is 0.2206 s, which is 3.2% of the 6.996 s corner value. The coarser 3-D grid (Δx = 0.69 m) has a larger error (0.5561 s).
+- **The remaining error is the first-order grid error.** It is small near the grid axes (mean 0.0395 s, max 0.0412 s on the grid rows nearest the axes; mean 0.0435 s within 5° of an axis) and largest along the diagonals (mean 0.1880 s within 5° of a diagonal). A 4-neighbour upwind stencil measures diagonal distances as too long. The largest 2-D error is 0.2206 s, which is 3.2% of the 6.996 s corner value. The coarser 3-D grid (Δx = 0.69 m) has a larger error (0.5561 s).
 - **Equal speeds in open space: no finite capture time.** For $v_P = v_E$ the $|\nabla V|$ term vanishes, and every iteration adds exactly τ = 0.05 s to $V$ (max|ΔV| = 0.0500 s at every one of 200 iterations). That is the numerical form of $V = \infty$: a Man who runs straight away is never caught.
-- **The value function now drives both players.** Steering by the interpolated numerical $\nabla V$ gives a straight-line chase whose separation follows $|s_0| - (v_P - v_E)\,t$ exactly, and capture at 2.938 s (the analytic optimum plus step rounding). The old version's evader was suboptimal (captured at 2.38 s).
+- **The value function now drives both players.** Steering by the interpolated numerical $\nabla V$ gives capture at 2.938 s (the analytic optimum plus step rounding) from all three starts. The old version's evader was suboptimal (captured at 2.38 s). On the axis (0°) and on the diagonal (45°) the numerical gradient points exactly along $\mathbf{s}$ by symmetry, so the paths are straight. From the 22.5° start, where the gradient direction is off by a few degrees (max 7.14° over the grid), the common path bows sideways by up to 0.318 m and ends 0.31° off the straight line.
+- **Capture time is insensitive to this gradient error, so this test is weak.** Both players use the same direction $\hat{u}$, so the separation shrinks at $(v_P - v_E)\cos\varphi$, where φ is the angle between $\hat{u}$ and $\mathbf{s}$. With φ ≤ 7.14°, $\cos\varphi \ge 0.992$: less than 1% slower, which disappears in the 1/48 s step. A test where only one player uses the numerical gradient and the other the exact direction would expose the error more directly; it is not done here.
 - **In the bounded arena with a 0.15 m capture radius, the Lion wins against every Man strategy tried.** This contradicts the card's expectation that the Man can keep his distance indefinitely. That expectation holds in open space (above) or in the continuous game with zero capture radius (Besicovitch's spiral). With walls and a positive capture radius, the Lion can always catch him.
 - **The Lion's strategy matters a lot against the circling Man.** The radius strategy (stay between centre and Man) captures him in 2.271 s. Pure pursuit, the open-space HJI control, needs 88.208 s: it falls into the Man's circle behind him, and the gap shrinks only slowly (log-scale distance plot).
 - **The Man's open-space HJI control (flee) fails in a box.** Running straight away takes him into the right wall, along it, and into the (5, 5) corner, where he is caught (2.542 s against pure pursuit, 2.688 s against the radius strategy). The radius Lion is 0.15 s slower there because it first moves along the centre→Man segment instead of straight at him.
 
-**Value Function** — left: numerical V(s) for $v_P = 5$, $v_E = 3$ (2-D); centre: error against the analytic value (zero along the axes, largest on the diagonals); right: V against distance for every 2-D and 3-D grid node, with the analytic line:
+**Value Function** — left: numerical V(s) for $v_P = 5$, $v_E = 3$ (2-D); centre: error against the analytic value (small near the axes, largest on the diagonals); right: V against distance for every 2-D and 3-D grid node, with the analytic line:
 
 ![Value Functions](value_functions.png)
 
@@ -128,7 +145,7 @@ Both players stay inside the arena in all four games.
 
 ![Convergence](convergence.png)
 
-**Asymmetric Game from ∇V** (open space) — both players fly straight along ∇V; the separation follows $6 - 2t$ (dashed) to capture:
+**Asymmetric Game from ∇V** (open space, starts at 0°, 22.5° and 45°) — on-axis and diagonal starts give straight paths; the 22.5° path bows slightly; all three separations follow $6 - 2t$ (green dashed) to capture at 2.938 s:
 
 ![Optimal Trajectories](optimal_trajectories.png)
 

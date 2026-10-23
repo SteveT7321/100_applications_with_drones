@@ -15,7 +15,8 @@ Part A — HJI in relative coordinates s = p_E - p_P (no walls)
   - v_P = v_E: |∇V| drops out, V grows by τ every iteration → V = ∞
     (no finite capture time in open space).
   The asymmetric game (v_P = 5, v_E = 3) is then played with both players
-  steering by the interpolated numerical ∇V.
+  steering by the interpolated numerical ∇V, from an on-axis start and two
+  off-axis starts (OFF_AXIS_DEG) where the grid gradient is least accurate.
 
 Part B — Equal-speed Lion & Man in the bounded arena [-5, 5]² (v = 4 m/s,
   capture radius 0.15 m).  The relative-state HJI ignores walls; the full
@@ -56,6 +57,7 @@ CAPTURE_R  = 0.15    # m
 DT_SIM     = 1 / 48
 MAX_TIME_OPEN  = 20.0   # s
 MAX_TIME_ARENA = 150.0  # s
+OFF_AXIS_DEG = [22.5, 45.0]   # deg — extra open-space starts off the grid axes
 
 V_P_ASYM, V_E_ASYM = 5.0, 3.0
 V_EQUAL = 4.0
@@ -222,15 +224,17 @@ MAN_LABEL = {'circle': 'Man: circle (4.5 m)', 'flee': 'Man: flee (HJI open-space
 
 # ── Simulation ───────────────────────────────────────────────
 
-def run_simulation(mode, lion='radius', man='circle', grad_interp=None):
+def run_simulation(mode, lion='radius', man='circle', grad_interp=None, init_evader=None):
     """
     mode = 'open'  : asymmetric speeds (V_P_ASYM, V_E_ASYM), no walls, both
                      players steer by the interpolated numerical ∇V(s).
     mode = 'arena' : equal speeds V_EQUAL in [-ARENA, ARENA]², strategies
                      LIONS[lion] vs MEN[man].
+    init_evader: evader start (default INIT_EVADER).
     Returns dict(p, e, d, t, captured, cap_time).
     """
-    L, M = INIT_PURSUER.astype(float).copy(), INIT_EVADER.astype(float).copy()
+    M0 = INIT_EVADER if init_evader is None else init_evader
+    L, M = INIT_PURSUER.astype(float).copy(), np.asarray(M0, dtype=float).copy()
     p_list, e_list = [L.copy()], [M.copy()]
     if mode == 'open':
         ix, iy = grad_interp
@@ -338,27 +342,31 @@ def plot_convergence(sol2, sol3, sol_eq, out_dir):
     print(f'Saved: {path}')
 
 
-def plot_optimal_trajectories(open_res, out_dir):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 4.8))
-    p, e = open_res['p'], open_res['e']
-    ax1.plot(p[:, 0], p[:, 1], 'r-', linewidth=2, label='Pursuer (5 m/s)')
-    ax1.plot(e[:, 0], e[:, 1], color='royalblue', linewidth=2, label='Evader (3 m/s)')
-    ax1.scatter(*p[0], color='red', s=60); ax1.scatter(*e[0], color='blue', s=60)
-    if open_res['captured']:
-        ax1.scatter(*p[-1], color='black', marker='X', s=100,
-                    label=f'Captured {open_res["cap_time"]:.3f} s')
+def plot_optimal_trajectories(open_runs, out_dir):
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
+    styles = ['-', '--', ':']
+    for (lab, r), ls in zip(open_runs, styles):
+        p, e = r['p'], r['e']
+        ax1.plot(p[:, 0], p[:, 1], color='red', linestyle=ls, linewidth=2,
+                 label=f'Pursuer, {lab}')
+        ax1.plot(e[:, 0], e[:, 1], color='royalblue', linestyle=ls, linewidth=2,
+                 label=f'Evader, {lab}')
+        ax1.scatter(*p[0], color='red', s=50); ax1.scatter(*e[0], color='blue', s=50)
+        if r['captured']:
+            ax1.scatter(*p[-1], color='black', marker='X', s=80)
+        ax2.plot(r['t'], r['d'], color='black', linestyle=ls, linewidth=2,
+                 label=f'{lab}: captured {r["cap_time"]:.3f} s')
     ax1.add_patch(plt.Rectangle((-ARENA, -ARENA), 2 * ARENA, 2 * ARENA, fill=False,
                                 edgecolor='grey', linestyle='--',
                                 label='±5 m arena (not enforced here)'))
     ax1.set_aspect('equal'); ax1.grid(True, alpha=0.3)
     ax1.set_xlabel('X (m)'); ax1.set_ylabel('Y (m)')
-    ax1.set_title('Open space, both players steer by numerical ∇V', fontsize=10)
-    ax1.legend(fontsize=8, loc='lower left')
+    ax1.set_title('Open space, both players steer by numerical ∇V (X = capture)', fontsize=10)
+    ax1.legend(fontsize=7, loc='upper left')
 
-    ax2.plot(open_res['t'], open_res['d'], 'k-', linewidth=2, label='Simulated |s|')
-    t_line = open_res['t']
+    t_line = open_runs[0][1]['t']
     ax2.plot(t_line, np.linalg.norm(INIT_EVADER - INIT_PURSUER)
-             - (V_P_ASYM - V_E_ASYM) * t_line, 'g--',
+             - (V_P_ASYM - V_E_ASYM) * t_line, 'g--', alpha=0.7,
              label='|s₀| − (v_P − v_E) t')
     ax2.axhline(CAPTURE_R, color='red', linestyle=':', label='capture radius')
     ax2.set_xlabel('Time (s)'); ax2.set_ylabel('Distance (m)')
@@ -505,12 +513,40 @@ if __name__ == '__main__':
     print(f'  angle between numerical ∇V and s/|s| (|s| > 1 m): mean {ang.mean():.2f}°, '
           f'max {ang.max():.2f}°')
 
-    open_res = run_simulation('open', grad_interp=gradient_interpolators(g2, V2))
+    # error near the axes (N even: no node lies exactly on an axis)
+    err2 = np.abs(V2 - analytic_value(R2, V_P_ASYM, V_E_ASYM))
+    near = np.min(np.abs(g2))
+    row = (np.isclose(np.abs(X), near) | np.isclose(np.abs(Y), near)) & (R2 > 1.0)
+    axis_ang = np.degrees(np.arctan2(np.minimum(np.abs(X), np.abs(Y)),
+                                     np.maximum(np.abs(X), np.abs(Y))))
+    within5 = (axis_ang <= 5.0) & (R2 > 1.0)
+    diag = (np.abs(axis_ang - 45.0) <= 5.0) & (R2 > 1.0)
+    print(f'  V error on the grid rows nearest the axes (|x| or |y| = {near:.4f} m, '
+          f'|s| > 1 m): max {err2[row].max():.4f} s, mean {err2[row].mean():.4f} s')
+    print(f'  V error within 5° of an axis: mean {err2[within5].mean():.4f} s '
+          f'({within5.sum()} nodes); within 5° of a diagonal: mean '
+          f'{err2[diag].mean():.4f} s ({diag.sum()} nodes)')
+
+    grads = gradient_interpolators(g2, V2)
     s0 = np.linalg.norm(INIT_EVADER - INIT_PURSUER)
-    print(f'  open-space game from ∇V: captured={open_res["captured"]} '
-          f'@ {open_res["cap_time"]:.3f} s (analytic (|s0| - r_c)/(v_P - v_E) = '
-          f'{(s0 - CAPTURE_R) / (V_P_ASYM - V_E_ASYM):.3f} s); '
-          f'evader final x = {open_res["e"][-1, 0]:.2f} m')
+    t_an = (s0 - CAPTURE_R) / (V_P_ASYM - V_E_ASYM)
+    open_runs = []
+    for deg in [0.0] + OFF_AXIS_DEG:
+        th = np.radians(deg)
+        e0 = INIT_PURSUER + s0 * np.array([np.cos(th), np.sin(th)])
+        r = run_simulation('open', grad_interp=grads, init_evader=e0)
+        open_runs.append((f'start at {deg:g}°', r))
+        u0 = (e0 - INIT_PURSUER) / s0
+        de = r['e'] - e0
+        perp = np.abs(u0[0] * de[:, 1] - u0[1] * de[:, 0])   # distance from the start line
+        head = np.degrees(np.arccos(np.clip(
+            (r['e'][-1] - e0) @ u0 / np.linalg.norm(r['e'][-1] - e0), -1, 1)))
+        print(f'  open-space game from ∇V, evader start at {deg:g}° ({e0[0]:.3f}, {e0[1]:.3f}): '
+              f'captured={r["captured"]} @ {r["cap_time"]:.3f} s (analytic {t_an:.3f} s) | '
+              f'evader max deviation from the straight escape line {perp.max():.3f} m, '
+              f'net heading error {head:.2f}° | evader final ({r["e"][-1, 0]:.2f}, '
+              f'{r["e"][-1, 1]:.2f})')
+    open_res = open_runs[0][1]
 
     print(f'\nPart B — equal-speed Lion & Man in the ±{ARENA:.0f} m arena '
           f'(v = {V_EQUAL} m/s, r_c = {CAPTURE_R} m, max {MAX_TIME_ARENA:.0f} s)')
@@ -533,6 +569,6 @@ if __name__ == '__main__':
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_value_functions(sol2, sol3, out_dir)
     plot_convergence(sol2, sol3, sol_eq, out_dir)
-    plot_optimal_trajectories(open_res, out_dir)
+    plot_optimal_trajectories(open_runs, out_dir)
     plot_arena(arena_res, out_dir)
     save_animation(open_res, arena_res, out_dir)
