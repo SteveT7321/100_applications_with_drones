@@ -7,7 +7,7 @@
 
 ## What Changes in 3D
 
-The original S022 uses RRT* in a 2D plane with infinite-height cylindrical obstacles. In this 3D upgrade, obstacles are finite-height cylinders — the drone can fly **over** short obstacles or **around** tall ones. The planner operates in full (x, y, z) space.
+The original S022 already samples (x, y, z), but it restricts flight to z ∈ [1, 5] m and puts start and goal at the same 2 m altitude, so in practice it can only route around obstacles. In this 3D upgrade the goal is elevated, and the obstacles are finite-height cylinders that the drone can fly **over** (short ones) or must fly **around** (ones taller than the flight ceiling). The planner operates in full (x, y, z) space.
 
 ---
 
@@ -21,7 +21,7 @@ The original S022 uses RRT* in a 2D plane with infinite-height cylindrical obsta
 
 ## Mathematical Model
 
-3D RRT* with Euclidean cost. Collision check tests both xy-distance to cylinder axis and z-height against cylinder top. Steering limited to `step_size = 0.5 m`.
+3D RRT* with Euclidean cost. The collision check tests both the xy-distance to the cylinder axis and the z-height against the cylinder top; both are inflated by the drone radius. Steering is limited to `step_size = 0.5 m`. After each rewire, the new cost is propagated to the whole subtree of the rewired node.
 
 ---
 
