@@ -219,7 +219,7 @@ flight time instead of $L_{horiz}/v$ for the cruise term.)
 | Simulation timestep $\Delta t$ | 0.5 s |
 | Altitude bounds (AGL) | 2 – 20 m |
 | Under-lap strip spacing $d$ | 12 m |
-| Optimal strip spacing $d^*$ | $2 r_s / \cos\phi_{ct}$ (adaptive) |
+| Optimal strip spacing $d_{slope}$ | $2 r_s \cos\phi_{ct}$ (adaptive, maths section; the earlier $2 r_s / \cos\phi_{ct}$ is evaluated as a separate variant) |
 | Over-lap strip spacing $d$ | 7 m |
 
 ---
