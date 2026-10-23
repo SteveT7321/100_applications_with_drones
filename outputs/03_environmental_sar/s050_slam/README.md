@@ -70,6 +70,8 @@ Per true landmark: *found* if an estimate lies within 1.0 m (so coverage ≤ 100
 | Common landmark correspondence radius | 2.0 m | |
 | Alignment search window / max rotation | 20 m / 0.5 rad | |
 | Transferred-landmark covariance inflation | 10 | |
+| Alternative merge policies (evaluated on the same flight log) | `dist_certainty`, `dist_agree` | see Results; figures use the card policy |
+| `dist_agree` frame-agreement limit | 1.0 m RMS shift of the visitor map | |
 | Host "already sensed" radius | 22 m (25 m − 3 m margin) | |
 | Merge period while in contact | 30 s | plus every new contact |
 | Landmark localisation success radius | 1.0 m | secondary radius 5.0 m |
@@ -90,7 +92,7 @@ Per true landmark: *found* if an estimate lies within 1.0 m (so coverage ≤ 100
 - **Start poses** are three different known poses (card: common origin), which defines the common map frame.
 - **Monte Carlo**: 10 seeds instead of 20 (runtime); the coverage figure shows min/max bands.
 - **Figures**: landmark ellipses are drawn at 3σ (1σ is invisible at the map scale); drones are drawn as upright triangles, not heading-oriented.
-- **Card expectation not met**: the card expects the distributed swarm to approach the centralised upper bound. It does not (see Results).
+- **Card expectation not met**: the card expects the distributed swarm to approach the centralised upper bound. It does not (see Results). Two attempted fixes of the underlying problem — a host cannot tell whether its own frame or the visitor's has drifted — are run alongside on the same flight log and reported, but neither works: `dist_certainty` (the drone with the larger position covariance adopts the other's frame, rigid transform of its whole state, then imports) and `dist_agree` (both import, but a merge is rejected if the alignment would move the visitor map by more than 1 m RMS).
 
 ---
 
@@ -105,30 +107,49 @@ conda activate drones
 python src/03_environmental_sar/s050_slam.py
 ```
 
-Runtime ≈ 2.5–3 min (10 runs × 3 estimators + figures; the old version took ≈ 390 s). Seeded: landmarks `default_rng(42)`, noise `default_rng(seed)`; two consecutive runs print identical output.
+Runtime ≈ 3.7 min (10 runs × 3 estimators + 2 alternative merge policies + figures; the old version took ≈ 390 s). Seeded: landmarks `default_rng(42)`, noise `default_rng(seed)`; two consecutive runs print identical output.
 
 ---
 
 ## Results
 
-### Monte Carlo (10 noise seeds, final values at t = 600 s: mean [min, max])
+### Monte Carlo (10 noise seeds, final values at t = 600 s: mean [min, max], median)
 
-| Metric | Isolated | Distributed | Centralised |
+| Metric | Isolated | Distributed (card policy) | Centralised |
 |---|---|---|---|
-| Coverage, landmarks within 1 m (mean per-drone map) | 21.6 % [2.2, 66.7] | 15.8 % [5.6, 35.6] | **93.0 %** [30.0, 100.0] |
+| Coverage, landmarks within 1 m (mean per-drone map) | 21.6 % [2.2, 66.7], median 16.1 | 15.8 % [5.6, 35.6], median 13.9 | **93.0 %** [30.0, 100.0], median 100.0 |
 | Coverage within 5 m | 70.7 % [28.9, 98.9] | 70.0 % [48.9, 100.0] | **96.3 %** [63.3, 100.0] |
 | Landmark RMS (found landmarks) | 0.634 m [0.210, 0.725] | 0.639 m [0.457, 0.733] | **0.170 m** [0.056, 0.605] |
 | Team union (found by any drone) | 46.3 % [6.7, 100.0] | 44.0 % [16.7, 96.7] | **93.0 %** [30.0, 100.0] |
-| Pose RMSE | 6.417 m [1.757, 16.270] | 5.861 m [2.574, 8.985] | **2.537 m** [0.093, 23.161] |
+| Pose RMSE | 6.417 m [1.757, 16.270], median 4.182 | 5.861 m [2.574, 8.985], median 6.117 | **2.537 m** [0.093, 23.161], median 0.222 |
 | Duplicate estimates (sum over all runs and maps) | 93 | 78 | 51 |
 | Largest map (estimates) | 38 | 39 | 81 |
 
-Dead reckoning (odometry only): pose RMSE 21.214 m [11.595, 32.023]. Executed merges: 11.2 per run on average. Smallest covariance eigenvalue in any filter over all runs: 1.494e-04 (all covariances stayed positive definite).
+Per seed (seeds 0–9, final values):
 
-- **Drift is real and large**: the heading noise is a random walk of 0.004 rad per step, i.e. $0.004\sqrt{3000} = 0.22$ rad after 600 s, so odometry alone ends ≈ 21 m off on average. Every SLAM variant reduces this substantially, by 3–8×: 21.214 / 6.417 = 3.3 isolated, 21.214 / 5.861 = 3.6 distributed, 21.214 / 2.537 = 8.4 centralised.
-- **Centralised is clearly best** (93.0 % coverage, 0.170 m RMS): all three drones observe the same landmarks in one joint filter, so loop closures by one drone correct the others immediately. It is not infallible — in one of the 10 runs the joint filter diverged (that run is the worst on all three measures: coverage 30.0 %, pose RMSE 23.161 m, 81 estimates), which is why its minimum and the duplicate count are poor.
-- **Distributed merging does not approach the centralised bound.** It slightly improves and stabilises the pose estimate (mean 5.861 vs 6.417 m, worst case 8.985 vs 16.270 m) and keeps the maps at about the true size (≤ 39 estimates). However, its 1 m coverage is *lower* than isolated (15.8 % vs 21.6 %). The transferred landmarks are expressed in the receiving drone's drifted frame and carry a 10× inflated covariance, so they are complete (70.0 % within 5 m) but rarely within 1 m of the truth. The 1 m criterion measures absolute accuracy, and merging two drifted maps cannot remove their common drift — only a joint estimate (centralised) does.
-- **Variance between runs is large** for isolated drones (1 m coverage 2.2 %–66.7 %) because a drone either closes loops on its own landmarks or drifts away; merging narrows the spread (5.6 %–35.6 %).
+| Seed | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | median |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 m coverage % — isolated | 66.7 | 28.9 | 3.3 | 18.9 | 47.8 | 6.7 | 8.9 | 2.2 | 16.7 | 15.6 | 16.11 |
+| 1 m coverage % — distributed | 10.0 | 17.8 | 6.7 | 35.6 | 32.2 | 13.3 | 15.6 | 6.7 | 5.6 | 14.4 | 13.89 |
+| 1 m coverage % — centralised | 100.0 | 100.0 | 100.0 | 100.0 | 30.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.00 |
+| pose RMSE m — isolated | 1.76 | 3.35 | 3.57 | 4.45 | 16.27 | 7.64 | 2.06 | 9.23 | 3.92 | 11.92 | 4.18 |
+| pose RMSE m — distributed | 2.76 | 5.98 | 2.57 | 6.26 | 7.01 | 8.98 | 5.40 | 7.14 | 5.24 | 7.26 | 6.12 |
+| pose RMSE m — centralised | 0.19 | 0.27 | 0.09 | 0.23 | 23.16 | 0.21 | 0.32 | 0.58 | 0.14 | 0.18 | 0.22 |
+
+Distributed vs isolated, per seed: 1 m coverage better in 5/10 and worse in 5/10; pose RMSE better in 4/10 and worse in 6/10. Centralised vs isolated: better in 9/10 on both. Dead reckoning (odometry only): pose RMSE 21.214 m [11.595, 32.023]. Executed merges: 11.2 per run on average. Smallest covariance eigenvalue in any filter over all runs: 1.494e-04 (all covariances stayed positive definite).
+
+- **Drift is real and large**: the heading noise is a random walk of 0.004 rad per step, i.e. $0.004\sqrt{3000} = 0.22$ rad after 600 s, so odometry alone ends ≈ 21 m off on average. Every SLAM variant reduces this substantially in the mean, by 3–8×: 21.214 / 6.417 = 3.3 isolated, 21.214 / 5.861 = 3.6 distributed, 21.214 / 2.537 = 8.4 centralised.
+- **Centralised is clearly best** (93.0 % mean, 100.0 % median coverage; better than isolated in 9 of 10 seeds): all three drones observe the same landmarks in one joint filter, so loop closures by one drone correct the others immediately. It is not infallible — in one of the 10 runs (seed 4) the joint filter diverged (coverage 30.0 %, pose RMSE 23.161 m, 81 estimates), which is why its minimum and the duplicate count are poor.
+- **Distributed merging (card policy) gives no consistent benefit over isolated drones** and does not approach the centralised bound. Per seed it is better on 1 m coverage in 5 runs and worse in 5 (median 13.89 % vs 16.11 %); the lower mean (15.8 % vs 21.6 %) comes mostly from seed 0 (10.0 % vs 66.7 %). Pose: better in 4 seeds, worse in 6 (median 6.12 vs 4.18 m); its lower mean (5.861 vs 6.417 m) and narrower range (max 8.985 vs 16.270 m) come from removing the isolated outliers (seeds 4 and 9). It keeps the maps at about the true size (≤ 39 estimates) and complete (70.0 % within 5 m).
+- **Mechanism (seed 0, printed by the script): a merge drags an accurate host into the visitor's drift.** Drone 1's distributed pose error equals its isolated one until the D1–D3 merge at 166.6 s (1.30 m in both). That merge transfers 7 landmarks from D3, whose isolated position error at that moment is 3.76 m. Afterwards D1's distributed error is 2.42 m at 200 s, 2.76 m at 400 s and 2.87 m at 600 s, while its isolated error falls to 0.61 m at 400 s and 0.23 m at 600 s. D1's final distributed map is offset by (−2.00, +1.71) m from the truth (2.63 m), against (+0.07, −0.15) m for its isolated map. The alignment correctly expresses D3's landmarks in D1's frame near the common landmarks, but D3's map is distorted by its drift, and D1 then localises on those transferred landmarks. Neither drone can judge whose frame is more accurate.
+- **Attempted fixes do not help** (same flight logs, same tuning):
+
+  | Policy | 1 m coverage: mean / median | vs isolated, per seed (better / worse / tie) | Pose RMSE: mean / median | Merges per run |
+  |---|---|---|---|---|
+  | `dist_certainty`: less certain drone (larger position covariance) adopts the other's frame | 14.7 % / 2.78 % | 3 / 7 / 0 | 5.571 / 6.037 m | 11.2 |
+  | `dist_agree`: reject merges whose alignment shifts the visitor map > 1 m RMS | 19.9 % / 16.11 % | 0 / 1 / 9 | 6.416 / 4.182 m | 0.4 |
+
+  `dist_certainty` fails because the drifted filters are overconfident: the position covariance does not identify the drone with the accurate frame (in seed 0 it reaches 1.1 % coverage, 3.376 m pose RMSE). `dist_agree` removes the harm but also almost all merges (0.4 per run), so it simply reproduces the isolated result (9 of 10 seeds identical). Fixing this properly needs information the card does not provide, e.g. relative range/bearing measurements between drones at rendezvous (Extension 6) or a joint (centralised or pose-graph) estimate.
 
 ### Showcase run (seed 0)
 
@@ -141,13 +162,13 @@ Dead reckoning (odometry only): pose RMSE 21.214 m [11.595, 32.023]. Executed me
 | Landmark RMS | 0.210 m | 0.594 m | 0.056 m |
 | Pose RMSE final / time-mean | 1.757 / 2.005 m | 2.758 / 2.525 m | 0.187 / 0.422 m |
 
-Dead reckoning: 14.814 m final, 17.337 m time-mean. Merges: 18 attempts, 14 executed (4 skipped at first contacts with < 3 common landmarks, 0 rejected as inconsistent), 17 landmarks transferred in total. In this run two isolated drones mapped all 30 landmarks within 1 m while drone 3 found none; its map is nearly complete within 5 m (3 × 98.9 % − 2 × 100 % = 96.7 %) but offset. The distributed maps of drone 1 contain all 30 landmarks with no duplicates, but the whole map is shifted by roughly 3 m relative to the truth (visible in the trajectory and heatmap figures), so only 2 are within 1 m.
+Dead reckoning: 14.814 m final, 17.337 m time-mean. Merges: 18 attempts, 14 executed (4 skipped at first contacts with < 3 common landmarks, 0 rejected as inconsistent), 17 landmarks transferred in total. In this run two isolated drones mapped all 30 landmarks within 1 m while drone 3 found none; its map is nearly complete within 5 m (3 × 98.9 % − 2 × 100 % = 96.7 %) but offset. The distributed map of drone 1 contains all 30 landmarks with no duplicates, but — through the 166.6 s merge described above — the whole map is offset by (−2.00, +1.71) m, so only 2 landmarks are within 1 m. Seed 0 is the worst seed for distributed relative to isolated.
 
-**Trajectories and Map** — true (solid) and estimated (dotted) paths of all drones, and the map of drone 1 (isolated, distributed) or the shared map (centralised) with 3σ ellipses; isolated drone 1 has large, elongated ellipses but accurate estimates, distributed drone 1's map is complete but shifted:
+**Trajectories and Map** — true (solid) and estimated (dotted) paths of all drones, and the map of drone 1 (isolated, distributed) or the shared map (centralised) with 3σ ellipses; isolated drone 1 has large, elongated ellipses but accurate estimates, distributed drone 1's map is complete but shifted by (−2.00, +1.71) m:
 
 ![Trajectories Map](./trajectories_map.png)
 
-**Final Map Heatmap** — distributed map of drone 1 coloured by $\sqrt{\mathrm{tr}\,\mathbf P_{ll}}$ (0.3–1.2 m); grey crosses are the true landmarks not localised within 1 m (28) — the systematic ≈ 3 m offset is larger than the filter's stated uncertainty:
+**Final Map Heatmap** — distributed map of drone 1 coloured by $\sqrt{\mathrm{tr}\,\mathbf P_{ll}}$ (0.3–1.2 m); grey crosses are the true landmarks not localised within 1 m (28) — the systematic 2.63 m offset is larger than the filter's stated uncertainty:
 
 ![Final Map Heatmap](./final_map_heatmap.png)
 

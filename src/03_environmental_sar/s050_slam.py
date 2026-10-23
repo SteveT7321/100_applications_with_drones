@@ -17,6 +17,11 @@ from the true pose.  Three estimators process the SAME flight log
   * centralised  - one joint EKF over all three poses and all landmarks fed
                    with every measurement (upper bound, needs perfect comms)
 
+Two alternative merge policies are evaluated on the same flight log for the
+report only (MERGE_VARIANTS): 'dist_certainty' (the drone with the larger
+position covariance adopts the other's frame) and 'dist_agree' (merges whose
+alignment would shift the visitor map by more than MAX_FRAME_SHIFT are rejected).
+
 The drones navigate with an information-gain frontier policy that steers on
 each drone's own (isolated) on-board estimate, so the flight log does not
 depend on the estimator being evaluated.
@@ -58,6 +63,8 @@ NEW_LM_GATE  = 13.816     # chi2(2, 0.999): new landmark only if min d_M > this
 MATCH_RADIUS = 2.0        # m - map-merge landmark correspondence radius
 MIN_LM_SEP   = 4.0        # m - no new landmark closer than this to an existing one
 MIN_COMMON   = 3          # min common landmarks for SVD alignment
+MAX_FRAME_SHIFT = 1.0     # m - variant 'dist_agree': reject merge if alignment moves the visitor map more (RMS)
+MERGE_VARIANTS = ('dist_certainty', 'dist_agree')   # alternative merge policies, same flight log
 ALIGN_SEARCH_R = 20.0     # m - max map-to-map offset searched by the robust alignment
 ALIGN_MAX_ROT = 0.5       # rad - max relative rotation between two drones' maps
 MERGE_PERIOD = 30.0       # s - repeat merge while staying in contact
@@ -199,6 +206,27 @@ class SlamFilter:
         self.X = np.concatenate([self.X, lm])
         self.P = Pn
 
+    def to_frame(self, R, t):
+        """Re-express the whole state in another frame: p' = R^T (p - t),
+        theta' = theta - angle(R); covariance J P J^T (rigid, no information added)."""
+        alpha = np.arctan2(R[1, 0], R[0, 0])
+        J = np.eye(len(self.X))
+        for k in range(self.n_pose):
+            p = 3 * k
+            self.X[p:p + 2] = R.T @ (self.X[p:p + 2] - t)
+            self.X[p + 2] = wrap(self.X[p + 2] - alpha)
+            J[p:p + 2, p:p + 2] = R.T
+        for a in range(self.n_lm):
+            l = self.lm0 + 2 * a
+            self.X[l:l + 2] = R.T @ (self.X[l:l + 2] - t)
+            J[l:l + 2, l:l + 2] = R.T
+        self.P = J @ self.P @ J.T
+        self.P = 0.5 * (self.P + self.P.T)
+
+    def pos_uncertainty(self, k=0):
+        """Trace of the position covariance of pose k (m^2)."""
+        return float(np.trace(self.P[3 * k:3 * k + 2, 3 * k:3 * k + 2]))
+
     def process(self, k, z):
         """Data association + update / initialise for one measurement."""
         j, d = self.associate(k, z)
@@ -278,7 +306,13 @@ def robust_align(Lh, Lv):
     return R, t, pairs
 
 
-def merge_maps(host, vis_L, vis_C, host_sensed=None):
+def _snapshot(f):
+    """(landmarks, 2x2 covariances) copy of a filter's map."""
+    return (f.landmarks.copy(),
+            np.array([f.lm_cov(a) for a in range(f.n_lm)]).reshape(-1, 2, 2))
+
+
+def merge_maps(host, vis_L, vis_C, host_sensed=None, check_shift=False, adopt=False):
     """
     Merge a visitor map snapshot (landmarks vis_L, 2x2 covariances vis_C) into
     host, transferring only NEW information:
@@ -290,6 +324,12 @@ def merge_maps(host, vis_L, vis_C, host_sensed=None):
          MERGE_INFLATE x (rotated visitor covariance) and no cross-correlation,
          unless they are within MIN_LM_SEP of a host landmark, statistically
          compatible with one, or inside the area the host has sensed itself.
+    Variants (evaluated alongside, see MERGE_VARIANTS):
+      check_shift - also reject the merge if the alignment moves the visitor map
+                    by more than MAX_FRAME_SHIFT (RMS), i.e. the frames disagree;
+      adopt       - the host (chosen by the caller as the drone with the larger
+                    position covariance) first re-expresses its whole state in
+                    the visitor's frame, then imports the new landmarks.
     Host landmark estimates and the host pose are not modified (fusing landmarks
     that both maps already contain double-counts information exchanged in
     earlier merges and made the filters overconfident).
@@ -311,6 +351,15 @@ def merge_maps(host, vis_L, vis_C, host_sensed=None):
             good.append((i, j))
     if len(good) < MIN_COMMON or len(good) < 0.5 * len(pairs):
         return len(pairs), -len(good), 0      # maps disagree: merge rejected
+    if check_shift:
+        shift = float(np.sqrt(np.mean(np.sum((Lt - vis_L) ** 2, axis=1))))
+        if shift > MAX_FRAME_SHIFT:
+            return len(pairs), -len(good), 0  # frames disagree (drift): merge rejected
+    L_old = Lt.copy()                         # visitor landmarks in the host's (old) frame
+    if adopt:
+        host.to_frame(R, t)
+        Lt = vis_L.copy()
+        Ct = vis_C.copy()
     matched_v = {j for _, j in pairs}
     n_added = 0
     for j in range(len(Lt)):
@@ -319,9 +368,9 @@ def merge_maps(host, vis_L, vis_C, host_sensed=None):
         diff = host.landmarks - Lt[j]
         if np.min(np.linalg.norm(diff, axis=1)) < MIN_LM_SEP:
             continue
-        if host_sensed is not None:
-            ix = int(np.clip(Lt[j][0] // GRID_RES, 0, W_CELLS - 1))
-            iy = int(np.clip(Lt[j][1] // GRID_RES, 0, W_CELLS - 1))
+        if host_sensed is not None:           # host_sensed is in the host's old frame
+            ix = int(np.clip(L_old[j][0] // GRID_RES, 0, W_CELLS - 1))
+            iy = int(np.clip(L_old[j][1] // GRID_RES, 0, W_CELLS - 1))
             if host_sensed[iy, ix]:
                 continue      # host has sensed this area: landmark would be a duplicate
         # skip if statistically compatible with an existing host landmark
@@ -403,6 +452,10 @@ def run_simulation(seed=SHOW_SEED, record=True):
     dead_reck = STARTS.copy()
     iso = [SlamFilter([STARTS[k]]) for k in range(N_DRONES)]
     dist = [SlamFilter([STARTS[k]]) for k in range(N_DRONES)]
+    var = {v: [SlamFilter([STARTS[k]]) for k in range(N_DRONES)] for v in MERGE_VARIANTS}
+    var_sensed = {v: [np.zeros((W_CELLS, W_CELLS), dtype=bool) for _ in range(N_DRONES)]
+                  for v in MERGE_VARIANTS}
+    var_events = {v: [] for v in MERGE_VARIANTS}
     cen = SlamFilter([STARTS[k] for k in range(N_DRONES)])
     grids = [np.zeros((W_CELLS, W_CELLS), dtype=bool) for _ in range(N_DRONES)]
     sensed = [np.zeros((W_CELLS, W_CELLS), dtype=bool) for _ in range(N_DRONES)]
@@ -430,6 +483,8 @@ def run_simulation(seed=SHOW_SEED, record=True):
             nav = iso[k].pose(0)
             mark_explored(grids[k], nav)
             mark_explored(sensed[k], dist[k].pose(0), SENSOR_RANGE - SENSED_MARGIN)
+            for v in MERGE_VARIANTS:
+                mark_explored(var_sensed[v][k], var[v][k].pose(0), SENSOR_RANGE - SENSED_MARGIN)
             if (targets[k] is None or step % int(RETARGET_DT / DT) == 0
                     or np.hypot(*(targets[k] - nav[:2])) < GRID_RES):
                 targets[k] = frontier_target(grids[k], nav,
@@ -451,6 +506,8 @@ def run_simulation(seed=SHOW_SEED, record=True):
                              omega * DT]
             iso[k].predict(0, DRONE_SPEED, omega)
             dist[k].predict(0, DRONE_SPEED, omega)
+            for v in MERGE_VARIANTS:
+                var[v][k].predict(0, DRONE_SPEED, omega)
             cen.predict(k, DRONE_SPEED, omega)
 
             # measurements from the TRUE pose
@@ -462,6 +519,8 @@ def run_simulation(seed=SHOW_SEED, record=True):
                                    + rng.normal(0, SIGMA_PHI))])
                 iso[k].process(0, z)
                 dist[k].process(0, z)
+                for v in MERGE_VARIANTS:
+                    var[v][k].process(0, z)
                 cen.process(k, z)
 
         # pairwise map merging (distributed), true inter-drone distance
@@ -476,14 +535,24 @@ def run_simulation(seed=SHOW_SEED, record=True):
                     r_ij = merge_maps(dist[i], *snap_j, sensed[i])
                     r_ji = merge_maps(dist[j], *snap_i, sensed[j])
                     last_merge[i, j] = t
-                    comm_events.append((t, i, j, max(r_ij[0], r_ji[0]),
-                                        r_ij[2] + r_ji[2],
+                    comm_events.append((t, i, j, max(r_ij[0], r_ji[0]), r_ij[2] + r_ji[2],
                                         r_ij[1] > 0 or r_ji[1] > 0,
                                         r_ij[1] < 0 or r_ji[1] < 0))
+                    # variant: frame-agreement gate, both directions
+                    F, S_ = var['dist_agree'], var_sensed['dist_agree']
+                    si, sj = _snapshot(F[i]), _snapshot(F[j])
+                    ra = merge_maps(F[i], *sj, S_[i], check_shift=True)
+                    rb = merge_maps(F[j], *si, S_[j], check_shift=True)
+                    var_events['dist_agree'].append((t, i, j, ra[1] > 0 or rb[1] > 0))
+                    # variant: less certain drone adopts the other's frame (one direction)
+                    F, S_ = var['dist_certainty'], var_sensed['dist_certainty']
+                    rcv, src = (i, j) if F[i].pos_uncertainty() >= F[j].pos_uncertainty() else (j, i)
+                    rc = merge_maps(F[rcv], *_snapshot(F[src]), S_[rcv], adopt=True)
+                    var_events['dist_certainty'].append((t, i, j, rc[1] > 0))
                 in_contact[i, j] = close
 
         if step % 50 == 0:
-            for f in dist + iso + [cen]:
+            for f in dist + iso + [cen] + var['dist_certainty'] + var['dist_agree']:
                 min_eig_seen = min(min_eig_seen, min_eig(f.P))
 
         if record:
@@ -515,10 +584,22 @@ def run_simulation(seed=SHOW_SEED, record=True):
                            [[f.lm_cov(a).copy() for a in range(f.n_lm)] for f in dist],
                            [(e[1], e[2]) for e in comm_events if t - 2.0 < e[0] <= t]))
 
-    for f in dist + iso + [cen]:
+    for f in dist + iso + [cen] + var['dist_certainty'] + var['dist_agree']:
         min_eig_seen = min(min_eig_seen, min_eig(f.P))
 
     final = {}
+    for v in MERGE_VARIANTS:
+        q = [map_quality(f.landmarks, true_lm) for f in var[v]]
+        final[v] = dict(
+            cov=float(np.mean([x['cov'] for x in q])),
+            cov_loose=float(np.mean([x['cov_loose'] for x in q])),
+            rms=float(np.nanmean([x['rms'] for x in q])) if any(x['n_found'] for x in q) else np.nan,
+            n_est=[x['n_est'] for x in q], n_found=[x['n_found'] for x in q],
+            n_dup=[x['n_dup'] for x in q],
+            union=team_union([f.landmarks for f in var[v]], true_lm),
+            pose_final=float(np.sqrt(np.mean([np.sum((var[v][k].pose(0)[:2] - truth[k, :2]) ** 2)
+                                              for k in range(N_DRONES)]))),
+            merges=int(sum(e[3] for e in var_events[v])))
     maps = {'isolated': [f.landmarks for f in iso], 'distributed': [f.landmarks for f in dist],
             'centralised': [cen.landmarks]}
     for s in STRATS:
@@ -526,7 +607,7 @@ def run_simulation(seed=SHOW_SEED, record=True):
         final[s] = dict(
             cov=float(np.mean([x['cov'] for x in q])),
             cov_loose=float(np.mean([x['cov_loose'] for x in q])),
-            rms=float(np.nanmean([x['rms'] for x in q])),
+            rms=float(np.nanmean([x['rms'] for x in q])) if any(x['n_found'] for x in q) else np.nan,
             n_est=[x['n_est'] for x in q], n_found=[x['n_found'] for x in q],
             n_dup=[x['n_dup'] for x in q], union=team_union(maps[s], true_lm),
             pose_final=pose_err[s][-1], pose_mean=float(np.mean(pose_err[s])))
@@ -697,11 +778,17 @@ def _print_final(res, label):
               f'team union {x["union"]*100:.1f}% | RMS {x["rms"]:.3f} m | estimates/map '
               f'{x["n_est"]} | found {x["n_found"]} | duplicates {x["n_dup"]} | pose RMSE '
               f'final {x["pose_final"]:.3f} m, mean {x["pose_mean"]:.3f} m')
+    for v in MERGE_VARIANTS:
+        x = f[v]
+        print(f'  {v:12s}: coverage (mean per-drone map) {x["cov"]*100:.1f}% '
+              f'(within {LOOSE_R:.0f} m: {x["cov_loose"]*100:.1f}%) | estimates/map {x["n_est"]} | '
+              f'found {x["n_found"]} | pose RMSE final {x["pose_final"]:.3f} m | '
+              f'executed merges {x["merges"]}')
     print(f'  dead reckoning: pose RMSE final {f["dead_reckoning"]["pose_final"]:.3f} m, '
           f'mean {f["dead_reckoning"]["pose_mean"]:.3f} m')
     ev = res['comm_events']
     ok = [e for e in ev if e[5]]
-    print(f'  merge attempts {len(ev)}, executed merges {len(ok)}, rejected as inconsistent '
+    print(f'  merge attempts {len(ev)}, executed merges {len(ok)}, rejected (inconsistent / frames disagree) '
           f'{sum(1 for e in ev if e[6])}, landmarks transferred {sum(e[4] for e in ok)}')
     print(f'  smallest covariance eigenvalue seen (all filters): {res["min_eig"]:.3e}')
 
@@ -710,31 +797,67 @@ if __name__ == '__main__':
     out_dir = os.path.normpath(OUTPUT_DIR)
     print(f'Running S050 swarm EKF-SLAM (showcase seed {SHOW_SEED})...')
     res = run_simulation(SHOW_SEED, record=True)
+    # seed-0 mechanism evidence: drone 1 pose error, isolated vs distributed
+    th = np.array(res['true_hist'][0])
+    ei = np.linalg.norm(np.array(res['est_hist']['isolated'][0]) - th, axis=1)
+    ed = np.linalg.norm(np.array(res['est_hist']['distributed'][0]) - th, axis=1)
+    e3 = np.linalg.norm(np.array(res['est_hist']['isolated'][2]) - np.array(res['true_hist'][2]), axis=1)
+    print('  D1 position error (m), isolated / distributed:')
+    for tt in (100.0, 160.0, 166.6, 170.0, 200.0, 300.0, 400.0, 500.0, 600.0):
+        n = int(round(tt / DT)) - 1
+        print(f'    t={tt:5.1f} s: {ei[n]:.2f} / {ed[n]:.2f}')
+    print(f'  D3 isolated position error at t=166.6 s: {e3[int(round(166.6 / DT)) - 1]:.2f} m')
+    for lab, f in (('isolated', res['iso'][0]), ('distributed', res['dist'][0])):
+        L = f.landmarks
+        nearest = res['true_lm'][np.linalg.norm(res['true_lm'][:, None] - L[None], axis=2).argmin(0)]
+        off = np.mean(L - nearest, axis=0)
+        print(f'  D1 {lab} final map: mean offset (estimate - nearest true) = '
+              f'({off[0]:+.2f}, {off[1]:+.2f}) m')
     tl = res['true_lm']
     dmin = np.min(np.linalg.norm(tl[:, None] - tl[None], axis=2) + 1e9 * np.eye(M_LANDMARKS))
     print(f'  closest pair of true landmarks: {dmin:.2f} m (MIN_LM_SEP = {MIN_LM_SEP} m)')
     _print_final(res, f'Showcase run, seed {SHOW_SEED}')
     print('  merge events (t, pair, common, added):')
     for (t, i, j, nc, nadd, ok, rej) in res['comm_events']:
-        st = 'merged' if ok else ('rejected (inconsistent)' if rej else 'skipped (<3 common)')
+        st = ('merged' if ok else
+              ('rejected (inconsistent or frames disagree)' if rej else 'skipped (<3 common)'))
         print(f'    t={t:6.1f} s  D{i+1}-D{j+1}  common {nc:2d}  added {nadd:2d}  {st}')
 
     print(f'\nRunning Monte Carlo over {N_MC} noise seeds...')
     mc = [res] + [run_simulation(s, record=False) for s in range(1, N_MC)]
     print(f'\n=== Monte Carlo ({N_MC} seeds), final values: mean [min, max] ===')
-    for s in STRATS:
+    for s in STRATS + list(MERGE_VARIANTS):
         for key, lab, sc in (('cov', 'coverage %', 100), ('cov_loose', 'cov<5 m %', 100),
                              ('rms', 'RMS m', 1),
                              ('union', 'team union %', 100), ('pose_final', 'pose RMSE m', 1)):
-            v = np.array([m['final'][s][key] for m in mc]) * sc
-            print(f'  {s:12s} {lab:13s}: {np.mean(v):7.3f} [{np.min(v):.3f}, {np.max(v):.3f}]')
+            v = np.array([m['final'][s][key] for m in mc], dtype=float) * sc
+            print(f'  {s:14s} {lab:13s}: {np.nanmean(v):7.3f} [{np.nanmin(v):.3f}, {np.nanmax(v):.3f}]'
+                  f' median {np.nanmedian(v):.3f}')
         nd = sum(sum(m['final'][s]['n_dup']) for m in mc)
         ne = max(max(m['final'][s]['n_est']) for m in mc)
         print(f'  {s:12s} duplicates over all runs/maps: {nd}, largest map: {ne} estimates')
     v = np.array([m['final']['dead_reckoning']['pose_final'] for m in mc])
     print(f'  dead reckoning pose RMSE m: {np.mean(v):7.3f} [{np.min(v):.3f}, {np.max(v):.3f}]')
     print(f'  smallest covariance eigenvalue over all runs: {min(m["min_eig"] for m in mc):.3e}')
-    print(f'  merges per run: mean {np.mean([sum(e[5] for e in m["comm_events"]) for m in mc]):.1f}')
+    print(f'  merges per run: mean {np.mean([sum(e[5] for e in m["comm_events"]) for m in mc]):.1f}'
+          + ''.join(f', {v} {np.mean([m["final"][v]["merges"] for m in mc]):.1f}'
+                    for v in MERGE_VARIANTS))
+    print('\n=== Per seed (final): 1 m coverage % | pose RMSE m ===')
+    for key, lab, sc, fmt in (('cov', 'coverage %', 100, '{:6.1f}'), ('pose_final', 'pose RMSE m', 1, '{:6.2f}')):
+        for st in STRATS + list(MERGE_VARIANTS):
+            v = [m['final'][st][key] * sc for m in mc]
+            print(f'  {lab:11s} {st:12s}: ' + ' '.join(fmt.format(x) for x in v)
+                  + f' | median {np.median(v):.2f}')
+    for key, lab, better in (('cov', '1 m coverage', np.greater), ('pose_final', 'pose RMSE', np.less)):
+        for a_, b_ in (('distributed', 'isolated'), ('dist_certainty', 'isolated'),
+                       ('dist_agree', 'isolated'), ('centralised', 'isolated'),
+                       ('centralised', 'distributed')):
+            va = np.array([m['final'][a_][key] for m in mc])
+            vb = np.array([m['final'][b_][key] for m in mc])
+            w = int(np.sum(better(va, vb) & ~np.isclose(va, vb)))
+            tie = int(np.sum(np.isclose(va, vb)))
+            print(f'  {lab:12s} {a_} vs {b_}: better in {w}/{N_MC}, worse in {N_MC - w - tie}/{N_MC}, '
+                  f'tie {tie}/{N_MC}')
 
     print('\nGenerating plots...')
     plot_trajectories_map(res, out_dir)
