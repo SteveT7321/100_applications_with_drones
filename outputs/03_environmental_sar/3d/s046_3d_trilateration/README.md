@@ -79,7 +79,6 @@ so $\operatorname{Var}(d_{i1}) = 2\sigma_r^2$ and $\operatorname{Cov}(d_{i1}, d_
 | "With N < 4 the range system has a 1D family of solutions (circle)" | three spheres meet in **two** points (mirror images across the anchor plane); found numerically (see Results); card corrected | geometry |
 | "TDOA is strictly a 3D construction (hyperboloids degenerate in 2D)" | TDOA also works in 2D (hyperbolas); sentence corrected in the card | geometry |
 | GN Jacobian $\mathbf{H}_k = (\mathbf{p}_i - \mathbf{x}_k)/\|\mathbf{p}_i - \mathbf{x}_k\|$ with the update $\mathbf{x}_{k+1} = \mathbf{x}_k + (\mathbf{H}^T\mathbf{H})^{-1}\mathbf{H}^T\mathbf{f}$ | $\mathbf{H}_k = (\mathbf{x}_k - \mathbf{p}_i)/\rho_i$ (the 2D code, imported); card corrected | with the card's sign every step goes the wrong way (the same error was fixed in the 2D card) |
-ho_i$ (2D code, imported); card corrected | with the card's sign every step goes the wrong way (the same error was fixed in the 2D card) |
 | Analytic GDOP gradient | finite-difference gradient (scipy default) | same optimum; simpler |
 | Error histogram "TDOA LLS carries a small bias" | TDOA LLS bias is small (z bias −0.046 / +0.057 m) but its main cost is variance (1.502 vs 0.745 m RMSE) | measured |
 | Hyperboloids for N = 4 | drawn for drones D1–D4 of the optimised layout; the TDOA estimators use N = 5 | the linear TDOA stage needs $N - 1 \ge 4$ equations |
