@@ -1,6 +1,6 @@
 # S005 3D Upgrade — Stealth Approach
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Done
 **Based on**: [S005 original](../S005_stealth_approach.md)
 
 ---
