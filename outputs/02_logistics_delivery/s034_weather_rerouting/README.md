@@ -101,11 +101,21 @@ D\* Lite expansions: initial plan 2331; replan at 3.45 s 551 (from scratch 1113)
 
 10 cells expired during the D\* Lite flights; 9 replans were triggered (4 on activation, 5 on expiry). Mean expansions per replan: incremental 259 vs from scratch 1319. The incremental and from-scratch path costs at every replan agreed exactly (max difference 0.0e+00 m). All drones reached the goal in every run.
 
+Mean detour per replanning event (change in the remaining planned path length at the replan): +1.01 m on activation (n = 4, +0.10 to +1.52 m) and +0.00 m on expiry (n = 5).
+
+Exposure by cell origin (cell-seconds inside cells active at take-off / cells appearing in flight; overlapping cells are counted once each, so the sum can exceed J_hazard):
+
+| Variant | Layouts hit by in-flight cells | Per-layout exposure (take-off / in-flight) |
+|---------|---:|---|
+| Blind | 6/10 | seed 0: 11.15/3.95; 1: 13.40/2.35; 2: 10.35/2.10; 3: 11.55/6.75; 4: 17.25/3.80; 5: 3.80/0.00; 6: 11.10/0.00; 7: 9.95/0.00; 8: 9.95/0.00; 9: 6.20/8.40 |
+| Plan once | 3/10 | seed 3: 0.00/1.10; 4: 0.55/3.70; 8: 0.05/0.00; 9: 0.00/9.00 |
+| D\* Lite | 0/10 | seed 8: 0.05/0.00 |
+
 **Key Findings**:
 - **Rerouting is genuinely exercised.** Cells appear on the route while the drone flies; in seed 9 two activations at 3.45 s and 4.05 s make the drone drop from 16 m to 8 m and pass under the storm cluster, while the plan-once drone flies into the newly active cells for 7.45 s.
 - **Replanning removes almost all exposure for ≈ 0.4 m extra detour on average.** Mean J_hazard falls from 9.31 s (blind) to 1.28 s (plan once) to 0.01 s (D\* Lite); the mean detour rises from 6.47 m to 6.88 m (≈ 5 % above J_base). The one residual exposure (0.05 s in seed 8) comes from discretisation: the straight segment between two voxel nodes outside a sphere can clip its edge.
-- **Most of the protection comes from knowing the current weather at all** (blind → plan once), but in 4/10 layouts storms appearing after take-off still hit the plan-once drone; only replanning handles those.
-- **Expiry replans did not shorten any route here.** The 5 expiry-triggered replans returned paths of the same length as the plan-once route (detours identical to two decimals in those layouts): other cells still constrained the corridor. With the 26 s mission, expiries are rarer than activations.
+- **Most of the protection comes from knowing the current weather at all** (blind → plan once), but in 3/10 layouts (seeds 3, 4, 9) cells that appeared after take-off still hit the plan-once drone; only replanning handles those (D\* Lite: 0/10). The remaining plan-once exposure to cells already active at take-off (0.55 cell-s in seed 4, 0.05 in seed 8) and D\* Lite's 0.05 s in seed 8 are the voxel path clipping the edge of a sphere.
+- **Expiry replans did not shorten any route here.** The 5 expiry-triggered replans returned paths of the same remaining length (+0.00 m per event; detours identical to the plan-once route in those layouts), while activation replans added +1.01 m each on average: other cells still constrained the corridor. With the 26 s mission, expiries are rarer than activations.
 - **Incremental search pays off**: a replan re-expanded on average 259 nodes vs 1319 for a fresh search from the drone's position (≈ 5× fewer), with identical path costs. Wall-clock latency is not reported because it is not reproducible run-to-run; expansions are the deterministic proxy.
 
 **3D trajectories** (orange = cells active at take-off, red = cells appearing in flight, × = replan points):
@@ -137,6 +147,7 @@ D\* Lite expansions: initial plan 2331; replan at 3.45 s 551 (from scratch 1113)
 | Initial plan (old code) ignored weather | Plan-once and D\* Lite variants plan with the cells active at t = 0; the "blind" variant keeps the no-weather plan as the nominal reference | The card's cost breakdown asks for nominal vs rerouted flight. |
 | Card code only updates voxels of active cells | Voxels whose weight changed on activation **and expiry** are updated | Otherwise expired cells keep their inflated costs inside D\* Lite. |
 | Mean replanning latency (ms) | Node expansions (incremental vs from scratch) | Deterministic and reproducible. |
+| Animation: top-down **and isometric** view | Top-down view only | The isometric view is given by the static 3D trajectory plot; a rotating 3D GIF with fading spheres would add minutes of rendering for no extra information. |
 | Arrival tolerance 3 m (old code) | Drone flies to the goal exactly | The old 3 m tolerance made the path 127.25 m, *shorter* than the 130.11 m straight line. |
 
 ---

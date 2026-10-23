@@ -260,6 +260,7 @@ def run_simulation(variant='dstar', seed=SEED, record=False):
     traj, times, n_active = [pos.copy()], [0.0], []
     replans, inc_exp, scratch_exp, g_err = [], [], [], []
     hazard_time = sev_exposure = 0.0
+    cell_exposure, event_detour = {}, []     # s inside each cell; remaining-path change per replan
     planned_paths = [np.array([vox_to_world(v) for v in remaining_vox])]
     prev_active = {k for k, c in enumerate(cells) if is_active(c, 0.0)}
 
@@ -279,13 +280,19 @@ def run_simulation(variant='dstar', seed=SEED, record=False):
                 scratch_exp.append(fresh.compute_shortest_path())
                 g_err.append(abs(planner.g.get(planner.start, math.inf) - fresh.g.get(planner.start, math.inf)))
                 vox = planner.extract_path()
+                old_rem = float(np.sum(np.linalg.norm(np.diff(np.array([pos] + waypoints), axis=0), axis=1)))
                 waypoints = [vox_to_world(v) for v in vox[1:]]
+                new_rem = float(np.sum(np.linalg.norm(np.diff(np.array([pos] + waypoints), axis=0), axis=1)))
+                event_detour.append(round(new_rem - old_rem, 9) + 0.0)
                 planned_paths.append(np.array([vox_to_world(v) for v in vox]))
                 replans.append((t, 'activation' if hit_new else 'expiry'))
         prev_active = active
 
         # exposure (true geometry)
         inside = [cells[k] for k in active if np.linalg.norm(pos - cells[k].center) <= cells[k].radius]
+        for k in active:
+            if np.linalg.norm(pos - cells[k].center) <= cells[k].radius:
+                cell_exposure[k] = cell_exposure.get(k, 0.0) + DT
         if inside:
             hazard_time += DT
             sev_exposure += DT * sum(c.severity for c in inside)
@@ -311,6 +318,7 @@ def run_simulation(variant='dstar', seed=SEED, record=False):
         'variant': variant, 'seed': seed, 'cells': cells, 'traj': traj,
         'times': np.array(times), 'n_active': np.array(n_active + n_active[-1:]),
         'replans': replans, 'inc_exp': inc_exp, 'scratch_exp': scratch_exp, 'g_err': g_err,
+        'cell_exposure': cell_exposure, 'event_detour': event_detour,
         'init_exp': init_exp, 'J_base': J_base, 'L': L, 'J_detour': round(L - J_base, 9) + 0.0,
         'J_hazard': hazard_time, 'sev_exposure': sev_exposure,
         'mission_time': t, 'arrived': bool(np.allclose(pos, P_GOAL)),
@@ -507,6 +515,22 @@ if __name__ == '__main__':
         print(f'  D* Lite replans: {len(inc)} total, mean expansions incremental={np.mean(inc):.0f} '
               f'vs from-scratch={np.mean(scr):.0f}; max |g_inc - g_scratch| at start = '
               f"{max(e for r in mc['dstar'] for e in r['g_err']):.1e} m")
+    for kind in ('activation', 'expiry'):
+        det = [dd for r in mc['dstar'] for (_, k), dd in zip(r['replans'], r['event_detour'])
+               if k == kind]
+        if det:
+            print(f'  remaining-path change per replan on {kind}: mean {np.mean(det):+.2f} m '
+                  f'(n={len(det)}, min {min(det):+.2f}, max {max(det):+.2f})')
+    print('  exposure by cell origin (s inside cells active at take-off / appearing in flight):')
+    for v in VARIANTS:
+        rows = []
+        for r in mc[v]:
+            pre = sum(e for k, e in r['cell_exposure'].items() if r['cells'][k].t_on <= 0.0)
+            post = sum(e for k, e in r['cell_exposure'].items() if r['cells'][k].t_on > 0.0)
+            if pre > 0 or post > 0:
+                rows.append(f"seed {r['seed']}: {pre:.2f}/{post:.2f}")
+        n_post = sum(1 for r in mc[v] if any(r['cells'][k].t_on > 0.0 for k in r['cell_exposure']))
+        print(f"    {v:10s} layouts hit by in-flight cells: {n_post}/{N_SEEDS}   " + ('; '.join(rows) or 'none'))
 
     plot_trajectory_3d(runs, out_dir)
     plot_timeline(runs, out_dir)
