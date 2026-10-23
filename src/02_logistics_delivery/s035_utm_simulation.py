@@ -202,7 +202,8 @@ def register_sequential(F, order, intents):
                 continue
             break
         else:
-            # no feasible hold within MAX_HOLD: the UTM would deny this intent
+            # no feasible hold within MAX_HOLD: flag the intent as denied. It is still
+            # registered at the MAX_HOLD hold, so the run continues (never triggered).
             DENIED.append(j)
         occ[sc[on], a[j] + d[j] + on] += 1
         reg.append(j)
