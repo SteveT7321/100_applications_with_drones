@@ -163,7 +163,7 @@ Kalman 3D covariance-ellipsoid volume: 0.1131 m³ at the first step (= 4π/3·0.
 
 ![q sweep](q_sweep.png)
 
-**Animation** (helix, run 0, first 6 s, every 3rd step, 98 frames): Kalman 3D (left) vs 2D KF + AltHold (right):
+**Animation** (helix, run 0, first 6 s, every 3rd step, 97 frames): Kalman 3D (left) vs 2D KF + AltHold (right):
 
 ![Animation](animation.gif)
 

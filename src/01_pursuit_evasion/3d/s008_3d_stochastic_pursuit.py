@@ -461,7 +461,7 @@ def save_animation(results, evader_traj, evader_name, out_dir):
     T_SHOW = 6.0
     n_max = min(max(len(r['p_traj']) for r in runs), int(T_SHOW / DT) + 1)
     step = 3
-    n_frames = (n_max - 1) // step + 2
+    n_frames = -(-(n_max - 1) // step) + 1   # ceil, so the last step is shown once
     fig = plt.figure(figsize=(14, 6.5))
     arts = []
     for k, r in enumerate(runs):
