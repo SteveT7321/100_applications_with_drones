@@ -64,6 +64,7 @@ Here $L_k$ is the total distance of drone $k$ over all its sorties.
 ### Deviations from the scenario card
 
 - **Third strategy.** The card asks for a VRPTW solved with OR-Tools CP-SAT. OR-Tools is not installed in the environment, so a documented time-window-aware insertion heuristic with relocate local search is used instead. It is a heuristic, not an exact solver; the card instance shows it can end in a local optimum (see the results).
+- **Homogeneous fleet.** The card's setup calls the fleet heterogeneous, but its parameters give every drone the same speed (15 m/s), capacity (3.0 kg) and range (4000 m). The simulation uses that homogeneous fleet; drone-specific speeds and capacities are left to Extension 1.
 - **Soft time windows.** The card's model lists $e_c \le s_c \le l_c$ as a hard constraint but also minimises tardiness, which only makes sense for soft windows. Windows are treated as soft (late service allowed and penalised), and early arrival waits.
 - **Tight-window instance added** (see the Instances list above).
 - **Multi-sortie bug fixed.** The previous version concatenated a drone's extra sorties into one customer list without a depot return, so capacity and range were not enforced across sorties. Every sortie now returns to the depot and is checked separately; the largest sortie load is 2.78 kg and the longest sortie 1153 m. In this instance neither old strategy needed more than one sortie per drone, so their card-instance numbers (4366.5 m and 4311.7 m) are unchanged.
