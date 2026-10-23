@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: A hiker has gone missing in a flat 200 × 200 m wilderness area. The last known position (LKP) was recorded 2 hours before the search begins. The person's initial probability of presence is modelled as a Gaussian centred on the LKP, broadened by a diffusion term proportional to elapsed time. A fleet of $N = 3$ drones, starting on the south edge at (40, 5), (100, 5) and (160, 5) m, is deployed to localise the (stationary) person as quickly as possible.
+**Setup**: A hiker has gone missing in a flat 200 × 200 m wilderness area. The last known position (LKP) was recorded 2 hours before the search begins. The person's initial probability of presence is modelled as a Gaussian centred on the LKP, broadened by a diffusion term proportional to elapsed time. A fleet of $N = 3$ drones, starting on the south edge at (50, 10), (100, 10) and (150, 10) m (card), is deployed to localise the (stationary) person as quickly as possible.
 
 **Objective**:
 - Minimise the time to first confirmed detection (target cumulative $P_{det} \geq 0.95$)
@@ -55,7 +55,7 @@ Each drone flies straight legs at $v_d = 5$ m/s; its position is interpolated al
 |-----------|-------|-------|
 | Search area | 200 × 200 m | |
 | Grid resolution | 0.5 m/cell | 400 × 400 = 160,000 cells |
-| Number of drones $N$ | 3 | Start (40, 5), (100, 5), (160, 5) m |
+| Number of drones $N$ | 3 | Start (50, 10), (100, 10), (150, 10) m (card) |
 | Sensor footprint radius $r_s$ | 2.0 m | |
 | Scan altitude $h$ | 10.0 m | Informational (2D simulation) |
 | Drone cruise speed $v_d$ | 5.0 m/s | |
@@ -75,7 +75,7 @@ Each drone flies straight legs at $v_d = 5$ m/s; its position is interpolated al
 | Random-walk temperature | $T_0 = 1.0$, $T_{min} = 0.25$, $\tau = 600$ s | |
 | Monte Carlo trials | 50 per strategy | Seeds 0–49, common person positions |
 | Entropy sampling interval | 5 s | |
-| Animation | 150 frames, 10 fps | |
+| Animation | 150 frames, 10 fps | Title shows t and entropy H per strategy |
 
 ---
 
@@ -98,36 +98,35 @@ Runtime ≈ 55 s (previously > 10 min).
 
 ### Monte Carlo (50 trials per strategy, not-found trials counted as 1800 s)
 
-| Strategy | Found | Median | IQR | Median of found trials |
-|----------|-------|--------|-----|------------------------|
-| Greedy max-belief | 39/50 | 574.9 s | [162.6, 1463.0] s | 326.0 s |
-| Lawnmower (±2σ₀ box) | 48/50 | 310.2 s | [222.4, 413.0] s | 299.5 s |
-| Belief-weighted random walk | 46/50 | 375.5 s | [127.6, 715.3] s | 253.2 s |
+| Strategy | Found | Median | IQR | Median of found trials | Detected by 60 s | Empirical P_det reaches 0.95 |
+|----------|-------|--------|-----|------------------------|------------------|------------------------------|
+| Greedy max-belief | 40/50 | 562.5 s | [165.5, 1404.3] s | 340.4 s | 12 % | never (0.80 at 1800 s) |
+| Lawnmower (±2σ₀ box) | 48/50 | 285.6 s | [216.6, 367.3] s | 274.3 s | 0 % | 959.1 s |
+| Belief-weighted random walk | 48/50 | 333.6 s | [146.7, 531.5] s | 297.5 s | 10 % | 1561.2 s |
 
 ### Seed-0 runs
 
 | Strategy | Detection | Observations | Entropy start → end |
 |----------|-----------|--------------|---------------------|
-| Greedy max-belief | 333.5 s | 251 | 10.185 → 9.860 nats |
-| Lawnmower | 317.4 s | 602 | 10.185 → 6.126 nats |
-| Belief-weighted random walk | 666.7 s | 560 | 10.185 → 9.938 nats |
+| Greedy max-belief | 313.1 s | 242 | 10.185 → 9.897 nats |
+| Lawnmower | 315.5 s | 600 | 10.185 → 7.384 nats |
+| Belief-weighted random walk | 501.6 s | 421 | 10.185 → 10.009 nats |
 
 The seed-0 person is at (116.75, 126.75) m.
 
 ### Person-absent runs (seed 0, full 1800 s)
 
-| Strategy | Observations | Mean leg | Transit share | H(300 s) | H(900 s) | H(1800 s) | E[P_det] 300 / 900 / 1800 s |
-|----------|--------------|----------|---------------|----------|----------|-----------|-----------------------------|
-| Greedy max-belief | 876 | 25.5 m | 83 % | 10.208 | 10.231 | 10.260 | 0.327 / 0.581 / 0.754 |
-| Lawnmower | 3476 | 2.7 m | 35 % | 6.213 | 5.217 | 7.959 | 0.530 / 0.917 / 0.923 |
-| Belief-weighted random walk | 1567 | 12.2 m | 71 % | 10.150 | 10.389 | 10.454 | 0.452 / 0.840 / 0.954 |
+| Strategy | Observations | Mean leg | Transit share | H(300 s) | H(900 s) | H(1800 s) | E[P_det] 300 / 900 / 1800 s | E[P_det] reaches 0.95 |
+|----------|--------------|----------|---------------|----------|----------|-----------|-----------------------------|-----------------------|
+| Greedy max-belief | 881 | 25.3 m | 82 % | 10.208 | 10.231 | 10.260 | 0.331 / 0.581 / 0.754 | never |
+| Lawnmower | 3479 | 2.7 m | 35 % | 7.547 | 8.063 | 8.739 | 0.534 / 0.917 / 0.923 | never |
+| Belief-weighted random walk | 1575 | 12.1 m | 71 % | 10.156 | 10.392 | 10.453 | 0.460 / 0.839 / 0.954 | 1715.0 s |
 
 **Key Findings**:
-- **Lawnmower is the best strategy here**: it finds the person in 48/50 trials with the lowest median (310 s) and by far the tightest IQR ([222, 413] s). Greedy is the worst: 39/50 found, median 575 s, and the widest IQR ([163, 1463] s). Greedy is fast when the person is near the LKP (it detects 14 % of trials within 60 s, against 8 % for the random walk and 0 % for the lawnmower, which first has to reach the bottom of its box), but it wastes most of its time flying.
-- **Why greedy is slow**: after a miss, the highest-belief cells form a nearly flat ring around the searched disc, and the argmax jumps between points on opposite sides of that ring. The mean leg is 25.5 m and 83 % of the mission time is transit, so greedy makes only 876 observations in 1800 s against 3476 for the lawnmower (mean leg 2.7 m).
-- **Random walk** sits in between (46/50, median 376 s). It is never confined to the box, so its model-expected $P_{det}$ keeps rising and reaches 0.954 at 1800 s, while the lawnmower stalls at 0.923 because only 91.2 % of the prior mass lies inside the ±2σ₀ box.
-- Only the lawnmower's empirical detection curve crosses 0.95 within 30 min (0.96, 48/50); in the model-expected curves only the random walk reaches 0.95 (0.954 at 1800 s). Greedy reaches 0.78 empirically and 0.754 expected.
-- **Entropy is not a good progress measure in this setup.** A miss at the belief peak flattens the belief, so greedy and random walk *raise* entropy (10.185 → 10.260 and 10.454 nats after 1800 s without a target). The lawnmower's entropy drops to about 4–6 nats mainly because the false alarms it does not chase (2 % per scan, about 20 per pass) pile belief into small spots (×45 per false hit). The upward jumps in its curve are passes that clear those spots again. The earlier claim that "greedy achieves faster entropy reduction" was wrong: greedy hardly changes the entropy at all.
+- **Lawnmower is the best strategy here**: it finds the person in 48/50 trials with the lowest median (285.6 s) and the tightest IQR ([216.6, 367.3] s), and its empirical detection curve is the first to reach 0.95 (at 959.1 s). The random walk also finds 48/50 but more slowly (median 333.6 s, reaches 0.95 at 1561.2 s). Greedy is the worst: 40/50 found, median 562.5 s, the widest IQR ([165.5, 1404.3] s), and it never reaches 0.95. Greedy is fast when the person is near the LKP (12 % of trials within 60 s, against 10 % for the random walk and 0 % for the lawnmower, which first has to reach the bottom of its box), but it wastes most of its time flying.
+- **Why greedy is slow**: after a miss, the highest-belief cells form a nearly flat ring around the searched disc, and the argmax jumps between points on opposite sides of that ring. The mean leg is 25.3 m and 82 % of the mission time is transit, so greedy makes only 881 observations in 1800 s against 3479 for the lawnmower (mean leg 2.7 m).
+- **Model-expected P_det** (seed-0 person-absent paths): only the random walk reaches 0.95 (at 1715.0 s). It is never confined to the box, while the lawnmower stalls at 0.923 because only 91.2 % of the prior mass lies inside the ±2σ₀ box. The lawnmower's empirical curve still passes 0.95 (48/50 = 0.96); the gap to the model value (0.96 vs 0.923) is within the sampling noise of 50 trials (binomial standard error ≈ 0.04). Greedy reaches 0.80 empirically and 0.754 expected.
+- **Entropy is not a good progress measure in this setup.** A miss at the belief peak flattens the belief, so greedy and random walk *raise* entropy (10.185 → 10.260 and 10.453 nats after 1800 s without a target). The lawnmower's entropy drops (to 7.547 nats at 300 s and below 5 nats later in the run) mainly because the false alarms it does not chase (2 % per scan, about 20 per pass) pile belief into small spots (×45 per false hit). The upward jumps in its curve are passes that clear those spots again; H ends at 8.739 nats. Greedy hardly changes the entropy at all, so the earlier claim that "greedy achieves faster entropy reduction" was wrong.
 
 **Prior Belief Map** — Gaussian prior centred on LKP with $\sigma_0 = 19.7$ m, lawnmower box and drone start positions:
 
@@ -145,11 +144,11 @@ The seed-0 person is at (116.75, 126.75) m.
 
 ![Monte Carlo Boxplot](./mc_boxplot.png)
 
-**Cumulative probability of detection** — empirical fraction of the 50 trials detected by time t (solid) and model-expected $\mathbb{E}[P_{det}(t)]$ along the seed-0 person-absent search paths (dashed), with the 0.95 target:
+**Cumulative probability of detection** — empirical fraction of the 50 trials detected by time t (solid) and model-expected $\mathbb{E}[P_{det}(t)]$ along the seed-0 person-absent search paths (dashed), with the 0.95 target; circles / squares mark where the empirical / model curves reach 0.95:
 
 ![Detection CDF](./detection_cdf.png)
 
-**Animation** — seed 0, all three strategies side by side, drones moving kinematically, belief updating after each scan:
+**Animation** — seed 0, all three strategies side by side, drones moving kinematically, belief updating after each scan; each panel title shows the time and the current belief entropy:
 
 ![Animation](./animation.gif)
 
@@ -158,7 +157,7 @@ The seed-0 person is at (116.75, 126.75) m.
 | Card | Implementation | Reason |
 |------|----------------|--------|
 | σ₀ ≈ 17.2 m | σ₀ = 19.7 m | Arithmetic error in the card: $\sqrt{10^2 + 2 \cdot 0.02 \cdot 7200} = 19.7$ m. Card corrected. |
-| Lawnmower over the whole area, rows 4 m apart | ±2σ₀ box around the LKP, 3 strips, 2.5 m lattice | A 4 m lattice with $r_s = 2$ m discs leaves about 21 % of every square unseen. A whole-area sweep would cover only about half the area in 30 min and mostly far from the LKP; a box sized from the prior is standard SAR practice and gives a fair comparison. The belief map is still ignored during the sweep. |
+| Lawnmower: "systematic boustrophedon coverage, ignoring the belief map" (area, row spacing and drone allocation not specified; the card's code calls an undefined `_lawnmower_next`) | ±2σ₀ box around the LKP, 3 strips (one per drone), 2.5 m lattice | The previous implementation swept the whole area with 4 m rows; a 4 m lattice with $r_s = 2$ m discs leaves about 21 % of every square unseen, and a whole-area sweep covers only about half the area in 30 min, mostly far from the LKP. A box sized from the prior is standard SAR practice and gives a fair comparison. The belief map is still ignored during the sweep. |
 | Drone jumps to its new waypoint when it is assigned | Kinematic legs at 5 m/s, positions interpolated | Snapshots previously showed future positions. |
 | Entropy-weighted random walk | Implemented as a belief-weighted, annealed random walk (local 20 m candidate set, weight ∝ block belief$^{1/T}$) | The card's third strategy was missing. |
 | Expected $P_{det}(t)$ curve from $B_t$ | Empirical MC curve plus model-expected curve using $B_0$ along the person-absent path | The empirical curve is what the mission actually achieves; weighting by the prior $B_0$ gives the standard probability-of-success formula. |

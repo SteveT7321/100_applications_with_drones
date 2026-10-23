@@ -50,7 +50,7 @@ DELTA_T_SEC     = 2.0 * 3600.0  # 7200 s elapsed since LKP
 SIGMA0          = np.sqrt(SIGMA_LKP ** 2 + 2.0 * DIFFUSION_D * DELTA_T_SEC)  # 19.7 m
 
 LKP = np.array([100.0, 120.0])  # last known position (m)
-START_POS = np.array([[40.0, 5.0], [100.0, 5.0], [160.0, 5.0]])  # south edge
+START_POS = np.array([[50.0, 10.0], [100.0, 10.0], [150.0, 10.0]])  # south edge (card)
 
 MAX_SIM_TIME    = 1800.0       # s, 30-minute hard cutoff
 N_MC_TRIALS     = 50           # Monte Carlo trials per strategy
@@ -275,7 +275,7 @@ def simulate(strategy, seed, record=False, person_absent=False, frame_times=None
         while f_idx < len(frame_times) and frame_times[f_idx] < t:
             tf = frame_times[f_idx]
             frames.append((tf, (B / B.sum()).reshape(GRID_N // 2, 2, GRID_N // 2, 2).sum(axis=(1, 3)),
-                           np.array([dd.pos_at(tf) for dd in drones])))
+                           np.array([dd.pos_at(tf) for dd in drones]), belief_entropy(B)))
             f_idx += 1
         # observation at the end of the dwell
         pos = d.target
@@ -300,11 +300,23 @@ def simulate(strategy, seed, record=False, person_absent=False, frame_times=None
     while f_idx < len(frame_times):     # freeze the final state for remaining frames
         tf = frame_times[f_idx]
         frames.append((min(tf, t_end), (B / B.sum()).reshape(GRID_N // 2, 2, GRID_N // 2, 2).sum(axis=(1, 3)),
-                       np.array([dd.pos_at(min(tf, t_end)) for dd in drones])))
+                       np.array([dd.pos_at(min(tf, t_end)) for dd in drones]), belief_entropy(B)))
         f_idx += 1
     return dict(det_time=det_time, person=person, n_obs=n_obs,
                 ent_t=np.array(ent_t), ent_h=np.array(ent_h, dtype=float), pdet=np.array(pdet),
                 snaps=snaps, frames=frames, drones=drones, t_end=t_end)
+
+
+def empirical_cross(times, level=0.95):
+    """Earliest time at which the fraction of trials detected reaches `level` (nan if never)."""
+    k = int(np.ceil(level * len(times)))
+    f = np.sort(times[np.isfinite(times)])
+    return float(f[k - 1]) if len(f) >= k else float('nan')
+
+
+def model_cross(r, level=0.95):
+    idx = np.flatnonzero(r['pdet'] >= level)
+    return float(r['ent_t'][idx[0]]) if len(idx) else float('nan')
 
 
 def run_simulation():
@@ -344,7 +356,7 @@ def run_simulation():
         print(f"[{s:>11s}] mean leg {legs.mean():.1f} m, transit share of mission time "
               f"{100 * legs.sum() / DRONE_SPEED / (N_DRONES * MAX_SIM_TIME):.0f} %")
         print(f"[{s:>11s}] model-expected P_det: t=300 s {ps[300]:.3f}, t=900 s {ps[900]:.3f}, "
-              f"t=1800 s {ps[1800]:.3f}")
+              f"t=1800 s {ps[1800]:.3f}; reaches 0.95 at t = {model_cross(r):.1f} s")
 
     print(f"--- Monte Carlo: {N_MC_TRIALS} trials per strategy (same person positions) ---")
     for s in STRATEGIES:
@@ -360,7 +372,8 @@ def run_simulation():
               f"median {np.median(cens):.1f} s, IQR [{np.percentile(cens, 25):.1f}, "
               f"{np.percentile(cens, 75):.1f}] s (not-found counted as {MAX_SIM_TIME:.0f} s); "
               f"median of found {np.median(times[found]):.1f} s; "
-              f"detected by 60 s: {np.sum(times <= 60) / N_MC_TRIALS:.2f}, by 1800 s: {found.mean():.2f}")
+              f"detected by 60 s: {np.sum(times <= 60) / N_MC_TRIALS:.2f}, by 1800 s: {found.mean():.2f}; "
+              f"empirical P_det reaches 0.95 at t = {empirical_cross(times):.1f} s")
     return demo, absent, mc
 
 
@@ -482,13 +495,19 @@ def plot_detection_cdf(mc, absent, out_dir):
         times = mc[s]
         cdf = [(times <= t).sum() / len(times) for t in tt]
         ax.plot(tt, cdf, color=COLORS[s], lw=2, label=f"{LABELS[s]} (MC empirical)")
+        for tc, mk in ((empirical_cross(times), 'o'), (model_cross(absent[s]), 's')):
+            if np.isfinite(tc):
+                ax.plot(tc, 0.95, mk, color=COLORS[s], mec='k', ms=8, zorder=6)
+                ax.annotate(f"{tc:.0f} s", (tc, 0.95), textcoords='offset points', xytext=(-10, -16),
+                            fontsize=8, color=COLORS[s])
         ax.plot(absent[s]["ent_t"], absent[s]["pdet"], color=COLORS[s], lw=1.2, ls="--",
                 label=f"{LABELS[s]} (model-expected, seed-0 path)")
     ax.axhline(0.95, color="grey", ls="--", lw=1, label="0.95 target")
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("Probability of detection")
     ax.set_ylim(0, 1.02)
-    ax.set_title(f"P_det(t): empirical over {N_MC_TRIALS} MC trials (solid) vs model-expected (dashed)")
+    ax.set_title(f"P_det(t): empirical over {N_MC_TRIALS} MC trials (solid) vs model-expected (dashed)\n"
+                 "circle / square = time the empirical / model curve reaches 0.95", fontsize=10)
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=7.5, loc="lower right")
     plt.tight_layout()
@@ -527,13 +546,13 @@ def save_animation(demo, out_dir):
 
     def update(i):
         for j, s in enumerate(STRATEGIES):
-            tf, bel, poses = demo[s]["frames"][i]
+            tf, bel, poses, h = demo[s]["frames"][i]
             ims[j].set_data(bel)
             for k in range(N_DRONES):
                 marks[j][k].set_data([poses[k][0]], [poses[k][1]])
                 circs[j][k].set_center(poses[k])
             done = demo[s]["det_time"] is not None and tf >= demo[s]["det_time"]
-            titles[j].set_text(f"{LABELS[s]}\nt = {tf:.0f} s" + ("  FOUND" if done else ""))
+            titles[j].set_text(f"{LABELS[s]}\nt = {tf:.0f} s, H = {h:.2f} nats" + ("  FOUND" if done else ""))
         return []
 
     ani = animation.FuncAnimation(fig, update, frames=N_FRAMES, interval=100, blit=False)
