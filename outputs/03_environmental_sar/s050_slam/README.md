@@ -144,12 +144,12 @@ Distributed vs isolated, per seed: 1 m coverage better in 5/10 and worse in 5/10
 - **Mechanism (seed 0, printed by the script): a merge drags an accurate host into the visitor's drift.** Drone 1's distributed pose error equals its isolated one until the D1–D3 merge at 166.6 s (1.30 m in both). That merge transfers 7 landmarks from D3, whose isolated position error at that moment is 3.76 m. Afterwards D1's distributed error is 2.42 m at 200 s, 2.76 m at 400 s and 2.87 m at 600 s, while its isolated error falls to 0.61 m at 400 s and 0.23 m at 600 s. D1's final distributed map is offset by (−2.00, +1.71) m from the truth (2.63 m), against (+0.07, −0.15) m for its isolated map. The alignment correctly expresses D3's landmarks in D1's frame near the common landmarks, but D3's map is distorted by its drift, and D1 then localises on those transferred landmarks. Neither drone can judge whose frame is more accurate.
 - **Attempted fixes do not help** (same flight logs, same tuning):
 
-  | Policy | 1 m coverage: mean / median | vs isolated, per seed (better / worse / tie) | Pose RMSE: mean / median | Merges per run |
-  |---|---|---|---|---|
-  | `dist_certainty`: less certain drone (larger position covariance) adopts the other's frame | 14.7 % / 2.78 % | 3 / 7 / 0 | 5.571 / 6.037 m | 11.2 |
-  | `dist_agree`: reject merges whose alignment shifts the visitor map > 1 m RMS | 19.9 % / 16.11 % | 0 / 1 / 9 | 6.416 / 4.182 m | 0.4 |
+  | Policy | 1 m coverage: mean / median | Coverage vs isolated, per seed (better / worse / tie) | Pose RMSE: mean / median | Pose RMSE vs isolated, per seed (better / worse / tie) | Merges per run |
+  |---|---|---|---|---|---|
+  | `dist_certainty`: less certain drone (larger position covariance) adopts the other's frame | 14.7 % / 2.78 % | 3 / 7 / 0 | 5.571 / 6.037 m | 6 / 4 / 0 | 11.2 |
+  | `dist_agree`: reject merges whose alignment shifts the visitor map > 1 m RMS | 19.9 % / 16.11 % | 0 / 1 / 9 | 6.416 / 4.182 m | 1 / 0 / 9 | 0.4 |
 
-  `dist_certainty` fails because the drifted filters are overconfident: the position covariance does not identify the drone with the accurate frame (in seed 0 it reaches 1.1 % coverage, 3.376 m pose RMSE). `dist_agree` removes the harm but also almost all merges (0.4 per run), so it simply reproduces the isolated result (9 of 10 seeds identical). Fixing this properly needs information the card does not provide, e.g. relative range/bearing measurements between drones at rendezvous (Extension 6) or a joint (centralised or pose-graph) estimate.
+  `dist_certainty` improves pose RMSE over isolated in 6 of 10 seeds (mean 5.571 m), but its median (6.037 m) is still worse than isolated's 4.18 m and it loses coverage in 7 of 10 seeds, so overall it does not help. It fails because the drifted filters are overconfident: the position covariance does not identify the drone with the accurate frame (in seed 0 it reaches 1.1 % coverage, 3.376 m pose RMSE). `dist_agree` removes the harm but also almost all merges (0.4 per run), so it simply reproduces the isolated result (9 of 10 seeds identical). Fixing this properly needs information the card does not provide, e.g. relative range/bearing measurements between drones at rendezvous (Extension 6) or a joint (centralised or pose-graph) estimate.
 
 ### Showcase run (seed 0)
 
