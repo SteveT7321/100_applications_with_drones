@@ -12,7 +12,9 @@ Strategies (all evaluated in true 3-D: 3-D flight times, 3-D energy):
   2. 3D Clarke-Wright   -- savings and feasibility with the 3-D energy metric
   3. 3D TW insertion    -- time-window-aware cheapest insertion of the card's
                            objective  J = alpha TWT + (1 - alpha) E_3D  with a
-                           relocate local search (VRPTW heuristic)
+                           relocate local search (VRPTW heuristic), run twice:
+                           restricted to each customer's nearest depot (same
+                           freedom as Clarke-Wright) and with any depot allowed
 
 Two instances: the card's time windows (seed 42) and a tight-window variant
 (same customers, windows from seed 2029) where the windows actually bind.
@@ -77,7 +79,9 @@ _rng_t  = np.random.default_rng(SEED_TIGHT)
 EARLY_T = _rng_t.uniform(0, 240, N_CUSTOMERS)
 LATE_T  = EARLY_T + _rng_t.uniform(20, 60, N_CUSTOMERS)
 INSTANCES = {'card': (EARLY, LATE), 'tight': (EARLY_T, LATE_T)}
-STRATS = ['2D Clarke-Wright', '3D Clarke-Wright', '3D TW insertion']
+STRATS = ['2D Clarke-Wright', '3D Clarke-Wright', '3D TW insertion (nearest depot)',
+          '3D TW insertion']
+NEAREST = np.argmin(np.linalg.norm(CUST_XY[:, None, :] - DEPOT_XY[None, :, :], axis=2), axis=1)
 
 
 # ── Costs and feasibility ─────────────────────────────────────────
@@ -197,10 +201,12 @@ def clarke_wright(inst, metric):
     return assign_sorties(sorties_by_depot, inst)
 
 
-def _best_insertion(plans, c, early, late, base):
+def _best_insertion(plans, c, early, late, base, restrict=False):
     best = None
     for k in range(N_DRONES):
         dep = DEPOT_OF_DRONE[k]
+        if restrict and dep != NEAREST[c]:
+            continue
         cands = []
         for si, s in enumerate(plans[k]):
             for pos in range(len(s) + 1):
@@ -216,12 +222,12 @@ def _best_insertion(plans, c, early, late, base):
     return best
 
 
-def tw_insertion(inst):
+def tw_insertion(inst, restrict=False):
     early, late = INSTANCES[inst]
     plans = [[] for _ in range(N_DRONES)]
     base = [0.0] * N_DRONES
     for c in sorted(range(N_CUSTOMERS), key=lambda c: (late[c], c)):
-        _, k, p = _best_insertion(plans, c, early, late, base)
+        _, k, p = _best_insertion(plans, c, early, late, base, restrict)
         plans[k] = p
         base[k] = drone_schedule(p, k, early, late)['obj']
     history = [sum(base)]
@@ -235,7 +241,7 @@ def tw_insertion(inst):
             trial[k0] = reduced
             tbase = list(base)
             tbase[k0] = drone_schedule(reduced, k0, early, late)['obj']
-            _, k, p = _best_insertion(trial, c, early, late, tbase)
+            _, k, p = _best_insertion(trial, c, early, late, tbase, restrict)
             new_k = drone_schedule(p, k, early, late)['obj']
             if sum(tbase) - tbase[k] + new_k < sum(base) - 1e-6:
                 trial[k] = p
@@ -265,6 +271,8 @@ def run_simulation():
         res[inst] = {}
         res[inst]['2D Clarke-Wright'] = evaluate(clarke_wright(inst, energy_flat), inst)
         res[inst]['3D Clarke-Wright'] = evaluate(clarke_wright(inst, energy_3d), inst)
+        plans, hn = tw_insertion(inst, restrict=True)
+        res[inst]['3D TW insertion (nearest depot)'] = evaluate(plans, inst)
         plans, h = tw_insertion(inst)
         res[inst]['3D TW insertion'] = evaluate(plans, inst)
         hist[inst] = h
@@ -272,11 +280,15 @@ def run_simulation():
         print(f'\n=== {inst} time windows ===')
         for s in STRATS:
             r = res[inst][s]
-            print(f'  {s:<17s} energy {r["energy"]:7.1f} m-eq  TWT {r["twt"]:6.1f} s '
+            print(f'  {s:<31s} energy {r["energy"]:7.1f} m-eq  TWT {r["twt"]:6.1f} s '
                   f'({r["n_late"]} late)  J {r["objective"]:7.1f}  makespan {r["makespan"]:6.1f} s  '
                   f'sorties {r["n_sorties"]}/drones {r["n_drones"]}  max load {r["max_load"]:.2f} kg  '
                   f'max sortie E {r["max_e3"]:.1f}  climb+descent {r["climb"]:.0f} m')
             print(f'      plan: {_fmt_plan(r["plans"])}')
+            off = [c for k, p in enumerate(r['plans']) for sx in p for c in sx
+                   if DEPOT_OF_DRONE[k] != NEAREST[c]]
+            print(f'      customers served from a non-nearest depot: '
+                  f'{", ".join(f"C{c + 1}" for c in sorted(off)) if off else "none"}')
             ex = r['extra_t']
             print(f'      altitude-change legs: {len(ex)}, extra flight time vs flat '
                   f'{min(ex):.2f}-{max(ex):.2f} s per leg, {sum(ex):.2f} s in total')
@@ -291,10 +303,18 @@ def run_simulation():
         rel = (f'{dt_ / b2["twt"] * 100:+.1f}%' if b2['twt'] > 1e-9
                else 'n/a, 2D TWT is 0')
         print(f'  3D vs 2D Clarke-Wright: energy {de:+.1f}%, TWT {dt_:+.1f} s ({rel})')
-        if len(h) > 1:
-            print(f'  TW insertion local search: J {h[0]:.1f} -> {h[-1]:.1f} in {len(h) - 1} moves')
-        else:
-            print(f'  TW insertion local search: no improving move (J {h[0]:.1f})')
+        for lab, hh in [('TW insertion (nearest depot)', hn), ('TW insertion (any depot)', h)]:
+            if len(hh) > 1:
+                print(f'  {lab} local search: J {hh[0]:.1f} -> {hh[-1]:.1f} in {len(hh) - 1} moves')
+            else:
+                print(f'  {lab} local search: no improving move (J {hh[0]:.1f})')
+        rn, ra = res[inst]['3D TW insertion (nearest depot)'], res[inst]['3D TW insertion']
+        print(f'  Effect of time-window awareness (nearest depot, vs 3D Clarke-Wright): '
+              f'J {b3["objective"]:.1f} -> {rn["objective"]:.1f}, TWT {b3["twt"]:.1f} -> {rn["twt"]:.1f} s, '
+              f'energy {b3["energy"]:.1f} -> {rn["energy"]:.1f}')
+        print(f'  Effect of free depot choice (vs nearest-depot TW insertion): '
+              f'J {rn["objective"]:.1f} -> {ra["objective"]:.1f}, TWT {rn["twt"]:.1f} -> {ra["twt"]:.1f} s, '
+              f'energy {rn["energy"]:.1f} -> {ra["energy"]:.1f}')
     return res, hist
 
 
@@ -330,7 +350,7 @@ def _draw_map(ax, r, title):
 
 def plot_3d_routes(res, out_dir):
     fig = plt.figure(figsize=(16, 7.5))
-    for i, (inst, s) in enumerate([('card', '3D Clarke-Wright'), ('tight', '3D TW insertion')]):
+    for i, (inst, s) in enumerate([('card', '3D Clarke-Wright'), ('tight', '3D TW insertion (nearest depot)')]):
         ax = fig.add_subplot(1, 2, i + 1, projection='3d')
         r = res[inst][s]
         _draw_map(ax, r, f'{s}, {inst} windows: E = {r["energy"]:.0f} m-eq, TWT = {r["twt"]:.1f} s')
@@ -350,7 +370,7 @@ def plot_3d_routes(res, out_dir):
 
 
 def plot_altitude_profiles(res, out_dir):
-    cases = [('card', '3D Clarke-Wright'), ('tight', '3D TW insertion')]
+    cases = [('card', '3D Clarke-Wright'), ('tight', '3D TW insertion (nearest depot)')]
     fig, axes = plt.subplots(2, 1, figsize=(13, 8.5), sharex=True)
     for ax, (inst, s) in zip(axes, cases):
         r = res[inst][s]
@@ -382,15 +402,15 @@ def plot_altitude_profiles(res, out_dir):
 
 def plot_energy_comparison(res, out_dir):
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    cols = ['steelblue', 'coral', 'seagreen']
+    cols = ['steelblue', 'coral', 'khaki', 'seagreen']
     x = np.arange(len(INSTANCES))
-    w = 0.26
+    w = 0.2
     for ax, key, lab in zip(axes, ['energy', 'twt', 'objective'],
                             ['Total 3-D energy (m-equiv)', 'Total weighted tardiness (s)',
                              f'Objective J = {ALPHA} TWT + {1 - ALPHA:.1f} E']):
         for i, s in enumerate(STRATS):
             vals = [res[inst][s][key] for inst in INSTANCES]
-            bars = ax.bar(x + (i - 1) * w, vals, w, color=cols[i], edgecolor='black', lw=0.6, label=s)
+            bars = ax.bar(x + (i - 1.5) * w, vals, w, color=cols[i], edgecolor='black', lw=0.6, label=s)
             for b, v in zip(bars, vals):
                 ax.text(b.get_x() + b.get_width() / 2, b.get_height(), f'{v:.0f}' if key != 'twt' else f'{v:.1f}',
                         ha='center', va='bottom', fontsize=7)
