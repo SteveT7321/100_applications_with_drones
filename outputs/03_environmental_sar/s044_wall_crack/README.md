@@ -120,6 +120,7 @@ At the 1.5 m standoff $w_{min} = 1.732/2048 \times 1000 = 0.846$ mm, so cracks n
 | $w_{min} \approx 0.847\ \mu$m | $w_{min} = 0.846$ mm | Unit/arithmetic error in the card (1.732 m / 2048 px = 0.846 mm). Card corrected. |
 | Waypoint reached within 0.3 m | Waypoint reached exactly | The 0.3 m tolerance let each pass stop up to 0.3 m short of its target height, leaving part of the top band unimaged. |
 | "Standoff RMS" | RMS computed as $\sqrt{\overline{e^2}}$ (earlier version printed the standard deviation) | Correct definition (includes any mean offset; the mean error here is −0.01 cm). |
+
 ---
 
 ## Extensions
