@@ -756,6 +756,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S050 Swarm Cooperative Mapping (EKF-SLAM)](../../03_environmental_sar/S050_slam.md), [S064 Greenhouse Inspection](S064_greenhouse.md), [S069 Underground Pipeline Inspection](S069_pipeline.md)
-- Follow-ups: [S075 Confined-Space Gas Detection](S075_gas_detection.md), [S076 Mine Rescue Path Planning](S076_mine_rescue.md)
-- Algorithmic cross-reference: [S013 Particle Filter Intercept](../../01_pursuit_evasion/S013_particle_filter_intercept.md) (probabilistic localisation), [S041 Wildfire Boundary Mapping](../../03_environmental_sar/S041_wildfire_boundary.md) (frontier-based coverage), [S048 Lawnmower Coverage](../../03_environmental_sar/S048_lawnmower.md) (systematic area coverage baselines)
+- Prerequisites: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../03_environmental_sar/S050_slam.md), [S064 Greenhouse Interior Precision Flight](S064_greenhouse.md)
+- Follow-ups: [S093 Earthquake Rubble Search and Rescue](../05_special_entertainment/S093_rubble_sar.md)
+- Algorithmic cross-reference: [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md) (probabilistic localisation), [S041 Wildfire Boundary Scan](../03_environmental_sar/S041_wildfire_boundary.md) (frontier-based coverage), [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (systematic area coverage baselines)

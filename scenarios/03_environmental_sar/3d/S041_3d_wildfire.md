@@ -258,7 +258,7 @@ with degraded IR precision.
 
 ## Related Scenarios
 
-- Original 2D version: [S041](../S041_wildfire_boundary.md)
-- Terrain-following reference: [S003 Low Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Original 2D version: [S041 Wildfire Boundary Scan](../S041_wildfire_boundary.md)
+- Terrain-following reference: [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
 - Volumetric plume sensing: [S045 Chemical Plume Tracing](../S045_plume_tracing.md)
-- Dynamic boundary tracking: [S055 Oil Spill Tracking](../S055_oil_spill.md)
+- Dynamic boundary tracking: [S055 Coastline Oil Spill Tracking](../S055_oil_spill.md)

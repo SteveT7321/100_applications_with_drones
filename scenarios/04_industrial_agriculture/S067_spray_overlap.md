@@ -519,6 +519,6 @@ if __name__ == "__main__":
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Full-Area Coverage Scan](../../03_environmental_sar/S048_lawnmower.md) (boustrophedon strip planning fundamentals), [S063 Crop Row Following](S063_crop_row_following.md) (agricultural strip flight basics)
-- Follow-ups: [S068 Multi-Drone Field Coverage](S068_multi_drone_field_coverage.md) (parallel strip assignment across a fleet), [S073 Precision Fertiliser Dosing](S073_precision_fertiliser_dosing.md) (variable-rate application with prescription maps)
-- Algorithmic cross-reference: [S052 Glacier Melt Area Measurement](../../03_environmental_sar/S052_glacier.md) (same strip-spacing overlap trade-off in photogrammetric surveys)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (boustrophedon strip planning fundamentals)
+- Follow-ups: [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md) (parallel strip assignment across a fleet)
+- Algorithmic cross-reference: [S052 Glacier Melt Area Measurement](../03_environmental_sar/S052_glacier.md) (same strip-spacing overlap trade-off in photogrammetric surveys)

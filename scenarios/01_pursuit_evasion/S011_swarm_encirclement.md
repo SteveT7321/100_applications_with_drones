@@ -86,5 +86,5 @@ init_xyzs.append([0., 0., 2.0])   # evader (index N_PURSUERS)
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md)
-- Follow-ups: [S013](S013_pincer_movement.md), [S018](S018_multi_target_intercept.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md)
+- Follow-ups: [S013 Pincer Movement](S013_pincer_movement.md), [S018 Multi-Target Intercept](S018_multi_target_intercept.md)

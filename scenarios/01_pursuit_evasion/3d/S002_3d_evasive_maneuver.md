@@ -122,5 +122,5 @@ increasing $T_{cap}$ compared to the 2D perpendicular case where $\cos\theta_0 =
 
 ## Related Scenarios
 
-- Original: [S002 2D version](../S002_evasive_maneuver.md)
-- Truly 3D reference: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original: [S002 Evasive Maneuver](../S002_evasive_maneuver.md)
+- Truly 3D reference: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

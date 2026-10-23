@@ -953,12 +953,12 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S082 FPV Racing](S082_fpv_racing.md) (high-speed drone navigation along a
-  course), [S095 Aerial Acrobatics](S095_aerial_acrobatics.md) (precise trajectory following under
+- Prerequisites: [S082 FPV Racing Circuit](S082_fpv_racing.md) (high-speed drone navigation along a
+  course), [S091 Aerial Acrobatic Maneuvers](S091_acrobatics.md) (precise trajectory following under
   dynamic constraints)
-- Algorithmic cross-reference: [S081 Fireworks Synchronisation](S081_fireworks_sync.md) (KF state
+- Algorithmic cross-reference: [S081 Selfie Follow Mode](S081_selfie_follow.md) (KF state
   estimation and timing, same filter architecture used here),
-  [S023 Moving Landing Pad](../../02_logistics_delivery/S023_moving_landing_pad.md) (velocity
+  [S023 Moving Landing Pad](../02_logistics_delivery/S023_moving_landing_pad.md) (velocity
   matching at a moving target, analogous to the handoff rendezvous condition)
-- Follow-ups: [S099 Multi-Drone Grand Prix](S099_grand_prix.md) (full race with multiple
+- Follow-ups: [S099 Cross-Obstacle Relay Pass](S099_obstacle_relay.md) (full race with multiple
   competing relay teams and collision avoidance)

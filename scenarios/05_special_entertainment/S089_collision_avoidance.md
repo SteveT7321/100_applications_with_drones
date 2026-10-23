@@ -759,13 +759,13 @@ reach the goal.
 
 ## Related Scenarios
 
-- Prerequisites: [S085 Light Matrix Positioning](S085_light_matrix.md),
-  [S088 Formation Shape Morphing](S088_formation_morphing.md)
-- Follow-ups: [S098 Swarm Synchronized Dance](S098_swarm_dance.md)
+- Prerequisites: [S085 Drone Light Matrix Positioning](S085_light_matrix.md),
+  [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md)
+- Follow-ups: [S098 Swarm Synchronized Dance](S098_synchronized_dance.md)
 - Algorithmic cross-reference:
-  [S009 Differential Game Pursuit](../01_pursuit_evasion/S009_differential_game.md)
+  [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../01_pursuit_evasion/S009_differential_game.md)
   (multi-agent velocity reasoning),
-  [S070 Swarm Weeding](../04_industrial_agriculture/S070_swarm_weeding.md)
+  [S070 Swarm Weeding Task](../04_industrial_agriculture/S070_swarm_weeding.md)
   (dense swarm coordination),
-  [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md)
+  [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md)
   (probabilistic multi-agent state tracking)

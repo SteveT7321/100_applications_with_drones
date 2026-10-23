@@ -600,6 +600,6 @@ def plot_path_length_breakdown(facade_wps, roof_wps, all_wps, tour_idx):
 
 ## Related Scenarios
 
-- Prerequisites: [S053 Coral Reef 3D Reconstruction](../../03_environmental_sar/S053_coral_reef.md) (GSD-constrained viewpoint coverage and TSP tour), [S061 Power Line Inspection](S061_power_line_inspection.md) (facade-parallel flight path fundamentals)
-- Follow-ups: [S074 Mine 3D Mapping](S074_mine_3d_mapping.md) (enclosed-space 3D scanning with no GPS)
-- Algorithmic cross-reference: [S053 Coral Reef 3D Reconstruction](../../03_environmental_sar/S053_coral_reef.md) (nearest-neighbour TSP, GSD formula), [S061 Power Line Inspection](S061_power_line_inspection.md) (strip-parallel flight pattern)
+- Prerequisites: [S053 Coral Reef 3D Reconstruction](../03_environmental_sar/S053_coral_reef.md) (GSD-constrained viewpoint coverage and TSP tour), [S061 Power Line Inspection](S061_power_line.md) (facade-parallel flight path fundamentals)
+- Follow-ups: [S074 Mine 3D Mapping](S074_mine_mapping.md) (enclosed-space 3D scanning with no GPS)
+- Algorithmic cross-reference: [S053 Coral Reef 3D Reconstruction](../03_environmental_sar/S053_coral_reef.md) (nearest-neighbour TSP, GSD formula), [S061 Power Line Inspection](S061_power_line.md) (strip-parallel flight pattern)

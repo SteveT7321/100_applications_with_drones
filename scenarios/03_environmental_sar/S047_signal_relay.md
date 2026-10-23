@@ -342,7 +342,7 @@ def run_simulation():
 5. **Relay count selection**: vary $N_{relays} \in \{1, 2, 3, 4, 5\}$ and plot the trade-off
    between bottleneck SNR improvement and drone resource cost; identify the minimum relay count
    that achieves $\text{SNR}_{min}$ on all links.
-6. **Communication network expansion**: connect to [S051](S051_post_disaster_comm_network.md)
+6. **Communication network expansion**: connect to [S051](S051_post_disaster_comm.md)
    by treating the optimal relay chain as a backbone link within a wider mesh network formed
    after a disaster event.
 
@@ -350,6 +350,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S046 3D Trilateration](S046_3d_trilateration.md)
-- Follow-ups: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md), [S051 Post-Disaster Comm Network](S051_post_disaster_comm_network.md)
-- Algorithmic cross-reference: [S059 Sonar Buoy Relay](S059_sonar_buoy_relay.md) (relay chain in underwater acoustics), [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md) (multi-agent positioning under constraints)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S046 Multi-Drone 3D Trilateration](S046_trilateration.md)
+- Follow-ups: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md), [S051 Post-Disaster Communication Network Restoration](S051_post_disaster_comm.md)
+- Algorithmic cross-reference: [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](S059_sonar_relay.md) (relay chain in underwater acoustics), [S049 Dynamic Zone Search](S049_dynamic_zone.md) (multi-agent positioning under constraints)

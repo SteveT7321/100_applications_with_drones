@@ -307,8 +307,8 @@ Expected quantitative results:
 
 - Original 2D version: [S062 Wind Turbine Blade Inspection](../S062_wind_turbine.md)
 - Structural cross-reference: [S061 Power Line Inspection](../S061_power_line.md) (radial
-  standoff tracking along elongated structures), [S071 Bridge Underside Inspection](../S071_bridge_inspection.md) (close-proximity 3D surface coverage)
+  standoff tracking along elongated structures), [S071 Bridge Underside Structural Inspection](../S071_bridge_inspection.md) (close-proximity 3D surface coverage)
 - Dynamic target tracking: [S023 Moving Landing Pad](../../02_logistics_delivery/S023_moving_landing_pad.md) (tracking a rotating reference frame)
-- Multi-turbine follow-up: [S079 Offshore Wind Installation](../S079_offshore_wind.md) (fleet
+- Multi-turbine follow-up: [S079 Offshore Wind Farm Installation Assistance](../S079_offshore_wind.md) (fleet
   scheduling across a wind farm)
-- Wake modelling reference: [S058 Typhoon Reconnaissance](../../03_environmental_sar/S058_typhoon.md) (wind-field disturbance rejection)
+- Wake modelling reference: [S058 Typhoon Eye Probing](../../03_environmental_sar/S058_typhoon.md) (wind-field disturbance rejection)

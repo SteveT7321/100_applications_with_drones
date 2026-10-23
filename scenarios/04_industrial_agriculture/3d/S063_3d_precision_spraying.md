@@ -275,6 +275,6 @@ where $M = \lfloor T_{spray} / \Delta t \rfloor$ and the norm is the full 3D Euc
 
 ## Related Scenarios
 
-- Original 2D version: [S063](../S063_precision_spraying.md)
-- Truly 3D agricultural references: [S062 Crop Row Following](../S062_crop_row_following.md), [S067 Spray Overlap Optimisation](../S067_spray_overlap_optimization.md)
-- Domain 3D format reference: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original 2D version: [S063 Single-Plant Precision Spraying](../S063_precision_spraying.md)
+- Truly 3D agricultural references: [S067 Spray Coverage Overlap Optimization](../S067_spray_overlap.md)
+- Domain 3D format reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

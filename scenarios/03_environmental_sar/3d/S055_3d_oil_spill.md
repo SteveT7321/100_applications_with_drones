@@ -237,8 +237,8 @@ $$\epsilon_{th}(t) = \sqrt{\frac{\int_\Omega (\hat{H}_{oil}(\mathbf{x}, t) - H_{
 ## Related Scenarios
 
 - Original 2D version: [S055 Coastline Oil Spill Tracking](../S055_oil_spill.md)
-- 3D sensor modelling reference: [S056 Radiation Hotspot Detection](../S056_radiation.md) (altitude-dependent sensor model in a different domain)
+- 3D sensor modelling reference: [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../S056_radiation.md) (altitude-dependent sensor model in a different domain)
 - Advection-diffusion field reference: [S045 Chemical Plume Tracing](../S045_plume_tracing.md) (same PDE structure, particle-filter tracking)
 - Boundary tracking reference: [S041 Wildfire Boundary Scan](../S041_wildfire_boundary.md) (iso-contour boundary following, 2D)
-- Multi-altitude coordination reference: [S049 Dynamic Zone Assignment](../S049_dynamic_zone.md) (heterogeneous agent roles and partition rebalancing)
-- Follow-up: [S058 Typhoon Eye Penetration](../S058_typhoon.md) (extreme sea-state boundary tracking with 3D wind fields)
+- Multi-altitude coordination reference: [S049 Dynamic Zone Search](../S049_dynamic_zone.md) (heterogeneous agent roles and partition rebalancing)
+- Follow-up: [S058 Typhoon Eye Probing](../S058_typhoon.md) (extreme sea-state boundary tracking with 3D wind fields)

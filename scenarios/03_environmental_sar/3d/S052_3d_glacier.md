@@ -264,7 +264,7 @@ A_{melt} = \sum_{u,v} \mathbf{1}[\text{NDWI}(u,v) > 0.2] \cdot \text{GSD}^2$$
 ## Related Scenarios
 
 - Original 2D version: [S052 Glacier Melt Area Measurement](../S052_glacier.md)
-- Terrain-following reference: [S050 SLAM-Aided Inspection](../S050_slam.md)
-- Volumetric reconstruction cross-reference: [S053 Coral Reef 3D Mapping](../S053_coral_reef.md)
-- Industrial 3D scan analogue: [S065 Building 3D Scan Path](../../04_industrial_agriculture/S065_building_3d_scan_path.md)
-- Coverage planning foundation: [S048 Lawnmower Coverage](../S048_lawnmower.md)
+- Terrain-following reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md)
+- Volumetric reconstruction cross-reference: [S053 Coral Reef 3D Reconstruction](../S053_coral_reef.md)
+- Industrial 3D scan analogue: [S065 Building 3D Modeling — Multi-Angle Scan Path](../../04_industrial_agriculture/S065_3d_scan_path.md)
+- Coverage planning foundation: [S048 Full-Area Coverage Scan (Lawnmower)](../S048_lawnmower.md)

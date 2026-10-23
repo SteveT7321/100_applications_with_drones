@@ -273,8 +273,7 @@ time cost per altitude change.
 
 ## Related Scenarios
 
-- Original 2D version: [S076](../S076_thermal_management.md)
-- Lawnmower path geometry: [S048 Full-Area Coverage Scan](../../03_environmental_sar/S048_lawnmower.md)
-- Environment-constrained mission: [S079 Night Flight Navigation](../S079_night_flight_navigation.md)
-- Field coverage planning: [S067 Spray Overlap Optimisation](../S067_spray_overlap_optimization.md)
-- 3D atmospheric environment reference: [S058 Typhoon Edge Sampling](../../03_environmental_sar/S058_typhoon.md)
+- Original 2D version: [S076 Extreme Heat Cooling Strategy](../S076_thermal_management.md)
+- Lawnmower path geometry: [S048 Full-Area Coverage Scan (Lawnmower)](../../03_environmental_sar/S048_lawnmower.md)
+- Field coverage planning: [S067 Spray Coverage Overlap Optimization](../S067_spray_overlap.md)
+- 3D atmospheric environment reference: [S058 Typhoon Eye Probing](../../03_environmental_sar/S058_typhoon.md)

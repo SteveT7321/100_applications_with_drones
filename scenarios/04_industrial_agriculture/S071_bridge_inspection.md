@@ -302,6 +302,6 @@ def coverage_fraction(traj, res=0.1):
 
 ## Related Scenarios
 
-- Prerequisites: [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md), [S061 Power Line Inspection](S061_power_line.md), [S065 Building 3D Scan Path](S065_3d_scan_path.md)
+- Prerequisites: [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md), [S061 Power Line Inspection](S061_power_line.md), [S065 Building 3D Modeling — Multi-Angle Scan Path](S065_3d_scan_path.md)
 - Next: [S072 Oil Pipeline Leak Detection](S072_pipeline_leak.md), [S074 Mine 3D Mapping](S074_mine_mapping.md)
-- Algorithmic cross-reference: [S067 Spray Coverage Overlap Optimisation](S067_spray_overlap.md) (strip planning), [S064 Greenhouse Interior Flight](S064_greenhouse.md) (GPS-denied close-proximity control)
+- Algorithmic cross-reference: [S067 Spray Coverage Overlap Optimization](S067_spray_overlap.md) (strip planning), [S064 Greenhouse Interior Precision Flight](S064_greenhouse.md) (GPS-denied close-proximity control)

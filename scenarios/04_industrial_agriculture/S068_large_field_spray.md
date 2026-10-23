@@ -529,6 +529,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S063 Orchard Row Spraying](S063_orchard_row_spraying.md), [S067 Spray Overlap Optimisation](S067_spray_overlap_optimization.md)
-- Follow-ups: [S070 Precision Variable-Rate Spraying](S070_precision_variable_rate_spraying.md) (sensor-driven spray control)
-- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../../03_environmental_sar/S048_lawnmower_coverage.md) (boustrophedon geometry), [S049 Dynamic Zone Assignment](../../03_environmental_sar/S049_dynamic_zone.md) (multi-drone zone partitioning), [S032 Charging Queue](../../02_logistics_delivery/S032_charging_queue.md) (battery swap scheduling)
+- Prerequisites: [S063 Single-Plant Precision Spraying](S063_precision_spraying.md), [S067 Spray Coverage Overlap Optimization](S067_spray_overlap.md)
+- Follow-ups: [S070 Swarm Weeding Task](S070_swarm_weeding.md) (sensor-driven spray control)
+- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (boustrophedon geometry), [S049 Dynamic Zone Search](../03_environmental_sar/S049_dynamic_zone.md) (multi-drone zone partitioning), [S032 Charging Queue](../02_logistics_delivery/S032_charging_queue.md) (battery swap scheduling)

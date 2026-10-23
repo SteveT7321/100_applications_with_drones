@@ -235,8 +235,8 @@ $$v_{max,tilt} = \frac{b_{max} \cdot \text{GSD}_{tilt}}{t_{exp}}$$
 
 ## Related Scenarios
 
-- Original 2D version: [S073 Solar Panel Thermal Inspection](../S073_solar_thermal.md)
+- Original 2D version: [S073 Solar Panel Thermal Imaging Inspection](../S073_solar_thermal.md)
 - 3D path planning reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
-- Boustrophedon fundamentals: [S048 Full-Area Coverage Scan](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
-- Curved surface inspection: [S074 Wind Turbine Blade Inspection](../S074_wind_turbine.md)
-- Anomaly detection over mapped area: [S072 Greenhouse Gas Leak Detection](../S072_greenhouse_gas.md)
+- Boustrophedon fundamentals: [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Curved surface inspection: [S062 Wind Turbine Blade Inspection](../S062_wind_turbine.md)
+- Anomaly detection over mapped area: [S072 Oil Pipeline Leak Detection](../S072_pipeline_leak.md)

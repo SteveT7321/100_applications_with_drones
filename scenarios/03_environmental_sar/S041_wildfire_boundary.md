@@ -434,6 +434,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Full-Area Coverage Scan](S048_lawnmower.md) (basic coverage planning before dynamic tracking)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md) (basic coverage planning before dynamic tracking)
 - Follow-ups: [S049 Dynamic Zone Search](S049_dynamic_zone.md) (multi-drone zoning with reallocation), [S055 Coastline Oil Spill Tracking](S055_oil_spill.md) (dynamic contamination boundary, analogous structure)
 - Algorithmic cross-reference: [S045 Chemical Plume Tracing](S045_plume_tracing.md) (gradient-ascent boundary following), [S042 Missing Person Localization](S042_missing_person.md) (Bayesian sensor update pattern)

@@ -233,8 +233,8 @@ $$V_i(t) = \frac{\pi_{max} + 1 - \pi_i}{\pi_{max}} \cdot \exp\!\left(-\lambda \c
 
 ## Related Scenarios
 
-- Original 2D version: [S038](../S038_disaster_relief_drop.md)
-- Wind compensation reference: [S024](../S024_wind_compensation.md)
-- Relay range extension: [S036](../S036_last_mile_relay.md)
-- Cooperative lift (multi-drone payload): [S026](../S026_cooperative_heavy_lift.md)
-- Weather rerouting (obstacle-aware replanning): [S034](../S034_weather_rerouting.md)
+- Original 2D version: [S038 Disaster Relief Drop](../S038_disaster_relief_drop.md)
+- Wind compensation reference: [S024 Wind Compensation](../S024_wind_compensation.md)
+- Relay range extension: [S036 Last-Mile Relay](../S036_last_mile_relay.md)
+- Cooperative lift (multi-drone payload): [S026 Cooperative Heavy Lift](../S026_cooperative_heavy_lift.md)
+- Weather rerouting (obstacle-aware replanning): [S034 Weather Rerouting](../S034_weather_rerouting.md)

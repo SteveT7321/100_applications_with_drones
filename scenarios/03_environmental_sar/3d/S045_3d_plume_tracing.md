@@ -280,7 +280,7 @@ where the norm is the full Euclidean distance in $(x, y, z)$.
 ## Related Scenarios
 
 - Original 2D version: [S045 Chemical Plume Tracing](../S045_plume_tracing.md)
-- 3D source localisation reference: [S046 3D Trilateration](../S046_trilateration.md)
-- Advecting scalar field (oil spill analogue): [S055 Oil Spill Tracking](../S055_oil_spill.md)
-- Radiation source-finding (same gradient-ascent structure): [S056 Radiation Hotspot Detection](../S056_radiation.md)
-- Multi-agent extension: [S049 Dynamic Zone Assignment](../S049_dynamic_zone.md)
+- 3D source localisation reference: [S046 Multi-Drone 3D Trilateration](../S046_trilateration.md)
+- Advecting scalar field (oil spill analogue): [S055 Coastline Oil Spill Tracking](../S055_oil_spill.md)
+- Radiation source-finding (same gradient-ascent structure): [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../S056_radiation.md)
+- Multi-agent extension: [S049 Dynamic Zone Search](../S049_dynamic_zone.md)

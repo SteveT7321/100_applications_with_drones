@@ -148,5 +148,5 @@ python src/02_logistics_delivery/s025_payload_cog_offset.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md) — basic delivery
-- Follow-ups: [S026](S026_cooperative_heavy_lift.md) — multi-drone suspended load with cable tension
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md) — basic delivery
+- Follow-ups: [S026 Cooperative Heavy Lift](S026_cooperative_heavy_lift.md) — multi-drone suspended load with cable tension

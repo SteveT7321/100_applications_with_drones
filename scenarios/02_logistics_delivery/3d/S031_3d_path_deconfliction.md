@@ -238,7 +238,7 @@ $$\Delta T_{max}^{(s)} = \max_{i} \left(T_i^{actual} - T_i^{nom}\right), \qquad
 
 ## Related Scenarios
 
-- Original 2D version: [S031](../S031_path_deconfliction.md)
-- 3D logistics references: [S022 3D](S022_3d_obstacle_avoidance.md), [S029 3D](S029_3d_urban_logistics.md)
-- Follow-ups: [S032](../S032_charging_queue.md), [S033](../S033_online_order_insertion.md)
-- Algorithmic cross-reference: [S028 3D](S028_3d_cargo_escort.md) (3D formation separation), [S022](../S022_obstacle_avoidance_delivery.md) (obstacle avoidance)
+- Original 2D version: [S031 Path De-confliction](../S031_path_deconfliction.md)
+- 3D logistics references: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md), [S029 3D Upgrade — Urban Logistics Scheduling](S029_3d_urban_logistics.md)
+- Follow-ups: [S032 Charging Queue](../S032_charging_queue.md), [S033 Online Order Insertion](../S033_online_order_insertion.md)
+- Algorithmic cross-reference: [S028 3D Upgrade — Cargo Escort Formation](S028_3d_cargo_escort.md) (3D formation separation), [S022 Obstacle Avoidance Delivery](../S022_obstacle_avoidance_delivery.md) (obstacle avoidance)

@@ -347,6 +347,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S029](S029_urban_logistics_scheduling.md), [S033](S033_online_order_insertion.md)
-- Follow-ups: [S036](S036_last_mile_relay.md) (relay chain for long-haul returns), [S038](S038_disaster_relief_drop.md) (multi-objective routing under urgency)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md), [S033 Online Order Insertion](S033_online_order_insertion.md)
+- Follow-ups: [S036 Last-Mile Relay](S036_last_mile_relay.md) (relay chain for long-haul returns), [S038 Disaster Relief Drop](S038_disaster_relief_drop.md) (multi-objective routing under urgency)
 - Algorithm reference: Clarke-Wright (1964) savings algorithm; CVRPTW standard benchmark (Solomon instances)

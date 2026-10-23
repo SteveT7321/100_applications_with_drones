@@ -380,6 +380,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
-- Follow-ups: [S057](S057_oil_spill_mapping.md) (contaminant mapping), [S058](S058_gas_leak.md) (gas plume tracing)
-- Algorithmic cross-reference: [S042 Missing Person Localization](S042_missing_person.md) (shared Bayesian update / entropy-reduction framework), [S044 Wall Crack Detection](S044_wall_crack.md) (adaptive inspection path planning)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S057 Wildlife Population Census](S057_wildlife.md) (contaminant mapping), [S058 Typhoon Eye Probing](S058_typhoon.md) (gas plume tracing)
+- Algorithmic cross-reference: [S042 Missing Person Localization](S042_missing_person.md) (shared Bayesian update / entropy-reduction framework), [S044 Wall Crack Inspection](S044_wall_crack.md) (adaptive inspection path planning)

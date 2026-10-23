@@ -268,6 +268,6 @@ The detection and inflation logic from S078 carries over unchanged.
 ## Related Scenarios
 
 - Original 2D version: [S078 Harvester Cooperative Guidance](../S078_harvester_guidance.md)
-- Terrain scanning reference: [S065 3D Scan Path Planning](../S065_3d_scan_path.md)
-- Boustrophedon geometry: [S048 Full-Area Coverage Scan](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Terrain scanning reference: [S065 Building 3D Modeling — Multi-Angle Scan Path](../S065_3d_scan_path.md)
+- Boustrophedon geometry: [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
 - Large-field coordination: [S068 Large-Scale Farmland Cooperative Spraying](../S068_large_field_spray.md)

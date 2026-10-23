@@ -420,7 +420,7 @@ def simulate_utm(intents: List[DroneIntent],
 
 - Prerequisites: [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md), [S033 Online Order Insertion](S033_online_order_insertion.md), [S034 Weather Rerouting](S034_weather_rerouting.md)
 - Follow-ups: [S036 Last-Mile Relay](S036_last_mile_relay.md)
-- Algorithm reference: LP conflict resolution relates to [S019 Dynamic Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (Hungarian / LP assignment)
+- Algorithm reference: LP conflict resolution relates to [S019 Dynamic Target Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (Hungarian / LP assignment)
 
 ## References
 

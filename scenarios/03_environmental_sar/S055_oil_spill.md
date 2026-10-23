@@ -412,6 +412,6 @@ def split_boundary(kf, n_landmarks):
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S048 Lawnmower Coverage](S048_lawnmower.md)
-- Follow-ups: [S056 Radiation Hotspot Detection](S056_radiation.md) (adaptive sampling of a scalar field), [S058 Typhoon Eye Penetration](S058_typhoon.md) (extreme-environment boundary tracking)
-- Algorithmic cross-reference: [S045 Chemical Plume Tracing](S045_plume_tracing.md) (advecting scalar field, same PDE structure), [S049 Dynamic Zone Assignment](S049_dynamic_zone.md) (partition rebalancing between agents), [S052 Glacier Area Monitoring](S052_glacier.md) (slowly evolving boundary)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md)
+- Follow-ups: [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](S056_radiation.md) (adaptive sampling of a scalar field), [S058 Typhoon Eye Probing](S058_typhoon.md) (extreme-environment boundary tracking)
+- Algorithmic cross-reference: [S045 Chemical Plume Tracing](S045_plume_tracing.md) (advecting scalar field, same PDE structure), [S049 Dynamic Zone Search](S049_dynamic_zone.md) (partition rebalancing between agents), [S052 Glacier Melt Area Measurement](S052_glacier.md) (slowly evolving boundary)

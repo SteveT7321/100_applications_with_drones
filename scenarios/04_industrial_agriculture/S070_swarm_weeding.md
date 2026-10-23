@@ -738,6 +738,6 @@ if __name__ == "__main__":
 
 ## Related Scenarios
 
-- Prerequisites: [S063 Precision Hover Inspection](S063_precision_hover_inspection.md) (PID hover, GPS noise model), [S067 Crop Row Lawnmower Coverage](S067_crop_row_coverage.md) (boustrophedon sweep, strip assignment), [S068 Multi-Drone Field Mapping](S068_multi_drone_field_mapping.md) (parallel sub-strip division)
-- Follow-ups: [S071 Variable-Rate Spraying](S071_variable_rate_spraying.md) (dosage optimisation after detection), [S075 Greenhouse Autonomous Inspection](S075_greenhouse_inspection.md) (3D canopy navigation)
-- Algorithmic cross-reference: [S018 Multi-Target Interception](../01_pursuit_evasion/S018_multi_target_interception.md) (Hungarian algorithm for multi-target assignment), [S040 Fleet Load Balancing](../02_logistics_delivery/S040_fleet_load_balancing.md) (equitable task distribution), [S042 Missing Person Localization](../03_environmental_sar/S042_missing_person.md) (Bernoulli sensor model, coverage sweep)
+- Prerequisites: [S063 Single-Plant Precision Spraying](S063_precision_spraying.md) (PID hover, GPS noise model), [S067 Spray Coverage Overlap Optimization](S067_spray_overlap.md) (boustrophedon sweep, strip assignment), [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md) (parallel sub-strip division)
+- Follow-ups: [S064 Greenhouse Interior Precision Flight](S064_greenhouse.md) (3D canopy navigation)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian algorithm for multi-target assignment), [S040 Fleet Load Balancing](../02_logistics_delivery/S040_fleet_load_balancing.md) (equitable task distribution), [S042 Missing Person Localization](../03_environmental_sar/S042_missing_person.md) (Bernoulli sensor model, coverage sweep)

@@ -290,6 +290,6 @@ def run_simulation(beta_threshold, seed=42):
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S029](S029_urban_logistics_scheduling.md)
-- Follow-ups: [S033](S033_online_order_insertion.md), [S040](S040_fleet_load_balancing.md)
-- See also: [S027](S027_aerial_refueling_relay.md) (airborne battery replenishment analogue)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md)
+- Follow-ups: [S033 Online Order Insertion](S033_online_order_insertion.md), [S040 Fleet Load Balancing](S040_fleet_load_balancing.md)
+- See also: [S027 Aerial Refueling Relay](S027_aerial_refueling_relay.md) (airborne battery replenishment analogue)

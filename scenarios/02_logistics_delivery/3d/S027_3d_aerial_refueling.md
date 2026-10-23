@@ -163,7 +163,7 @@ $$E_R \leftarrow E_R + \Delta E_{xfer}, \qquad E_T \leftarrow E_T - \Delta E_{xf
 
 ## Related Scenarios
 
-- Original 2D version: [S027](../S027_aerial_refueling_relay.md)
-- Prerequisites: [S021](../S021_point_delivery.md), [S024](../S024_wind_compensation.md)
-- Follow-ups: [S028](../S028_cargo_escort_formation.md), [S036](../S036_last_mile_relay.md)
-- Cross-domain: [S012 3D relay pursuit](../../01_pursuit_evasion/3d/S012_3d_relay_pursuit.md)
+- Original 2D version: [S027 Aerial Refueling Relay](../S027_aerial_refueling_relay.md)
+- Prerequisites: [S021 Point Delivery](../S021_point_delivery.md), [S024 Wind Compensation](../S024_wind_compensation.md)
+- Follow-ups: [S028 Cargo Escort Formation](../S028_cargo_escort_formation.md), [S036 Last-Mile Relay](../S036_last_mile_relay.md)
+- Cross-domain: [S012 3D Upgrade — Relay Pursuit](../../01_pursuit_evasion/3d/S012_3d_relay_pursuit.md)

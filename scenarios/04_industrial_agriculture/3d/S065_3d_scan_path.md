@@ -311,7 +311,7 @@ $$T_{mission} = \frac{L_{total}}{v} + N_{WP} \cdot t_{cap}$$
 
 ## Related Scenarios
 
-- Original 2D version: [S065 Building 3D Scan Path](../S065_3d_scan_path.md)
+- Original 2D version: [S065 Building 3D Modeling — Multi-Angle Scan Path](../S065_3d_scan_path.md)
 - Prerequisites: [S053 Coral Reef 3D Reconstruction](../../03_environmental_sar/S053_coral_reef.md) (GSD-constrained viewpoint planning, set-cover), [S061 Power Line Inspection](../S061_power_line.md) (facade-parallel strip fundamentals)
 - Follow-ups: [S074 Mine 3D Mapping](../S074_mine_mapping.md) (enclosed-space 3D scanning without GPS)
-- Algorithmic cross-reference: [S002 3D Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (3D helical trajectory parameterisation)
+- Algorithmic cross-reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (3D helical trajectory parameterisation)

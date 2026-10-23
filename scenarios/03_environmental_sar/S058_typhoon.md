@@ -403,6 +403,6 @@ def run_simulation(controller='mpc'):
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S060 Meteorological Profiling](S060_meteorological_profiling.md)
-- Follow-ups: [S059 Sonar Buoy Relay](S059_sonar_buoy_relay.md) (ocean hazard environment), [S055 Oil Spill Tracking](S055_oil_spill_tracking.md) (extreme environment monitoring)
-- Algorithmic cross-reference: [S034 Weather Rerouting](../02_logistics_delivery/S034_weather_rerouting.md) (wind disturbance replanning), [S004 Disturbance Rejection Chase](../01_pursuit_evasion/S004_disturbance_rejection.md) (H-inf control in pursuit context)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S060 Multi-Drone Cooperative Meteorological Measurement](S060_meteorological.md)
+- Follow-ups: [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](S059_sonar_relay.md) (ocean hazard environment), [S055 Coastline Oil Spill Tracking](S055_oil_spill.md) (extreme environment monitoring)
+- Algorithmic cross-reference: [S034 Weather Rerouting](../02_logistics_delivery/S034_weather_rerouting.md) (wind disturbance replanning)

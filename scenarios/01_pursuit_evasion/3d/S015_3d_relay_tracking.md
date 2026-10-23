@@ -262,5 +262,5 @@ for step in range(int(T_MAX / DT)):
 
 ## Related Scenarios
 
-- Original 2D version: [S015](../S015_relay_tracking.md)
-- Truly 3D references: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original 2D version: [S015 Relay Tracking](../S015_relay_tracking.md)
+- Truly 3D references: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

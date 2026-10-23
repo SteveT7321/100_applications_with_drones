@@ -288,8 +288,8 @@ $$= P_{detect,0} \cdot \left(\frac{z_{ref}}{z_{sweep}^*}\right)^{\!\beta}
 
 ## Related Scenarios
 
-- Original 2D version: [S070](../S070_swarm_weeding.md)
-- 3D hover reference: [S063 Precision Hover Inspection](../S063_precision_hover_inspection.md)
-- Canopy navigation reference: [S075 Greenhouse Autonomous Inspection](../S075_container_yard.md)
-- Algorithmic reference: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (3D Gram-Schmidt, altitude bounds pattern)
-- Multi-drone assignment: [S068 Multi-Drone Field Mapping](../S068_large_field_spray.md) (parallel sub-strip division)
+- Original 2D version: [S070 Swarm Weeding Task](../S070_swarm_weeding.md)
+- 3D hover reference: [S063 Single-Plant Precision Spraying](../S063_precision_spraying.md)
+- Canopy navigation reference: [S064 Greenhouse Interior Precision Flight](../S064_greenhouse.md)
+- Algorithmic reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (3D Gram-Schmidt, altitude bounds pattern)
+- Multi-drone assignment: [S068 Large-Scale Farmland Cooperative Spraying](../S068_large_field_spray.md) (parallel sub-strip division)

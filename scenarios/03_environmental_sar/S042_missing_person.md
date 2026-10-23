@@ -418,6 +418,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Area Coverage Sweep](S041_area_coverage_sweep.md)
-- Follow-ups: [S043 Wildfire Detection](S043_wildfire_detection.md), [S044 Flood Mapping](S044_flood_mapping.md)
-- Algorithmic cross-reference: [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md) (sensor-range pursuit), [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md) (particle filter state estimation)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md)
+- Follow-ups: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md)
+- Algorithmic cross-reference: [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md) (sensor-range pursuit), [S045 Chemical Plume Tracing](S045_plume_tracing.md) (particle filter state estimation)

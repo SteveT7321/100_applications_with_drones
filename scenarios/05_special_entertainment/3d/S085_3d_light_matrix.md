@@ -267,9 +267,9 @@ a larger spread in inter-drone distances, giving the Hungarian algorithm more ro
 
 ## Related Scenarios
 
-- Original 2D (flat grid) version: [S085](../S085_light_matrix.md)
-- LED formation predecessor: [S083 LED Show Formation](../S083_light_show_single.md)
-- 3D shape morphing follow-up: [S088 Formation Morphing](../S088_formation_morphing.md)
-- Multi-agent assignment cross-reference: [S018 Multi-Target Interception](../../01_pursuit_evasion/S018_multi_target_interception.md)
-- Agricultural swarm with Hungarian + PID: [S070 Swarm Weeding](../../04_industrial_agriculture/S070_swarm_weeding.md)
-- 3D pursuit evasion reference for 3D ORCA: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original 2D (flat grid) version: [S085 Drone Light Matrix Positioning](../S085_light_matrix.md)
+- LED formation predecessor: [S083 Light Show Single-Drone Test](../S083_light_show_single.md)
+- 3D shape morphing follow-up: [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)
+- Multi-agent assignment cross-reference: [S018 Multi-Target Intercept](../../01_pursuit_evasion/S018_multi_target_intercept.md)
+- Agricultural swarm with Hungarian + PID: [S070 Swarm Weeding Task](../../04_industrial_agriculture/S070_swarm_weeding.md)
+- 3D pursuit evasion reference for 3D ORCA: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

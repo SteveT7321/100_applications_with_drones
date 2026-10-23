@@ -357,5 +357,5 @@ Raw 3D GPS + Spherical PD  39.4%       1.04 m        3.67 m
 
 - Original 2D version: [S081 Selfie Follow Mode](../S081_selfie_follow.md)
 - 3D pursuit reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Kalman Filter tracking: [S013 Particle Filter Intercept](../../01_pursuit_evasion/S013_particle_filter_intercept.md), [S042 Missing Person Localization](../../03_environmental_sar/S042_missing_person.md)
-- Cinematic control patterns: [S086 Multi-Angle Cinema](../S086_multi_angle_cinema.md), [S092 Movie Chase](../S092_movie_chase.md), [S094 Counter Drone](../S094_counter_drone.md)
+- Kalman Filter tracking: [S008 Stochastic Pursuit — Kalman Filter Tracking](../../01_pursuit_evasion/S008_stochastic_pursuit.md), [S042 Missing Person Localization](../../03_environmental_sar/S042_missing_person.md)
+- Cinematic control patterns: [S086 Cooperative Multi-Angle Filming](../S086_multi_angle_cinema.md), [S092 Movie Car Chase Scene](../S092_movie_chase.md), [S094 Counter-Drone Intercept](../S094_counter_drone.md)

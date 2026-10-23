@@ -634,6 +634,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Area Coverage Sweep](S041_wildfire_boundary.md), [S046 Trilateration Localisation](S046_trilateration.md), [S049 Dynamic Zone Search](S049_dynamic_zone.md)
-- Follow-ups: [S051 Post-Disaster Communication Restoration](S051_post_disaster_comm.md)
-- Algorithmic cross-reference: [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md) (probabilistic state estimation), [S042 Missing Person Localisation](S042_missing_person.md) (Bayesian belief maps), [S047 Signal Relay](S047_signal_relay.md) (inter-drone communication topology)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md), [S046 Multi-Drone 3D Trilateration](S046_trilateration.md), [S049 Dynamic Zone Search](S049_dynamic_zone.md)
+- Follow-ups: [S051 Post-Disaster Communication Network Restoration](S051_post_disaster_comm.md)
+- Algorithmic cross-reference: [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md) (probabilistic state estimation), [S042 Missing Person Localization](S042_missing_person.md) (Bayesian belief maps), [S047 Base Station Signal Relay](S047_signal_relay.md) (inter-drone communication topology)

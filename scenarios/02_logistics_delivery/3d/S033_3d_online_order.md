@@ -192,6 +192,6 @@ $$R_{k^*} \leftarrow [\ldots,\; \mathbf{w}^{k^*}_{i^*},\; \mathbf{q}_{new},\; \m
 
 ## Related Scenarios
 
-- Original 2D version: [S033](../S033_online_order_insertion.md)
+- Original 2D version: [S033 Online Order Insertion](../S033_online_order_insertion.md)
 - 3D logistics references: S034 Weather Rerouting, S035 UTM Simulation
-- Truly 3D domain references: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S003](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Truly 3D domain references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)

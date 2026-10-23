@@ -272,7 +272,7 @@ $$\text{Path completion} = \frac{|\{k : \|\mathbf{e}_k\| \leq 0.5\}|}{N_{steps}}
 
 ## Related Scenarios
 
-- Original 2D version: [S083](../S083_light_show_single.md)
-- Multi-drone follow-up: [S085 Light Matrix Formation](../S085_light_matrix.md)
-- Formation morphing: [S088 Formation Morphing](../S088_formation_morphing.md)
-- Algorithmic cross-reference: [S063 Precision Spraying](../../04_industrial_agriculture/S063_precision_spraying.md) (PID + feedforward under wind), [S048 Lawnmower Coverage](../../03_environmental_sar/S048_lawnmower.md) (pre-scripted path following)
+- Original 2D version: [S083 Light Show Single-Drone Test](../S083_light_show_single.md)
+- Multi-drone follow-up: [S085 Drone Light Matrix Positioning](../S085_light_matrix.md)
+- Formation morphing: [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)
+- Algorithmic cross-reference: [S063 Single-Plant Precision Spraying](../../04_industrial_agriculture/S063_precision_spraying.md) (PID + feedforward under wind), [S048 Full-Area Coverage Scan (Lawnmower)](../../03_environmental_sar/S048_lawnmower.md) (pre-scripted path following)

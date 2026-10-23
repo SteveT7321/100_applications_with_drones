@@ -581,6 +581,6 @@ if __name__ == "__main__":
 
 ## Related Scenarios
 
-- Prerequisites: [S083 LED Show Formation](S083_led_show_formation.md) (PID hover, domain constants), [S084 Swarm Takeoff Sequencing](S084_swarm_takeoff_sequencing.md) (staged launch from ground)
-- Follow-ups: [S087 Multi-Pattern Morphing](S087_multi_pattern_morphing.md) (sequential formation changes), [S088 Swarm Synchronised Dance](S088_swarm_dance.md) (time-coordinated choreography)
-- Algorithmic cross-reference: [S018 Multi-Target Interception](../01_pursuit_evasion/S018_multi_target_interception.md) (Hungarian algorithm, multi-agent assignment), [S070 Swarm Weeding](../04_industrial_agriculture/S070_swarm_weeding.md) (Hungarian + PID per agent), [S049 Dynamic Zone Search](../03_environmental_sar/S049_dynamic_zone.md) (pairwise repulsion, Voronoi reallocation)
+- Prerequisites: [S083 Light Show Single-Drone Test](S083_light_show_single.md) (PID hover, domain constants)
+- Follow-ups: [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md) (sequential formation changes), [S098 Swarm Synchronized Dance](S098_synchronized_dance.md) (time-coordinated choreography)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian algorithm, multi-agent assignment), [S070 Swarm Weeding Task](../04_industrial_agriculture/S070_swarm_weeding.md) (Hungarian + PID per agent), [S049 Dynamic Zone Search](../03_environmental_sar/S049_dynamic_zone.md) (pairwise repulsion, Voronoi reallocation)

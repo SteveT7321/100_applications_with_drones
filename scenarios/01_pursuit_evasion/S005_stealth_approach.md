@@ -141,6 +141,6 @@ for step in range(MAX_STEPS):
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S002](S002_evasive_maneuver.md)
-- Follow-ups: [S006](S006_energy_race.md), [S016](S016_airspace_defense.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S002 Evasive Maneuver](S002_evasive_maneuver.md)
+- Follow-ups: [S006 Energy Race](S006_energy_race.md), [S016 Airspace Defense](S016_airspace_defense.md)
 - See [domains/01_pursuit_evasion](../../domains/01_pursuit_evasion/README.md)

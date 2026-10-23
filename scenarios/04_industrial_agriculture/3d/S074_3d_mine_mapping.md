@@ -306,8 +306,7 @@ illuminate dust-shadow voxels from multiple angles.
 
 ## Related Scenarios
 
-- Original 2D version: [S074](../S074_mine_mapping.md)
-- Multi-level localisation reference: [S013 Particle Filter Intercept](../../../scenarios/01_pursuit_evasion/S013_particle_filter_intercept.md)
-- Frontier-based coverage baseline: [S041 Wildfire Boundary Mapping](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md)
-- Collaborative mapping reference: [S050 Swarm Cooperative Mapping (EKF-SLAM)](../../../scenarios/03_environmental_sar/S050_slam.md)
-- Follow-up gas detection scenario: [S075 Confined-Space Gas Detection](../S075_gas_detection.md)
+- Original 2D version: [S074 Mine 3D Mapping](../S074_mine_mapping.md)
+- Multi-level localisation reference: [S008 Stochastic Pursuit — Kalman Filter Tracking](../../01_pursuit_evasion/S008_stochastic_pursuit.md)
+- Frontier-based coverage baseline: [S041 Wildfire Boundary Scan](../../../scenarios/03_environmental_sar/S041_wildfire_boundary.md)
+- Collaborative mapping reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../../../scenarios/03_environmental_sar/S050_slam.md)

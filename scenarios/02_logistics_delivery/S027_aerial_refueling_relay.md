@@ -231,6 +231,6 @@ Energy check: cruise power $k_f V^2 + k_h = 0.3 \times 25 + 0.5 = 8.0$ W, i.e. 1
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S024](S024_wind_compensation.md)
-- Follow-ups: [S028](S028_cargo_escort_formation.md), [S036](S036_last_mile_relay.md)
-- Cross-domain reference: [S012](../01_pursuit_evasion/S012_relay_pursuit.md) — relay handoff state machine pattern
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S024 Wind Compensation](S024_wind_compensation.md)
+- Follow-ups: [S028 Cargo Escort Formation](S028_cargo_escort_formation.md), [S036 Last-Mile Relay](S036_last_mile_relay.md)
+- Cross-domain reference: [S012 Relay Pursuit](../01_pursuit_evasion/S012_relay_pursuit.md) — relay handoff state machine pattern

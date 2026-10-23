@@ -260,7 +260,7 @@ the heave-following during vessel approach incurs the same cost with $v_z = \dot
 
 ## Related Scenarios
 
-- Original 2D version: [S039](../S039_offshore_platform_exchange.md)
-- 3D moving-deck foundation: [S023 3D](S023_3d_moving_landing_pad.md)
-- 3D wind compensation reference: [S024 3D](S024_3d_wind_compensation.md)
-- 3D aerial refueling (vessel-relay concept in 3D): [S027 3D](S027_3d_aerial_refueling.md)
+- Original 2D version: [S039 Offshore Platform Exchange](../S039_offshore_platform_exchange.md)
+- 3D moving-deck foundation: [S023 3D Upgrade — Moving Landing Pad](S023_3d_moving_landing_pad.md)
+- 3D wind compensation reference: [S024 3D Upgrade — Wind Compensation](S024_3d_wind_compensation.md)
+- 3D aerial refueling (vessel-relay concept in 3D): [S027 3D Upgrade — Aerial Refueling Relay](S027_3d_aerial_refueling.md)

@@ -168,5 +168,5 @@ Analytical predictions:
 
 ## Related Scenarios
 
-- Prerequisites: none (entry-level logistics scenario; compare with [S001](../01_pursuit_evasion/S001_basic_intercept.md) for flight dynamics baseline)
-- Follow-ups: [S022](S022_obstacle_avoidance_delivery.md) (RRT* obstacle avoidance), [S023](S023_moving_landing_pad.md) (moving target), [S024](S024_wind_compensation.md) (wind disturbance)
+- Prerequisites: none (entry-level logistics scenario; compare with [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md) for flight dynamics baseline)
+- Follow-ups: [S022 Obstacle Avoidance Delivery](S022_obstacle_avoidance_delivery.md) (RRT* obstacle avoidance), [S023 Moving Landing Pad](S023_moving_landing_pad.md) (moving target), [S024 Wind Compensation](S024_wind_compensation.md) (wind disturbance)

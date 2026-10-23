@@ -319,5 +319,5 @@ model_pursuer.learn(total_timesteps=10_000 * MAX_STEPS)
 
 ## Related Scenarios
 
-- Original 2D version: [S020](../S020_pursuit_evasion_game.md)
-- Truly 3D references: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original 2D version: [S020 Pursuit-Evasion Game (RL Capstone)](../S020_pursuit_evasion_game.md)
+- Truly 3D references: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

@@ -264,7 +264,7 @@ $$S_{mission} = \sum_{p=1}^{4} w_p \cdot s_p - \lambda_{OT} \cdot \max(0,\; t_4^
 
 ## Related Scenarios
 
-- Original 2D version: [S100 original](../S100_grand_challenge.md)
-- 3D Pursuit reference: [S001 3D Upgrade](../../01_pursuit_evasion/3d/S001_3d_basic_intercept.md), [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
-- Volumetric SAR reference: [S042 Missing Person](../../03_environmental_sar/S042_missing_person.md)
-- Formation reference: [S085 Light Matrix](../S085_light_matrix.md), [S088 Formation Morphing](../S088_formation_morphing.md)
+- Original 2D version: [S100 Ultimate Grand Challenge — Multi-Domain Integration](../S100_grand_challenge.md)
+- 3D Pursuit reference: [S001 3D Upgrade — Basic Intercept](../../01_pursuit_evasion/3d/S001_3d_basic_intercept.md), [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Volumetric SAR reference: [S042 Missing Person Localization](../../03_environmental_sar/S042_missing_person.md)
+- Formation reference: [S085 Drone Light Matrix Positioning](../S085_light_matrix.md), [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)

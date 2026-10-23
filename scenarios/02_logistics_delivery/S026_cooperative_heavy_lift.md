@@ -235,5 +235,5 @@ def pd_control(p_des, p, v_des, v):
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S025](S025_payload_cog_offset.md)
-- Follow-ups: [S027](S027_aerial_refueling_relay.md), [S028](S028_cargo_escort_formation.md)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S025 Payload CoG Offset](S025_payload_cog_offset.md)
+- Follow-ups: [S027 Aerial Refueling Relay](S027_aerial_refueling_relay.md), [S028 Cargo Escort Formation](S028_cargo_escort_formation.md)

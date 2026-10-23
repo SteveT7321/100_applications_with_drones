@@ -242,6 +242,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S022 Obstacle Avoidance](S022_obstacle_avoidance.md), [S024 Wind Compensation](S024_wind_compensation.md)
-- Follow-ups: [S031 Path Deconfliction](S031_path_deconfliction.md), [S038 Disaster Relief](S038_disaster_relief.md)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](S022_obstacle_avoidance_delivery.md), [S024 Wind Compensation](S024_wind_compensation.md)
+- Follow-ups: [S031 Path De-confliction](S031_path_deconfliction.md), [S038 Disaster Relief Drop](S038_disaster_relief_drop.md)
 - Algorithm reference: see [domains/02_logistics_delivery/README.md](../../domains/02_logistics_delivery/README.md) §1.1 (D* Lite)

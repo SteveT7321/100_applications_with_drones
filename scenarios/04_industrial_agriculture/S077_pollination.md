@@ -635,10 +635,8 @@ if __name__ == '__main__':
 ## Related Scenarios
 
 - Prerequisites: [S063 Single-Plant Precision Spraying](S063_precision_spraying.md) (TSP tour +
-  hover control over agricultural targets), [S070 Greenhouse Climate Patrol](S070_greenhouse_climate_patrol.md)
+  hover control over agricultural targets), [S064 Greenhouse Interior Precision Flight](S064_greenhouse.md)
   (3D waypoint navigation in a structured indoor environment)
-- Follow-ups: [S078 Fruit Size Estimation](S078_fruit_size_estimation.md) (close-range precision
-  inspection with similar docking geometry)
 - Algorithmic cross-reference: [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md)
-  (quadrotor dynamics reference), [S021 Package Delivery](../02_logistics_delivery/S021_package_delivery.md)
+  (quadrotor dynamics reference), [S021 Point Delivery](../02_logistics_delivery/S021_point_delivery.md)
   (TSP tour planning over 3D waypoints)

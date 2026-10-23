@@ -205,7 +205,7 @@ Outputs: `outputs/02_logistics_delivery/s024_3d_wind_compensation/`
 
 ## Related Scenarios
 
-- Original 2D version: [S024](../S024_wind_compensation.md)
-- Prerequisites: [S021](../S021_point_delivery.md), [S022](../S022_obstacle_avoidance_delivery.md)
-- Follow-ups: [S034](../S034_weather_rerouting.md), [S031](../S031_path_deconfliction.md)
-- Other 3D logistics upgrades: [S022 3D](S022_3d_obstacle_avoidance.md), [S027 3D](S027_3d_aerial_refueling.md)
+- Original 2D version: [S024 Wind Compensation](../S024_wind_compensation.md)
+- Prerequisites: [S021 Point Delivery](../S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](../S022_obstacle_avoidance_delivery.md)
+- Follow-ups: [S034 Weather Rerouting](../S034_weather_rerouting.md), [S031 Path De-confliction](../S031_path_deconfliction.md)
+- Other 3D logistics upgrades: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md), [S027 3D Upgrade — Aerial Refueling Relay](S027_3d_aerial_refueling.md)

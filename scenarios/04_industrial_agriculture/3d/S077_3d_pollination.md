@@ -353,9 +353,8 @@ $v_{transit}$, and $T_{approach,k} = d_{standoff} / v_{approach}^{(l)}$.
 
 ## Related Scenarios
 
-- Original 2D/3D version: [S077 Precision Pollination](../S077_pollination.md)
+- Original 2D/3D version: [S077 Precision Pollination Flight Pattern](../S077_pollination.md)
 - Domain prerequisites: [S063 Single-Plant Precision Spraying](../S063_precision_spraying.md),
-  [S070 Greenhouse Climate Patrol](../S070_greenhouse_climate_patrol.md)
-- Truly 3D SAR reference (sensor cone model): [S041](../../03_environmental_sar/S041_area_coverage_search.md)
-- Pollen plume physics reference (Gaussian dispersion): [S045](../../03_environmental_sar/S045_plume_tracing.md)
-- Follow-ups: [S078 Fruit Size Estimation](../S078_fruit_size_estimation.md)
+  [S064 Greenhouse Interior Precision Flight](../S064_greenhouse.md)
+- Truly 3D SAR reference (sensor cone model): [S041 Wildfire Boundary Scan](../../03_environmental_sar/S041_wildfire_boundary.md)
+- Pollen plume physics reference (Gaussian dispersion): [S045 Chemical Plume Tracing](../../03_environmental_sar/S045_plume_tracing.md)

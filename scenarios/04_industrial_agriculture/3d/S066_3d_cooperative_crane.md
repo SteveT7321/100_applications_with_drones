@@ -319,10 +319,9 @@ $$\delta_{min} = \min_{i,k,t} \; d_{ik}(t)$$
 
 ## Related Scenarios
 
-- Original 2D/flat version: [S066](../S066_cooperative_crane.md)
-- 3D rigid-body transport references: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S003](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Multi-drone formation control: [S005 Formation Keeping](../../01_pursuit_evasion/S005_formation_keeping.md)
-- Cooperative interception (distributed control): [S020 Cooperative Interception](../../01_pursuit_evasion/S020_cooperative_interception.md)
-- Aerial assembly follow-up: [S068 Aerial Assembly Line](../S068_aerial_assembly.md)
-- Swarm construction follow-up: [S070 Swarm Construction](../S070_swarm_construction.md)
-- Tethered operations (cable dynamics): [S079 Tethered Drone Operations](../S079_offshore_wind.md)
+- Original 2D/flat version: [S066 Cooperative Crane Simulation](../S066_cooperative_crane.md)
+- 3D rigid-body transport references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Multi-drone formation control: [S028 Cargo Escort Formation](../../02_logistics_delivery/S028_cargo_escort_formation.md)
+- Cooperative interception (distributed control): [S013 Pincer Movement](../../01_pursuit_evasion/S013_pincer_movement.md)
+- Aerial assembly follow-up: [S097 Aerial Puzzle Assembly](../../05_special_entertainment/S097_aerial_puzzle.md)
+- Tethered operations (cable dynamics): [S026 Cooperative Heavy Lift](../../02_logistics_delivery/S026_cooperative_heavy_lift.md)

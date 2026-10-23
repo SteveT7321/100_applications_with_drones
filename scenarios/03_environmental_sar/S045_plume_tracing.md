@@ -439,6 +439,6 @@ def run_simulation(strategy='cast_surge', seed=42):
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S042 Missing Person Search](S042_missing_person_search.md)
-- Follow-ups: [S055 Oil Spill Tracking](S055_oil_spill_tracking.md) (advecting scalar field), [S056 Radiation Hotspot Detection](S056_radiation_hotspot_detection.md) (similar gradient-ascent source-finding structure)
-- Algorithmic cross-reference: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md) (systematic coverage as fallback), [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md) (multi-agent extension), [S046 3D Trilateration](S046_3d_trilateration.md) (3D source localisation)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S055 Coastline Oil Spill Tracking](S055_oil_spill.md) (advecting scalar field), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](S056_radiation.md) (similar gradient-ascent source-finding structure)
+- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md) (systematic coverage as fallback), [S049 Dynamic Zone Search](S049_dynamic_zone.md) (multi-agent extension), [S046 Multi-Drone 3D Trilateration](S046_trilateration.md) (3D source localisation)

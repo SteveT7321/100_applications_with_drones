@@ -304,9 +304,9 @@ $$\phi_{ref} = \arctan\!\left(\frac{v^2}{g \, R_{turn}}\right)$$
 
 ## Related Scenarios
 
-- Original 2D/3D version: [S090 Racing Optimal Path](../S090_racing_optimal.md)
+- Original 2D/3D version: [S090 Racing Drone Optimal Path](../S090_racing_optimal.md)
 - Attitude dynamics reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md),
-  [S003 Low Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Acrobatic attitude planning: [S091 FPV Acrobatic Manoeuvre](../S091_acrobatics.md)
-- Multi-drone extension: [S099 Obstacle Relay](../S099_obstacle_relay.md)
-- Polynomial trajectory cross-reference: [S077 Precision Pollination](../../04_industrial_agriculture/S077_pollination.md)
+  [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Acrobatic attitude planning: [S091 Aerial Acrobatic Maneuvers](../S091_acrobatics.md)
+- Multi-drone extension: [S099 Cross-Obstacle Relay Pass](../S099_obstacle_relay.md)
+- Polynomial trajectory cross-reference: [S077 Precision Pollination Flight Pattern](../../04_industrial_agriculture/S077_pollination.md)

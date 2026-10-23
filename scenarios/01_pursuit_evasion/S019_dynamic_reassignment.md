@@ -102,8 +102,8 @@ for step in range(max_steps):
 
 ## Related Scenarios
 
-- Prerequisites: [S011](S011_swarm_encirclement.md), [S017](S017_swarm_vs_swarm.md)
-- Next: [S020](S020_pursuit_evasion_game.md)
+- Prerequisites: [S011 Swarm Encirclement](S011_swarm_encirclement.md), [S017 Swarm vs Swarm](S017_swarm_vs_swarm.md)
+- Next: [S020 Pursuit-Evasion Game (RL Capstone)](S020_pursuit_evasion_game.md)
 
 ## References
 

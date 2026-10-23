@@ -107,5 +107,5 @@ for step in range(max_steps):
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S006](S006_energy_race.md)
-- Next: [S013](S013_pincer_movement.md), [S015](S015_relay_tracking.md), [S019](S019_dynamic_reassignment.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S006 Energy Race](S006_energy_race.md)
+- Next: [S013 Pincer Movement](S013_pincer_movement.md), [S015 Relay Tracking](S015_relay_tracking.md), [S019 Dynamic Target Reassignment](S019_dynamic_reassignment.md)

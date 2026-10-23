@@ -314,8 +314,8 @@ Collision count:            0
 
 ## Related Scenarios
 
-- Original 2D/3D-lite version: [S061](../S061_power_line.md)
-- 3D orbit reference: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
-- Tower structure inspection: [S071 Bridge Inspection](../S071_bridge_inspection.md)
-- Pipeline following (similar Frenet approach): [S072 Pipeline Leak](../S072_pipeline_leak.md)
-- 3D scan path planning: [S065 Building 3D Scan Path](../S065_3d_scan_path.md)
+- Original 2D/3D-lite version: [S061 Power Line Inspection](../S061_power_line.md)
+- 3D orbit reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Tower structure inspection: [S071 Bridge Underside Structural Inspection](../S071_bridge_inspection.md)
+- Pipeline following (similar Frenet approach): [S072 Oil Pipeline Leak Detection](../S072_pipeline_leak.md)
+- 3D scan path planning: [S065 Building 3D Modeling — Multi-Angle Scan Path](../S065_3d_scan_path.md)

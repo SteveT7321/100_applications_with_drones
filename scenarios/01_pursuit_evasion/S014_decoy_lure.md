@@ -96,5 +96,5 @@ target = track1 if p_real_t1 > 0.5 else track2
 
 ## Related Scenarios
 
-- Prerequisites: [S002](S002_evasive_maneuver.md), [S008](S008_stochastic_pursuit.md)
-- Next: [S015](S015_relay_tracking.md), [S019](S019_dynamic_reassignment.md)
+- Prerequisites: [S002 Evasive Maneuver](S002_evasive_maneuver.md), [S008 Stochastic Pursuit — Kalman Filter Tracking](S008_stochastic_pursuit.md)
+- Next: [S015 Relay Tracking](S015_relay_tracking.md), [S019 Dynamic Target Reassignment](S019_dynamic_reassignment.md)

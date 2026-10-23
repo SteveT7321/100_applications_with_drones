@@ -114,5 +114,5 @@ strategies = {
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md)
-- Follow-ups: [S003](S003_low_altitude_tracking.md), [S009](S009_differential_game.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md)
+- Follow-ups: [S003 Low-Altitude Tracking](S003_low_altitude_tracking.md), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](S009_differential_game.md)

@@ -424,5 +424,5 @@ def run_simulation():
 ## Related Scenarios
 
 - Prerequisites: [S046 Multi-Drone 3D Trilateration](S046_trilateration.md), [S047 Base Station Signal Relay](S047_signal_relay.md)
-- Follow-ups: [S060](S060_glacier_melt_monitor.md) (environmental monitoring with sensor networks)
-- Algorithmic cross-reference: [S046 Trilateration](S046_trilateration.md) (range-based vs TDOA-based localisation), [S047 Signal Relay](S047_signal_relay.md) (drone relay chain for data exfiltration), [S008 Stochastic Pursuit](../01_pursuit_evasion/S008_stochastic_pursuit.md) (noisy state estimation with Kalman filtering)
+- Follow-ups: [S060 Multi-Drone Cooperative Meteorological Measurement](S060_meteorological.md) (environmental monitoring with sensor networks)
+- Algorithmic cross-reference: [S046 Multi-Drone 3D Trilateration](S046_trilateration.md) (range-based vs TDOA-based localisation), [S047 Base Station Signal Relay](S047_signal_relay.md) (drone relay chain for data exfiltration), [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md) (noisy state estimation with Kalman filtering)

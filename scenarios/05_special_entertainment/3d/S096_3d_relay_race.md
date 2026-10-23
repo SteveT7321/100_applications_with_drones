@@ -298,11 +298,11 @@ $$u_{z,bound} = \begin{cases}
 
 ## Related Scenarios
 
-- Original 2D version: [S096](../S096_relay_race.md)
-- Truly 3D references: [S001](../../01_pursuit_evasion/S001_basic_intercept.md) (3D intercept
-  geometry), [S023](../../02_logistics_delivery/S023_moving_landing_pad.md) (3D velocity-matched
+- Original 2D version: [S096 Drone Relay Race](../S096_relay_race.md)
+- Truly 3D references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md) (3D intercept
+  geometry), [S023 Moving Landing Pad](../../02_logistics_delivery/S023_moving_landing_pad.md) (3D velocity-matched
   rendezvous with a moving target)
-- Domain 3D peers: [S081 3D Selfie Follow](S081_3d_selfie_follow.md),
-  [S083 3D Light Show](S083_3d_light_show.md), [S085 3D Light Matrix](S085_3d_light_matrix.md)
-- Follow-up: [S099 Obstacle Relay](../S099_obstacle_relay.md) (relay race with dynamic obstacles
+- Domain 3D peers: [S081 3D Upgrade — Selfie Follow Mode](S081_3d_selfie_follow.md),
+  [S083 3D Upgrade — Light Show Single Drone Test](S083_3d_light_show.md), [S085 3D Upgrade — Light Matrix Positioning](S085_3d_light_matrix.md)
+- Follow-up: [S099 Cross-Obstacle Relay Pass](../S099_obstacle_relay.md) (relay race with dynamic obstacles
   and collision avoidance, natural next step after mastering the 3D handoff geometry)

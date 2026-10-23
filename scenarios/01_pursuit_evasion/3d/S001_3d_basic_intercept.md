@@ -191,6 +191,6 @@ $$\|\mathbf{p}_P - \mathbf{p}_T\| < r_{capture} = 0.15 \text{ m}$$
 
 ## Related Scenarios
 
-- Original 2D version: [S001](../S001_basic_intercept.md)
-- Evasion in 3D: [S002 3D](S002_3d_evasive_maneuver.md)
-- Low-altitude tracking (terrain + vertical): [S003](../S003_low_altitude_tracking.md)
+- Original 2D version: [S001 Basic Intercept](../S001_basic_intercept.md)
+- Evasion in 3D: [S002 3D Upgrade — Evasive Maneuver](S002_3d_evasive_maneuver.md)
+- Low-altitude tracking (terrain + vertical): [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

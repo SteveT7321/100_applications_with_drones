@@ -291,10 +291,8 @@ $$d_{miss} = \min_{t \in [0, T_{max}]} \|\mathbf{p}_I(t) - \mathbf{p}_T(t)\|$$
 
 ## Related Scenarios
 
-- Original 2D/3D version: [S094](../S094_counter_drone.md)
+- Original 2D/3D version: [S094 Counter-Drone Intercept](../S094_counter_drone.md)
 - Truly 3D pursuit references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md),
-  [S003 Low Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+  [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
 - Multi-agent assignment: [S018 Multi-Target Intercept](../../01_pursuit_evasion/S018_multi_target_intercept.md)
-- Differential game foundation: [S009 Differential Game](../../01_pursuit_evasion/S009_differential_game.md)
-- Domain 5 follow-ups: [S092 Autonomous Combat Drone](../S092_autonomous_combat.md),
-  [S099 Electronic Warfare Drone](../S099_obstacle_relay.md)
+- Differential game foundation: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../01_pursuit_evasion/S009_differential_game.md)

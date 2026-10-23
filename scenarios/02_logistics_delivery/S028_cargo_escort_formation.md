@@ -199,6 +199,6 @@ def repulsion(pos_ei, pos_ej):
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S026](S026_cooperative_heavy_lift.md)
-- Follow-ups: [S029](S029_urban_logistics_scheduling.md), [S031](S031_path_deconfliction.md)
-- Domain 1 analogue: [S011](../01_pursuit_evasion/S011_swarm_encirclement.md) (virtual-structure coordination pattern)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S026 Cooperative Heavy Lift](S026_cooperative_heavy_lift.md)
+- Follow-ups: [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md), [S031 Path De-confliction](S031_path_deconfliction.md)
+- Domain 1 analogue: [S011 Swarm Encirclement](../01_pursuit_evasion/S011_swarm_encirclement.md) (virtual-structure coordination pattern)

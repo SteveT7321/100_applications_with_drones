@@ -128,8 +128,8 @@ def optimal_pursuer_action(pos_p, pos_e, V_interp, grid):
 
 ## Related Scenarios
 
-- Prerequisites: [S002](S002_evasive_maneuver.md) (understand strategy concepts)
-- Follow-ups: [S010](S010_asymmetric_speed.md) (asymmetric speeds), [S020](S020_pursuit_evasion_game.md)
+- Prerequisites: [S002 Evasive Maneuver](S002_evasive_maneuver.md) (understand strategy concepts)
+- Follow-ups: [S010 Asymmetric Speed — Bounded Arena Trapping](S010_asymmetric_speed.md) (asymmetric speeds), [S020 Pursuit-Evasion Game (RL Capstone)](S020_pursuit_evasion_game.md)
 
 ## References
 

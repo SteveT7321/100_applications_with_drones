@@ -284,8 +284,8 @@ preceding node, operating on the full 3D displacement vector.
 
 ## Related Scenarios
 
-- Original 2D version: [S047](../S047_signal_relay.md)
-- 3D geometry reference: [S046 3D Trilateration](../S046_3d_trilateration.md)
-- Network extension: [S051 Post-Disaster Comm Network](../S051_post_disaster_comm.md)
-- Relay chain in a different medium: [S059 Sonar Buoy Relay](../S059_sonar_relay.md)
-- Multi-agent positioning: [S049 Dynamic Zone Assignment](../S049_dynamic_zone_assignment.md)
+- Original 2D version: [S047 Base Station Signal Relay](../S047_signal_relay.md)
+- 3D geometry reference: [S046 Multi-Drone 3D Trilateration](../S046_trilateration.md)
+- Network extension: [S051 Post-Disaster Communication Network Restoration](../S051_post_disaster_comm.md)
+- Relay chain in a different medium: [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](../S059_sonar_relay.md)
+- Multi-agent positioning: [S049 Dynamic Zone Search](../S049_dynamic_zone.md)

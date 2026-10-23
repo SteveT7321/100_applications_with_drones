@@ -467,9 +467,9 @@ def run_simulation(strategy: str = 'load_index', seed: int = 42) -> dict:
 
 ## Related Scenarios
 
-- Prerequisites: [S029](S029_urban_logistics_scheduling.md), [S032](S032_charging_queue.md), [S033](S033_online_order_insertion.md)
-- Follow-ups: [S041](../03_environmental_sar/S041_wildfire_boundary.md) (next domain: multi-drone coordination)
-- Algorithmic cross-reference: [S036](S036_last_mile_relay.md) (relay chain, battery-constrained routing), [S019](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time Hungarian reassignment)
+- Prerequisites: [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md), [S032 Charging Queue](S032_charging_queue.md), [S033 Online Order Insertion](S033_online_order_insertion.md)
+- Follow-ups: [S041 Wildfire Boundary Scan](../03_environmental_sar/S041_wildfire_boundary.md) (next domain: multi-drone coordination)
+- Algorithmic cross-reference: [S036 Last-Mile Relay](S036_last_mile_relay.md) (relay chain, battery-constrained routing), [S019 Dynamic Target Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time Hungarian reassignment)
 
 ## References
 

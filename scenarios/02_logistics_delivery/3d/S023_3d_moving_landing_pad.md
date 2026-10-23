@@ -190,7 +190,7 @@ $$\|\dot{\mathbf{p}}_{xy,D} - \dot{\mathbf{p}}_{xy,pad}\| \leq \Delta v_{max}$$
 
 ## Related Scenarios
 
-- Original 2D version: [S023](../S023_moving_landing_pad.md)
-- Moving pad with wind: [S024](../S024_wind_compensation.md)
-- Offshore platform exchange (related 3D context): [S039](../S039_offshore_platform_exchange.md)
-- 3D obstacle avoidance delivery: [S022 3D](S022_3d_obstacle_avoidance.md)
+- Original 2D version: [S023 Moving Landing Pad](../S023_moving_landing_pad.md)
+- Moving pad with wind: [S024 Wind Compensation](../S024_wind_compensation.md)
+- Offshore platform exchange (related 3D context): [S039 Offshore Platform Exchange](../S039_offshore_platform_exchange.md)
+- 3D obstacle avoidance delivery: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md)

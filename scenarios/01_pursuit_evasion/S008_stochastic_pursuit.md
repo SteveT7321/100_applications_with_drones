@@ -100,8 +100,8 @@ class KalmanFilter3D:
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S002](S002_evasive_maneuver.md)
-- Next: [S009](S009_differential_game.md), [S019](S019_dynamic_reassignment.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S002 Evasive Maneuver](S002_evasive_maneuver.md)
+- Next: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](S009_differential_game.md), [S019 Dynamic Target Reassignment](S019_dynamic_reassignment.md)
 
 ## References
 

@@ -118,7 +118,7 @@ Script: `src/01_pursuit_evasion/s001_basic_intercept.py` — functions `run_simu
 ## Related Scenarios
 
 - Prerequisites: none (entry-level scenario)
-- Follow-ups: [S002](S002_evasive_maneuver.md), [S009](S009_differential_game.md)
+- Follow-ups: [S002 Evasive Maneuver](S002_evasive_maneuver.md), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](S009_differential_game.md)
 
 ## References
 

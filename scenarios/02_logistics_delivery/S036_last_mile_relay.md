@@ -227,6 +227,6 @@ def simulate_relay(waypoints, legs, speed, dt):
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S029](S029_urban_scheduling.md)
-- Follow-ups: [S033](S033_online_order_insertion.md) (online insertion), [S037](S037_reverse_logistics.md) (return path optimisation), [S040](S040_fleet_load_balancing.md) (load balancing)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md)
+- Follow-ups: [S033 Online Order Insertion](S033_online_order_insertion.md) (online insertion), [S037 Reverse Logistics](S037_reverse_logistics.md) (return path optimisation), [S040 Fleet Load Balancing](S040_fleet_load_balancing.md) (load balancing)
 - Domain reference: [domains/02_logistics_delivery/README.md](../../domains/02_logistics_delivery/README.md)

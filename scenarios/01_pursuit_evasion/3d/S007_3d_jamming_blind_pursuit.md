@@ -112,5 +112,5 @@ $$e(t) = \|\hat{\mathbf{p}}_P(t) - \mathbf{p}_P(t)\|$$
 
 ## Related Scenarios
 
-- Original: [S007 2D version](../S007_jamming_blind_pursuit.md)
-- Truly 3D reference: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original: [S007 Jamming & Blind Pursuit](../S007_jamming_blind_pursuit.md)
+- Truly 3D reference: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

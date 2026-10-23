@@ -253,8 +253,7 @@ Altitude sampling completeness: the fraction of prescribed altitude waypoints (e
 ## Related Scenarios
 
 - Original 2D version: [S058 Typhoon Eye Probing](../S058_typhoon.md)
-- Vertical profile reference: [S060 Meteorological Profiling](../S060_meteorological.md)
-- 3D wind disturbance in pursuit context: [S004 Disturbance Rejection Chase](../../01_pursuit_evasion/S004_disturbance_rejection.md)
-- Extreme environment monitoring: [S055 Oil Spill Tracking](../S055_oil_spill.md), [S056 Radiation Mapping](../S056_radiation.md)
-- Ocean hazard analogue: [S059 Sonar Buoy Relay](../S059_sonar_relay.md)
-- 3D evasion format reference: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Vertical profile reference: [S060 Multi-Drone Cooperative Meteorological Measurement](../S060_meteorological.md)
+- Extreme environment monitoring: [S055 Coastline Oil Spill Tracking](../S055_oil_spill.md), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../S056_radiation.md)
+- Ocean hazard analogue: [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](../S059_sonar_relay.md)
+- 3D evasion format reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

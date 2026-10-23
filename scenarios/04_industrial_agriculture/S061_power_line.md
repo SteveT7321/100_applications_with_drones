@@ -428,6 +428,6 @@ Collision count:       0
 
 ## Related Scenarios
 
-- Prerequisites: [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md), [S048 Lawnmower Coverage](../03_environmental_sar/S048_lawnmower.md)
-- Follow-ups: [S065 Building 3D Scan Path](S065_building_3d_scan_path.md), [S072 Orchard Row Following](S072_orchard_row_following.md)
+- Prerequisites: [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md), [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md)
+- Follow-ups: [S065 Building 3D Modeling — Multi-Angle Scan Path](S065_3d_scan_path.md), [S072 Oil Pipeline Leak Detection](S072_pipeline_leak.md)
 - Algorithmic cross-reference: [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md) (PID control fundamentals), [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md) (close-proximity standoff control)

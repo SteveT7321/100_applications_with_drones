@@ -301,10 +301,10 @@ vertical axis (flat trajectories score low).
 
 ## Related Scenarios
 
-- Original 2D/point-mass version: [S082](../S082_fpv_racing.md)
+- Original 2D/point-mass version: [S082 FPV Racing Circuit](../S082_fpv_racing.md)
 - 3D pursuit reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md),
-  [S003 Low Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Other 3D upgrades in domain: [S002 3D Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
-- Related racing: [S090 Racing Optimal](../S090_racing_optimal.md),
-  [S096 Relay Race](../S096_relay_race.md)
-- MPC / trajectory reference: [S066 Cooperative Crane](../../04_industrial_agriculture/S066_cooperative_crane.md)
+  [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Other 3D upgrades in domain: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Related racing: [S090 Racing Drone Optimal Path](../S090_racing_optimal.md),
+  [S096 Drone Relay Race](../S096_relay_race.md)
+- MPC / trajectory reference: [S066 Cooperative Crane Simulation](../../04_industrial_agriculture/S066_cooperative_crane.md)

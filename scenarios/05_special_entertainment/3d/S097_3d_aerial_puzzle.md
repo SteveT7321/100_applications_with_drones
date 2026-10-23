@@ -262,8 +262,8 @@ stiffness gains, giving a single convergence measure in SI-compatible units (met
 
 ## Related Scenarios
 
-- Original 2D version: [S097](../S097_aerial_puzzle.md)
-- 3D attitude control reference: [S001](../../01_pursuit_evasion/S001_basic_intercept.md)
-- Formation 3D references: [S083 3D Light Show](S083_3d_light_show.md), [S085 3D Light Matrix](S085_3d_light_matrix.md)
-- Multi-agent coordination: [S020 Cooperative Interception](../../01_pursuit_evasion/S020_cooperative_interception.md)
-- Compliant manipulation: [S066 Cooperative Crane](../../04_industrial_agriculture/S066_cooperative_crane.md)
+- Original 2D version: [S097 Aerial Puzzle Assembly](../S097_aerial_puzzle.md)
+- 3D attitude control reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md)
+- Formation 3D references: [S083 3D Upgrade — Light Show Single Drone Test](S083_3d_light_show.md), [S085 3D Upgrade — Light Matrix Positioning](S085_3d_light_matrix.md)
+- Multi-agent coordination: [S013 Pincer Movement](../../01_pursuit_evasion/S013_pincer_movement.md)
+- Compliant manipulation: [S066 Cooperative Crane Simulation](../../04_industrial_agriculture/S066_cooperative_crane.md)

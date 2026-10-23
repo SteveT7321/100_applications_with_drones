@@ -305,8 +305,8 @@ $$M^* = \arg\min_{M \in \{0,\ldots,K-1\}} \text{coverage loss}(M) \;\text{s.t.}\
 
 ## Related Scenarios
 
-- Original 2D version: [S051](../S051_post_disaster_comm.md)
-- Truly 3D references: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S003](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Signal relay geometry: [S047 Signal Relay Enhancement](../S047_signal_relay.md), [S015 Communication Relay Tracking](../../01_pursuit_evasion/S015_comm_relay_tracking.md)
-- Debris-aware path planning cross-reference: [S043 Confined Space Inspection](../S043_confined_space.md)
-- Multi-drone coverage follow-up: [S052 Glacier Area Monitoring](../S052_glacier.md)
+- Original 2D version: [S051 Post-Disaster Communication Network Restoration](../S051_post_disaster_comm.md)
+- Truly 3D references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Signal relay geometry: [S047 Base Station Signal Relay](../S047_signal_relay.md), [S015 Relay Tracking](../../01_pursuit_evasion/S015_relay_tracking.md)
+- Debris-aware path planning cross-reference: [S043 Confined Space Exploration](../S043_confined_space.md)
+- Multi-drone coverage follow-up: [S052 Glacier Melt Area Measurement](../S052_glacier.md)

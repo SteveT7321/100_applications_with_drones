@@ -852,14 +852,14 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S082 LED Light Show Choreography](S082_led_light_show.md) (smooth trajectory
-  generation), [S084 Drone Racing Gate Navigation](S084_racing_gates.md) (aggressive manoeuvring
-  fundamentals), [S090 High-Speed Formation Aerobatics](S090_formation_aerobatics.md) (formation
+- Prerequisites: [S083 Light Show Single-Drone Test](S083_light_show_single.md) (smooth trajectory
+  generation), [S082 FPV Racing Circuit](S082_fpv_racing.md) (aggressive manoeuvring
+  fundamentals), [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md) (formation
   baseline)
 - Algorithmic cross-reference: [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md)
   (quadrotor dynamics reference; MATH_FOUNDATIONS §1), [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md)
   (aggressive attitude control), [S058 Typhoon Eye Probing](../03_environmental_sar/S058_typhoon.md)
   (extreme dynamics, full 3D control under disturbances)
 - Follow-ups: apply minimum-snap attitude planning from S091 to the full entertainment swarm in
-  [S095 Swarm Air Show](S095_swarm_air_show.md); extend the geometric controller to thrust-vectoring
+  [S098 Swarm Synchronized Dance](S098_synchronized_dance.md); extend the geometric controller to thrust-vectoring
   tri-copters for S097.

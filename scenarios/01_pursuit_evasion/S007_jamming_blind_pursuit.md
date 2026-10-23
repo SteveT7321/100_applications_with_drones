@@ -105,5 +105,5 @@ for step in range(max_steps):
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S002](S002_evasive_maneuver.md)
-- Next: [S008](S008_stochastic_pursuit.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S002 Evasive Maneuver](S002_evasive_maneuver.md)
+- Next: [S008 Stochastic Pursuit — Kalman Filter Tracking](S008_stochastic_pursuit.md)

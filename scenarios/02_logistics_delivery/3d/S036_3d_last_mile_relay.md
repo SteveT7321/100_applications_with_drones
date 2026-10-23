@@ -228,7 +228,7 @@ where $\mathbf{p}_{fly}(s) = (p_x(s),\, p_y(s),\, z_{fly}(s))$.
 
 ## Related Scenarios
 
-- Original 2D version: [S036](../S036_last_mile_relay.md)
-- Prerequisites: [S021 3D point delivery](S021_3d_point_delivery.md), [S024 3D wind compensation](S024_3d_wind_compensation.md)
-- Follow-ups: [S037](../S037_reverse_logistics.md) (return path), [S040](../S040_fleet_load_balancing.md) (load balancing)
-- Related 3D logistics: [S027 3D aerial refueling](S027_3d_aerial_refueling.md), [S030 3D multi-depot](S030_3d_multi_depot.md)
+- Original 2D version: [S036 Last-Mile Relay](../S036_last_mile_relay.md)
+- Prerequisites: [S021 3D Upgrade — Point Delivery](S021_3d_point_delivery.md), [S024 3D Upgrade — Wind Compensation](S024_3d_wind_compensation.md)
+- Follow-ups: [S037 Reverse Logistics](../S037_reverse_logistics.md) (return path), [S040 Fleet Load Balancing](../S040_fleet_load_balancing.md) (load balancing)
+- Related 3D logistics: [S027 3D Upgrade — Aerial Refueling Relay](S027_3d_aerial_refueling.md), [S030 3D Upgrade — Multi-Depot Delivery](S030_3d_multi_depot.md)

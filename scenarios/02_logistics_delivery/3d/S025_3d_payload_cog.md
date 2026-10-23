@@ -280,7 +280,7 @@ state-dependent yaw moment from accumulating into a heading drift.
 
 ## Related Scenarios
 
-- Original 2D version: [S025](../S025_payload_cog_offset.md)
-- Cooperative payload (3D catenary cables): [S026 3D](S026_3d_cooperative_heavy_lift.md)
-- Wind disturbance rejection reference: [S024 3D](S024_3d_wind_compensation.md)
-- Obstacle avoidance in 3D delivery: [S022 3D](S022_3d_obstacle_avoidance.md)
+- Original 2D version: [S025 Payload CoG Offset](../S025_payload_cog_offset.md)
+- Cooperative payload (3D catenary cables): [S026 3D Upgrade — Cooperative Heavy Lift](S026_3d_cooperative_heavy_lift.md)
+- Wind disturbance rejection reference: [S024 3D Upgrade — Wind Compensation](S024_3d_wind_compensation.md)
+- Obstacle avoidance in 3D delivery: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md)

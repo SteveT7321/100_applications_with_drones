@@ -212,8 +212,8 @@ $$P_{land} = \frac{N_{success}}{N_{trials}} \times 100\%$$
 
 ## Related Scenarios
 
-- Original 2D version: [S095](../S095_water_landing.md)
-- Heaving platform with LQR: [S079 Offshore Wind Farm Installation](../../scenarios/04_industrial_agriculture/S079_offshore_wind.md)
-- Precision approach to moving target: [S084 Aerial Refuelling Rendezvous](../S084_wind_endurance.md)
-- Velocity-matching landing: [S023 Moving Landing Pad](../../scenarios/02_logistics_delivery/S023_moving_landing_pad.md)
-- Disturbance rejection reference: [S058 Typhoon Eye Probing](../../scenarios/03_environmental_sar/S058_typhoon.md)
+- Original 2D version: [S095 Water Surface Landing Simulation](../S095_water_landing.md)
+- Heaving platform with LQR: [S079 Offshore Wind Farm Installation Assistance](../../04_industrial_agriculture/S079_offshore_wind.md)
+- Precision approach to moving target: [S027 Aerial Refueling Relay](../../02_logistics_delivery/S027_aerial_refueling_relay.md)
+- Velocity-matching landing: [S023 Moving Landing Pad](../../02_logistics_delivery/S023_moving_landing_pad.md)
+- Disturbance rejection reference: [S058 Typhoon Eye Probing](../../03_environmental_sar/S058_typhoon.md)

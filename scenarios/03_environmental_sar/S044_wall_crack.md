@@ -343,6 +343,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md)
-- Follow-ups: [S061 Power Line Inspection](../04_industrial_agriculture/S061_power_line_inspection.md), [S062 Wind Turbine Blade Inspection](../04_industrial_agriculture/S062_wind_turbine_blade_inspection.md), [S065 Building 3D Scan Path](../04_industrial_agriculture/S065_building_3d_scan_path.md)
-- Algorithmic cross-reference: [S053 Coral Reef 3D Mapping](S053_coral_reef_3d_mapping.md) (surface coverage metrics), [S043 Confined Space Exploration](S043_confined_space_exploration.md) (close-proximity flight control)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md)
+- Follow-ups: [S061 Power Line Inspection](../04_industrial_agriculture/S061_power_line.md), [S062 Wind Turbine Blade Inspection](../04_industrial_agriculture/S062_wind_turbine.md), [S065 Building 3D Modeling — Multi-Angle Scan Path](../04_industrial_agriculture/S065_3d_scan_path.md)
+- Algorithmic cross-reference: [S053 Coral Reef 3D Reconstruction](S053_coral_reef.md) (surface coverage metrics), [S043 Confined Space Exploration](S043_confined_space.md) (close-proximity flight control)

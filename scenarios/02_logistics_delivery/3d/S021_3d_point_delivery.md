@@ -250,7 +250,7 @@ def optimal_cruise_altitude(d_xy, z_range=np.linspace(0.5, 6.0, 56)):
 
 ## Related Scenarios
 
-- Original 2D version: [S021](../S021_point_delivery.md)
-- 3D obstacle avoidance: [S022](../S022_obstacle_avoidance_delivery.md)
-- Wind disturbance: [S024](../S024_wind_compensation.md)
-- 3D reference (pursuit domain): [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S003](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Original 2D version: [S021 Point Delivery](../S021_point_delivery.md)
+- 3D obstacle avoidance: [S022 Obstacle Avoidance Delivery](../S022_obstacle_avoidance_delivery.md)
+- Wind disturbance: [S024 Wind Compensation](../S024_wind_compensation.md)
+- 3D reference (pursuit domain): [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)

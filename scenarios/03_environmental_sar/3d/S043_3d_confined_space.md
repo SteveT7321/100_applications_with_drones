@@ -232,8 +232,8 @@ $$\text{Coverage}_{F_k}(t) = \frac{\left|\left\{v \in \mathcal{C}_{reach}^{3D} \
 
 ## Related Scenarios
 
-- Original 2D version: [S043](../S043_confined_space.md)
-- Volumetric SLAM reference: [S050 Autonomous SLAM Mapping](../S050_slam.md)
-- 3D frontier exploration background: [S001 3D Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S002 3D Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original 2D version: [S043 Confined Space Exploration](../S043_confined_space.md)
+- Volumetric SLAM reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md)
+- 3D frontier exploration background: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
 - Post-mapping structural survey: [S044 Wall Crack Inspection](../S044_wall_crack.md)
-- Multi-drone coordination pattern: [S042 Missing Person Search](../S042_missing_person.md)
+- Multi-drone coordination pattern: [S042 Missing Person Localization](../S042_missing_person.md)

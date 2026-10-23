@@ -507,6 +507,5 @@ False alarm rate:      P_FA %
 
 ## Related Scenarios
 
-- Prerequisites: [S045 Chemical Plume Tracing](../03_environmental_sar/S045_plume_tracing.md), [S056 Radiation Hotspot Detection](../03_environmental_sar/S056_radiation.md)
-- Follow-ups: [S073 Pump Station Vibration](S073_pump_station_vibration.md), [S074 Tank Farm Inspection](S074_tank_farm_inspection.md)
-- Algorithmic cross-reference: [S061 Power Line Inspection](S061_power_line.md) (Frenet-frame pipeline following), [S045 Chemical Plume Tracing](../03_environmental_sar/S045_plume_tracing.md) (Gaussian plume model and cast-and-surge), [S056 Radiation Hotspot Detection](../03_environmental_sar/S056_radiation.md) (gradient-ascent source localisation)
+- Prerequisites: [S045 Chemical Plume Tracing](../03_environmental_sar/S045_plume_tracing.md), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../03_environmental_sar/S056_radiation.md)
+- Algorithmic cross-reference: [S061 Power Line Inspection](S061_power_line.md) (Frenet-frame pipeline following), [S045 Chemical Plume Tracing](../03_environmental_sar/S045_plume_tracing.md) (Gaussian plume model and cast-and-surge), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../03_environmental_sar/S056_radiation.md) (gradient-ascent source localisation)

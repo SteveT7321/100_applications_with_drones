@@ -799,6 +799,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S085 Light Show Synchronisation](S085_light_show_sync.md), [S087 Aerial Calligraphy](S087_aerial_calligraphy.md)
-- Follow-ups: [S089 Swarm Music Visualisation](S089_swarm_music_viz.md)
-- Algorithmic cross-reference: [S005 Formation Keeping](../01_pursuit_evasion/S005_formation_keeping.md) (multi-drone formation PID), [S009 Multi-Pursuer Coordination](../01_pursuit_evasion/S009_multi_pursuer.md) (distributed multi-agent planning), [S066 Cooperative Crane](../04_industrial_agriculture/S066_cooperative_crane.md) (ORCA-style soft repulsion in 3D formation)
+- Prerequisites: [S085 Drone Light Matrix Positioning](S085_light_matrix.md), [S087 Aerial Light Show Text Display](S087_led_text.md)
+- Follow-ups: [S098 Swarm Synchronized Dance](S098_synchronized_dance.md)
+- Algorithmic cross-reference: [S028 Cargo Escort Formation](../02_logistics_delivery/S028_cargo_escort_formation.md) (multi-drone formation PID), [S011 Swarm Encirclement](../01_pursuit_evasion/S011_swarm_encirclement.md) (distributed multi-agent planning), [S066 Cooperative Crane Simulation](../04_industrial_agriculture/S066_cooperative_crane.md) (ORCA-style soft repulsion in 3D formation)

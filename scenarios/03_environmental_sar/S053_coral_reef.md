@@ -383,6 +383,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md), [S046 3D Trilateration](S046_3d_trilateration.md)
-- Follow-ups: [S054 Minefield Detection](S054_minefield_detection.md), [S065 Building 3D Scan Path](../04_industrial_agriculture/S065_building_3d_scan_path.md)
-- Algorithmic cross-reference: [S050 Swarm SLAM](S050_swarm_slam.md) (map-building from drone views), [S074 Mine 3D Mapping](../04_industrial_agriculture/S074_mine_3d_mapping.md) (confined-space photogrammetry)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md), [S046 Multi-Drone 3D Trilateration](S046_trilateration.md)
+- Follow-ups: [S054 Minefield Detection](S054_minefield.md), [S065 Building 3D Modeling — Multi-Angle Scan Path](../04_industrial_agriculture/S065_3d_scan_path.md)
+- Algorithmic cross-reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](S050_slam.md) (map-building from drone views), [S074 Mine 3D Mapping](../04_industrial_agriculture/S074_mine_mapping.md) (confined-space photogrammetry)

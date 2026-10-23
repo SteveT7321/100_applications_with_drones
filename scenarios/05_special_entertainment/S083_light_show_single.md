@@ -435,5 +435,5 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Follow-ups: [S085 Multi-Drone Formation Light Show](S085_light_show_formation.md) (synchronised swarm with the same figure-8 script), [S087 Dynamic Shape Morphing](S087_shape_morphing.md) (formation transitions mid-show), [S098 Grand Finale Burst](S098_grand_finale_burst.md) (high-density simultaneous launch)
-- Algorithmic cross-reference: [S063 Precision Spraying](../../04_industrial_agriculture/S063_precision_spraying.md) (PID position hold under wind disturbance), [S048 Lawnmower Coverage](../../03_environmental_sar/S048_lawnmower.md) (pre-scripted path following without feedback)
+- Follow-ups: [S085 Drone Light Matrix Positioning](S085_light_matrix.md) (synchronised swarm with the same figure-8 script), [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md) (formation transitions mid-show)
+- Algorithmic cross-reference: [S063 Single-Plant Precision Spraying](../04_industrial_agriculture/S063_precision_spraying.md) (PID position hold under wind disturbance), [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (pre-scripted path following without feedback)

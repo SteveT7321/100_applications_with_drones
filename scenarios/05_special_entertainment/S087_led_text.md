@@ -306,9 +306,9 @@ traj_A_to_B = morph_with_priority(targets_drone[assign_A], targets_show[assign_B
 
 ## Related Scenarios
 
-- Prerequisites: [S083](S083_swarm_formation.md), [S085](S085_light_matrix.md)
-- Next: [S088](S088_logo_transition.md)
-- Algorithmic cross-reference: [S018 Multi-Target Interception](../01_pursuit_evasion/S018_multi_target_interception.md) (Hungarian assignment), [S019 Dynamic Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time re-assignment), [S040 Fleet Load Balancing](../02_logistics_delivery/S040_fleet_load_balancing.md) (priority scheduling)
+- Prerequisites: [S083 Light Show Single-Drone Test](S083_light_show_single.md), [S085 Drone Light Matrix Positioning](S085_light_matrix.md)
+- Next: [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian assignment), [S019 Dynamic Target Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time re-assignment), [S040 Fleet Load Balancing](../02_logistics_delivery/S040_fleet_load_balancing.md) (priority scheduling)
 
 ## References
 

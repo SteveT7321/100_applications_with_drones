@@ -722,6 +722,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S061 Precision Spraying Path](S061_precision_spraying.md), [S063 Perching and Grasping](S063_perching_grasping.md)
-- Follow-ups: [S068 Aerial Assembly Line](S068_aerial_assembly.md), [S070 Swarm Construction](S070_swarm_construction.md)
-- Algorithmic cross-reference: [S079 Tethered Drone Operations](S079_tethered_operations.md) (cable constraint dynamics), [S005 Formation Keeping](../01_pursuit_evasion/S005_formation_keeping.md) (multi-drone PID formation), [S020 Cooperative Interception](../01_pursuit_evasion/S020_cooperative_interception.md) (distributed multi-agent control)
+- Prerequisites: [S063 Single-Plant Precision Spraying](S063_precision_spraying.md)
+- Follow-ups: [S097 Aerial Puzzle Assembly](../05_special_entertainment/S097_aerial_puzzle.md)
+- Algorithmic cross-reference: [S026 Cooperative Heavy Lift](../02_logistics_delivery/S026_cooperative_heavy_lift.md) (cable constraint dynamics), [S028 Cargo Escort Formation](../02_logistics_delivery/S028_cargo_escort_formation.md) (multi-drone PID formation), [S013 Pincer Movement](../01_pursuit_evasion/S013_pincer_movement.md) (distributed multi-agent control)

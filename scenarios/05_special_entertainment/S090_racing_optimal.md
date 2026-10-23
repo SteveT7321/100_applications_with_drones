@@ -727,13 +727,13 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S082 Drone Light Show Formation](S082_light_show_formation.md) (3D waypoint
-  trajectory planning in the entertainment domain), [S091 FPV Acrobatic Manoeuvre](S091_fpv_acrobatic.md)
+- Prerequisites: [S085 Drone Light Matrix Positioning](S085_light_matrix.md) (3D waypoint
+  trajectory planning in the entertainment domain), [S091 Aerial Acrobatic Maneuvers](S091_acrobatics.md)
   (high-speed drone dynamics and snap-limited flight envelopes)
-- Follow-ups: [S091 FPV Acrobatic Manoeuvre](S091_fpv_acrobatic.md) (extends minimum-snap to
-  acrobatic flip sequences), [S099 Multi-Drone Race](S099_multi_drone_race.md) (competitive
+- Follow-ups: [S091 Aerial Acrobatic Maneuvers](S091_acrobatics.md) (extends minimum-snap to
+  acrobatic flip sequences), [S096 Drone Relay Race](S096_relay_race.md) (competitive
   trajectory planning with inter-drone collision avoidance)
-- Algorithmic cross-reference: [S077 Precision Pollination](../04_industrial_agriculture/S077_pollination.md)
+- Algorithmic cross-reference: [S077 Precision Pollination Flight Pattern](../04_industrial_agriculture/S077_pollination.md)
   (minimum-snap single-segment approach trajectories with the same degree-7 polynomial formulation),
-  [S021 Package Delivery](../02_logistics_delivery/S021_package_delivery.md) (waypoint trajectory
+  [S021 Point Delivery](../02_logistics_delivery/S021_point_delivery.md) (waypoint trajectory
   planning with time constraints)

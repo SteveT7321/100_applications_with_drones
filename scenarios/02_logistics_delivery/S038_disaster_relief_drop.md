@@ -426,5 +426,5 @@ def run_simulation():
 ## Related Scenarios
 
 - Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md), [S033 Online Order Insertion](S033_online_order_insertion.md)
-- Follow-ups: [S039](S039_offshore_platform_exchange.md) (sustained resupply), [S040](S040_fleet_load_balancing.md) (load balancing)
+- Follow-ups: [S039 Offshore Platform Exchange](S039_offshore_platform_exchange.md) (sustained resupply), [S040 Fleet Load Balancing](S040_fleet_load_balancing.md) (load balancing)
 - Algorithmic cross-reference: [S034 Weather Rerouting](S034_weather_rerouting.md) (replanning under disruption), [S036 Last-Mile Relay](S036_last_mile_relay.md) (range extension), [S026 Cooperative Heavy Lift](S026_cooperative_heavy_lift.md) (multi-drone payload)

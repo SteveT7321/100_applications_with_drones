@@ -202,8 +202,8 @@ Bar chart of $\|\mathbf{p}(t_k) - \mathbf{g}_k\|$ for each of the 5 gates, with 
 
 ## Related Scenarios
 
-- Prerequisites: [S082](S082_fpv_racing.md), [S090](S090_racing_optimal.md), [S096](S096_relay_race.md)
-- Next: [S100](S100_grand_challenge.md)
+- Prerequisites: [S082 FPV Racing Circuit](S082_fpv_racing.md), [S090 Racing Drone Optimal Path](S090_racing_optimal.md), [S096 Drone Relay Race](S096_relay_race.md)
+- Next: [S100 Ultimate Grand Challenge — Multi-Domain Integration](S100_grand_challenge.md)
 
 ## References
 

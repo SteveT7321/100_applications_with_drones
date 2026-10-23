@@ -237,6 +237,6 @@ $$\lambda_{3D} = \frac{|\mathcal{C}_{3D}|}{\binom{N}{2} \cdot T_{mission} / 60}$
 ## Related Scenarios
 
 - Original 2D version: [S035 UTM Simulation](../S035_utm_simulation.md)
-- 3D logistics references: [S022 3D Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance_delivery.md), [S031 3D Path Deconfliction](S031_3d_path_deconfliction.md)
-- Algorithm reference: LP conflict resolution relates to [S019 Dynamic Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md)
+- 3D logistics references: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md), [S031 3D Upgrade — Path De-confliction](S031_3d_path_deconfliction.md)
+- Algorithm reference: LP conflict resolution relates to [S019 Dynamic Target Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md)
 - Follow-up: [S036 Last-Mile Relay](../S036_last_mile_relay.md)

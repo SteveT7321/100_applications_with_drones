@@ -39,5 +39,5 @@ The original S022 uses RRT* in a 2D plane with infinite-height cylindrical obsta
 
 ## Related Scenarios
 
-- Original: [S022](../S022_obstacle_avoidance_delivery.md)
-- See also: [S043 Confined Space](../../03_environmental_sar/S043_confined_space.md)
+- Original: [S022 Obstacle Avoidance Delivery](../S022_obstacle_avoidance_delivery.md)
+- See also: [S043 Confined Space Exploration](../../03_environmental_sar/S043_confined_space.md)

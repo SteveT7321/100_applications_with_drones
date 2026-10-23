@@ -165,6 +165,6 @@ for step in range(int(T_MAX / DT)):
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S012](S012_relay_pursuit.md)
-- Next: [S019](S019_dynamic_reassignment.md) (dynamic reassignment)
-- See [domains/01_pursuit_evasion.md](../../domains/01_pursuit_evasion.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S012 Relay Pursuit](S012_relay_pursuit.md)
+- Next: [S019 Dynamic Target Reassignment](S019_dynamic_reassignment.md) (dynamic reassignment)
+- See [domains/01_pursuit_evasion/README.md](../../domains/01_pursuit_evasion/README.md)

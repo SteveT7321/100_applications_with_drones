@@ -224,6 +224,6 @@ $$D_{total}(\beta) = \sum_{i=1}^{N} D_i(\beta), \quad \beta^* = \arg\max_{\beta 
 
 ## Related Scenarios
 
-- Original 2D version: [S032](../S032_charging_queue.md)
-- 3D logistics references: [S021](../S021_point_delivery.md), [S027](../S027_aerial_refueling_relay.md)
-- Follow-ups: [S033](../S033_online_order_insertion.md), [S040](../S040_fleet_load_balancing.md)
+- Original 2D version: [S032 Charging Queue](../S032_charging_queue.md)
+- 3D logistics references: [S021 Point Delivery](../S021_point_delivery.md), [S027 Aerial Refueling Relay](../S027_aerial_refueling_relay.md)
+- Follow-ups: [S033 Online Order Insertion](../S033_online_order_insertion.md), [S040 Fleet Load Balancing](../S040_fleet_load_balancing.md)

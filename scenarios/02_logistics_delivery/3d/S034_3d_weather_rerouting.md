@@ -216,7 +216,7 @@ The vertical speed is naturally bounded by $v_{max}$ projected onto the z-axis; 
 
 ## Related Scenarios
 
-- Original 2D version: [S034](../S034_weather_rerouting.md)
-- 3D path planning reference: [S022 3D Obstacle Avoidance](S022_3d_obstacle_avoidance.md), [S029 3D Urban Logistics](S029_3d_urban_logistics.md)
-- Wind compensation foundation: [S024 Wind Compensation](../S024_wind_compensation.md), [S024 3D Wind Compensation](S024_3d_wind_compensation.md)
-- Follow-ups: [S031 Path Deconfliction](../S031_path_deconfliction.md), [S038 Disaster Relief](../S038_disaster_relief.md)
+- Original 2D version: [S034 Weather Rerouting](../S034_weather_rerouting.md)
+- 3D path planning reference: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md), [S029 3D Upgrade — Urban Logistics Scheduling](S029_3d_urban_logistics.md)
+- Wind compensation foundation: [S024 Wind Compensation](../S024_wind_compensation.md), [S024 3D Upgrade — Wind Compensation](S024_3d_wind_compensation.md)
+- Follow-ups: [S031 Path De-confliction](../S031_path_deconfliction.md), [S038 Disaster Relief Drop](../S038_disaster_relief_drop.md)

@@ -318,7 +318,7 @@ where $\mathrm{dist}_{3D}$ is the signed minimum Euclidean distance to the obsta
 
 ## Related Scenarios
 
-- Original 2D version: [S092](../S092_movie_chase.md)
+- Original 2D version: [S092 Movie Car Chase Scene](../S092_movie_chase.md)
 - 3D pursuit reference: [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Gimbal/framing cross-reference: [S081 Selfie Follow Mode](../S081_selfie_follow.md), [S086 Multi-Angle Cinema](../S086_multi_angle_cinema.md)
-- Obstacle-course pursuit: [S004 Obstacle-Course Chase](../../01_pursuit_evasion/S004_obstacle_course_chase.md)
+- Gimbal/framing cross-reference: [S081 Selfie Follow Mode](../S081_selfie_follow.md), [S086 Cooperative Multi-Angle Filming](../S086_multi_angle_cinema.md)
+- Obstacle-course pursuit: [S004 Obstacle-Course Chase](../../01_pursuit_evasion/S004_obstacle_chase.md)

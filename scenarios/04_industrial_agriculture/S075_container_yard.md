@@ -652,6 +652,5 @@ Total mission time (s)             420.6        467.2
 
 ## Related Scenarios
 
-- Prerequisites: [S043 Confined Space Exploration](../03_environmental_sar/S043_confined_space.md), [S074 Automated Warehouse Picking](S074_automated_warehouse_picking.md)
-- Follow-ups: [S076 Port Crane Inspection](S076_port_crane_inspection.md) (vertical structure survey), [S077 Ship Hull Survey](S077_ship_hull_survey.md) (curved surface coverage)
-- Algorithmic cross-reference: [S004 Obstacle Chase](../01_pursuit_evasion/S004_obstacle_chase.md) (RRT in dynamic environments), [S069 Warehouse Inventory](S069_warehouse_inventory.md) (scan-scheduling fundamentals)
+- Prerequisites: [S043 Confined Space Exploration](../03_environmental_sar/S043_confined_space.md)
+- Algorithmic cross-reference: [S004 Obstacle-Course Chase](../01_pursuit_evasion/S004_obstacle_chase.md) (RRT in dynamic environments), [S069 Automated Warehouse Inventory](S069_warehouse_inventory.md) (scan-scheduling fundamentals)

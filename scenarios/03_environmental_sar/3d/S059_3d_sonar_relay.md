@@ -189,7 +189,7 @@ Convergence criterion: $\|\Delta \mathbf{p}^{(k)}\|_2 < \epsilon_{tol} = 10^{-3}
 
 ## Related Scenarios
 
-- Original 2D version: [S059 Sonar Buoy Relay](../S059_sonar_relay.md)
+- Original 2D version: [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](../S059_sonar_relay.md)
 - Prerequisites: [S046 Multi-Drone 3D Trilateration](../S046_trilateration.md), [S047 Base Station Signal Relay](../S047_signal_relay.md)
-- Algorithmic cross-reference: [S046 Trilateration](../S046_trilateration.md) (range-based vs TDOA-based localisation with 3D receiver geometry), [S047 Signal Relay](../S047_signal_relay.md) (drone altitude vs link coverage trade-off)
-- Pursuit & Evasion 3D reference: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (3D kinematics and altitude-strategy patterns)
+- Algorithmic cross-reference: [S046 Multi-Drone 3D Trilateration](../S046_trilateration.md) (range-based vs TDOA-based localisation with 3D receiver geometry), [S047 Base Station Signal Relay](../S047_signal_relay.md) (drone altitude vs link coverage trade-off)
+- Pursuit & Evasion 3D reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (3D kinematics and altitude-strategy patterns)

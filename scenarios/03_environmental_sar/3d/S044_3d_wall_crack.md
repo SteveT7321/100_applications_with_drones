@@ -259,8 +259,8 @@ with $\sigma_{noise} = 0.05\ \text{mm}$, $R_{px} = 2048$ px.
 
 ## Related Scenarios
 
-- Original 2D version: [S044](../S044_wall_crack.md)
-- Cylindrical surface coverage reference: [S062 Wind Turbine Blade Inspection](../../04_industrial_agriculture/S062_wind_turbine_blade_inspection.md)
-- Multi-face building reference: [S065 Building 3D Scan Path](../../04_industrial_agriculture/S065_building_3d_scan_path.md)
-- Coral reef 3D surface coverage metrics: [S053 Coral Reef 3D Mapping](../S053_coral_reef.md)
+- Original 2D version: [S044 Wall Crack Inspection](../S044_wall_crack.md)
+- Cylindrical surface coverage reference: [S062 Wind Turbine Blade Inspection](../../04_industrial_agriculture/S062_wind_turbine.md)
+- Multi-face building reference: [S065 Building 3D Modeling — Multi-Angle Scan Path](../../04_industrial_agriculture/S065_3d_scan_path.md)
+- Coral reef 3D surface coverage metrics: [S053 Coral Reef 3D Reconstruction](../S053_coral_reef.md)
 - Corner clearance manoeuvring: [S043 Confined Space Exploration](../S043_confined_space.md)

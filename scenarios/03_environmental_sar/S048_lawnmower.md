@@ -290,6 +290,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S042 Missing Person Search](S042_missing_person_search.md)
-- Follow-ups: [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md) (multi-drone parallel coverage), [S050 Swarm SLAM](S050_swarm_slam.md) (simultaneous mapping)
-- Algorithmic cross-reference: [S032 Charging Queue](../../02_logistics_delivery/S032_charging_queue.md) (battery-constrained multi-pass), [S067 Spray Overlap Optimization](../../04_industrial_agriculture/S067_spray_overlap_optimization.md) (same strip-width trade-off in agriculture)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S049 Dynamic Zone Search](S049_dynamic_zone.md) (multi-drone parallel coverage), [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](S050_slam.md) (simultaneous mapping)
+- Algorithmic cross-reference: [S032 Charging Queue](../02_logistics_delivery/S032_charging_queue.md) (battery-constrained multi-pass), [S067 Spray Coverage Overlap Optimization](../04_industrial_agriculture/S067_spray_overlap.md) (same strip-width trade-off in agriculture)

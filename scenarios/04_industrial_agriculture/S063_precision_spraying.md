@@ -346,6 +346,5 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S061 Field Boundary Mapping](S061_field_boundary_mapping.md), [S062 Crop Row Following](S062_crop_row_following.md)
-- Follow-ups: [S067 Spray Overlap Optimisation](S067_spray_overlap_optimization.md) (strip-width trade-off for area spray), [S068 Variable-Rate Application](S068_variable_rate_application.md) (prescription maps + dose control), [S070 Swarm Coordinated Spraying](S070_swarm_coordinated_spraying.md) (multi-drone coverage)
-- Algorithmic cross-reference: [S048 Lawnmower Coverage](../../03_environmental_sar/S048_lawnmower.md) (same strip-geometry trade-off), [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md) (PID position control foundations)
+- Follow-ups: [S067 Spray Coverage Overlap Optimization](S067_spray_overlap.md) (strip-width trade-off for area spray), [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md) (multi-drone coverage)
+- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (same strip-geometry trade-off), [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md) (PID position control foundations)

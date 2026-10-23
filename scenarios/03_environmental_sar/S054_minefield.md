@@ -432,6 +432,6 @@ def run_simulation(strategy='risk_aware', n_mines=15, seed=42):
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Lawnmower Coverage](S048_lawnmower_coverage.md), [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md)
-- Follow-ups: [S056 Radiation Hotspot Detection](S056_radiation_hotspot.md) (probabilistic risk map with source localisation), [S074 Mine 3D Mapping](../../04_industrial_agriculture/S074_mine_3d_mapping.md) (full 3D volumetric scan of underground workings)
-- Algorithmic cross-reference: [S034 Weather Rerouting](../../02_logistics_delivery/S034_weather_rerouting.md) (A* replanning under dynamic hazards), [S022 Obstacle Avoidance Delivery](../../02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (RRT* path planning with forbidden zones)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md), [S049 Dynamic Zone Search](S049_dynamic_zone.md)
+- Follow-ups: [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](S056_radiation.md) (probabilistic risk map with source localisation), [S074 Mine 3D Mapping](../04_industrial_agriculture/S074_mine_mapping.md) (full 3D volumetric scan of underground workings)
+- Algorithmic cross-reference: [S034 Weather Rerouting](../02_logistics_delivery/S034_weather_rerouting.md) (A* replanning under dynamic hazards), [S022 Obstacle Avoidance Delivery](../02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (RRT* path planning with forbidden zones)

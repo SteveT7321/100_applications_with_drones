@@ -227,7 +227,7 @@ with 3D localisation error $\varepsilon = \|\hat{\mathbf{p}}_{leak} - \mathbf{p}
 
 ## Related Scenarios
 
-- Original 2D version: [S072 Pipeline Leak Detection](../S072_pipeline_leak.md)
-- Terrain-following patrol reference: [S061 Power Line Inspection](../S061_power_line.md) (Frenet-frame pipe following), [S071 Bridge Inspection](../S071_bridge_inspection.md) (complex 3D geometry patrol)
-- 3D plume model reference: [S045 Chemical Plume Tracing](../../03_environmental_sar/S045_plume_tracing.md), [S056 Radiation Hotspot Detection](../../03_environmental_sar/S056_radiation.md)
-- Pipeline follow-up: [S073 Solar Thermal Inspection](../S073_solar_thermal.md), [S080 Underground Pipe](../S080_underground_pipe.md)
+- Original 2D version: [S072 Oil Pipeline Leak Detection](../S072_pipeline_leak.md)
+- Terrain-following patrol reference: [S061 Power Line Inspection](../S061_power_line.md) (Frenet-frame pipe following), [S071 Bridge Underside Structural Inspection](../S071_bridge_inspection.md) (complex 3D geometry patrol)
+- 3D plume model reference: [S045 Chemical Plume Tracing](../../03_environmental_sar/S045_plume_tracing.md), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../../03_environmental_sar/S056_radiation.md)
+- Pipeline follow-up: [S073 Solar Panel Thermal Imaging Inspection](../S073_solar_thermal.md), [S080 Underground Pipe CCTV Replacement](../S080_underground_pipe.md)

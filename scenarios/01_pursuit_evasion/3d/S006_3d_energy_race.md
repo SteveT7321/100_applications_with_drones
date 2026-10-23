@@ -113,5 +113,5 @@ where $\beta$ is the climb angle. Optimal $\beta$ for the evader maximises pursu
 
 ## Related Scenarios
 
-- Original: [S006 2D version](../S006_energy_race.md)
-- Truly 3D reference: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original: [S006 Energy Race](../S006_energy_race.md)
+- Truly 3D reference: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

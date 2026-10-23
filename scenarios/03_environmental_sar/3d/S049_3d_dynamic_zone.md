@@ -282,7 +282,7 @@ When reallocation trigger fires for drone $k^*$:
 
 ## Related Scenarios
 
-- Original 2D version: [S049 Dynamic Zone Assignment](../S049_dynamic_zone.md)
-- 3D search volume references: [S043 Confined Space](../S043_confined_space.md) (indoor 3D navigation), [S050 Swarm SLAM](../S050_slam.md) (simultaneous 3D mapping)
-- Algorithmic cross-reference: [S019 Dynamic Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time zone reallocation), [S040 Fleet Load Balancing](../../02_logistics_delivery/S040_fleet_load_balancing.md) (Jain fairness, load redistribution)
-- Follow-ups: [S054 Minefield Detection](../S054_minefield.md) (3D risk-weighted zone assignment), [S056 Radiation Mapping](../S056_radiation.md) (volumetric hazard mapping)
+- Original 2D version: [S049 Dynamic Zone Search](../S049_dynamic_zone.md)
+- 3D search volume references: [S043 Confined Space Exploration](../S043_confined_space.md) (indoor 3D navigation), [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md) (simultaneous 3D mapping)
+- Algorithmic cross-reference: [S019 Dynamic Target Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time zone reallocation), [S040 Fleet Load Balancing](../../02_logistics_delivery/S040_fleet_load_balancing.md) (Jain fairness, load redistribution)
+- Follow-ups: [S054 Minefield Detection](../S054_minefield.md) (3D risk-weighted zone assignment), [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../S056_radiation.md) (volumetric hazard mapping)

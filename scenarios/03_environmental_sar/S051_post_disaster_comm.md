@@ -348,6 +348,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S047 Signal Relay Enhancement](S047_signal_relay_enhancement.md), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md), [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md)
-- Follow-ups: [S052 Glacier Area Monitoring](S052_glacier_area_monitoring.md) (persistent multi-drone coverage)
-- Algorithmic cross-reference: [S029 Urban Logistics Scheduling](../02_logistics_delivery/S029_urban_logistics_scheduling.md) (multi-agent area assignment), [S015 Communication Relay Tracking](../01_pursuit_evasion/S015_comm_relay_tracking.md) (relay chain geometry)
+- Prerequisites: [S047 Base Station Signal Relay](S047_signal_relay.md), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md), [S049 Dynamic Zone Search](S049_dynamic_zone.md)
+- Follow-ups: [S052 Glacier Melt Area Measurement](S052_glacier.md) (persistent multi-drone coverage)
+- Algorithmic cross-reference: [S029 Urban Logistics Scheduling](../02_logistics_delivery/S029_urban_logistics_scheduling.md) (multi-agent area assignment), [S015 Relay Tracking](../01_pursuit_evasion/S015_relay_tracking.md) (relay chain geometry)

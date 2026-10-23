@@ -255,8 +255,8 @@ $$\mathcal{J} = \frac{\bigl(\sum_{i=1}^{N} D_i\bigr)^2}{N \cdot \sum_{i=1}^{N} D
 
 ## Related Scenarios
 
-- Original 2D version: [S040](../S040_fleet_load_balancing.md)
-- Other 3D logistics upgrades: [S030 3D](S030_3d_multi_depot.md), [S029 3D](S029_3d_urban_logistics.md)
-- Algorithmic cross-reference: [S019](../../01_pursuit_evasion/S019_dynamic_reassignment.md)
-  (real-time Hungarian reassignment), [S032](../S032_charging_queue.md) (charging pad contention),
-  [S033](../S033_online_order_insertion.md) (online order insertion)
+- Original 2D version: [S040 Fleet Load Balancing](../S040_fleet_load_balancing.md)
+- Other 3D logistics upgrades: [S030 3D Upgrade — Multi-Depot Delivery](S030_3d_multi_depot.md), [S029 3D Upgrade — Urban Logistics Scheduling](S029_3d_urban_logistics.md)
+- Algorithmic cross-reference: [S019 Dynamic Target Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md)
+  (real-time Hungarian reassignment), [S032 Charging Queue](../S032_charging_queue.md) (charging pad contention),
+  [S033 Online Order Insertion](../S033_online_order_insertion.md) (online order insertion)

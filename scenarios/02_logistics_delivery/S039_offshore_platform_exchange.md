@@ -369,8 +369,8 @@ class Drone:
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S023](S023_moving_landing_pad.md),
-  [S024](S024_wind_compensation.md), [S027](S027_aerial_refueling_relay.md)
-- Follow-ups: [S040](S040_fleet_load_balancing.md) (fleet load balancing across a larger network)
-- Relay chain reference: [S036](S036_last_mile_relay.md) (relay chain range extension)
-- Scheduling reference: [S029](S029_urban_logistics_scheduling.md) (VRPTW formulation)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S023 Moving Landing Pad](S023_moving_landing_pad.md),
+  [S024 Wind Compensation](S024_wind_compensation.md), [S027 Aerial Refueling Relay](S027_aerial_refueling_relay.md)
+- Follow-ups: [S040 Fleet Load Balancing](S040_fleet_load_balancing.md) (fleet load balancing across a larger network)
+- Relay chain reference: [S036 Last-Mile Relay](S036_last_mile_relay.md) (relay chain range extension)
+- Scheduling reference: [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md) (VRPTW formulation)

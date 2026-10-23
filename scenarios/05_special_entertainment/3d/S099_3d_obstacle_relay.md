@@ -187,8 +187,8 @@ encodes both radial miss distance within the hoop disc and axial approach tolera
 
 ## Related Scenarios
 
-- Original 2D/3D version: [S099](../S099_obstacle_relay.md)
-- Racing gate threading reference: [S082](../S082_fpv_racing.md), [S090](../S090_racing_optimal.md)
-- Relay handoff reference: [S096](../S096_relay_race.md)
-- Pursuit-evasion coupling: [S094](../S094_counter_drone.md)
-- Grand challenge integration: [S100](../S100_grand_challenge.md)
+- Original 2D/3D version: [S099 Cross-Obstacle Relay Pass](../S099_obstacle_relay.md)
+- Racing gate threading reference: [S082 FPV Racing Circuit](../S082_fpv_racing.md), [S090 Racing Drone Optimal Path](../S090_racing_optimal.md)
+- Relay handoff reference: [S096 Drone Relay Race](../S096_relay_race.md)
+- Pursuit-evasion coupling: [S094 Counter-Drone Intercept](../S094_counter_drone.md)
+- Grand challenge integration: [S100 Ultimate Grand Challenge — Multi-Domain Integration](../S100_grand_challenge.md)

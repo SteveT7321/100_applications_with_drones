@@ -736,11 +736,10 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S063 Solar Panel Fault Detection](S063_solar_panel_fault_detection.md)
-  (industrial inspection lawnmower structure), [S067 Spray Overlap Optimisation](S067_spray_overlap_optimization.md)
+- Prerequisites: [S073 Solar Panel Thermal Imaging Inspection](S073_solar_thermal.md)
+  (industrial inspection lawnmower structure), [S067 Spray Coverage Overlap Optimization](S067_spray_overlap.md)
   (field-coverage path planning in Domain 4)
-- Algorithmic cross-reference: [S079 Night Flight Navigation](S079_night_flight_navigation.md)
-  (environment-constrained mission planning), [S048 Full-Area Coverage Scan](../../03_environmental_sar/S048_lawnmower.md)
+- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md)
   (boustrophedon path geometry reference)
 - Follow-ups: extend the first-order thermal model to a two-mass RC circuit (winding + casing)
   for higher-fidelity temperature prediction; integrate with a real ESC telemetry stream for

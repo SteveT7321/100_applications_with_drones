@@ -235,7 +235,7 @@ Altitude bounds: $z_{drone} \in \mathcal{Z} = \{3, 10, 20, 35, 60\}$ m.
 
 ## Related Scenarios
 
-- Original 2D version: [S056](../S056_radiation.md)
+- Original 2D version: [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../S056_radiation.md)
 - 3D SAR reference: [S042 Missing Person Localization](../S042_missing_person.md) (shared Bayesian EIG framework, extended to 3D)
-- Volumetric mapping reference: [S050 SLAM](../S050_slam.md) (3D occupancy grid update analogous to 3D voxel posterior)
-- Contaminant field mapping: [S055 Oil Spill](../S055_oil_spill.md), [S045 Plume Tracing](../S045_plume_tracing.md)
+- Volumetric mapping reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md) (3D occupancy grid update analogous to 3D voxel posterior)
+- Contaminant field mapping: [S055 Coastline Oil Spill Tracking](../S055_oil_spill.md), [S045 Chemical Plume Tracing](../S045_plume_tracing.md)

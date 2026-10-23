@@ -95,5 +95,5 @@ for step in ...:
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md)
-- Next: [S010](S010_asymmetric_speed.md), [S012](S012_relay_pursuit.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md)
+- Next: [S010 Asymmetric Speed — Bounded Arena Trapping](S010_asymmetric_speed.md), [S012 Relay Pursuit](S012_relay_pursuit.md)

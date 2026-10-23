@@ -287,8 +287,8 @@ The constraint $L_{path}^{3D} \leq L_{max} = 500$ m must still be satisfied.
 ## Related Scenarios
 
 - Original 2D version: [S053 Coral Reef 3D Reconstruction](../S053_coral_reef.md)
-- Prerequisite coverage: [S048 Lawnmower Coverage](../S048_lawnmower.md)
-- Swarm extension: [S049 Dynamic Zone Assignment](../S049_dynamic_zone.md), [S050 Swarm SLAM](../S050_slam.md)
-- Industrial 3D analog: [S065 Building 3D Scan Path](../../04_industrial_agriculture/S065_building_3d_scan_path.md)
-- Confined-space photogrammetry: [S074 Mine 3D Mapping](../../04_industrial_agriculture/S074_mine_3d_mapping.md)
-- Pursuit & evasion 3D reference format: [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Prerequisite coverage: [S048 Full-Area Coverage Scan (Lawnmower)](../S048_lawnmower.md)
+- Swarm extension: [S049 Dynamic Zone Search](../S049_dynamic_zone.md), [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md)
+- Industrial 3D analog: [S065 Building 3D Modeling — Multi-Angle Scan Path](../../04_industrial_agriculture/S065_3d_scan_path.md)
+- Confined-space photogrammetry: [S074 Mine 3D Mapping](../../04_industrial_agriculture/S074_mine_mapping.md)
+- Pursuit & evasion 3D reference format: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

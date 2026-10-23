@@ -293,8 +293,6 @@ Total mission time (s)                  1063.4
 
 ## Related Scenarios
 
-- Original 2D version: [S075 Container Yard Inventory](../S075_container_yard.md)
-- Vertical structure survey reference: [S076 Port Crane Inspection](../S076_port_crane_inspection.md)
-- Multi-face coverage: [S077 Ship Hull Survey](../S077_ship_hull_survey.md)
+- Original 2D version: [S075 Port Container Yard Inventory](../S075_container_yard.md)
 - 3D path planning reference: [S043 Confined Space Exploration](../../03_environmental_sar/S043_confined_space.md)
-- Scan scheduling fundamentals: [S069 Warehouse Inventory](../S069_warehouse_inventory.md)
+- Scan scheduling fundamentals: [S069 Automated Warehouse Inventory](../S069_warehouse_inventory.md)

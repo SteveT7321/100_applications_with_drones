@@ -122,5 +122,5 @@ Tracking quality degrades as $V_{ellipsoid}$ grows.
 
 ## Related Scenarios
 
-- Original: [S008 2D version](../S008_stochastic_pursuit.md)
-- Truly 3D reference: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original: [S008 Stochastic Pursuit — Kalman Filter Tracking](../S008_stochastic_pursuit.md)
+- Truly 3D reference: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

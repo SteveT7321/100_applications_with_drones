@@ -358,6 +358,6 @@ def simulate(strategy, seed=7):
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S022](S022_obstacle_avoidance_delivery.md), [S029](S029_urban_logistics_scheduling.md)
-- Follow-ups: [S032](S032_charging_queue.md), [S033](S033_online_order_insertion.md)
-- Algorithmic cross-reference: [S028](S028_cargo_escort_formation.md) (formation separation), [S022](S022_obstacle_avoidance_delivery.md) (obstacle avoidance)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](S022_obstacle_avoidance_delivery.md), [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md)
+- Follow-ups: [S032 Charging Queue](S032_charging_queue.md), [S033 Online Order Insertion](S033_online_order_insertion.md)
+- Algorithmic cross-reference: [S028 Cargo Escort Formation](S028_cargo_escort_formation.md) (formation separation), [S022 Obstacle Avoidance Delivery](S022_obstacle_avoidance_delivery.md) (obstacle avoidance)

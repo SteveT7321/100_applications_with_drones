@@ -175,6 +175,6 @@ $$\|\mathbf{p}_P - \mathbf{p}_E\| < r_{capture} = 0.20 \text{ m}$$
 
 ## Related Scenarios
 
-- Original 2D version: [S003](../S003_low_altitude_tracking.md)
-- 3D evasion reference: [S002 3D](S002_3d_evasive_maneuver.md)
-- Obstacle chase extension: [S004](../S004_obstacle_avoidance_pursuit.md)
+- Original 2D version: [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)
+- 3D evasion reference: [S002 3D Upgrade — Evasive Maneuver](S002_3d_evasive_maneuver.md)
+- Obstacle chase extension: [S004 Obstacle-Course Chase](../S004_obstacle_chase.md)

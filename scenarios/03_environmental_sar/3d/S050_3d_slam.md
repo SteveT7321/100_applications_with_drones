@@ -339,8 +339,8 @@ horizontal uncertainty when sensor elevation angle noise $\sigma_\epsilon$ domin
 
 ## Related Scenarios
 
-- Original 2D version: [S050 Swarm SLAM](../S050_slam.md)
-- 3D sensor geometry reference: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S003](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Probabilistic mapping foundation: [S042 Missing Person Localisation](../S042_missing_person.md)
-- Communication topology under 3D relay constraints: [S047 Signal Relay](../S047_signal_relay.md)
-- Loop closure graph-SLAM: [S013 Particle Filter Intercept](../../01_pursuit_evasion/S013_particle_filter_intercept.md)
+- Original 2D version: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md)
+- 3D sensor geometry reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Probabilistic mapping foundation: [S042 Missing Person Localization](../S042_missing_person.md)
+- Communication topology under 3D relay constraints: [S047 Base Station Signal Relay](../S047_signal_relay.md)
+- Loop closure graph-SLAM: [S074 Mine 3D Mapping](../../04_industrial_agriculture/S074_mine_mapping.md)

@@ -409,6 +409,6 @@ def run_simulation(ground_truth):
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S042 Missing Person Search](S042_missing_person_search.md)
-- Follow-ups: [S044 Wall Crack Inspection](S044_wall_crack_inspection.md) (post-mapping structural survey), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md) (systematic coverage baseline)
-- Algorithmic cross-reference: [S004 Obstacle Chase](../01_pursuit_evasion/S004_obstacle_chase.md) (Bug algorithm in pursuit context), [S022 Obstacle Avoidance Delivery](../02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (potential field avoidance)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S044 Wall Crack Inspection](S044_wall_crack.md) (post-mapping structural survey), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md) (systematic coverage baseline)
+- Algorithmic cross-reference: [S004 Obstacle-Course Chase](../01_pursuit_evasion/S004_obstacle_chase.md) (Bug algorithm in pursuit context), [S022 Obstacle Avoidance Delivery](../02_logistics_delivery/S022_obstacle_avoidance_delivery.md) (potential field avoidance)

@@ -195,7 +195,7 @@ Mission success criterion: $\Theta_L(t) < 5°$ for all $t > t_{lift}$.
 
 ## Related Scenarios
 
-- Original 2D/flat version: [S026](../S026_cooperative_heavy_lift.md)
-- Obstacle avoidance reference: [S022 3D](S022_3d_obstacle_avoidance.md)
-- Cargo escort 3D: [S028 3D](S028_3d_cargo_escort.md)
-- Payload CoG offset (asymmetric load baseline): [S025](../S025_payload_cog_offset.md)
+- Original 2D/flat version: [S026 Cooperative Heavy Lift](../S026_cooperative_heavy_lift.md)
+- Obstacle avoidance reference: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md)
+- Cargo escort 3D: [S028 3D Upgrade — Cargo Escort Formation](S028_3d_cargo_escort.md)
+- Payload CoG offset (asymmetric load baseline): [S025 Payload CoG Offset](../S025_payload_cog_offset.md)

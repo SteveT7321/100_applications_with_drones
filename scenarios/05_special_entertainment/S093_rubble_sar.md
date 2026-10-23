@@ -830,6 +830,5 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S043 Post-Disaster Mapping](../03_environmental_sar/S043_post_disaster.md), [S074 Mine 3D Mapping](../04_industrial_agriculture/S074_mine_mapping.md)
-- Follow-ups: [S094 Rubble Multi-Agent SAR](S094_rubble_multiagent.md)
-- Algorithmic cross-reference: [S050 Swarm Cooperative Mapping (EKF-SLAM)](../03_environmental_sar/S050_slam.md) (frontier exploration), [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md) (probabilistic detection models)
+- Prerequisites: [S043 Confined Space Exploration](../03_environmental_sar/S043_confined_space.md), [S074 Mine 3D Mapping](../04_industrial_agriculture/S074_mine_mapping.md)
+- Algorithmic cross-reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../03_environmental_sar/S050_slam.md) (frontier exploration), [S045 Chemical Plume Tracing](../03_environmental_sar/S045_plume_tracing.md) (probabilistic detection models)

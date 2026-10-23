@@ -612,6 +612,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S085 Swarm Light Painting](S085_swarm_light_painting.md), [S088 Formation Morphing](S088_formation_morphing.md)
-- Follow-ups: [S098 Aerial Calligraphy](S098_aerial_calligraphy.md)
-- Algorithmic cross-reference: [S005 Formation Keeping](../01_pursuit_evasion/S005_formation_keeping.md) (multi-drone formation PID), [S020 Cooperative Interception](../01_pursuit_evasion/S020_cooperative_interception.md) (distributed multi-agent consensus), [S066 Cooperative Crane](../04_industrial_agriculture/S066_cooperative_crane.md) (compliant load manipulation)
+- Prerequisites: [S085 Drone Light Matrix Positioning](S085_light_matrix.md), [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md)
+- Follow-ups: [S087 Aerial Light Show Text Display](S087_led_text.md)
+- Algorithmic cross-reference: [S028 Cargo Escort Formation](../02_logistics_delivery/S028_cargo_escort_formation.md) (multi-drone formation PID), [S013 Pincer Movement](../01_pursuit_evasion/S013_pincer_movement.md) (distributed multi-agent consensus), [S066 Cooperative Crane Simulation](../04_industrial_agriculture/S066_cooperative_crane.md) (compliant load manipulation)

@@ -497,6 +497,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S048 Full-Area Coverage Scan](../../03_environmental_sar/S048_lawnmower.md) (boustrophedon path planning fundamentals), [S052 Glacier Melt Area Measurement](../../03_environmental_sar/S052_glacier.md) (lawnmower with Gaussian anomaly detection)
-- Follow-ups: [S074 Wind Turbine Blade Inspection](S074_wind_turbine.md) (curved surface inspection path), [S075 Substation Equipment Survey](S075_substation.md) (structured industrial inspection)
-- Algorithmic cross-reference: [S067 Spray Overlap Optimisation](S067_spray_overlap_optimization.md) (same strip-spacing trade-off), [S072 Greenhouse Gas Leak Detection](S072_greenhouse_gas.md) (sensor-threshold anomaly detection over a mapped area)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (boustrophedon path planning fundamentals), [S052 Glacier Melt Area Measurement](../03_environmental_sar/S052_glacier.md) (lawnmower with Gaussian anomaly detection)
+- Follow-ups: [S062 Wind Turbine Blade Inspection](S062_wind_turbine.md) (curved surface inspection path), [S061 Power Line Inspection](S061_power_line.md) (structured industrial inspection)
+- Algorithmic cross-reference: [S067 Spray Coverage Overlap Optimization](S067_spray_overlap.md) (same strip-spacing trade-off), [S072 Oil Pipeline Leak Detection](S072_pipeline_leak.md) (sensor-threshold anomaly detection over a mapped area)

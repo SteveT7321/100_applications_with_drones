@@ -175,6 +175,6 @@ for p0 in INTRUDER_STARTS:
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S002](S002_evasive_maneuver.md), [S005](S005_stealth_approach.md)
-- Next: [S017](S017_swarm_vs_swarm.md), [S018](S018_multi_target_intercept.md)
-- See [domains/01_pursuit_evasion.md](../../domains/01_pursuit_evasion.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S002 Evasive Maneuver](S002_evasive_maneuver.md), [S005 Stealth Approach](S005_stealth_approach.md)
+- Next: [S017 Swarm vs Swarm](S017_swarm_vs_swarm.md), [S018 Multi-Target Intercept](S018_multi_target_intercept.md)
+- See [domains/01_pursuit_evasion/README.md](../../domains/01_pursuit_evasion/README.md)

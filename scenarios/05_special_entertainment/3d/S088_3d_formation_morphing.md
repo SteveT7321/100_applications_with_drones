@@ -320,8 +320,8 @@ $$\mathcal{S} = \sqrt{\frac{1}{N \cdot T_{steps}} \sum_{k=1}^{N} \sum_{t} \bigl\
 
 ## Related Scenarios
 
-- Original 2D version: [S088 Formation Shape Morphing](../S088_formation_morphing.md)
-- Formation keeping foundation: [S005 Formation Keeping](../../01_pursuit_evasion/S005_formation_keeping.md)
-- Multi-agent coordination: [S009 Multi-Pursuer Coordination](../../01_pursuit_evasion/S009_multi_pursuer.md)
-- Cooperative 3D formation: [S066 Cooperative Crane](../../04_industrial_agriculture/S066_cooperative_crane.md)
-- Related 3D upgrade reference: [S002 3D Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original 2D version: [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)
+- Formation keeping foundation: [S028 Cargo Escort Formation](../../02_logistics_delivery/S028_cargo_escort_formation.md)
+- Multi-agent coordination: [S011 Swarm Encirclement](../../01_pursuit_evasion/S011_swarm_encirclement.md)
+- Cooperative 3D formation: [S066 Cooperative Crane Simulation](../../04_industrial_agriculture/S066_cooperative_crane.md)
+- Related 3D upgrade reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

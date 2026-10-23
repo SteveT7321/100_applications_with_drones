@@ -39,5 +39,5 @@ Formation offsets (diamond): `[±d, 0, 0]`, `[0, ±d, 0]`, `[0, 0, ±d]` — fou
 
 ## Related Scenarios
 
-- Original: [S028](../S028_cargo_escort_formation.md)
+- Original: [S028 Cargo Escort Formation](../S028_cargo_escort_formation.md)
 - See also: [S011 Swarm Encirclement](../../01_pursuit_evasion/S011_swarm_encirclement.md)

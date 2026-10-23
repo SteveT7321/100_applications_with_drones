@@ -120,5 +120,5 @@ Trilinear interpolation of the 3D grid to evaluate $\nabla V$ at arbitrary $\mat
 
 ## Related Scenarios
 
-- Original: [S009 2D version](../S009_differential_game.md)
-- Truly 3D reference: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../S009_differential_game.md)
+- Truly 3D reference: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

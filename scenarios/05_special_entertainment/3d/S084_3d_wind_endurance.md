@@ -301,7 +301,7 @@ $$\mathbf{v}_{ref}(t) = v_{ref} \cdot \frac{\mathbf{w}_{i+1} - \mathbf{w}_i}{\|\
 
 ## Related Scenarios
 
-- Original 2D version: [S084](../S084_wind_endurance.md)
+- Original 2D version: [S084 Extreme Weather Wind Resistance Test](../S084_wind_endurance.md)
 - Wind environment cross-reference: [S058 Typhoon Eye Probing](../../03_environmental_sar/S058_typhoon.md) (Rankine vortex + LQR feedforward)
-- 3D references: [S002 3D Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (full 3D guidance law structure)
-- Follow-ups: [S091 Acrobatics](../S091_acrobatics.md) (aggressive 3D maneuvers under disturbance), [S100 Grand Challenge](../S100_grand_challenge.md) (combined wind + multi-agent endurance)
+- 3D references: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md) (full 3D guidance law structure)
+- Follow-ups: [S091 Aerial Acrobatic Maneuvers](../S091_acrobatics.md) (aggressive 3D maneuvers under disturbance), [S100 Ultimate Grand Challenge — Multi-Domain Integration](../S100_grand_challenge.md) (combined wind + multi-agent endurance)

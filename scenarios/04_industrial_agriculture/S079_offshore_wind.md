@@ -711,11 +711,11 @@ if __name__ == '__main__':
 ## Related Scenarios
 
 - Prerequisites: [S062 Wind Turbine Blade Inspection](S062_wind_turbine.md) (offshore turbine
-  proximity operations), [S066 Cooperative Crane Lift](S066_cooperative_crane.md) (precision
+  proximity operations), [S066 Cooperative Crane Simulation](S066_cooperative_crane.md) (precision
   delivery to a constrained target)
 - Algorithmic cross-reference: [S058 Typhoon Eye Probing](../03_environmental_sar/S058_typhoon.md)
   (LQR under extreme disturbance, feedforward architecture),
   [S023 Moving Landing Pad](../02_logistics_delivery/S023_moving_landing_pad.md) (landing on a
   moving target, velocity matching)
-- Follow-ups: [S080 Autonomous Ship Deck Landing](S080_ship_deck_landing.md) (6-DOF moving
+- Follow-ups: [S095 Water Surface Landing Simulation](../05_special_entertainment/S095_water_landing.md) (6-DOF moving
   platform, full attitude coupling)

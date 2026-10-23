@@ -275,8 +275,8 @@ the flat-terrain estimate from S057.
 
 ## Related Scenarios
 
-- Original 2D version: [S057](../S057_wildlife.md)
-- Terrain-following reference: [S043 Confined Space](../S043_confined_space.md) (altitude control near surfaces)
-- Coverage geometry reference: [S048 Lawnmower](../S048_lawnmower.md) (strip-pattern coverage)
+- Original 2D version: [S057 Wildlife Population Census](../S057_wildlife.md)
+- Terrain-following reference: [S043 Confined Space Exploration](../S043_confined_space.md) (altitude control near surfaces)
+- Coverage geometry reference: [S048 Full-Area Coverage Scan (Lawnmower)](../S048_lawnmower.md) (strip-pattern coverage)
 - Sensor footprint reference: [S044 Wall Crack Inspection](../S044_wall_crack.md) (altitude-dependent footprint)
-- Pursuit-evasion 3D reference: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S002 3D](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Pursuit-evasion 3D reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

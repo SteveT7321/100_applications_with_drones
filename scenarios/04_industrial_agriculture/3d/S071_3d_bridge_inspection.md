@@ -269,8 +269,8 @@ to maintain $d_{3D} = d_{target}$.
 
 ## Related Scenarios
 
-- Original 2D version: [S071](../S071_bridge_inspection.md)
-- 3D standoff control reference: [S065 3D Scan Path](../S065_3d_scan_path.md), [S074 Mine 3D Mapping](../S074_mine_mapping.md)
-- GPS-denied close-proximity control: [S064 Greenhouse Interior Flight](../S064_greenhouse.md), [S080 Underground Pipe](../S080_underground_pipe.md)
-- Cooperative multi-drone inspection: [S066 Cooperative Crane](../S066_cooperative_crane.md)
+- Original 2D version: [S071 Bridge Underside Structural Inspection](../S071_bridge_inspection.md)
+- 3D standoff control reference: [S065 Building 3D Modeling — Multi-Angle Scan Path](../S065_3d_scan_path.md), [S074 Mine 3D Mapping](../S074_mine_mapping.md)
+- GPS-denied close-proximity control: [S064 Greenhouse Interior Precision Flight](../S064_greenhouse.md), [S080 Underground Pipe CCTV Replacement](../S080_underground_pipe.md)
+- Cooperative multi-drone inspection: [S066 Cooperative Crane Simulation](../S066_cooperative_crane.md)
 - Crack detection probabilistic model: [S044 Wall Crack Inspection](../../03_environmental_sar/S044_wall_crack.md)

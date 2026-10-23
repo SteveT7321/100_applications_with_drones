@@ -249,8 +249,7 @@ $$\text{RMSE} = \sqrt{\frac{1}{N_{found}} \sum_{i:\, found_i} \|\boldsymbol{\mu}
 
 ## Related Scenarios
 
-- Original 2D/flat version: [S093](../S093_rubble_sar.md)
-- Multi-agent follow-up: [S094 Counter-Drone Defense](../S094_counter_drone.md)
+- Original 2D/flat version: [S093 Earthquake Rubble Search and Rescue](../S093_rubble_sar.md)
 - 3D occupancy mapping reference: [S074 Mine 3D Mapping](../../04_industrial_agriculture/S074_mine_mapping.md)
-- Probabilistic detection reference: [S013 Particle Filter Intercept](../../01_pursuit_evasion/S013_particle_filter_intercept.md)
-- Cooperative SLAM reference: [S050 Swarm Cooperative Mapping](../../03_environmental_sar/S050_slam.md)
+- Probabilistic detection reference: [S045 Chemical Plume Tracing](../../03_environmental_sar/S045_plume_tracing.md)
+- Cooperative SLAM reference: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../../03_environmental_sar/S050_slam.md)

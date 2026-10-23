@@ -270,8 +270,8 @@ where $\mathcal{G}_{safe} = \{(x,y) : \|\nabla z_{dem}(x,y)\| \leq 1.0,\; (x,y) 
 
 ## Related Scenarios
 
-- Original 2D version: [S042](../S042_missing_person.md)
-- Terrain-aware SAR reference: [S041 Area Coverage Sweep](../S041_wildfire_boundary.md)
+- Original 2D version: [S042 Missing Person Localization](../S042_missing_person.md)
+- Terrain-aware SAR reference: [S048 3D Upgrade — Lawnmower Coverage on Terrain](S048_3d_lawnmower.md)
 - Occlusion and 3D sensing: [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Particle filter estimation: [S013 Particle Filter Intercept](../../01_pursuit_evasion/S013_particle_filter_intercept.md)
-- Truly 3D pursuit reference: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S002 3D](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Particle filter estimation: [S045 Chemical Plume Tracing](../S045_plume_tracing.md)
+- Truly 3D pursuit reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

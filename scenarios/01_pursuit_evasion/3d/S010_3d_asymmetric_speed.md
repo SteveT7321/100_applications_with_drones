@@ -247,5 +247,5 @@ def simulate_3d(strategy="wall_herd"):
 
 ## Related Scenarios
 
-- Original 2D version: [S010](../S010_asymmetric_speed.md)
-- Truly 3D references: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original 2D version: [S010 Asymmetric Speed — Bounded Arena Trapping](../S010_asymmetric_speed.md)
+- Truly 3D references: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

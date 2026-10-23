@@ -819,11 +819,9 @@ if __name__ == '__main__':
 ## Related Scenarios
 
 - Prerequisites: [S058 Typhoon Eye Probing](../03_environmental_sar/S058_typhoon.md)
-  (Rankine vortex LQR feedforward architecture), [S079 Night Flight Navigation](../04_industrial_agriculture/S079_night_flight_navigation.md)
-  (environment-constrained straight-line mission)
+  (Rankine vortex LQR feedforward architecture)
 - Algorithmic cross-reference: [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md)
-  (quadrotor dynamics reference), [S091 Formation Flying](S091_formation_flying.md)
-  (multi-agent disturbance rejection)
+  (quadrotor dynamics reference)
 - Follow-ups: deploy the validated LQR+RLS controller in a gym-pybullet-drones environment with
   a custom wind-force plugin; extend to a full IMU-based acceleration measurement model with
   sensor noise for hardware-in-the-loop validation.

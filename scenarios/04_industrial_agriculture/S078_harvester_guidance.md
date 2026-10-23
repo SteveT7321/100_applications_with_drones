@@ -582,6 +582,5 @@ if __name__ == "__main__":
 
 ## Related Scenarios
 
-- Prerequisites: [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md), [S070 Crop Health Monitoring](S070_crop_health_monitoring.md)
-- Follow-up: [S077 Seeding Path Planning](S077_seeding_path.md) (same air-ground coordination framework, seed delivery)
-- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../../03_environmental_sar/S048_lawnmower.md) (boustrophedon strip geometry), [S042 Missing Person Search](../../03_environmental_sar/S042_missing_person_search.md) (A* replanning on occupancy grid)
+- Prerequisites: [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md)
+- Algorithmic cross-reference: [S048 Full-Area Coverage Scan (Lawnmower)](../03_environmental_sar/S048_lawnmower.md) (boustrophedon strip geometry), [S042 Missing Person Localization](../03_environmental_sar/S042_missing_person.md) (A* replanning on occupancy grid)

@@ -256,8 +256,7 @@ $$\hat{\delta}_k \leftarrow (1 - \beta)\,\hat{\delta}_k + \beta\,\Delta_k, \qqua
 
 ## Related Scenarios
 
-- Original 2D version: [S098](../S098_synchronized_dance.md)
-- Formation in 3D: [S083 3D Light Show](S083_3d_light_show.md), [S085 3D Light Matrix](S085_3d_light_matrix.md)
-- Clock sync reference: [S095 Swarm Communication](../S095_swarm_communication.md)
-- Collision avoidance at scale: [S089 Collision Avoidance](../S089_collision_avoidance.md)
-- Pursuit & evasion 3D reference: [S002 3D Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original 2D version: [S098 Swarm Synchronized Dance](../S098_synchronized_dance.md)
+- Formation in 3D: [S083 3D Upgrade — Light Show Single Drone Test](S083_3d_light_show.md), [S085 3D Upgrade — Light Matrix Positioning](S085_3d_light_matrix.md)
+- Collision avoidance at scale: [S089 Large-Scale Swarm Collision Avoidance Test](../S089_collision_avoidance.md)
+- Pursuit & evasion 3D reference: [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

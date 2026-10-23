@@ -121,5 +121,5 @@ $$\mathbf{v}_E = v_{E,alert} \cdot \frac{\mathbf{p}_E - \mathbf{p}_P}{\|\mathbf{
 
 ## Related Scenarios
 
-- Original: [S005 2D version](../S005_stealth_approach.md)
-- Truly 3D reference: [S001](../S001_basic_intercept.md), [S003](../S003_low_altitude_tracking.md)
+- Original: [S005 Stealth Approach](../S005_stealth_approach.md)
+- Truly 3D reference: [S001 Basic Intercept](../S001_basic_intercept.md), [S003 Low-Altitude Tracking](../S003_low_altitude_tracking.md)

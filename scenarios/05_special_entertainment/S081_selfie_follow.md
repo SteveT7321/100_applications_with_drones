@@ -618,6 +618,6 @@ Raw GPS + PD          54.0%       0.89 m       2.74 m
 
 ## Related Scenarios
 
-- Prerequisites: [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md), [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md)
-- Follow-ups: [S086 Formation Light Show](S086_formation_light_show.md), [S092 Crowd Surveillance](S092_crowd_surveillance.md), [S094 Actor Chase Cam](S094_actor_chase_cam.md)
+- Prerequisites: [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md), [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md)
+- Follow-ups: [S085 Drone Light Matrix Positioning](S085_light_matrix.md), [S092 Movie Car Chase Scene](S092_movie_chase.md)
 - Algorithmic cross-reference: [S042 Missing Person Localization](../03_environmental_sar/S042_missing_person.md) (Bayesian target tracking), [S061 Power Line Inspection](../04_industrial_agriculture/S061_power_line.md) (PD offset controller pattern)

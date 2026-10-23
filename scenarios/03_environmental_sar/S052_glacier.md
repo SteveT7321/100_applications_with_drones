@@ -387,6 +387,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md)
-- Follow-ups: [S053 Coral Reef 3D Mapping](S053_coral_reef_3d_mapping.md) (underwater photogrammetry), [S057 Wildlife Census](S057_wildlife_census.md) (orthophoto-based counting)
-- Algorithmic cross-reference: [S049 Dynamic Zone Assignment](S049_dynamic_zone_assignment.md) (adaptive coverage), [S065 Building 3D Scan Path](../../04_industrial_agriculture/S065_building_3d_scan_path.md) (viewpoint planning)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md)
+- Follow-ups: [S053 Coral Reef 3D Reconstruction](S053_coral_reef.md) (underwater photogrammetry), [S057 Wildlife Population Census](S057_wildlife.md) (orthophoto-based counting)
+- Algorithmic cross-reference: [S049 Dynamic Zone Search](S049_dynamic_zone.md) (adaptive coverage), [S065 Building 3D Modeling — Multi-Angle Scan Path](../04_industrial_agriculture/S065_3d_scan_path.md) (viewpoint planning)

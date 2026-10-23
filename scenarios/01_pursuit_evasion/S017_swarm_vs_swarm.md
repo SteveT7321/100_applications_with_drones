@@ -205,6 +205,6 @@ for n_pursuers, p_init in [(3, PURSUERS_3), (5, PURSUERS_5)]:
 
 ## Related Scenarios
 
-- Prerequisites: [S011](S011_swarm_encirclement.md), [S013](S013_pincer_movement.md)
-- Next: [S018](S018_multi_target_intercept.md), [S019](S019_dynamic_reassignment.md)
-- See [domains/01_pursuit_evasion.md](../../domains/01_pursuit_evasion.md)
+- Prerequisites: [S011 Swarm Encirclement](S011_swarm_encirclement.md), [S013 Pincer Movement](S013_pincer_movement.md)
+- Next: [S018 Multi-Target Intercept](S018_multi_target_intercept.md), [S019 Dynamic Target Reassignment](S019_dynamic_reassignment.md)
+- See [domains/01_pursuit_evasion/README.md](../../domains/01_pursuit_evasion/README.md)

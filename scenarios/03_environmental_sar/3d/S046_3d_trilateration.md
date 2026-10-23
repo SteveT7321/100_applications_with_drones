@@ -268,11 +268,11 @@ $$\text{Var}(\hat{x}_j) \geq \bigl[\mathbf{I}_{TDOA}^{-1}\bigr]_{jj}$$
 
 ## Related Scenarios
 
-- Original 2D version: [S046](../S046_trilateration.md)
-- Prerequisite: [S042 Missing Person Search](../S042_missing_person.md) — motivation for
+- Original 2D version: [S046 Multi-Drone 3D Trilateration](../S046_trilateration.md)
+- Prerequisite: [S042 Missing Person Localization](../S042_missing_person.md) — motivation for
   accurate 3D localisation of survivors in complex terrain
-- Follow-up: [S050 Swarm SLAM](../S050_slam.md) — extends anchor-based localisation to
+- Follow-up: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md) — extends anchor-based localisation to
   simultaneous mapping when anchor positions are themselves uncertain
-- Algorithmic cross-reference: [S008 Stochastic Pursuit](../../01_pursuit_evasion/S008_stochastic_pursuit.md)
-  (Kalman filtering under Gaussian noise), [S047 Signal Relay Enhancement](../S047_signal_relay.md)
+- Algorithmic cross-reference: [S008 Stochastic Pursuit — Kalman Filter Tracking](../../01_pursuit_evasion/S008_stochastic_pursuit.md)
+  (Kalman filtering under Gaussian noise), [S047 Base Station Signal Relay](../S047_signal_relay.md)
   (mesh network timing synchronisation needed for TDOA)

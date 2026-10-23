@@ -665,6 +665,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S064 Greenhouse Interior Flight](S064_greenhouse.md), [S074 Mine 3D Mapping](S074_mine_mapping.md), [S075 Tunnel Navigation](S075_tunnel.md)
-- Algorithmic cross-reference: [S071 Bridge Underside Inspection](S071_bridge_inspection.md) (surface crack detection), [S069 Warehouse Inventory](S069_warehouse_inventory.md) (GPS-denied indoor navigation)
-- See also: [S013 Particle Filter Intercept](../01_pursuit_evasion/S013_particle_filter_intercept.md) (probabilistic state estimation under noise)
+- Prerequisites: [S064 Greenhouse Interior Precision Flight](S064_greenhouse.md), [S074 Mine 3D Mapping](S074_mine_mapping.md)
+- Algorithmic cross-reference: [S071 Bridge Underside Structural Inspection](S071_bridge_inspection.md) (surface crack detection), [S069 Automated Warehouse Inventory](S069_warehouse_inventory.md) (GPS-denied indoor navigation)
+- See also: [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md) (probabilistic state estimation under noise)

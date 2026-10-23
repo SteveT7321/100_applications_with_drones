@@ -299,6 +299,6 @@ def simulate_mission(grid, waypoints):
 
 ## Related Scenarios
 
-- Prerequisites: [S065 Building 3D Modeling Sampling](S065_3d_scan_path.md), [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md)
+- Prerequisites: [S065 Building 3D Modeling — Multi-Angle Scan Path](S065_3d_scan_path.md), [S068 Large-Scale Farmland Cooperative Spraying](S068_large_field_spray.md)
 - Next: [S074 Mine 3D Mapping](S074_mine_mapping.md) (GNSS-denied volumetric mapping), [S075 Port Container Yard Inventory](S075_container_yard.md) (high-density outdoor inventory)
 - Algorithmic cross-reference: [S043 Confined Space Exploration](../03_environmental_sar/S043_confined_space.md) (A* + frontier in GPS-denied interior)

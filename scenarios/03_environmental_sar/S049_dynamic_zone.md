@@ -430,6 +430,6 @@ def run_simulation(strategy='weighted'):
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S042 Missing Person Search](S042_missing_person_search.md), [S048 Lawnmower Coverage](S048_lawnmower_coverage.md)
-- Follow-ups: [S050 Swarm SLAM](S050_swarm_slam.md) (simultaneous mapping during search), [S054 Minefield Detection](S054_minefield_detection.md) (zone-based detection with risk weighting)
-- Algorithmic cross-reference: [S018 Multi-Target Interception](../01_pursuit_evasion/S018_multi_target_interception.md) (Hungarian assignment), [S019 Dynamic Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time zone reallocation), [S040 Fleet Load Balancing](../02_logistics_delivery/S040_fleet_load_balancing.md) (Jain fairness, load redistribution)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md), [S048 Full-Area Coverage Scan (Lawnmower)](S048_lawnmower.md)
+- Follow-ups: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](S050_slam.md) (simultaneous mapping during search), [S054 Minefield Detection](S054_minefield.md) (zone-based detection with risk weighting)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian assignment), [S019 Dynamic Target Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time zone reallocation), [S040 Fleet Load Balancing](../02_logistics_delivery/S040_fleet_load_balancing.md) (Jain fairness, load redistribution)

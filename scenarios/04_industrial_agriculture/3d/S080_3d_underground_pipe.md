@@ -336,9 +336,8 @@ $$C_{circ} = \frac{|\{\psi : \psi \text{ has been imaged}\}|}{2\pi} \times 100\%
 
 ## Related Scenarios
 
-- Original 2D/3D-limited version: [S080](../S080_underground_pipe.md)
-- GPS-denied indoor navigation: [S069 Warehouse Inventory](../S069_warehouse_inventory.md)
-- Tunnel navigation reference: [S075 Tunnel Navigation](../S075_container_yard.md)
+- Original 2D/3D-limited version: [S080 Underground Pipe CCTV Replacement](../S080_underground_pipe.md)
+- GPS-denied indoor navigation: [S069 Automated Warehouse Inventory](../S069_warehouse_inventory.md)
 - 3D mapping in confined space: [S074 Mine 3D Mapping](../S074_mine_mapping.md)
-- Surface crack detection: [S071 Bridge Underside Inspection](../S071_bridge_inspection.md)
-- Probabilistic state estimation: [S013 Particle Filter Intercept](../../01_pursuit_evasion/S013_particle_filter_intercept.md)
+- Surface crack detection: [S071 Bridge Underside Structural Inspection](../S071_bridge_inspection.md)
+- Probabilistic state estimation: [S008 Stochastic Pursuit — Kalman Filter Tracking](../../01_pursuit_evasion/S008_stochastic_pursuit.md)

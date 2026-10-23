@@ -244,8 +244,8 @@ $$T_{mission} = \max_{i \in \{0,\ldots,N-1\}} T_i$$
 
 ## Related Scenarios
 
-- Original 2D version: [S068](../S068_large_field_spray.md)
+- Original 2D version: [S068 Large-Scale Farmland Cooperative Spraying](../S068_large_field_spray.md)
 - 3D terrain-following reference: [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Adjacent 3D agriculture: [S063 Orchard Row Spraying](../S063_orchard_row_spraying.md), [S067 Spray Overlap Optimisation](../S067_spray_overlap_optimization.md)
-- Multi-drone coordination: [S049 Dynamic Zone Assignment](../../03_environmental_sar/S049_dynamic_zone.md)
-- Wash interference background: [S070 Precision Variable-Rate Spraying](../S070_precision_variable_rate_spraying.md)
+- Adjacent 3D agriculture: [S063 Single-Plant Precision Spraying](../S063_precision_spraying.md), [S067 Spray Coverage Overlap Optimization](../S067_spray_overlap.md)
+- Multi-drone coordination: [S049 Dynamic Zone Search](../../03_environmental_sar/S049_dynamic_zone.md)
+- Wash interference background: [S070 Swarm Weeding Task](../S070_swarm_weeding.md)

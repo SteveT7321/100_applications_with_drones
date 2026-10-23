@@ -302,6 +302,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
-- Follow-ups: [S058](S058_flood_mapping.md) (area coverage with sensor fusion), [S059](S059_oil_spill_detection.md) (contaminant census)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S058 Typhoon Eye Probing](S058_typhoon.md) (area coverage with sensor fusion), [S059 Underwater Target Sonar Marking (Surface Cooperative Localization)](S059_sonar_relay.md) (contaminant census)
 - Algorithmic cross-reference: [S044 Wall Crack Inspection](S044_wall_crack.md) (sensor footprint geometry), [S042 Missing Person Localization](S042_missing_person.md) (probabilistic detection model)

@@ -256,10 +256,8 @@ overhead is approximately $1$–$3\%$ compared to the flat-field value.
 ## Related Scenarios
 
 - Original 2D version: [S067 Spray Coverage Overlap Optimization](../S067_spray_overlap.md)
-- Terrain-following context: [S063 Crop Row Following](../S063_crop_row_following.md) (strip
-  following fundamentals applied to agricultural rows)
-- Multi-drone extension: [S068 Multi-Drone Field Coverage](../S068_multi_drone_field_coverage.md)
+- Multi-drone extension: [S068 Large-Scale Farmland Cooperative Spraying](../S068_large_field_spray.md)
   (parallel strip assignment across a fleet; add terrain-following to each agent)
-- Coverage planning reference: [S048 Full-Area Coverage Scan](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
+- Coverage planning reference: [S048 Full-Area Coverage Scan (Lawnmower)](../../../scenarios/03_environmental_sar/S048_lawnmower.md)
   (boustrophedon strip planning; 3D terrain extension is analogous)
-- Truly 3D format reference: [S002 3D Upgrade](../../../scenarios/01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Truly 3D format reference: [S002 3D Upgrade — Evasive Maneuver](../../../scenarios/01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

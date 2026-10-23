@@ -364,11 +364,11 @@ def build_and_improve_routes(customers, demands, depots, partition,
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S029](S029_urban_logistics_scheduling.md)
-- Follow-ups: [S031](S031_path_deconfliction.md), [S033](S033_online_order_insertion.md)
-- Range-constrained delivery: [S027](S027_aerial_refueling_relay.md), [S036](S036_last_mile_relay.md)
-- Algorithmic cross-reference: [S019](../01_pursuit_evasion/S019_dynamic_reassignment.md) (Hungarian
-  assignment), [S018](../01_pursuit_evasion/S018_multi_target_intercept.md) (TSP tour building)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S029 Urban Logistics Scheduling](S029_urban_logistics_scheduling.md)
+- Follow-ups: [S031 Path De-confliction](S031_path_deconfliction.md), [S033 Online Order Insertion](S033_online_order_insertion.md)
+- Range-constrained delivery: [S027 Aerial Refueling Relay](S027_aerial_refueling_relay.md), [S036 Last-Mile Relay](S036_last_mile_relay.md)
+- Algorithmic cross-reference: [S019 Dynamic Target Reassignment](../01_pursuit_evasion/S019_dynamic_reassignment.md) (Hungarian
+  assignment), [S018 Multi-Target Intercept](../01_pursuit_evasion/S018_multi_target_intercept.md) (TSP tour building)
 
 ## References
 

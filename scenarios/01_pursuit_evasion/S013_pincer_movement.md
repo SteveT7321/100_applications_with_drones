@@ -97,5 +97,5 @@ v_p2 = PURSUER_SPEED * (target_2 - pursuer2.pos) / (norm(...) + 1e-8)
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S011](S011_swarm_encirclement.md)
-- Next: [S016](S016_airspace_defense.md), [S017](S017_swarm_vs_swarm.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S011 Swarm Encirclement](S011_swarm_encirclement.md)
+- Next: [S016 Airspace Defense](S016_airspace_defense.md), [S017 Swarm vs Swarm](S017_swarm_vs_swarm.md)

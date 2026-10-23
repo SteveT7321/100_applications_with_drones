@@ -314,10 +314,10 @@ $$J_{snap,total} = \sum_i \int_{t_i}^{t_{i+1}} \left\|\frac{d^4\mathbf{p}_{ref}}
 
 ## Related Scenarios
 
-- Original 2D version: [S091](../S091_acrobatics.md)
-- Minimum-snap trajectory reference: [S084 Wind Endurance](../S084_wind_endurance.md),
-  [S090 Racing Optimal](../S090_racing_optimal.md)
+- Original 2D version: [S091 Aerial Acrobatic Maneuvers](../S091_acrobatics.md)
+- Minimum-snap trajectory reference: [S084 Extreme Weather Wind Resistance Test](../S084_wind_endurance.md),
+  [S090 Racing Drone Optimal Path](../S090_racing_optimal.md)
 - Truly 3D attitude control reference: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md),
   [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Formation extension: [S088 Formation Morphing](../S088_formation_morphing.md),
-  [S098 Synchronized Dance](../S098_synchronized_dance.md)
+- Formation extension: [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md),
+  [S098 Swarm Synchronized Dance](../S098_synchronized_dance.md)

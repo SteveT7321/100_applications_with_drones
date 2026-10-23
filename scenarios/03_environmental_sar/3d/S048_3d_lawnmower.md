@@ -261,8 +261,8 @@ where:
 
 ## Related Scenarios
 
-- Original 2D version: [S048](../S048_lawnmower.md)
-- Truly 3D references: [S001](../../01_pursuit_evasion/S001_basic_intercept.md), [S043 Confined Space](../S043_confined_space.md)
-- Multi-drone extension: [S049 Dynamic Zone Assignment](../S049_dynamic_zone.md)
-- Mapping feedback: [S050 Swarm SLAM](../S050_slam.md)
-- Agricultural parallel: [S067 Spray Overlap Optimization](../../04_industrial_agriculture/S067_spray_overlap_optimization.md)
+- Original 2D version: [S048 Full-Area Coverage Scan (Lawnmower)](../S048_lawnmower.md)
+- Truly 3D references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md), [S043 Confined Space Exploration](../S043_confined_space.md)
+- Multi-drone extension: [S049 Dynamic Zone Search](../S049_dynamic_zone.md)
+- Mapping feedback: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../S050_slam.md)
+- Agricultural parallel: [S067 Spray Coverage Overlap Optimization](../../04_industrial_agriculture/S067_spray_overlap.md)

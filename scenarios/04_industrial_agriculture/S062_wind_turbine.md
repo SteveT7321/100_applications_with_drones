@@ -574,6 +574,6 @@ Expected quantitative results for the proposed strategy over $T_{max} = 120$ s:
 
 ## Related Scenarios
 
-- Prerequisites: [S061 Power Line Inspection](S061_power_line_inspection.md) (proximity tracking along linear structures), [S071 Bridge Underside Inspection](S071_bridge_underside.md) (confined-space proximity control)
-- Follow-ups: [S079 Offshore Wind Installation](S079_offshore_wind.md) (multi-turbine coordination and marine environment)
-- Algorithmic cross-reference: [S005 Stealth Approach](../01_pursuit_evasion/S005_stealth_approach.md) (phase-based angular positioning), [S023 Moving Landing Pad](../02_logistics_delivery/S023_moving_landing_pad.md) (tracking a moving reference), [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack_inspection.md) (close-range surface inspection)
+- Prerequisites: [S061 Power Line Inspection](S061_power_line.md) (proximity tracking along linear structures), [S071 Bridge Underside Structural Inspection](S071_bridge_inspection.md) (confined-space proximity control)
+- Follow-ups: [S079 Offshore Wind Farm Installation Assistance](S079_offshore_wind.md) (multi-turbine coordination and marine environment)
+- Algorithmic cross-reference: [S005 Stealth Approach](../01_pursuit_evasion/S005_stealth_approach.md) (phase-based angular positioning), [S023 Moving Landing Pad](../02_logistics_delivery/S023_moving_landing_pad.md) (tracking a moving reference), [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md) (close-range surface inspection)

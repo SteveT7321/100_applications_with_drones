@@ -866,12 +866,10 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S079 Offshore Wind Farm Installation](../04_industrial_agriculture/S079_offshore_wind.md)
+- Prerequisites: [S079 Offshore Wind Farm Installation Assistance](../04_industrial_agriculture/S079_offshore_wind.md)
   (heaving platform landing, LQR + feedforward architecture),
-  [S084 Aerial Refuelling Rendezvous](S084_aerial_refuelling.md) (precision approach to a moving
+  [S027 Aerial Refueling Relay](../02_logistics_delivery/S027_aerial_refueling_relay.md) (precision approach to a moving
   target)
 - Algorithmic cross-reference: [S023 Moving Landing Pad](../02_logistics_delivery/S023_moving_landing_pad.md)
   (velocity-matching landing), [S058 Typhoon Eye Probing](../03_environmental_sar/S058_typhoon.md)
   (disturbance rejection under environmental dynamics)
-- Follow-ups: [S096 Ship Deck Night Landing](S096_ship_deck_night.md) (vision-impaired deck
-  localisation + wave prediction under sensor noise)

@@ -265,9 +265,9 @@ $$\rho_{ORCA} = \frac{\text{total half-plane activations}}{N \cdot T_{steps}}$$
 
 ## Related Scenarios
 
-- Original 2D/3D version: [S089](../S089_collision_avoidance.md)
-- Altitude-layer coordination reference: [S085 Light Matrix Positioning](../S085_light_matrix.md),
-  [S088 Formation Shape Morphing](../S088_formation_morphing.md)
-- Multi-agent velocity reasoning: [S009 Differential Game Pursuit](../../01_pursuit_evasion/S009_differential_game.md)
-- Dense swarm coordination: [S070 Swarm Weeding](../../04_industrial_agriculture/S070_swarm_weeding.md)
-- 3D evasion reference (ORCA geometry analogy): [S002 3D Upgrade](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- Original 2D/3D version: [S089 Large-Scale Swarm Collision Avoidance Test](../S089_collision_avoidance.md)
+- Altitude-layer coordination reference: [S085 Drone Light Matrix Positioning](../S085_light_matrix.md),
+  [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)
+- Multi-agent velocity reasoning: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../../01_pursuit_evasion/S009_differential_game.md)
+- Dense swarm coordination: [S070 Swarm Weeding Task](../../04_industrial_agriculture/S070_swarm_weeding.md)
+- 3D evasion reference (ORCA geometry analogy): [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)

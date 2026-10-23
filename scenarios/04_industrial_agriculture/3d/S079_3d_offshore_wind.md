@@ -365,9 +365,9 @@ $\Delta U \sim \mathcal{N}(0, 2^2)$ m/s.
 
 ## Related Scenarios
 
-- Original 2D/shallow-3D version: [S079 Offshore Wind Installation](../S079_offshore_wind.md)
+- Original 2D/shallow-3D version: [S079 Offshore Wind Farm Installation Assistance](../S079_offshore_wind.md)
 - Turbine proximity operations reference: [S062 Wind Turbine Blade Inspection](../S062_wind_turbine.md)
-- High-altitude precision delivery: [S066 Cooperative Crane Lift](../S066_cooperative_crane.md)
+- High-altitude precision delivery: [S066 Cooperative Crane Simulation](../S066_cooperative_crane.md)
 - Moving target landing (low altitude): [S023 Moving Landing Pad](../../02_logistics_delivery/S023_moving_landing_pad.md)
 - LQR under extreme wind disturbance: [S058 Typhoon Eye Probing](../../03_environmental_sar/S058_typhoon.md)
-- Follow-up (6-DOF moving deck): [S080 Underground Pipe Inspection](../S080_underground_pipe.md)
+- Follow-up (6-DOF moving deck): [S095 Water Surface Landing Simulation](../../05_special_entertainment/S095_water_landing.md)

@@ -130,7 +130,7 @@ Remaining energy after leg $(i,j)$: $E_{rem} \leftarrow E_{rem} - E_{ij}$
 
 ## Related Scenarios
 
-- Original: [S029 2D version](../S029_urban_logistics_scheduling.md)
-- Prerequisites: [S021](../S021_point_delivery.md), [S022](../S022_obstacle_avoidance_delivery.md)
-- Follow-ups: [S030](../S030_multi_depot_delivery.md), [S031](../S031_path_deconfliction.md)
-- Algorithmic cross-reference: [S018](../../01_pursuit_evasion/S018_multi_target_intercept.md) (TSP formulation)
+- Original: [S029 Urban Logistics Scheduling](../S029_urban_logistics_scheduling.md)
+- Prerequisites: [S021 Point Delivery](../S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](../S022_obstacle_avoidance_delivery.md)
+- Follow-ups: [S030 Multi-Depot Delivery](../S030_multi_depot_delivery.md), [S031 Path De-confliction](../S031_path_deconfliction.md)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../../01_pursuit_evasion/S018_multi_target_intercept.md) (TSP formulation)

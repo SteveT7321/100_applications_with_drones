@@ -121,7 +121,7 @@ model_pursuer.learn(total_timesteps=5_000 * MAX_STEPS)
 ## Related Scenarios
 
 - Prerequisites: all S001–S019 (capstone of the pursuit-evasion domain)
-- See [domains/01_pursuit_evasion.md](../../domains/01_pursuit_evasion.md)
+- See [domains/01_pursuit_evasion/README.md](../../domains/01_pursuit_evasion/README.md)
 
 ## References
 

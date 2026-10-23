@@ -693,7 +693,7 @@ if __name__ == '__main__':
    and plot the success-rate curve for PNG vs pure pursuit; identify the critical ratio at which
    pure pursuit fails while PNG still achieves $> 90\%$ success.
 5. **Differential game optimal evasion**: replace the bang-bang heuristic with the HJI-optimal
-   evasion strategy from [S009 Differential Game](../../01_pursuit_evasion/S009_differential_game.md);
+   evasion strategy from [S009 Differential Game](../01_pursuit_evasion/S009_differential_game.md);
    measure the reduction in PNG success rate and estimate the value-of-the-game capture time
    under mutual optimality.
 6. **Physical capture mechanism**: attach a net-deployment model ($r_{net} = 1.5$ m) that
@@ -704,15 +704,15 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S081 Selfie Follow](S081_selfie_follow.md) (basic drone tracking in domain 5),
-  [S009 Differential Game](../../01_pursuit_evasion/S009_differential_game.md) (HJI optimal
-  guidance), [S016 Airspace Defense](../../01_pursuit_evasion/S016_airspace_defense.md) (zone
+- Prerequisites: [S081 Selfie Follow Mode](S081_selfie_follow.md) (basic drone tracking in domain 5),
+  [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../01_pursuit_evasion/S009_differential_game.md) (HJI optimal
+  guidance), [S016 Airspace Defense](../01_pursuit_evasion/S016_airspace_defense.md) (zone
   protection against intruder)
-- Follow-ups: [S092 Autonomous Combat Drone](S092_autonomous_combat.md) (multi-agent armed
-  intercept), [S099 Electronic Warfare Drone](S099_electronic_warfare.md) (jamming and
+- Follow-ups: [S017 Swarm vs Swarm](../01_pursuit_evasion/S017_swarm_vs_swarm.md) (multi-agent armed
+  intercept), [S007 Jamming & Blind Pursuit](../01_pursuit_evasion/S007_jamming_blind_pursuit.md) (jamming and
   counter-measures)
-- Algorithmic cross-reference: [S018 Multi-Target Intercept](../../01_pursuit_evasion/S018_multi_target_intercept.md)
-  (multiple simultaneous engagements), [S009 Differential Game](../../01_pursuit_evasion/S009_differential_game.md)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../01_pursuit_evasion/S018_multi_target_intercept.md)
+  (multiple simultaneous engagements), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../01_pursuit_evasion/S009_differential_game.md)
   (game-theoretic guidance analysis)
 
 ## References

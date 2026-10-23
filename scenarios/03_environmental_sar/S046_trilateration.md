@@ -339,6 +339,6 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary_scan.md), [S042 Missing Person Search](S042_missing_person_search.md)
-- Follow-ups: [S047 Signal Relay Enhancement](S047_signal_relay_enhancement.md), [S050 Swarm SLAM](S050_swarm_slam.md)
-- Algorithmic cross-reference: [S007 Blind Pursuit under Jamming](../01_pursuit_evasion/S007_blind_pursuit_jamming.md) (noisy state estimation), [S008 Stochastic Pursuit](../01_pursuit_evasion/S008_stochastic_pursuit.md) (Kalman filtering)
+- Prerequisites: [S041 Wildfire Boundary Scan](S041_wildfire_boundary.md), [S042 Missing Person Localization](S042_missing_person.md)
+- Follow-ups: [S047 Base Station Signal Relay](S047_signal_relay.md), [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](S050_slam.md)
+- Algorithmic cross-reference: [S007 Jamming & Blind Pursuit](../01_pursuit_evasion/S007_jamming_blind_pursuit.md) (noisy state estimation), [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md) (Kalman filtering)

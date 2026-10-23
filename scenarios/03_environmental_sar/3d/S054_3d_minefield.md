@@ -299,8 +299,8 @@ A* escape path cost and replanning triggers are identical to S054.
 
 ## Related Scenarios
 
-- Original 2D version: [S054](../S054_minefield.md)
-- Terrain-following reference: [S003 Low Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Probabilistic sensor model reference: [S056 Radiation Hotspot Detection](../S056_radiation_hotspot.md)
-- Multi-drone coordination: [S049 Dynamic Zone Assignment](../S049_dynamic_zone_assignment.md)
+- Original 2D version: [S054 Minefield Detection](../S054_minefield.md)
+- Terrain-following reference: [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Probabilistic sensor model reference: [S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)](../S056_radiation.md)
+- Multi-drone coordination: [S049 Dynamic Zone Search](../S049_dynamic_zone.md)
 - A* replanning under dynamic hazards: [S034 Weather Rerouting](../../02_logistics_delivery/S034_weather_rerouting.md)

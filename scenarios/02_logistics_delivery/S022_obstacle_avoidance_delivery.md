@@ -200,8 +200,8 @@ python src/02_logistics_delivery/s022_obstacle_avoidance_delivery.py
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md) — basic A* point delivery (simpler obstacle-free baseline)
-- Follow-ups: [S023](S023_moving_landing_pad.md) — dynamic goal (moving truck landing pad)
-- Follow-ups: [S034](S034_weather_rerouting.md) — D* Lite dynamic replanning under changing wind zones
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md) — basic A* point delivery (simpler obstacle-free baseline)
+- Follow-ups: [S023 Moving Landing Pad](S023_moving_landing_pad.md) — dynamic goal (moving truck landing pad)
+- Follow-ups: [S034 Weather Rerouting](S034_weather_rerouting.md) — D* Lite dynamic replanning under changing wind zones
 - See [domains/02_logistics_delivery/README.md](../../domains/02_logistics_delivery/README.md)
 - Algorithm reference: [MATH_FOUNDATIONS.md §3.1](../../MATH_FOUNDATIONS.md) — RRT/RRT* foundations

@@ -547,7 +547,7 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S083 Formation Flight](S083_formation_flight.md), [S085 LED Light Matrix](S085_light_matrix.md)
-- Follow-ups: [S089 Crowd Safety Monitoring](S089_crowd_safety.md) (real-time coordination under safety constraints)
-- Algorithmic cross-reference: [S095 Swarm Communication](S095_swarm_communication.md) (broadcast graph topology), [S049 Dynamic Zone Search](../03_environmental_sar/S049_dynamic_zone.md) (distributed consensus)
-- Domain overview: [domains/05_special_entertainment.md](../../domains/05_special_entertainment.md)
+- Prerequisites: [S088 Formation Geometric Shape Morphing](S088_formation_morphing.md), [S085 Drone Light Matrix Positioning](S085_light_matrix.md)
+- Follow-ups: [S089 Large-Scale Swarm Collision Avoidance Test](S089_collision_avoidance.md) (real-time coordination under safety constraints)
+- Algorithmic cross-reference: [S051 Post-Disaster Communication Network Restoration](../03_environmental_sar/S051_post_disaster_comm.md) (broadcast graph topology), [S049 Dynamic Zone Search](../03_environmental_sar/S049_dynamic_zone.md) (distributed consensus)
+- Domain overview: [domains/05_special_entertainment/README.md](../../domains/05_special_entertainment/README.md)

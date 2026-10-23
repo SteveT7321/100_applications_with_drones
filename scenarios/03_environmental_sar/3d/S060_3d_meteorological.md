@@ -319,9 +319,9 @@ represent the atmosphere at different times).
 
 ## Related Scenarios
 
-- Original 2D version: [S060](../S060_meteorological.md)
-- Prerequisites: [S048 Lawnmower Coverage](../S048_lawnmower.md),
+- Original 2D version: [S060 Multi-Drone Cooperative Meteorological Measurement](../S060_meteorological.md)
+- Prerequisites: [S048 Full-Area Coverage Scan (Lawnmower)](../S048_lawnmower.md),
   [S045 Chemical Plume Tracing](../S045_plume_tracing.md)
 - Follow-ups: [S058 Typhoon Eye Probing](../S058_typhoon.md)
 - Algorithmic cross-reference: [S046 Multi-Drone 3D Trilateration](../S046_trilateration.md),
-  [S052 Glacier Surface Mapping](../S052_glacier.md)
+  [S052 Glacier Melt Area Measurement](../S052_glacier.md)

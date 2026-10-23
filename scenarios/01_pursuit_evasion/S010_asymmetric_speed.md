@@ -102,5 +102,5 @@ def corner_target(pos_p, pos_e, v_max):
 
 ## Related Scenarios
 
-- Prerequisites: [S002](S002_evasive_maneuver.md), [S009](S009_differential_game.md)
-- Next: [S011](S011_swarm_encirclement.md), [S013](S013_pincer_movement.md)
+- Prerequisites: [S002 Evasive Maneuver](S002_evasive_maneuver.md), [S009 Differential Game 1v1 (Differential Game — Lion & Man)](S009_differential_game.md)
+- Next: [S011 Swarm Encirclement](S011_swarm_encirclement.md), [S013 Pincer Movement](S013_pincer_movement.md)

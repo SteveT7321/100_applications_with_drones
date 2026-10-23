@@ -269,5 +269,5 @@ def run_simulation():
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md) (basic A-to-B landing), [S022](S022_obstacle_avoidance_delivery.md) (path planning)
-- Follow-ups: [S024](S024_wind_compensation.md) (wind disturbance), [S039](S039_offshore_platform_exchange.md) (moving pad with vessel pitch/roll)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md) (basic A-to-B landing), [S022 Obstacle Avoidance Delivery](S022_obstacle_avoidance_delivery.md) (path planning)
+- Follow-ups: [S024 Wind Compensation](S024_wind_compensation.md) (wind disturbance), [S039 Offshore Platform Exchange](S039_offshore_platform_exchange.md) (moving pad with vessel pitch/roll)

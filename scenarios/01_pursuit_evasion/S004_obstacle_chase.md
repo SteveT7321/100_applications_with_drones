@@ -104,6 +104,6 @@ python src/01_pursuit_evasion/s004_obstacle_chase.py
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S003](S003_low_altitude_tracking.md)
-- Next: [S005](S005_stealth_approach.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S003 Low-Altitude Tracking](S003_low_altitude_tracking.md)
+- Next: [S005 Stealth Approach](S005_stealth_approach.md)
 - See [domains/01_pursuit_evasion](../../domains/01_pursuit_evasion/README.md)

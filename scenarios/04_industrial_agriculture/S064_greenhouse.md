@@ -641,6 +641,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S061 Power Line Inspection](S061_powerline_inspection.md) (structured linear inspection path), [S063 Precision Per-Plant Spraying](S063_per_plant_spraying.md) (row-based navigation)
+- Prerequisites: [S061 Power Line Inspection](S061_power_line.md) (structured linear inspection path), [S063 Single-Plant Precision Spraying](S063_precision_spraying.md) (row-based navigation)
 - Follow-ups: [S069 Automated Warehouse Inventory](S069_warehouse_inventory.md) (GPS-denied indoor 3D flight), [S074 Mine 3D Mapping](S074_mine_mapping.md) (dead-reckoning in large GPS-denied tunnels)
-- Algorithmic cross-reference: [S043 Confined Space Exploration](../03_environmental_sar/S043_confined_space.md) (indoor navigation without GPS), [S050 Distributed EKF-SLAM](../03_environmental_sar/S050_slam.md) (sensor-fusion localisation), [S046 Trilateration Localisation](../03_environmental_sar/S046_trilateration.md) (range-based position estimation)
+- Algorithmic cross-reference: [S043 Confined Space Exploration](../03_environmental_sar/S043_confined_space.md) (indoor navigation without GPS), [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../03_environmental_sar/S050_slam.md) (sensor-fusion localisation), [S046 Multi-Drone 3D Trilateration](../03_environmental_sar/S046_trilateration.md) (range-based position estimation)

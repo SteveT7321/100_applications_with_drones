@@ -281,8 +281,8 @@ $$\bar{E}_{lat} = \frac{1}{N_t}\sum_t E_{lat}(t), \qquad
 
 ## Related Scenarios
 
-- Original 2D version: [S064](../S064_greenhouse.md)
+- Original 2D version: [S064 Greenhouse Interior Precision Flight](../S064_greenhouse.md)
 - 3D indoor dead reckoning: [S069 Automated Warehouse Inventory](../S069_warehouse_inventory.md)
 - 3D trellis/structure avoidance reference: [S061 Power Line Inspection](../S061_power_line.md)
-- GPS-denied localisation: [S050 Distributed EKF-SLAM](../../03_environmental_sar/S050_slam.md), [S046 Trilateration](../../03_environmental_sar/S046_trilateration.md)
+- GPS-denied localisation: [S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)](../../03_environmental_sar/S050_slam.md), [S046 Multi-Drone 3D Trilateration](../../03_environmental_sar/S046_trilateration.md)
 - Vertical obstacle planning: [S043 Confined Space Exploration](../../03_environmental_sar/S043_confined_space.md)

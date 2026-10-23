@@ -101,5 +101,5 @@ while remaining:
 
 ## Related Scenarios
 
-- Prerequisites: [S001](S001_basic_intercept.md), [S011](S011_swarm_encirclement.md)
-- Next: [S019](S019_dynamic_reassignment.md)
+- Prerequisites: [S001 Basic Intercept](S001_basic_intercept.md), [S011 Swarm Encirclement](S011_swarm_encirclement.md)
+- Next: [S019 Dynamic Target Reassignment](S019_dynamic_reassignment.md)

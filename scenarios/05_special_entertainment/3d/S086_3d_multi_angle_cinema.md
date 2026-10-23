@@ -278,11 +278,11 @@ Altitude is bounded: $z_k \in [z_{min}, z_{max}] = [0.5, 8.0]$ m.
 
 ## Related Scenarios
 
-- Original 2D version: [S086](../S086_multi_angle_cinema.md)
-- Truly 3D references: [S001](../../01_pursuit_evasion/S001_basic_intercept.md),
-  [S003](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
-- Domain 3D variants: [S081 3D Selfie Follow](S081_3d_selfie_follow.md),
-  [S085 3D Light Matrix](S085_3d_light_matrix.md)
+- Original 2D version: [S086 Cooperative Multi-Angle Filming](../S086_multi_angle_cinema.md)
+- Truly 3D references: [S001 Basic Intercept](../../01_pursuit_evasion/S001_basic_intercept.md),
+  [S003 Low-Altitude Tracking](../../01_pursuit_evasion/S003_low_altitude_tracking.md)
+- Domain 3D variants: [S081 3D Upgrade — Selfie Follow Mode](S081_3d_selfie_follow.md),
+  [S085 3D Upgrade — Light Matrix Positioning](S085_3d_light_matrix.md)
 - Related algorithmic patterns: [S046 Multi-Drone 3D Trilateration](../../03_environmental_sar/S046_trilateration.md)
-  (shared 3D KF), [S088 Aerial Acrobatics Synchronisation](../S088_aerial_acrobatics_sync.md)
+  (shared 3D KF), [S098 Swarm Synchronized Dance](../S098_synchronized_dance.md)
   (multi-drone timing)

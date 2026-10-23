@@ -382,7 +382,7 @@ def run_simulation(T_total=37.5, rng_seed=0):
 
 - Prerequisites: [S081 Selfie Follow Mode](S081_selfie_follow.md), [S086 Cooperative Multi-Angle Filming](S086_multi_angle_cinema.md)
 - Next: [S094 Counter-Drone Intercept](S094_counter_drone.md)
-- Pursuit-evasion cross-reference: [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md), [S004 Obstacle-Course Chase](../01_pursuit_evasion/S004_obstacle_course_chase.md)
+- Pursuit-evasion cross-reference: [S003 Low-Altitude Tracking](../01_pursuit_evasion/S003_low_altitude_tracking.md), [S004 Obstacle-Course Chase](../01_pursuit_evasion/S004_obstacle_chase.md)
 
 ## References
 

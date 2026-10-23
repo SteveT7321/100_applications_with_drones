@@ -242,8 +242,8 @@ the shaft only after $D_{k-1}$ has cleared its time slot.
 
 ## Related Scenarios
 
-- Original 2D/flat version: [S069](../S069_warehouse_inventory.md)
-- 3D volumetric mapping reference: [S065 Building 3D Modeling Sampling](../S065_3d_scan_path.md)
+- Original 2D/flat version: [S069 Automated Warehouse Inventory](../S069_warehouse_inventory.md)
+- 3D volumetric mapping reference: [S065 Building 3D Modeling — Multi-Angle Scan Path](../S065_3d_scan_path.md)
 - GNSS-denied interior planning: [S043 Confined Space Exploration](../../03_environmental_sar/S043_confined_space.md)
 - Outdoor high-density inventory: [S075 Port Container Yard Inventory](../S075_container_yard.md)
 - Multi-drone coordination pattern: [S068 Large-Scale Farmland Cooperative Spraying](../S068_large_field_spray.md)

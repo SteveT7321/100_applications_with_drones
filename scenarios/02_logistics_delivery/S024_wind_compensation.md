@@ -214,5 +214,5 @@ def run_strategy(strategy, seed=42):
 
 ## Related Scenarios
 
-- Prerequisites: [S021](S021_point_delivery.md), [S022](S022_obstacle_avoidance_delivery.md)
-- Follow-ups: [S025](S025_payload_cog_offset.md), [S034](S034_weather_rerouting.md)
+- Prerequisites: [S021 Point Delivery](S021_point_delivery.md), [S022 Obstacle Avoidance Delivery](S022_obstacle_avoidance_delivery.md)
+- Follow-ups: [S025 Payload CoG Offset](S025_payload_cog_offset.md), [S034 Weather Rerouting](S034_weather_rerouting.md)

@@ -215,7 +215,7 @@ with $\gamma = 1.4$ (climbing consumes approximately 40% more energy per metre t
 
 ## Related Scenarios
 
-- Original 2D version: [S037](../S037_reverse_logistics.md)
-- 3D logistics references: [S021 3D](S021_3d_point_delivery.md), [S029 3D](S029_3d_urban_logistics.md), [S030 3D](S030_3d_multi_depot.md)
-- Obstacle avoidance in 3D: [S022 3D](S022_3d_obstacle_avoidance.md)
-- Related logistics domain: [S036](../S036_last_mile_relay.md), [S038](../S038_disaster_relief_drop.md)
+- Original 2D version: [S037 Reverse Logistics](../S037_reverse_logistics.md)
+- 3D logistics references: [S021 3D Upgrade — Point Delivery](S021_3d_point_delivery.md), [S029 3D Upgrade — Urban Logistics Scheduling](S029_3d_urban_logistics.md), [S030 3D Upgrade — Multi-Depot Delivery](S030_3d_multi_depot.md)
+- Obstacle avoidance in 3D: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md)
+- Related logistics domain: [S036 Last-Mile Relay](../S036_last_mile_relay.md), [S038 Disaster Relief Drop](../S038_disaster_relief_drop.md)

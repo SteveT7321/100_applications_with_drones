@@ -227,7 +227,7 @@ Accept the reassignment when $\Delta_{m \to m'}^{3D} < 0$ and feasibility is pre
 
 ## Related Scenarios
 
-- Original 2D version: [S030](../S030_multi_depot_delivery.md)
-- Other 3D logistics upgrades: [S029 3D](S029_3d_urban_logistics.md), [S027 3D](S027_3d_aerial_refueling.md)
-- Truly 3D references: [S022 3D](S022_3d_obstacle_avoidance.md), [S028 3D](S028_3d_cargo_escort.md)
-- Algorithmic cross-reference: [S019](../../01_pursuit_evasion/S019_dynamic_reassignment.md) (Hungarian assignment), [S018](../../01_pursuit_evasion/S018_multi_target_intercept.md) (TSP tour building)
+- Original 2D version: [S030 Multi-Depot Delivery](../S030_multi_depot_delivery.md)
+- Other 3D logistics upgrades: [S029 3D Upgrade — Urban Logistics Scheduling](S029_3d_urban_logistics.md), [S027 3D Upgrade — Aerial Refueling Relay](S027_3d_aerial_refueling.md)
+- Truly 3D references: [S022 3D Upgrade — Obstacle Avoidance Delivery](S022_3d_obstacle_avoidance.md), [S028 3D Upgrade — Cargo Escort Formation](S028_3d_cargo_escort.md)
+- Algorithmic cross-reference: [S019 Dynamic Target Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md) (Hungarian assignment), [S018 Multi-Target Intercept](../../01_pursuit_evasion/S018_multi_target_intercept.md) (TSP tour building)

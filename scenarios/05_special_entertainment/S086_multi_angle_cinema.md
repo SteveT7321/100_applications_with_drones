@@ -531,10 +531,10 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S081 Selfie Follow](S081_selfie_follow.md) (single-drone KF orbit),
-  [S085 Drone Racing Gate Sequence](S085_drone_racing_gate_sequence.md)
-- Follow-ups: [S088 Aerial Acrobatics Synchronisation](S088_aerial_acrobatics_sync.md),
-  [S092 Multi-Drone Stage Coverage](S092_multi_drone_stage_coverage.md)
+- Prerequisites: [S081 Selfie Follow Mode](S081_selfie_follow.md) (single-drone KF orbit),
+  [S082 FPV Racing Circuit](S082_fpv_racing.md)
+- Follow-ups: [S098 Swarm Synchronized Dance](S098_synchronized_dance.md),
+  [S092 Movie Car Chase Scene](S092_movie_chase.md)
 - Algorithmic cross-reference: [S046 Multi-Drone 3D Trilateration](../03_environmental_sar/S046_trilateration.md)
-  (shared KF update pattern), [S007 Blind Pursuit under Jamming](../01_pursuit_evasion/S007_blind_pursuit_jamming.md)
+  (shared KF update pattern), [S007 Jamming & Blind Pursuit](../01_pursuit_evasion/S007_jamming_blind_pursuit.md)
   (noisy subject estimation)

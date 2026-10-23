@@ -262,7 +262,7 @@ before: $v_{max} = 5$ m/s, $a_{max} = 3$ m/s$^2$.
 
 ## Related Scenarios
 
-- Original 2D version: [S087](../S087_led_text.md)
-- Prerequisites: [S083](../S083_light_show_single.md), [S085](../S085_light_matrix.md)
-- Follow-up: [S088](../S088_formation_morphing.md)
-- Algorithmic cross-reference: [S018 Multi-Target Interception](../../01_pursuit_evasion/S018_multi_target_interception.md) (Hungarian assignment in 3D), [S019 Dynamic Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time re-assignment)
+- Original 2D version: [S087 Aerial Light Show Text Display](../S087_led_text.md)
+- Prerequisites: [S083 Light Show Single-Drone Test](../S083_light_show_single.md), [S085 Drone Light Matrix Positioning](../S085_light_matrix.md)
+- Follow-up: [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)
+- Algorithmic cross-reference: [S018 Multi-Target Intercept](../../01_pursuit_evasion/S018_multi_target_intercept.md) (Hungarian assignment in 3D), [S019 Dynamic Target Reassignment](../../01_pursuit_evasion/S019_dynamic_reassignment.md) (real-time re-assignment)
