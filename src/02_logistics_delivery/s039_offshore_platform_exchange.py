@@ -171,12 +171,12 @@ def intercept(p, t0, n_iter=20):
 class GustModel:
     """First-order Dryden gust, one per drone, seeded."""
 
-    def __init__(self, rng):
+    def __init__(self, rng, sigma=SIGMA_GUST):
         self.rng = rng
         self.xi = np.zeros(2)
         tau = L_GUST / V_AIRSPEED
         self.a = np.exp(-DT / tau)
-        self.b = SIGMA_GUST * np.sqrt(max(1.0 - self.a ** 2, 0.0))
+        self.b = sigma * np.sqrt(max(1.0 - self.a ** 2, 0.0))
 
     def step(self):
         self.xi = self.a * self.xi + self.b * self.rng.standard_normal(2)
@@ -284,9 +284,9 @@ class Drone:
         self.log_pos, self.log_soc, self.log_mode = [], [], []
 
 
-def run_strategy(strategy, seed, reqs):
+def run_strategy(strategy, seed, reqs, sigma=SIGMA_GUST):
     drones = [Drone(k) for k in range(N_DRONES)]
-    gusts = [GustModel(np.random.default_rng([seed, k])) for k in range(N_DRONES)]
+    gusts = [GustModel(np.random.default_rng([seed, k]), sigma) for k in range(N_DRONES)]
     n_req = len(reqs)
     status = ['pending'] * n_req       # pending | assigned | picked | delivered | rejected | aborted
     t_deliver = [None] * n_req
@@ -853,6 +853,32 @@ def print_results(name, runs):
         print(f'         events: {ev}')
 
 
+def print_r3_plan_vs_execution(card_runs):
+    """Why executed R3 deliveries scatter around the planned time."""
+    r3 = 2
+    opts = plan_options(PLATFORMS[REQUESTS[r3][0]], BATTERY_FULL, 0.0, r3, REQUESTS)
+    best = min(opts, key=lambda op: op['t_deliver'])
+    wait = [s for s in best['steps'] if s[0] == 'wait']
+    t_dep = wait[0][1] if wait else T_HANDLE
+    ts, pv = intercept(PLATFORMS[REQUESTS[r3][0]], t_dep)
+    t_leg, _ = fly_cost(pv, PLATFORMS[REQUESTS[r3][1]])
+    print('\n=== R3 (card instance, relay): plan vs execution ===')
+    print(f'plan: leave P5 at {t_dep:.1f} s, dock {ts:.1f} s at ({pv[0]:.0f}, {pv[1]:.0f}) m '
+          f'({float(np.hypot(*(PLATFORMS[0] - pv))):.0f} m from P1), swap done {ts + T_SWAP:.1f} s, '
+          f'leg to P1 {t_leg:.1f} s, delivery {best["t_deliver"]:.1f} s')
+
+    def describe(label, res):
+        ev = {kind: t for t, k, kind, info in res['events']
+              if k == 2 and kind in ('dock', 'swap')}
+        t_del = res['t_deliver'][r3]
+        print(f'{label:<26} dock {ev["dock"]:.1f} s, swap done {ev["swap"]:.1f} s, leg to P1 '
+              f'{t_del - ev["swap"]:.1f} s, delivery {t_del:.1f} s')
+
+    describe('execution without gusts', run_strategy('relay', 0, REQUESTS, sigma=0.0))
+    for res in card_runs['relay']:
+        describe(f'execution, gust seed {res["seed"]}', res)
+
+
 if __name__ == '__main__':
     print('=== Planning feasibility (mean wind + expected gust power, 15 % reserve) ===')
     print(f'BATTERY_FULL = {BATTERY_FULL/1000:.2f} kJ, P_plan = {P_PLAN:.1f} W '
@@ -864,6 +890,7 @@ if __name__ == '__main__':
     all_runs = run_simulation()
     for name in INSTANCES:
         print_results(name, all_runs[name])
+    print_r3_plan_vs_execution(all_runs['card'])
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out_dir, exist_ok=True)

@@ -121,6 +121,20 @@ R1 and R2 are impossible because the vessel spends the whole 600 s horizon in th
 | Vessel-relay scheduled | **62.23 ± 3.99** | 2.0 / 4 | 1.4 | 1.0 | 14.4 % | 2 / 5 | R1, R2 rejected; R3 at 488–542 s; R4 at 169–192 s |
 | Rolling-horizon | **62.23 ± 3.99** | 2.0 / 4 | 1.4 | 1.0 | 14.4 % | 2 / 5 | identical to relay |
 
+**Why R3 is sometimes delivered before its planned 506 s.** The planner gives R3's earliest feasible delivery as 506.2 s: leave P5 at 30.0 s, dock at 290.6 s, finish the swap at 295.6 s, then a 210.6 s leg to P1. Relay delivers it at 488.1 s and 497.3 s, on time, in 2 of 5 runs. The script prints a gust-free reference run of the same plan:
+
+| Run | Dock (s) | Swap done (s) | Leg to P1 (s) | Delivery (s) |
+|-----|---------|---------------|---------------|--------------|
+| Plan | 290.6 | 295.6 | 210.6 | 506.2 |
+| Execution without gusts | 289.3 | 294.3 | 212.5 | 506.8 |
+| Gust seed 0 | 301.3 | 306.3 | 235.9 | 542.2 |
+| Gust seed 1 | 286.7 | 291.7 | 196.4 | 488.1 |
+| Gust seed 2 | 284.7 | 289.7 | 207.6 | 497.3 |
+| Gust seed 3 | 305.8 | 310.8 | 222.2 | 533.0 |
+| Gust seed 4 | 290.9 | 295.9 | 222.2 | 518.1 |
+
+The planner's speed model is not the cause: without gusts, execution matches the plan within 0.6 s. The 15 m docking radius lets the drone dock 1.3 s early (289.3 s against 290.6 s), but the leg to P1 then starts from a slightly different point and takes 1.9 s longer, so the net effect is +0.6 s. The scatter of −18.1 to +36.0 s around the plan (488.1 to 542.2 s against 506.2 s) therefore comes from the gusts, which the planner ignores. The Dryden gust has a correlation time of $L_g/V_a$ = 200 / 12 = 16.7 s, so over a 210 s leg it does not average out. The standard deviation of the leg-mean gust is roughly $\sigma_g\sqrt{2 \times 16.7/210}$ = 1.2 × 0.40 = 0.48 m/s. That is about 6 % of the headwind groundspeed on this leg: the planned dock point (2128, 718) m is 1642 m from P1, flown in 210.6 s, i.e. 7.8 m/s. A 6 % speed change is about ±13 s per leg. The observed post-swap legs take 196.4–235.9 s, and the vessel-intercept legs shift docking by −5.9 to +15.2 s. Seeds 1 and 2 had favourable gusts on both legs and beat the plan; seeds 0, 3 and 4 were delayed.
+
 ### Extended instance (8 requests; mean of 5 gust seeds)
 
 | Strategy | Fleet energy (kJ) | Delivered | On time | Swaps | Lowest SoC | Drones ditched (5 runs) |
