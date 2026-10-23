@@ -43,7 +43,7 @@ Subject to the same capacity, time-window, and range constraints as S037, plus:
 4. **Obstacle avoidance**: the horizontal waypoint path for each drone must not intersect any cylinder footprint at transit altitude.
 5. **Vertical clearance**: $z_{cruise} \geq H_c^k$ whenever the drone is within $2 r_c^k$ of obstacle $k$ horizontally.
 
-*Correction to constraint 5:* with $H_c^k > z_{cruise}$ (needed for constraint 4 to matter) this constraint can never hold, and the tangent detour waypoint at distance $r_c^k + r_{safety} < 2 r_c^k$ would itself violate it. The implementation drops constraint 5 and enforces constraint 4 with the buffer: below $H_c^k$ the horizontal distance to the centre must stay $\geq r_c^k + r_{safety}$.
+*Correction to constraint 5:* with $H_c^k > z_{cruise}$ (needed for constraint 4 to matter), constraint 5 can only hold by keeping the drone more than $2 r_c^k$ from every obstacle. That conflicts with the rest of the model: the tangent detour waypoint sits at $r_c^k + r_{safety} < 2 r_c^k$, so every detour would violate it, and a customer within $2 r_c^k$ of an obstacle could not be reached at all. The implementation drops constraint 5 and enforces constraint 4 with the buffer: below $H_c^k$ the horizontal distance to the centre must stay $\geq r_c^k + r_{safety}$.
 
 ---
 
