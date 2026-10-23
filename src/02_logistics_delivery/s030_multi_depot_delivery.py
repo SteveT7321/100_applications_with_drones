@@ -1,13 +1,33 @@
 """
 S030 Multi-Depot Delivery
 =========================
-4 depots, 10 drones, 20 customers.
-Compares three partition strategies:
-  1. Nearest-Depot
-  2. K-Means (depot-seeded)
-  3. Alternating Optimisation (AO) with 2-opt + boundary reassignment
+4 depots, 10 drones (fleet [3, 2, 3, 2]), 20 customers.
 
-Open-route return: each drone returns to the nearest depot after its last delivery.
+Constraints enforced for every strategy:
+  * one sortie per drone (card formulation: one route per drone), so a depot
+    can fly at most F_m sorties;
+  * per sortie: payload <= Q, length (with home return) <= R_max;
+  * per depot: dispatched cargo <= inventory I_m.
+A depot's customer set is packed into sorties by nearest-neighbour; if that
+needs more than F_m sorties, a first-fit-decreasing bin packing into F_m
+sorties is tried.  A partition that still does not fit is infeasible.
+
+Partition strategies:
+  1. Nearest-Depot      : each customer to its closest depot
+  2. Balanced K-Means   : depot-anchored K-Means (centroid = 0.5 depot +
+                          0.5 cluster mean, as in the card) whose assignment
+                          step caps every cluster at ceil(N/D) customers
+                          (regret order) - targets the card's balance term
+  3. Alternating Opt.   : start from Nearest-Depot, move single customers to
+                          the depot that lowers distance + balance penalty
+                          (routes rebuilt + 2-opt), until convergence
+
+After routing, every sortie may end at the nearest depot with a free docking
+slot (open-route return, slots = fleet size).
+
+Usage:
+    conda activate drones
+    python src/02_logistics_delivery/s030_multi_depot_delivery.py
 """
 
 import os
@@ -20,8 +40,9 @@ import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 from matplotlib.animation import FuncAnimation
 
-# ─── Output directory ────────────────────────────────────────────────────────
-OUT_DIR = "outputs/02_logistics_delivery/s030_multi_depot_delivery"
+OUT_DIR = os.path.normpath(os.path.join(
+    os.path.dirname(__file__), "..", "..",
+    "outputs", "02_logistics_delivery", "s030_multi_depot_delivery"))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -33,729 +54,473 @@ Q_MAX       = 3.0    # kg payload per sortie
 R_MAX       = 3500.0 # m max range per sortie
 SVC_TIME    = 8.0    # s service time per stop
 LAMBDA      = 50.0   # balance penalty weight
-EPS_AO      = 1.0    # m convergence threshold
+EPS_AO      = 1.0    # convergence threshold
 MAX_AO_ITER = 50
+KM_ITER     = 100
+SEED        = 7
 
-DEPOT_COLORS  = ["#e6194b", "#3cb44b", "#4363d8", "#f58231"]
-DEPOT_LABELS  = ["D1 SW", "D2 NW", "D3 SE", "D4 NE"]
+DEPOT_COLORS = ["#e6194b", "#3cb44b", "#4363d8", "#f58231"]
+DEPOT_LABELS = ["D1 SW", "D2 NW", "D3 SE", "D4 NE"]
+STRATS = ["Nearest-Depot", "Balanced K-Means", "AO"]
 
-DEPOTS      = np.array([[150., 150.], [150., 1050.], [1050., 150.], [1050., 1050.]])
-FLEET_SIZE  = np.array([3, 2, 3, 2])
-INVENTORY   = np.array([25., 18., 25., 20.])
+DEPOTS     = np.array([[150., 150.], [150., 1050.], [1050., 150.],
+                       [1050., 1050.]])
+FLEET_SIZE = np.array([3, 2, 3, 2])
+INVENTORY  = np.array([25., 18., 25., 20.])
+assert FLEET_SIZE.sum() == N_DRONES
 
-rng       = np.random.default_rng(7)
-CUSTOMERS = rng.uniform(100, 1100, (N_CUSTOMERS, 2))
-DEMANDS   = rng.uniform(0.3, 1.8, N_CUSTOMERS)
+_rng      = np.random.default_rng(SEED)
+CUSTOMERS = _rng.uniform(100, 1100, (N_CUSTOMERS, 2))
+DEMANDS   = _rng.uniform(0.3, 1.8, N_CUSTOMERS)
 
-ALL_POS = np.vstack([DEPOTS, CUSTOMERS])   # shape (D+N, 2)
-DIST_M  = cdist(ALL_POS, ALL_POS)          # full distance matrix
+ALL_POS = np.vstack([DEPOTS, CUSTOMERS])      # nodes: depots 0..3, then customers
+DIST_M  = cdist(ALL_POS, ALL_POS)
+N_BAR   = N_CUSTOMERS / N_DEPOTS
+INFEASIBLE = {"inventory": 0, "fleet": 0, "range": 0}   # rejected AO moves
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def route_dist(route):
-    """Total Euclidean distance of a node-index sequence."""
-    return sum(DIST_M[route[i], route[i+1]] for i in range(len(route) - 1))
+    return sum(DIST_M[route[i], route[i + 1]] for i in range(len(route) - 1))
+
+
+def load_of(route):
+    return sum(DEMANDS[n - N_DEPOTS] for n in route if n >= N_DEPOTS)
 
 
 def two_opt(route):
-    """2-opt improvement; route includes depot at start and end."""
     route = list(route)
     improved = True
     while improved:
         improved = False
         for i in range(1, len(route) - 2):
             for j in range(i + 1, len(route) - 1):
-                gain = (DIST_M[route[i-1], route[i]]
-                        + DIST_M[route[j],   route[j+1]]
-                        - DIST_M[route[i-1], route[j]]
-                        - DIST_M[route[i],   route[j+1]])
+                gain = (DIST_M[route[i-1], route[i]] + DIST_M[route[j], route[j+1]]
+                        - DIST_M[route[i-1], route[j]] - DIST_M[route[i], route[j+1]])
                 if gain > 1e-6:
                     route[i:j+1] = route[i:j+1][::-1]
                     improved = True
     return route
 
 
-def nearest_neighbour_route(depot_node, cust_nodes):
-    """Build a nearest-neighbour route from depot through cust_nodes, back to depot."""
+def nn_order(depot, nodes):
+    route, rem, cur = [depot], list(nodes), depot
+    while rem:
+        nxt = min(rem, key=lambda c: (DIST_M[cur, c], c))
+        route.append(nxt); rem.remove(nxt); cur = nxt
+    return two_opt(route + [depot])
+
+
+def build_routes_for_depot(m, cust_nodes):
+    """Pack depot m's customers into <= FLEET_SIZE[m] feasible sorties.
+
+    Returns (sorties, feasible flag, packing method or failure reason)."""
     if not cust_nodes:
-        return [depot_node, depot_node]
-    remaining = list(cust_nodes)
-    route = [depot_node]
-    pos_now = depot_node
-    while remaining:
-        dists = [DIST_M[pos_now, c] for c in remaining]
-        nearest = remaining[int(np.argmin(dists))]
-        route.append(nearest)
-        pos_now = nearest
-        remaining.remove(nearest)
-    route.append(depot_node)
-    return route
-
-
-def build_routes_for_depot(depot_idx, cust_idxs, n_drones):
-    """
-    Build capacity/range-feasible sub-routes for one depot using
-    nearest-neighbour then 2-opt.  Returns list of route lists.
-    """
-    D = N_DEPOTS
-    depot_node = depot_idx
-    if not cust_idxs:
-        return []
-
-    sub_routes = []
-    remaining = list(cust_idxs)  # global node indices (D .. D+N-1)
-
-    while remaining:
-        route = [depot_node]
-        load = 0.0
-        dist = 0.0
-        pos_now = depot_node
-
+        return [], True, "-"
+    if load_of(cust_nodes) > INVENTORY[m] + 1e-9:
+        return [], False, "inventory"
+    # (a) nearest-neighbour sorties
+    sorties, rem = [], list(cust_nodes)
+    while rem:
+        route, load, d, cur = [m], 0.0, 0.0, m
         while True:
-            best_c   = None
-            best_leg = np.inf
-            for c in remaining:
-                leg        = DIST_M[pos_now, c]
-                ret_leg    = DIST_M[c, depot_node]
-                demand_c   = DEMANDS[c - D]
-                if (load + demand_c <= Q_MAX
-                        and dist + leg + ret_leg <= R_MAX):
-                    if leg < best_leg:
-                        best_leg = leg
-                        best_c   = c
-            if best_c is None:
+            cand = [c for c in rem
+                    if load + DEMANDS[c - N_DEPOTS] <= Q_MAX + 1e-9
+                    and d + DIST_M[cur, c] + DIST_M[c, m] <= R_MAX]
+            if not cand:
                 break
-            route.append(best_c)
-            load += DEMANDS[best_c - D]
-            dist += DIST_M[pos_now, best_c]
-            pos_now = best_c
-            remaining.remove(best_c)
-
-        route.append(depot_node)
-        sub_routes.append(two_opt(route))
-
-    return sub_routes
-
-
-def total_cost(partition, lam=LAMBDA):
-    """Compute total distance + balance penalty for a given partition."""
-    total = 0.0
-    for m in range(N_DEPOTS):
-        cust_idxs = [c + N_DEPOTS for c in range(N_CUSTOMERS) if partition[c] == m]
-        routes = build_routes_for_depot(m, cust_idxs, FLEET_SIZE[m])
-        for r in routes:
-            total += route_dist(r)
-    n_per = np.bincount(partition, minlength=N_DEPOTS).astype(float)
-    n_bar = N_CUSTOMERS / N_DEPOTS
-    penalty = lam * np.sum((n_per - n_bar) ** 2)
-    return total + penalty
+            c = min(cand, key=lambda c: (DIST_M[cur, c], c))
+            route.append(c); rem.remove(c)
+            load += DEMANDS[c - N_DEPOTS]; d += DIST_M[cur, c]; cur = c
+        sorties.append(two_opt(route + [m]))
+    if len(sorties) <= FLEET_SIZE[m]:
+        return sorties, True, "NN"
+    # (b) first-fit-decreasing bin packing into F_m sorties
+    bins = [[] for _ in range(FLEET_SIZE[m])]
+    for c in sorted(cust_nodes, key=lambda c: (-DEMANDS[c - N_DEPOTS], c)):
+        for b in bins:
+            if load_of(b) + DEMANDS[c - N_DEPOTS] <= Q_MAX + 1e-9:
+                b.append(c)
+                break
+        else:
+            return [], False, "fleet"
+    sorties = [nn_order(m, b) for b in bins if b]
+    if all(route_dist(s) <= R_MAX for s in sorties):
+        return sorties, True, "FFD"
+    return [], False, "range"
 
 
 def all_routes(partition):
-    routes_all = []
+    routes, ok, how = [], True, []
     for m in range(N_DEPOTS):
-        cust_idxs = [c + N_DEPOTS for c in range(N_CUSTOMERS) if partition[c] == m]
-        routes_all.append(build_routes_for_depot(m, cust_idxs, FLEET_SIZE[m]))
-    return routes_all
+        nodes = [c + N_DEPOTS for c in range(N_CUSTOMERS) if partition[c] == m]
+        r, f, h = build_routes_for_depot(m, nodes)
+        routes.append(r)
+        ok &= f
+        how.append(h)
+    return routes, ok, how
 
-# ─── Strategy 1: Nearest-Depot ────────────────────────────────────────────────
+
+def balance_penalty(partition):
+    n = np.bincount(partition, minlength=N_DEPOTS)
+    return LAMBDA * float(np.sum((n - N_BAR) ** 2))
+
+
+def total_cost(partition):
+    """Home-return distance + balance penalty (inf if infeasible)."""
+    routes, ok, how = all_routes(partition)
+    if not ok:
+        for h in how:
+            if h in INFEASIBLE:
+                INFEASIBLE[h] += 1
+        return np.inf
+    return sum(route_dist(r) for rr in routes for r in rr) + \
+        balance_penalty(partition)
+
+
+# ─── Strategies ───────────────────────────────────────────────────────────────
 
 def nearest_depot_partition():
-    dists = cdist(CUSTOMERS, DEPOTS)
-    return np.argmin(dists, axis=1)
+    return np.argmin(cdist(CUSTOMERS, DEPOTS), axis=1)
 
-# ─── Strategy 2: K-Means (depot-seeded) ──────────────────────────────────────
 
-def kmeans_partition(max_iter=100):
-    """K-means with depot positions as initial centroids."""
-    centroids = DEPOTS.copy().astype(float)
-    partition = np.zeros(N_CUSTOMERS, dtype=int)
-    for _ in range(max_iter):
-        dists = cdist(CUSTOMERS, centroids)
-        new_part = np.argmin(dists, axis=1)
-        if np.all(new_part == partition):
+def balanced_kmeans_partition():
+    """Depot-anchored K-Means with a size cap of ceil(N/D) per cluster."""
+    cap = int(np.ceil(N_BAR))
+    centroids = DEPOTS.astype(float).copy()
+    part = None
+    for it in range(KM_ITER):
+        d = cdist(CUSTOMERS, centroids)
+        srt = np.sort(d, axis=1)
+        regret = srt[:, 1] - srt[:, 0]
+        new = -np.ones(N_CUSTOMERS, dtype=int)
+        count = np.zeros(N_DEPOTS, dtype=int)
+        for c in sorted(range(N_CUSTOMERS), key=lambda c: (-regret[c], c)):
+            for m in np.argsort(d[c], kind="stable"):
+                if count[m] < cap:
+                    new[c] = m; count[m] += 1
+                    break
+        if part is not None and np.array_equal(new, part):
             break
-        partition = new_part
+        part = new
         for m in range(N_DEPOTS):
-            members = CUSTOMERS[partition == m]
-            if len(members) > 0:
-                # Centroid attracted 50/50 toward depot and cluster mean
+            members = CUSTOMERS[part == m]
+            if len(members):
                 centroids[m] = 0.5 * DEPOTS[m] + 0.5 * members.mean(axis=0)
-    return partition
+    return part, it + 1
 
-# ─── Strategy 3: Alternating Optimisation ─────────────────────────────────────
 
 def alternating_optimisation():
     partition = nearest_depot_partition().copy()
-    prev_cost = np.inf
-    history   = []
-
-    for iteration in range(MAX_AO_ITER):
+    history = []
+    prev = np.inf
+    for _ in range(MAX_AO_ITER):
         c_val = total_cost(partition)
         history.append(c_val)
-        if abs(prev_cost - c_val) < EPS_AO:
+        if abs(prev - c_val) < EPS_AO:
             break
-        prev_cost = c_val
-
-        # Boundary reassignment
+        prev = c_val
         for c in range(N_CUSTOMERS):
-            m_cur  = partition[c]
-            best_m = m_cur
-            best_c = c_val
+            m_cur, best_m, best_c = partition[c], partition[c], c_val
             for m2 in range(N_DEPOTS):
                 if m2 == m_cur:
                     continue
                 partition[c] = m2
                 c2 = total_cost(partition)
                 if c2 < best_c:
-                    best_c = c2
-                    best_m = m2
+                    best_c, best_m = c2, m2
             partition[c] = best_m
             c_val = best_c
-
     return partition, history
 
-# ─── Open-route return ────────────────────────────────────────────────────────
 
 def open_route_return(routes_by_depot):
-    """
-    For each sub-route, replace the closing depot node with the
-    nearest depot, and record the saving vs forced home-base return.
-    Returns (updated_routes_by_depot, total_saving_m).
-    """
-    avail = np.array(FLEET_SIZE, dtype=float)   # parking slots proxy
-    total_saving = 0.0
-    updated = []
-    for m, depot_routes in enumerate(routes_by_depot):
-        depot_updated = []
-        for route in depot_routes:
-            if len(route) < 2:
-                depot_updated.append(route)
-                continue
-            last_cust = route[-2]   # last delivery node (before home depot)
-            home_dist = DIST_M[last_cust, m]
-            # Find nearest depot with remaining capacity
-            d_to_depots = DIST_M[last_cust, :N_DEPOTS].copy()
-            d_to_depots[avail <= 0] = np.inf
-            best_depot = int(np.argmin(d_to_depots))
-            saving = home_dist - d_to_depots[best_depot]
-            total_saving += max(saving, 0.0)
-            avail[best_depot] -= 1
-            new_route = route[:-1] + [best_depot]
-            depot_updated.append(new_route)
-        updated.append(depot_updated)
-    return updated, total_saving
-
-# ─── Compute metrics ─────────────────────────────────────────────────────────
-
-def fleet_total_distance(routes_by_depot):
-    return sum(route_dist(r) for depot_routes in routes_by_depot for r in depot_routes)
+    """End every sortie at the nearest depot with a free docking slot."""
+    avail = FLEET_SIZE.astype(int).copy()
+    saving, out = 0.0, []
+    for m, rr in enumerate(routes_by_depot):
+        new_rr = []
+        for r in rr:
+            last = r[-2]
+            d = DIST_M[last, :N_DEPOTS].copy()
+            d[avail <= 0] = np.inf
+            best = int(np.argmin(d))
+            avail[best] -= 1
+            saving += DIST_M[last, m] - d[best]
+            new_rr.append(r[:-1] + [best])
+        out.append(new_rr)
+    return out, saving
 
 
-def deliveries_per_depot(partition):
-    return np.bincount(partition, minlength=N_DEPOTS)
+def run_simulation():
+    """Partition, route and evaluate the three strategies."""
+    res = {}
+    hist = None
+    km_iter = None
+    for s in STRATS:
+        if s == "Nearest-Depot":
+            part = nearest_depot_partition()
+        elif s == "Balanced K-Means":
+            part, km_iter = balanced_kmeans_partition()
+        else:
+            part, hist = alternating_optimisation()
+        routes_home, ok, how = all_routes(part)
+        routes, saving = open_route_return(routes_home)
+        home_d = sum(route_dist(r) for rr in routes_home for r in rr)
+        dist = sum(route_dist(r) for rr in routes for r in rr)
+        n = np.bincount(part, minlength=N_DEPOTS)
+        drones = []
+        for m, rr in enumerate(routes):
+            for k, r in enumerate(rr):
+                stops = [x for x in r if x >= N_DEPOTS]
+                drones.append(dict(
+                    name=f"D{m+1}-#{k+1}", origin=m, ret=r[-1], route=r,
+                    stops=len(stops), length=route_dist(r), load=load_of(r),
+                    t_end=route_dist(r) / V_DRONE + SVC_TIME * len(stops)))
+        res[s] = dict(
+            part=part, routes=routes, feasible=ok, how=how, dist_home=home_d,
+            dist=dist, saving=saving, n=n, bal_std=float(np.std(n)),
+            penalty=balance_penalty(part),
+            objective=home_d + balance_penalty(part),
+            sorties=[len(rr) for rr in routes],
+            cargo=[sum(load_of(r) for r in rr) for rr in routes],
+            drones=drones, makespan=max(d["t_end"] for d in drones),
+            max_load=max(d["load"] for d in drones),
+            max_len=max(route_dist(r) for rr in routes_home for r in rr))
+    return res, hist, km_iter
 
-
-def per_drone_summary(routes_by_depot, partition):
-    rows = []
-    D = N_DEPOTS
-    for m, depot_routes in enumerate(routes_by_depot):
-        for k, route in enumerate(depot_routes):
-            rd  = route_dist(route)
-            load = sum(DEMANDS[n - D] for n in route if n >= D)
-            ret_depot = route[-1]
-            rows.append({
-                "drone":       f"D{m+1}-#{k+1}",
-                "origin":      m,
-                "return":      ret_depot,
-                "n_stops":     len([n for n in route if n >= D]),
-                "route_m":     rd,
-                "payload_kg":  load,
-                "range_used":  rd,
-            })
-    return rows
 
 # ─── Plotting ─────────────────────────────────────────────────────────────────
 
-def plot_route_map(partition, routes_by_depot, title, filename):
-    fig, ax = plt.subplots(figsize=(9, 9))
-    ax.set_xlim(0, 1200)
-    ax.set_ylim(0, 1200)
-    ax.set_aspect("equal")
-    ax.set_facecolor("#f8f8f8")
-    ax.grid(True, linestyle="--", alpha=0.4)
-
-    # Customer markers
+def plot_route_map(r, title, filename):
+    fig, ax = plt.subplots(figsize=(11.5, 9))
+    ax.set_xlim(0, 1200); ax.set_ylim(0, 1200); ax.set_aspect("equal")
+    ax.set_facecolor("#f8f8f8"); ax.grid(True, ls="--", alpha=0.4)
     for c in range(N_CUSTOMERS):
-        m = partition[c]
-        ax.scatter(*CUSTOMERS[c], color=DEPOT_COLORS[m], s=60, zorder=3,
-                   edgecolors="k", linewidths=0.5)
-        ax.text(CUSTOMERS[c, 0] + 10, CUSTOMERS[c, 1] + 10,
-                str(c + 1), fontsize=6, color="dimgray")
-
-    # Routes
-    for m, depot_routes in enumerate(routes_by_depot):
-        for route in depot_routes:
-            xs = [ALL_POS[n, 0] for n in route]
-            ys = [ALL_POS[n, 1] for n in route]
-            # Dashed line if open-route return (last node != origin depot)
-            ls = "--" if route[-1] != m else "-"
-            ax.plot(xs, ys, color=DEPOT_COLORS[m], lw=1.3, ls=ls, alpha=0.75)
-            # Arrow on first leg
-            if len(route) >= 2:
-                dx = ALL_POS[route[1], 0] - ALL_POS[route[0], 0]
-                dy = ALL_POS[route[1], 1] - ALL_POS[route[0], 1]
-                ax.annotate("", xy=(ALL_POS[route[1], 0], ALL_POS[route[1], 1]),
-                            xytext=(ALL_POS[route[0], 0], ALL_POS[route[0], 1]),
-                            arrowprops=dict(arrowstyle="->", color=DEPOT_COLORS[m],
-                                            lw=0.8))
-
-    # Depot markers
+        ax.scatter(*CUSTOMERS[c], color=DEPOT_COLORS[r["part"][c]], s=60,
+                   zorder=3, edgecolors="k", linewidths=0.5)
+        ax.text(CUSTOMERS[c, 0] + 10, CUSTOMERS[c, 1] + 10, str(c + 1),
+                fontsize=7, color="dimgray")
+    for m, rr in enumerate(r["routes"]):
+        for route in rr:
+            xs, ys = ALL_POS[route, 0], ALL_POS[route, 1]
+            ax.plot(xs[:-1], ys[:-1], color=DEPOT_COLORS[m], lw=1.4, alpha=0.8)
+            ax.plot(xs[-2:], ys[-2:], color=DEPOT_COLORS[m], lw=1.4,
+                    ls="--" if route[-1] != m else "-", alpha=0.8)
+            ax.annotate("", xy=ALL_POS[route[1]], xytext=ALL_POS[route[0]],
+                        arrowprops=dict(arrowstyle="->",
+                                        color=DEPOT_COLORS[m], lw=0.8))
     for m in range(N_DEPOTS):
         ax.scatter(*DEPOTS[m], marker="^", s=250, color=DEPOT_COLORS[m],
                    zorder=5, edgecolors="k", linewidths=1.2)
-        ax.text(DEPOTS[m, 0] + 20, DEPOTS[m, 1] + 20, DEPOT_LABELS[m],
+        ax.text(DEPOTS[m, 0] + 20, DEPOTS[m, 1] + 20,
+                f"{DEPOT_LABELS[m]} ({r['sorties'][m]}/{FLEET_SIZE[m]} drones)",
                 fontsize=9, fontweight="bold", color=DEPOT_COLORS[m])
-
-    # Legend
     handles = [mpatches.Patch(color=DEPOT_COLORS[m], label=DEPOT_LABELS[m])
                for m in range(N_DEPOTS)]
-    handles += [Line2D([0], [0], color="gray", ls="-",  label="Home return"),
-                Line2D([0], [0], color="gray", ls="--", label="Open return")]
-    ax.legend(handles=handles, loc="lower right", fontsize=8)
-    ax.set_title(title, fontsize=13, fontweight="bold")
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
+    handles += [Line2D([0], [0], color="gray", ls="-", label="Home return"),
+                Line2D([0], [0], color="gray", ls="--",
+                       label="Open return (other depot)")]
+    ax.legend(handles=handles, loc="upper left", bbox_to_anchor=(1.01, 1.0),
+              fontsize=8)
+    ax.set_title(f"{title}\n{r['dist']:.0f} m, deliveries/depot "
+                 f"{r['n'].tolist()}", fontsize=12)
+    ax.set_xlabel("x (m)"); ax.set_ylabel("y (m)")
     plt.tight_layout()
-    fpath = os.path.join(OUT_DIR, filename)
-    plt.savefig(fpath, dpi=120)
-    plt.close()
-    print(f"  Saved: {fpath}")
+    _save(fig, filename)
 
 
-def plot_strategy_comparison(distances, balances):
-    """Bar charts: total distance and deliveries-per-depot for each strategy."""
-    strategies = ["Nearest\nDepot", "K-Means", "AO"]
-    x = np.arange(len(strategies))
-    width = 0.55
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    # Total distance
-    ax = axes[0]
-    bars = ax.bar(x, distances, width, color=["#4363d8", "#3cb44b", "#e6194b"],
-                  edgecolor="k", linewidth=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(strategies)
-    ax.set_ylabel("Total fleet distance (m)")
-    ax.set_title("Total Fleet Flight Distance by Strategy")
-    for bar, val in zip(bars, distances):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 20,
-                f"{val:.0f} m", ha="center", va="bottom", fontsize=9)
-    ax.set_ylim(0, max(distances) * 1.15)
-    ax.grid(axis="y", linestyle="--", alpha=0.5)
-
-    # Deliveries per depot (stacked bars)
-    ax2 = axes[1]
-    balances_arr = np.array(balances)   # shape (3, 4)
-    bottom = np.zeros(len(strategies))
+def plot_strategy_comparison(res):
+    x = np.arange(len(STRATS))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    cols = ["#4363d8", "#3cb44b", "#e6194b"]
+    for ax, key, ttl in [(axes[0], "dist", "Total fleet distance, open return (m)"),
+                         (axes[1], "objective",
+                          "AO objective: home-return dist + balance penalty")]:
+        vals = [res[s][key] for s in STRATS]
+        bars = ax.bar(x, vals, 0.55, color=cols, edgecolor="k")
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v, f"{v:.0f}", ha="center",
+                    va="bottom", fontsize=9)
+        ax.set_title(ttl, fontsize=10); ax.set_xticks(x)
+        ax.set_xticklabels(STRATS); ax.grid(axis="y", ls="--", alpha=0.5)
+    bottom = np.zeros(len(STRATS))
     for m in range(N_DEPOTS):
-        ax2.bar(x, balances_arr[:, m], width, bottom=bottom,
-                label=DEPOT_LABELS[m], color=DEPOT_COLORS[m],
-                edgecolor="k", linewidth=0.5)
-        bottom += balances_arr[:, m]
-    ax2.axhline(N_CUSTOMERS, color="k", ls="--", lw=0.8, label="Total (20)")
-    ax2.set_xticks(x)
-    ax2.set_xticklabels(strategies)
-    ax2.set_ylabel("Number of deliveries")
-    ax2.set_title("Deliveries per Depot by Strategy")
-    ax2.legend(fontsize=8, loc="lower right")
-    ax2.set_ylim(0, N_CUSTOMERS * 1.25)
-    ax2.grid(axis="y", linestyle="--", alpha=0.5)
-
+        v = np.array([res[s]["n"][m] for s in STRATS])
+        axes[2].bar(x, v, 0.55, bottom=bottom, color=DEPOT_COLORS[m],
+                    edgecolor="k", label=DEPOT_LABELS[m])
+        for xi, (b, vv) in enumerate(zip(bottom, v)):
+            axes[2].text(xi, b + vv / 2, str(vv), ha="center", va="center",
+                         fontsize=8, color="white")
+        bottom += v
+    axes[2].set_title("Deliveries per depot (ideal 5 each)", fontsize=10)
+    axes[2].set_xticks(x); axes[2].set_xticklabels(STRATS)
+    axes[2].legend(fontsize=8, loc="lower right")
+    plt.suptitle("S030 — Strategy comparison")
     plt.tight_layout()
-    fpath = os.path.join(OUT_DIR, "strategy_comparison.png")
-    plt.savefig(fpath, dpi=120)
-    plt.close()
-    print(f"  Saved: {fpath}")
+    _save(fig, "strategy_comparison.png")
 
 
 def plot_ao_convergence(history):
     fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(range(1, len(history) + 1), history, "o-", color="#e6194b",
-            lw=2, ms=5)
-    ax.set_xlabel("AO Iteration")
-    ax.set_ylabel("Objective (dist + balance penalty, m)")
-    ax.set_title("Alternating Optimisation Convergence")
-    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.plot(range(1, len(history) + 1), history, "o-", color="#e6194b")
+    ax.set_xlabel("AO iteration (cost evaluated at the start of the sweep)")
+    ax.set_ylabel("Home-return distance + balance penalty")
+    ax.set_title("S030 — Alternating optimisation convergence")
+    ax.grid(True, ls="--", alpha=0.5)
     plt.tight_layout()
-    fpath = os.path.join(OUT_DIR, "ao_convergence.png")
-    plt.savefig(fpath, dpi=120)
-    plt.close()
-    print(f"  Saved: {fpath}")
+    _save(fig, "ao_convergence.png")
 
 
-def plot_per_drone_summary(summary_rows, strategy_name, filename):
-    labels   = [r["drone"]   for r in summary_rows]
-    ranges   = [r["range_used"] for r in summary_rows]
-    payloads = [r["payload_kg"] for r in summary_rows]
-    colors   = [DEPOT_COLORS[r["origin"]] for r in summary_rows]
-
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    x = np.arange(len(labels))
-    width = 0.6
-
-    ax = axes[0]
-    bars = ax.bar(x, ranges, width, color=colors, edgecolor="k", linewidth=0.6)
-    ax.axhline(R_MAX, color="red", ls="--", lw=1, label=f"R_max={R_MAX:.0f} m")
-    ax.set_xticks(x); ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-    ax.set_ylabel("Range used (m)")
-    ax.set_title(f"{strategy_name}: Range Used per Drone")
-    ax.legend(fontsize=8)
-    ax.grid(axis="y", linestyle="--", alpha=0.5)
-
-    ax2 = axes[1]
-    ax2.bar(x, payloads, width, color=colors, edgecolor="k", linewidth=0.6)
-    ax2.axhline(Q_MAX, color="red", ls="--", lw=1, label=f"Q_max={Q_MAX:.1f} kg")
-    ax2.set_xticks(x); ax2.set_xticklabels(labels, rotation=45, ha="right", fontsize=8)
-    ax2.set_ylabel("Payload (kg)")
-    ax2.set_title(f"{strategy_name}: Payload per Sortie")
-    ax2.legend(fontsize=8)
-    ax2.grid(axis="y", linestyle="--", alpha=0.5)
-
-    # Depot colour legend
-    handles = [mpatches.Patch(color=DEPOT_COLORS[m], label=DEPOT_LABELS[m])
-               for m in range(N_DEPOTS)]
-    axes[0].legend(handles=handles + [Line2D([0],[0], color="red", ls="--",
-                   label=f"R_max")], fontsize=8)
-
+def plot_per_drone_summary(r, name):
+    rows = r["drones"]
+    x = np.arange(len(rows))
+    cols = [DEPOT_COLORS[d["origin"]] for d in rows]
+    labels = [f"{d['name']}→D{d['ret']+1}" for d in rows]
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    axes[0].bar(x, [d["length"] for d in rows], color=cols, edgecolor="k")
+    axes[0].axhline(R_MAX, color="red", ls="--", label=f"R_max {R_MAX:.0f} m")
+    axes[0].set_ylabel("Sortie length (m)")
+    axes[1].bar(x, [d["load"] for d in rows], color=cols, edgecolor="k")
+    axes[1].axhline(Q_MAX, color="red", ls="--", label=f"Q {Q_MAX} kg")
+    axes[1].set_ylabel("Payload (kg)")
+    for ax in axes:
+        ax.set_xticks(x); ax.set_xticklabels(labels, rotation=45, ha="right",
+                                             fontsize=8)
+        ax.legend(fontsize=8); ax.grid(axis="y", ls="--", alpha=0.5)
+    plt.suptitle(f"S030 — Per-drone sorties, {name} (label: drone→return depot)")
     plt.tight_layout()
-    fpath = os.path.join(OUT_DIR, filename)
-    plt.savefig(fpath, dpi=120)
-    plt.close()
-    print(f"  Saved: {fpath}")
+    _save(fig, "per_drone_metrics_ao.png")
+
+
+def _save(fig, name):
+    fig.savefig(os.path.join(OUT_DIR, name), dpi=120)
+    plt.close(fig)
+    print(f"  Saved: {name}")
+
 
 # ─── Animation ────────────────────────────────────────────────────────────────
 
-def _build_drone_trajectories(routes_by_depot):
-    """
-    Convert routes (node-index sequences) into per-drone (x, y) position arrays
-    sampled at uniform time steps (FPS=20, speed=V_DRONE m/s).
+def save_animation(r, name, n_frames=130, fps=10):
+    """Top-down GIF of all sorties flown simultaneously (<= 150 frames)."""
+    tracks = []                    # per drone: list of (t0, t1, p0, p1, cust)
+    for d in r["drones"]:
+        t, ev = 0.0, []
+        route = d["route"]
+        for a, b in zip(route[:-1], route[1:]):
+            t1 = t + DIST_M[a, b] / V_DRONE
+            ev.append((t, t1, ALL_POS[a], ALL_POS[b], None))
+            t = t1
+            if b >= N_DEPOTS:
+                ev.append((t, t + SVC_TIME, ALL_POS[b], ALL_POS[b], b))
+                t += SVC_TIME
+        tracks.append((d["origin"], ev))
+    t_end = max(ev[-1][1] for _, ev in tracks)
+    times = np.linspace(0, t_end, n_frames)
 
-    Returns:
-        trajectories : list of np.ndarray shape (T_drone, 2) — one per drone
-        depot_origin : list of int — origin depot index per drone
-        cust_delivery_frame : dict mapping customer node index -> (drone_idx, frame_idx)
-    """
-    FPS = 20
-    dt  = 1.0 / FPS                 # seconds per frame
+    def pos(ev, t):
+        for t0, t1, p0, p1, _ in ev:
+            if t0 <= t <= t1:
+                return p0 + ((t - t0) / (t1 - t0) if t1 > t0 else 1) * (p1 - p0)
+        return ev[-1][3]
 
-    trajectories    = []
-    depot_origin    = []
-    cust_del_frame  = {}            # cust_node -> (drone_idx, global frame when delivered)
-
-    drone_idx = 0
-    for m, depot_routes in enumerate(routes_by_depot):
-        for route in depot_routes:
-            # Build list of (x, y) waypoints for this drone
-            waypoints = [ALL_POS[n] for n in route]
-
-            # Simulate movement at V_DRONE m/s
-            positions = []
-            delivery_events = []   # (node, frame_at_delivery) in local frames
-
-            # Service time at each customer stop
-            for wi in range(len(waypoints) - 1):
-                p0 = waypoints[wi]
-                p1 = waypoints[wi + 1]
-                seg_dist = np.linalg.norm(p1 - p0)
-                n_fly    = max(1, int(round(seg_dist / (V_DRONE * dt))))
-                for f in range(n_fly):
-                    alpha = f / n_fly
-                    positions.append(p0 + alpha * (p1 - p0))
-
-                # Arrived at waypoint wi+1
-                arr_frame_local = len(positions)
-                node_at_p1 = route[wi + 1]
-                if node_at_p1 >= N_DEPOTS:          # it's a customer
-                    svc_frames = max(1, int(round(SVC_TIME * FPS)))
-                    for _ in range(svc_frames):
-                        positions.append(p1.copy())
-                    delivery_events.append((node_at_p1, arr_frame_local))
-                else:
-                    positions.append(p1.copy())     # depot arrival
-
-            traj = np.array(positions)
-            trajectories.append(traj)
-            depot_origin.append(m)
-
-            for node, local_f in delivery_events:
-                cust_del_frame[node] = (drone_idx, local_f)
-
-            drone_idx += 1
-
-    return trajectories, depot_origin, cust_del_frame
-
-
-def save_animation(routes_by_depot, partition, gif_path, fps=20):
-    """
-    Build and save a 2-D top-down animated GIF showing all drones flying
-    the AO routes simultaneously.
-
-    Parameters
-    ----------
-    routes_by_depot : list[list[list[int]]]  — output of all_routes() / open_route_return()
-    partition       : np.ndarray of shape (N_CUSTOMERS,)  — depot assignment
-    gif_path        : str  — full path for the output GIF
-    fps             : int  — frames per second (default 20)
-    """
-    TRAIL_LEN = 20
-
-    print("  Building drone trajectories for animation…")
-    trajectories, depot_origin, cust_del_frame = _build_drone_trajectories(routes_by_depot)
-
-    # Pad all trajectories to the same length (drones wait at last position)
-    T_max = max(len(t) for t in trajectories)
-    padded = []
-    for t in trajectories:
-        if len(t) < T_max:
-            pad = np.tile(t[-1], (T_max - len(t), 1))
-            t = np.vstack([t, pad])
-        padded.append(t)
-    trajectories = padded
-
-    n_drones = len(trajectories)
-
-    # Pre-compute per-customer delivery frame (global)
-    delivered_at = {}   # cust_node -> global frame
-    for node, (di, lf) in cust_del_frame.items():
-        delivered_at[node] = lf    # local frame == global frame since all start at 0
-
-    # ── Set up figure ──────────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_xlim(0, 1200)
-    ax.set_ylim(0, 1200)
-    ax.set_aspect("equal")
-    ax.set_facecolor("#1a1a2e")
-    ax.grid(True, linestyle="--", alpha=0.2, color="white")
-    ax.tick_params(colors="white")
-    for spine in ax.spines.values():
-        spine.set_edgecolor("white")
-    ax.set_xlabel("x (m)", color="white")
-    ax.set_ylabel("y (m)", color="white")
-
-    # ── Static: depot triangles ────────────────────────────────────────────
+    P = np.array([[pos(ev, t) for _, ev in tracks] for t in times])
+    served_t = {}
+    for _, ev in tracks:
+        for t0, _, _, _, c in ev:
+            if c is not None:
+                served_t[c] = t0
+    fig, ax = plt.subplots(figsize=(7.5, 7.5))
+    ax.set_xlim(0, 1200); ax.set_ylim(0, 1200); ax.set_aspect("equal")
+    ax.grid(True, ls="--", alpha=0.3)
     for m in range(N_DEPOTS):
-        ax.scatter(*DEPOTS[m], marker="^", s=300,
-                   color=DEPOT_COLORS[m], zorder=6,
-                   edgecolors="white", linewidths=1.2)
-        ax.text(DEPOTS[m, 0] + 25, DEPOTS[m, 1] + 25,
-                DEPOT_LABELS[m], color=DEPOT_COLORS[m],
-                fontsize=8, fontweight="bold", zorder=7)
+        ax.scatter(*DEPOTS[m], marker="^", s=250, color=DEPOT_COLORS[m],
+                   edgecolors="k", zorder=5)
+        ax.text(DEPOTS[m, 0] + 20, DEPOTS[m, 1] + 20, DEPOT_LABELS[m],
+                color=DEPOT_COLORS[m], fontweight="bold")
+    cust = [ax.scatter(*CUSTOMERS[c], s=70, color="#bbbbbb",
+                       edgecolors="k", zorder=4) for c in range(N_CUSTOMERS)]
+    dots = [ax.plot([], [], "o", color=DEPOT_COLORS[o], ms=7,
+                    markeredgecolor="k", zorder=6)[0] for o, _ in tracks]
+    trails = [ax.plot([], [], "-", color=DEPOT_COLORS[o], lw=1.2,
+                      alpha=0.5)[0] for o, _ in tracks]
+    ttl = ax.set_title("")
+    ax.legend(handles=[mpatches.Patch(color=DEPOT_COLORS[m],
+                                      label=f"{DEPOT_LABELS[m]} drones")
+                       for m in range(N_DEPOTS)] + [
+        Line2D([], [], marker="o", ls="", color="limegreen",
+               label="Customer served")], fontsize=8, loc="lower right")
 
-    # ── Static: customer circles (will be updated each frame) ─────────────
-    cust_scatters = []
-    for c in range(N_CUSTOMERS):
-        sc = ax.scatter(*CUSTOMERS[c], s=80, color="#cccccc",
-                        edgecolors="white", linewidths=0.6, zorder=4)
-        ax.text(CUSTOMERS[c, 0] + 12, CUSTOMERS[c, 1] + 12,
-                str(c + 1), color="white", fontsize=5, zorder=5)
-        cust_scatters.append(sc)
-
-    # ── Dynamic: drone dots ────────────────────────────────────────────────
-    drone_dots = []
-    for di in range(n_drones):
-        m = depot_origin[di]
-        dot, = ax.plot([], [], "o", color=DEPOT_COLORS[m],
-                       ms=6, zorder=8,
-                       markeredgecolor="white", markeredgewidth=0.5)
-        drone_dots.append(dot)
-
-    # ── Dynamic: trail lines ───────────────────────────────────────────────
-    trail_lines = []
-    for di in range(n_drones):
-        m = depot_origin[di]
-        line, = ax.plot([], [], "-", color=DEPOT_COLORS[m],
-                        lw=1.0, alpha=0.5, zorder=3)
-        trail_lines.append(line)
-
-    # ── Title / frame counter ──────────────────────────────────────────────
-    title_text = ax.set_title("S030 Multi-Depot Delivery (AO) — frame 0",
-                              color="white", fontsize=11, fontweight="bold")
-
-    # ── Legend ─────────────────────────────────────────────────────────────
-    legend_handles = []
-    for m in range(N_DEPOTS):
-        legend_handles.append(
-            mpatches.Patch(color=DEPOT_COLORS[m], label=DEPOT_LABELS[m]))
-    legend_handles.append(
-        plt.scatter([], [], s=80, color="#cccccc",
-                    edgecolors="white", linewidths=0.6, label="Customer (undelivered)"))
-    legend_handles.append(
-        plt.scatter([], [], s=80, color="#00cc44",
-                    edgecolors="white", linewidths=0.6, label="Customer (delivered)"))
-    ax.legend(handles=legend_handles, loc="lower right",
-              fontsize=7, facecolor="#1a1a2e", labelcolor="white",
-              edgecolor="white")
-
-    fig.patch.set_facecolor("#1a1a2e")
-
-    # ── Init function ──────────────────────────────────────────────────────
-    def init():
-        for dot in drone_dots:
-            dot.set_data([], [])
-        for line in trail_lines:
-            line.set_data([], [])
-        for sc in cust_scatters:
-            sc.set_facecolor("#cccccc")
-        return drone_dots + trail_lines + cust_scatters + [title_text]
-
-    # ── Update function ────────────────────────────────────────────────────
-    def update(frame):
-        artists = []
-
-        # Update customer colours
+    def update(f):
+        t = times[f]
         for c in range(N_CUSTOMERS):
-            node = c + N_DEPOTS
-            if node in delivered_at and frame >= delivered_at[node]:
-                cust_scatters[c].set_facecolor("#00cc44")
-            else:
-                cust_scatters[c].set_facecolor("#cccccc")
-            artists.append(cust_scatters[c])
+            if served_t.get(c + N_DEPOTS, np.inf) <= t:
+                cust[c].set_facecolor("limegreen")
+        for i in range(len(tracks)):
+            dots[i].set_data([P[f, i, 0]], [P[f, i, 1]])
+            lo = max(0, f - 6)
+            trails[i].set_data(P[lo:f + 1, i, 0], P[lo:f + 1, i, 1])
+        ttl.set_text(f"S030 Multi-Depot Delivery ({name}) — t = {t:.0f} s")
+        return dots + trails + cust + [ttl]
 
-        # Update drones
-        for di in range(n_drones):
-            traj = trajectories[di]
-            f = min(frame, len(traj) - 1)
-            x, y = traj[f]
-            drone_dots[di].set_data([x], [y])
-            artists.append(drone_dots[di])
-
-            # Trail
-            start = max(0, f - TRAIL_LEN)
-            tx = traj[start:f+1, 0]
-            ty = traj[start:f+1, 1]
-            trail_lines[di].set_data(tx, ty)
-            artists.append(trail_lines[di])
-
-        title_text.set_text(
-            f"S030 Multi-Depot Delivery (AO) — t = {frame / fps:.1f} s")
-        artists.append(title_text)
-        return artists
-
-    # ── Build and save ─────────────────────────────────────────────────────
-    print(f"  Rendering {T_max} frames at {fps} fps…")
-    anim = FuncAnimation(fig, update, frames=T_max,
-                         init_func=init, blit=True, interval=1000 // fps)
-
-    os.makedirs(os.path.dirname(gif_path), exist_ok=True)
-    anim.save(gif_path, writer="pillow", fps=fps)
+    anim = FuncAnimation(fig, update, frames=n_frames, blit=False)
+    anim.save(os.path.join(OUT_DIR, "animation.gif"), writer="pillow", fps=fps)
     plt.close(fig)
-    print(f"  Saved: {gif_path}")
+    print(f"  Saved: animation.gif ({n_frames} frames, {fps} fps, "
+          f"{t_end:.0f} s of flight)")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def main():
-    print("=" * 60)
-    print("S030  Multi-Depot Delivery Simulation")
-    print("=" * 60)
-    print(f"  Depots    : {N_DEPOTS}  |  Customers : {N_CUSTOMERS}")
-    print(f"  Drones    : {N_DRONES}  |  Fleet/depot: {FLEET_SIZE.tolist()}")
-    print(f"  Payload   : {Q_MAX} kg  |  Range     : {R_MAX} m")
-    print(f"  Inventory : {INVENTORY.tolist()} kg")
-    print()
-
-    # ── Strategy 1: Nearest-Depot ──────────────────────────────────────────
-    print("─ Strategy 1: Nearest-Depot Partition ─")
-    part_nd  = nearest_depot_partition()
-    rts_nd   = all_routes(part_nd)
-    rts_nd, saving_nd = open_route_return(rts_nd)
-    dist_nd  = fleet_total_distance(rts_nd)
-    bal_nd   = deliveries_per_depot(part_nd)
-    summary_nd = per_drone_summary(rts_nd, part_nd)
-    print(f"  Total distance  : {dist_nd:.1f} m")
-    print(f"  Deliveries/depot: {bal_nd.tolist()}")
-    print(f"  Open-route saving: {saving_nd:.1f} m")
-
-    # ── Strategy 2: K-Means ───────────────────────────────────────────────
-    print("\n─ Strategy 2: K-Means Partition ─")
-    part_km  = kmeans_partition()
-    rts_km   = all_routes(part_km)
-    rts_km, saving_km = open_route_return(rts_km)
-    dist_km  = fleet_total_distance(rts_km)
-    bal_km   = deliveries_per_depot(part_km)
-    summary_km = per_drone_summary(rts_km, part_km)
-    print(f"  Total distance  : {dist_km:.1f} m")
-    print(f"  Deliveries/depot: {bal_km.tolist()}")
-    print(f"  Open-route saving: {saving_km:.1f} m")
-
-    # ── Strategy 3: Alternating Optimisation ──────────────────────────────
-    print("\n─ Strategy 3: Alternating Optimisation ─")
-    part_ao, ao_history = alternating_optimisation()
-    rts_ao   = all_routes(part_ao)
-    rts_ao, saving_ao = open_route_return(rts_ao)
-    dist_ao  = fleet_total_distance(rts_ao)
-    bal_ao   = deliveries_per_depot(part_ao)
-    summary_ao = per_drone_summary(rts_ao, part_ao)
-    print(f"  AO iterations   : {len(ao_history)}")
-    print(f"  Total distance  : {dist_ao:.1f} m")
-    print(f"  Deliveries/depot: {bal_ao.tolist()}")
-    print(f"  Open-route saving: {saving_ao:.1f} m")
-
-    # ── Summary table ─────────────────────────────────────────────────────
-    print()
-    print("=" * 60)
-    print("STRATEGY COMPARISON")
-    print(f"  {'Strategy':<22}  {'Total dist (m)':>14}  {'Balance (std)':>13}  {'OR saving (m)':>13}")
-    def std_balance(bal):
-        return np.std(bal)
-    for name, dist, bal, saving in [
-        ("Nearest-Depot",  dist_nd, bal_nd, saving_nd),
-        ("K-Means",        dist_km, bal_km, saving_km),
-        ("AO",             dist_ao, bal_ao, saving_ao),
-    ]:
-        print(f"  {name:<22}  {dist:>14.1f}  {std_balance(bal):>13.2f}  {saving:>13.1f}")
-
-    print()
-    print("PER-DRONE SUMMARY (AO strategy):")
-    print(f"  {'Drone':<8} {'Origin':>6} {'Return':>6} {'Stops':>5} {'Route(m)':>9} {'Load(kg)':>8}")
-    for r in summary_ao:
-        print(f"  {r['drone']:<8} {r['origin']:>6} {r['return']:>6} {r['n_stops']:>5}"
-              f" {r['route_m']:>9.1f} {r['payload_kg']:>8.2f}")
-
-    improvement = (dist_nd - dist_ao) / dist_nd * 100 if dist_nd > 0 else 0
-    print()
-    print(f"AO vs Nearest-Depot improvement: {improvement:.1f}%")
-    print(f"Total open-route return saving (AO): {saving_ao:.1f} m")
-    print("=" * 60)
-
-    # ── Plots ──────────────────────────────────────────────────────────────
-    print("\nGenerating plots…")
-    plot_route_map(part_nd, rts_nd,
-                   "Nearest-Depot Strategy – Routes & Assignments",
-                   "route_map_nearest_depot.png")
-    plot_route_map(part_km, rts_km,
-                   "K-Means Strategy – Routes & Assignments",
-                   "route_map_kmeans.png")
-    plot_route_map(part_ao, rts_ao,
-                   "Alternating Optimisation – Routes & Assignments",
-                   "route_map_ao.png")
-
-    plot_strategy_comparison(
-        [dist_nd, dist_km, dist_ao],
-        [bal_nd.tolist(), bal_km.tolist(), bal_ao.tolist()]
-    )
-    plot_ao_convergence(ao_history)
-    plot_per_drone_summary(summary_ao, "AO", "per_drone_metrics_ao.png")
-
-    # ── Animation ──────────────────────────────────────────────────────────
-    print("\nGenerating animation GIF…")
-    gif_path = os.path.join(OUT_DIR, "animation.gif")
-    save_animation(rts_ao, part_ao, gif_path, fps=20)
-
-    print("\nAll outputs saved to:", OUT_DIR)
-
-
 if __name__ == "__main__":
-    main()
+    print("=" * 66)
+    print("S030  Multi-Depot Delivery Simulation")
+    print("=" * 66)
+    print(f"  Fleet/depot {FLEET_SIZE.tolist()}, inventory {INVENTORY.tolist()} kg,"
+          f" fleet capacity F*Q {(FLEET_SIZE * Q_MAX).tolist()} kg")
+    print(f"  Total demand {DEMANDS.sum():.2f} kg")
+    res, hist, km_iter = run_simulation()
+    nd = res["Nearest-Depot"]
+    for s in STRATS:
+        r = res[s]
+        moved = [c + 1 for c in range(N_CUSTOMERS) if r["part"][c] != nd["part"][c]]
+        print(f"\n--- {s} ---")
+        if s == "Balanced K-Means":
+            print(f"  K-Means iterations: {km_iter}")
+        if s == "AO":
+            print(f"  AO iterations: {len(hist)}, objective "
+                  + " -> ".join(f"{h:.1f}" for h in hist))
+            print(f"  Candidate moves rejected as infeasible (depot-level "
+                  f"reason counts): {INFEASIBLE}")
+        print(f"  Feasible (fleet, payload, range, inventory): {r['feasible']}")
+        print(f"  Customers assigned differently from Nearest-Depot: "
+              f"{moved if moved else 'none'}")
+        print(f"  Deliveries/depot {r['n'].tolist()} (std {r['bal_std']:.2f}, "
+              f"penalty {r['penalty']:.1f})")
+        print(f"  Sorties/depot {r['sorties']} vs fleet {FLEET_SIZE.tolist()} "
+              f"(packing {r['how']}); cargo/depot "
+              f"{[round(float(x), 2) for x in r['cargo']]} kg vs "
+              f"inventory {INVENTORY.tolist()}")
+        print(f"  Max sortie load {r['max_load']:.2f} kg, max sortie length "
+              f"(home return) {r['max_len']:.1f} m")
+        print(f"  Distance home-return {r['dist_home']:.1f} m, open-route "
+              f"{r['dist']:.1f} m (saving {r['saving']:.1f} m)")
+        print(f"  Objective (home dist + penalty) {r['objective']:.1f}; "
+              f"makespan {r['makespan']:.1f} s")
+    ao = res["AO"]
+    print("\nPER-DRONE SUMMARY (AO):")
+    for d in ao["drones"]:
+        print(f"  {d['name']:<7} origin D{d['origin']+1} return D{d['ret']+1} "
+              f"stops {d['stops']} length {d['length']:7.1f} m load "
+              f"{d['load']:.2f} kg")
+    for s in STRATS[1:]:
+        print(f"{s} vs Nearest-Depot distance (open return): "
+              f"{(nd['dist'] - res[s]['dist']) / nd['dist'] * 100:+.1f}% saving")
+    print("\nGenerating plots...")
+    plot_route_map(nd, "Nearest-Depot", "route_map_nearest_depot.png")
+    plot_route_map(res["Balanced K-Means"], "Balanced K-Means",
+                   "route_map_kmeans.png")
+    plot_route_map(ao, "Alternating Optimisation", "route_map_ao.png")
+    plot_strategy_comparison(res)
+    plot_ao_convergence(hist)
+    plot_per_drone_summary(ao, "AO")
+    save_animation(ao, "AO")
