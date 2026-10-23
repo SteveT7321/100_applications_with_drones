@@ -101,7 +101,7 @@ conda activate drones
 python src/02_logistics_delivery/3d/s031_3d_path_deconfliction.py
 ```
 
-Runtime was 384–422 s (about 6–7 min) while other simulations ran on the same machine. Most of it is the 1000-run Monte Carlo. Two runs gave byte-identical console output and output files.
+Runtime was 384–529 s (about 6.5–9 min) while other simulations ran on the same machine; this is close to the 10-minute limit. Most of it is the 1000-run Monte Carlo. Two runs gave byte-identical console output and output files.
 
 ---
 
