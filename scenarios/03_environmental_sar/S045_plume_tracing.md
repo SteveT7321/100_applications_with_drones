@@ -107,7 +107,7 @@ The surge velocity command in world frame:
 
 $$\mathbf{v}_{cmd} = v_{surge}\left[\alpha \, \hat{\mathbf{u}}_{wind} + (1 - \alpha)\, \hat{\mathbf{g}}\right]$$
 
-where $\hat{\mathbf{u}}_{wind} = (1, 0)^T$ is the upwind unit vector, $\alpha = 0.4$ is the upwind
+where $\hat{\mathbf{u}}_{wind} = (-1, 0)^T$ is the upwind unit vector (the wind blows toward $+x$, so upwind is $-x$), $\alpha = 0.4$ is the upwind
 bias weight, and $\hat{\mathbf{g}}$ is the normalised gradient estimate.
 
 ### Particle Filter Source Localisation
@@ -233,7 +233,7 @@ class CastSurgeNavigator:
 
     def command(self, pos, concentration, grad_hat, dt):
         """Return velocity command vector given current sensor state."""
-        upwind = np.array([1.0, 0.0])
+        upwind = np.array([-1.0, 0.0])   # wind blows toward +x, so upwind is -x
 
         if concentration >= C_THRESH:
             self.state = 'surge'
@@ -299,9 +299,9 @@ def run_simulation(strategy='cast_surge', seed=42):
     rng = np.random.default_rng(seed)
 
     # True source position (unknown to drone)
-    pos_source = np.array([140.0, 95.0])
-    # Drone starts downwind (low x), random crosswind position
-    pos = np.array([20.0, 80.0])
+    pos_source = np.array([55.0, 107.0])
+    # Drone starts downwind: the plume extends toward +x, so downwind = higher x
+    pos = np.array([170.0, 100.0])
     vel = np.zeros(2)
     bounds = [0, 200, 0, 200]
 
