@@ -11,8 +11,13 @@ The card writes c(t) = p_E(t).  Re-centring on the *current* evader position
 every step makes the sphere translate rigidly with the evader (V_P > V_E), so
 capture just follows the shrink schedule and no breakout is possible.  Here
 the swarm centres the sphere on its shared evader fix, which is τ = 0.1 s old
-(tracking + communication latency):  c(t) = p_E(t − τ).  τ = 0 (the ideal card
-law) is run as a reference.
+(tracking + communication latency):  c(t) = p_E(t − τ).
+
+Terminal pursuit (main law): the nearest pursuer flies straight at the
+evader once it is within R_TERMINAL = 1 m.  Without it the slots trail a
+fleeing evader by about v_E·τ forever (constant 0.498 m gap), so "escapes"
+are an artefact of the law; the slots-only law (τ = 0.1, 0.05 and 0) and a
+fixed-heading evader are run as references to show this.
 
 Breakout: the evader is outside the convex hull of the pursuers iff some
 direction makes > 90° with every pursuer bearing (3D analogue of the 2D
@@ -48,10 +53,11 @@ K_BREAKOUT  = 200    # random candidate directions per step (card)
 GAP_HYST    = np.radians(20.0)   # evader switches direction only if gain > 20°
 WALL_MARGIN = 0.6    # m  evader ignores directions into floor/ceiling this close (2·R_capture)
 TAU_FIX     = 0.1    # s  age of the swarm's evader fix (sphere centre)
+R_TERMINAL  = 1.0    # m  nearest pursuer within this range flies straight at the evader
 INIT_EVADER = np.array([0.0, 0.0, 2.0])
 
 SWEEP_N      = [4, 6, 8, 10, 12]
-SWEEP_RATIO  = [0.3, 0.5, 0.7, 0.9]       # v_E / v_P
+SWEEP_RATIO  = [0.3, 0.5, 0.7, 0.9, 1.0]  # v_E / v_P
 N_SEEDS      = 20                         # common random numbers: seed s in every cell
 MAIN_SEED    = 0
 
@@ -145,7 +151,10 @@ def evader_direction(pos_e, pos_p, R, u_cur, rng, k=K_BREAKOUT):
 # ── Main simulation ──────────────────────────────────────────
 
 def run_simulation(n_pursuers=N_PURSUERS, v_e=V_EVADER, tau=TAU_FIX,
-                   seed=MAIN_SEED, log=True):
+                   seed=MAIN_SEED, log=True, terminal=True, evader='gap'):
+    """terminal: nearest pursuer within R_TERMINAL pursues the evader directly.
+    evader: 'gap' (committed max-gap breakout) or 'fixed' (random horizontal
+    heading held for the whole run, no gap seeking)."""
     rng = np.random.default_rng(seed)
     q = fibonacci_sphere(n_pursuers)
     lag = int(round(tau / DT))
@@ -161,7 +170,11 @@ def run_simulation(n_pursuers=N_PURSUERS, v_e=V_EVADER, tau=TAU_FIX,
     dmin_hist = [float(np.linalg.norm(pos_p - pos_e, axis=1).min())]
 
     u_cur = None
+    if evader == 'fixed':
+        a = rng.uniform(0, 2 * np.pi)
+        u_cur = np.array([np.cos(a), np.sin(a), 0.0])
     n_switch = 0
+    term_time = None
     captured, cap_time, cap_who, breakout_time = False, None, None, None
     max_gap = gap_hist[0]
 
@@ -171,13 +184,21 @@ def run_simulation(n_pursuers=N_PURSUERS, v_e=V_EVADER, tau=TAU_FIX,
         centre = hist_e[max(0, len(hist_e) - 1 - lag)]      # p_E(t − τ)
         targets = centre[np.newaxis, :] + R * q
         targets[:, 2] = np.clip(targets[:, 2], Z_MIN, Z_MAX)
+        if terminal:
+            d_now = np.linalg.norm(pos_p - pos_e[np.newaxis, :], axis=1)
+            k = int(np.argmin(d_now))
+            if d_now[k] < R_TERMINAL:                       # terminal pursuit phase
+                targets[k] = pos_e
+                if term_time is None:
+                    term_time = t
         d = targets - pos_p
         dn = np.linalg.norm(d, axis=1, keepdims=True)
         pos_p = pos_p + d / np.maximum(dn, 1e-12) * np.minimum(V_PURSUER, dn / DT) * DT
         pos_p[:, 2] = np.clip(pos_p[:, 2], Z_MIN, Z_MAX)
 
-        u_cur, switched = evader_direction(pos_e, pos_p, R, u_cur, rng)
-        n_switch += int(switched)
+        if evader == 'gap':
+            u_cur, switched = evader_direction(pos_e, pos_p, R, u_cur, rng)
+            n_switch += int(switched)
         pos_e = pos_e + v_e * u_cur * DT
         pos_e[2] = np.clip(pos_e[2], Z_MIN, Z_MAX)
 
@@ -200,18 +221,20 @@ def run_simulation(n_pursuers=N_PURSUERS, v_e=V_EVADER, tau=TAU_FIX,
                 t_hist=np.array(t_hist), gap_hist=np.array(gap_hist),
                 pair_hist=np.array(pair_hist), dmin_hist=np.array(dmin_hist),
                 captured=captured, cap_time=cap_time, cap_who=cap_who,
-                breakout_time=breakout_time, max_gap=max_gap, n_switch=n_switch,
+                breakout_time=breakout_time, max_gap=max_gap, n_switch=n_switch, term_time=term_time,
                 z_range=(float(traj_e[:, 2].min()), float(traj_e[:, 2].max())),
                 final_dmin=float(dists.min()),
                 net_disp=float(np.linalg.norm(traj_e[-1] - traj_e[0])))
 
 
-def run_sweep(tau=TAU_FIX, ratios=SWEEP_RATIO, n_list=SWEEP_N, n_seeds=N_SEEDS):
+def run_sweep(tau=TAU_FIX, ratios=SWEEP_RATIO, n_list=SWEEP_N, n_seeds=N_SEEDS,
+              terminal=True, evader='gap'):
     """Escape / breakout statistics over N × v_E/v_P × seeds (CRN)."""
     out = {}
     for ratio in ratios:
         for n in n_list:
-            rs = [run_simulation(n, ratio * V_PURSUER, tau, s, log=False) for s in range(n_seeds)]
+            rs = [run_simulation(n, ratio * V_PURSUER, tau, s, log=False, terminal=terminal, evader=evader)
+                  for s in range(n_seeds)]
             caps = [r['cap_time'] for r in rs if r['captured']]
             out[(ratio, n)] = dict(
                 esc=sum(not r['captured'] for r in rs),
@@ -279,7 +302,7 @@ def plot_altitude_time(res, out_dir):
     ax.axhline(Z_MIN, color='grey', ls='--', lw=0.8, label='z bounds')
     ax.axhline(Z_MAX, color='grey', ls='--', lw=0.8)
     ax.set_xlabel('Time (s)'); ax.set_ylabel('Altitude z (m)')
-    ax.set_title(f'S011 3D — Altitude vs Time (N={n}, τ={TAU_FIX} s fix latency)', fontsize=10)
+    ax.set_title(f'S011 3D — Altitude vs Time (N={n}, τ={TAU_FIX} s, terminal pursuit)', fontsize=10)
     ax.legend(fontsize=8, ncol=4); ax.grid(True, alpha=0.3)
     plt.tight_layout()
     path = os.path.join(out_dir, 'altitude_time.png')
@@ -325,17 +348,18 @@ def plot_angular_gap(runs, labels, out_dir):
     print(f'Saved: {path}')
 
 
-def plot_breakout_vs_N(sweep, ideal, out_dir):
-    fig, ax = plt.subplots(figsize=(10, 5))
+def plot_breakout_vs_N(sweep, refs, out_dir):
+    fig, ax = plt.subplots(figsize=(10, 5.5))
     colors = plt.cm.viridis(np.linspace(0.1, 0.85, len(SWEEP_RATIO)))
     for c, ratio in zip(colors, SWEEP_RATIO):
         ax.plot(SWEEP_N, [100 * sweep[(ratio, n)]['esc'] / N_SEEDS for n in SWEEP_N], 'o-',
-                color=c, lw=1.8, label=f'τ={TAU_FIX} s, v_E/v_P={ratio}')
-    ax.plot(SWEEP_N, [100 * ideal[(0.7, n)]['esc'] / N_SEEDS for n in SWEEP_N], 'k--s',
-            lw=1.5, label='τ=0 (ideal card law), v_E/v_P=0.7')
+                color=c, lw=1.8, label=f'with terminal pursuit, v_E/v_P={ratio}')
+    for (lab, sw, ratio), st in zip(refs, ['k--s', 'k:^', 'k-.d']):
+        ax.plot(SWEEP_N, [100 * sw[(ratio, n)]['esc'] / N_SEEDS for n in SWEEP_N], st,
+                lw=1.3, label=lab)
     ax.set_xlabel('Number of pursuers N'); ax.set_ylabel('Escape rate (%)')
     ax.set_xticks(SWEEP_N); ax.set_ylim(-5, 105)
-    ax.set_title(f'S011 3D — Breakout (escape) Rate vs N ({N_SEEDS} seeds per cell, CRN)')
+    ax.set_title(f'S011 3D — Escape Rate vs N ({N_SEEDS} seeds per cell, CRN, τ={TAU_FIX} s)')
     ax.grid(True, alpha=0.3)
     ax.legend(fontsize=8, loc='upper center', bbox_to_anchor=(0.5, -0.13), ncol=3)
     plt.tight_layout()
@@ -357,8 +381,8 @@ def plot_speed_ratio_sweep(sweep, out_dir):
     ax.set_xlabel('Number of pursuers N'); ax.set_ylabel('Speed ratio v_E / v_P')
     lab = [f'{r}: sim N_crit={sim_n_critical(sweep, r) or ">12"}, card={card_n_critical(r)}'
            for r in SWEEP_RATIO]
-    ax.set_title('S011 3D — Escape Rate over N × v_E/v_P (τ=%.1f s)\n' % TAU_FIX + '; '.join(lab),
-                 fontsize=8)
+    ax.set_title('S011 3D — Escape Rate over N × v_E/v_P (τ=%.1f s, terminal pursuit within %.0f m)\n'
+                 % (TAU_FIX, R_TERMINAL) + '; '.join(lab), fontsize=7)
     fig.colorbar(im, ax=ax, label='Escape rate (%)')
     plt.tight_layout()
     path = os.path.join(out_dir, 'speed_ratio_sweep.png')
@@ -408,55 +432,72 @@ def _describe(res, lab):
     out = (f"captured by P{res['cap_who']+1} @ {res['cap_time']:.2f} s" if res['captured']
            else 'escaped (no capture in 30 s)')
     bt = res['breakout_time']
+    late = res['t_hist'] > T_CONVERGE
+    tail = (f"; nearest pursuer for t > {T_CONVERGE:.0f} s: mean {res['dmin_hist'][late].mean():.3f} m, "
+            f"range {res['dmin_hist'][late].min():.3f}–{res['dmin_hist'][late].max():.3f} m" if late.any() else '')
+    tt = res['term_time']
+    tail += f"; terminal phase from {tt:.2f} s" if tt is not None else ''
     print(f"  {lab}: {out}; hull broken {'at %.2f s' % bt if bt is not None else 'never'}; "
           f"max gap {res['max_gap']:.1f}°; direction switches {res['n_switch']}; "
           f"evader z {res['z_range'][0]:.2f}–{res['z_range'][1]:.2f} m; "
-          f"net displacement {res['net_disp']:.2f} m; final nearest pursuer {res['final_dmin']:.2f} m")
+          f"net displacement {res['net_disp']:.2f} m; final nearest pursuer {res['final_dmin']:.2f} m" + tail)
 
 
 if __name__ == '__main__':
     print(f'S011 3D Swarm Encirclement: N={N_PURSUERS}, v_E={V_EVADER}, v_P={V_PURSUER}, '
-          f'seed={MAIN_SEED}')
+          f'seed={MAIN_SEED}, τ={TAU_FIX} s, terminal pursuit within {R_TERMINAL} m')
     main = run_simulation()
-    ideal = run_simulation(tau=0.0)
-    lab_main, lab_ideal = f'τ={TAU_FIX} s fix latency', 'τ=0 (ideal card law)'
+    ref = run_simulation(terminal=False)
+    lab_main, lab_ref = 'with terminal pursuit (main)', 'slots only, no terminal phase (reference)'
     _describe(main, lab_main)
-    _describe(ideal, lab_ideal)
+    _describe(ref, lab_ref)
     print('  Fibonacci slots seen from the sphere centre (no walls): largest gap ' +
           ', '.join(f'N={n}: {max_gap_deg(np.zeros(3), fibonacci_sphere(n), 0.0):.1f}°'
                     for n in SWEEP_N))
     static = run_simulation(v_e=0.0)
-    print(f"  static evader (τ={TAU_FIX} s): "
+    print(f"  static evader: "
           f"{'captured @ %.2f s' % static['cap_time'] if static['captured'] else 'not captured'}")
 
-    print(f'\nSweep: N={SWEEP_N} × v_E/v_P={SWEEP_RATIO}, {N_SEEDS} seeds (CRN), τ={TAU_FIX} s')
+    def print_sweep(sw, ratios):
+        print(f"{'v_E/v_P':>7} {'N':>3} {'escape':>7} {'hull broken':>11} {'capture time mean±sd (s)':>26}"
+              f"  {'escapes: median final nearest pursuer (m)':>42}")
+        for ratio in ratios:
+            for n in SWEEP_N:
+                s = sw[(ratio, n)]
+                ct = f"{s['cap_mean']:.2f} ± {s['cap_std']:.2f}" if s['cap_mean'] is not None else '-'
+                ed = f"{s['esc_dmin']:.2f}" if s['esc_dmin'] is not None else '-'
+                print(f"{ratio:>7} {n:>3} {s['esc']:>4}/{N_SEEDS} {s['broke']:>8}/{N_SEEDS} {ct:>26}  {ed:>42}")
+
+    print(f'\nMain sweep (terminal pursuit): N={SWEEP_N} × v_E/v_P={SWEEP_RATIO}, {N_SEEDS} seeds (CRN)')
     sweep = run_sweep()
-    print(f"{'v_E/v_P':>7} {'N':>3} {'escape':>7} {'hull broken':>11} {'capture time mean±sd (s)':>26}"
-          f"  {'escapes: median final nearest pursuer (m)':>42}")
-    for ratio in SWEEP_RATIO:
-        for n in SWEEP_N:
-            s = sweep[(ratio, n)]
-            ct = f"{s['cap_mean']:.2f} ± {s['cap_std']:.2f}" if s['cap_mean'] is not None else '-'
-            ed = f"{s['esc_dmin']:.2f}" if s['esc_dmin'] is not None else '-'
-            print(f"{ratio:>7} {n:>3} {s['esc']:>4}/{N_SEEDS} {s['broke']:>8}/{N_SEEDS} {ct:>26}  {ed:>42}")
+    print_sweep(sweep, SWEEP_RATIO)
     print('\nN_crit (smallest swept N with 0 escapes) vs card formula ceil(2/(1-cos(asin r))):')
     for ratio in SWEEP_RATIO:
         print(f'  v_E/v_P={ratio}: simulated {sim_n_critical(sweep, ratio) or ">12"}, '
               f'card formula {card_n_critical(ratio)}')
 
-    ideal_sweep = run_sweep(tau=0.0, ratios=[0.7])
-    print('\nReference τ=0 (sphere re-centred on the current evader every step), v_E/v_P=0.7:')
-    for n in SWEEP_N:
-        s = ideal_sweep[(0.7, n)]
-        ct = f"{s['cap_mean']:.2f} ± {s['cap_std']:.2f}" if s['cap_mean'] is not None else '-'
-        print(f"  N={n:>2}: escape {s['esc']}/{N_SEEDS}, hull broken {s['broke']}/{N_SEEDS}, "
-              f"capture time {ct} s")
+    print('\nReference: slots only (no terminal phase), v_E/v_P=0.7 and 0.9, τ=0.10 s')
+    ref_sweep = run_sweep(ratios=[0.7, 0.9], terminal=False)
+    print_sweep(ref_sweep, [0.7, 0.9])
+    print('Reference: slots only, v_E/v_P=0.7, τ=0.05 s')
+    ref_sweep05 = run_sweep(tau=0.05, ratios=[0.7], terminal=False)
+    print_sweep(ref_sweep05, [0.7])
+    print('Reference: slots only, v_E/v_P=0.7, τ=0 (card law: re-centred on the current evader)')
+    ideal_sweep = run_sweep(tau=0.0, ratios=[0.7], terminal=False)
+    print_sweep(ideal_sweep, [0.7])
+    print('Fixed-heading evader (no gap seeking), v_E/v_P=0.7, τ=0.10 s:')
+    for term in (False, True):
+        fx = run_sweep(ratios=[0.7], n_list=[6, 8], terminal=term, evader='fixed')
+        print(f"  {'with terminal pursuit' if term else 'slots only':<22} "
+              + ', '.join(f"N={n}: escape {fx[(0.7, n)]['esc']}/{N_SEEDS}" for n in (6, 8)))
 
-    plot_trajectories_3d([main, ideal], [lab_main, lab_ideal], OUTPUT_DIR)
+    plot_trajectories_3d([main, ref], [lab_main, lab_ref], OUTPUT_DIR)
     plot_altitude_time(main, OUTPUT_DIR)
-    plot_radius_time([main, ideal], [lab_main, lab_ideal], OUTPUT_DIR)
-    plot_angular_gap([main, ideal], [lab_main, lab_ideal], OUTPUT_DIR)
-    plot_breakout_vs_N(sweep, ideal_sweep, OUTPUT_DIR)
+    plot_radius_time([main, ref], [lab_main, lab_ref], OUTPUT_DIR)
+    plot_angular_gap([main, ref], [lab_main, lab_ref], OUTPUT_DIR)
+    plot_breakout_vs_N(sweep, [('slots only, τ=0.10 s, v_E/v_P=0.7', ref_sweep, 0.7),
+                               ('slots only, τ=0.05 s, v_E/v_P=0.7', ref_sweep05, 0.7),
+                               ('slots only, τ=0 (card law), v_E/v_P=0.7', ideal_sweep, 0.7)], OUTPUT_DIR)
     plot_speed_ratio_sweep(sweep, OUTPUT_DIR)
     save_animation(main, OUTPUT_DIR)
     print('All outputs saved to:', OUTPUT_DIR)
