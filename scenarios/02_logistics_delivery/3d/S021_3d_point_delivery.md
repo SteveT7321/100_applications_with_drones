@@ -1,6 +1,6 @@
 # S021 3D Upgrade — Point Delivery
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S021 original](../S021_point_delivery.md)
 
 ---
@@ -74,21 +74,15 @@ $$T_{takeoff} = 2\,t_{switch} = 2\sqrt{\frac{z_{cruise}}{a_{z,max}}}$$
 
 Final vertical velocity at top of climb is zero (full deceleration to cruise altitude).
 
-### Phase 2 — Cruise (Velocity-Controlled Point-Mass)
+### Phase 2 — Cruise (Wind-Triangle Point-Mass)
 
-Horizontal velocity at maximum speed corrected for headwind component:
+$v_{max}$ is a limit on the **airspeed** $\|\mathbf{v} - \mathbf{v}_{wind}\|$. With $\hat{\mathbf{d}}_{xy}$ the unit vector toward the goal, split the wind into $w_\parallel = \mathbf{v}_{wind}\cdot\hat{\mathbf{d}}_{xy}$ and $w_\perp = \|\mathbf{v}_{wind} - w_\parallel\hat{\mathbf{d}}_{xy}\|$. The fastest ground speed along the bearing (wind triangle) is
 
-$$\mathbf{v}_{cmd,xy}(t) = v_{max} \cdot \hat{\mathbf{d}}_{xy} - v_{wind}(z_{cruise})\,\hat{\mathbf{x}}_{corr}$$
+$$v_{gnd}(z_{cruise}) = w_\parallel + \sqrt{v_{max}^2 - w_\perp^2}$$
 
-where $\hat{\mathbf{d}}_{xy}$ is the unit vector toward the horizontal goal projection. The wind correction $\hat{\mathbf{x}}_{corr}$ is a feedforward compensation for the dominant wind direction.
+and the air-velocity command is $\mathbf{v}_{air} = v_{gnd}\,\hat{\mathbf{d}}_{xy} - \mathbf{v}_{wind}$, with $\|\mathbf{v}_{air}\| = v_{max}$. The cruise starts from rest after the climb and accelerates at $a_{max}$ up to $v_{gnd}$.
 
-Effective ground speed:
-
-$$v_{gnd} = \sqrt{v_{max}^2 - v_{wind}^2(z_{cruise})} \approx v_{max} - \frac{v_{wind}^2(z_{cruise})}{2\,v_{max}}$$
-
-Cruise time:
-
-$$T_{cruise} = \frac{d_{xy}}{v_{gnd}(z_{cruise})}$$
+> **Correction (2026-10-24).** An earlier version of this card used $v_{gnd} = \sqrt{v_{max}^2 - v_{wind}^2}$ and the command $v_{max}\hat{\mathbf{d}}_{xy} - v_{wind}\hat{\mathbf{x}}$. That formula ignores the wind direction: it slows a tailwind leg (the depot→goal bearing here has a 0.95 tailwind component). The command also has an airspeed above $v_{max}$. The earlier version also changed velocity instantaneously at the start of the cruise. That is free kinetic energy, and it is inconsistent with the $a_{max}$ bound of the descent.
 
 ### Phase 3 — Minimum-Time 3D Descent (Pontryagin)
 
@@ -114,7 +108,7 @@ $$\dot{\boldsymbol{\lambda}}_p = \mathbf{0}, \quad \dot{\boldsymbol{\lambda}}_v 
 
 implying $\boldsymbol{\lambda}_p = \text{const}$, $\boldsymbol{\lambda}_v(t) = \boldsymbol{\lambda}_{v,0} - \boldsymbol{\lambda}_p \, t$ (linear).
 
-The optimal thrust direction therefore rotates linearly in time — the 3D generalisation of the classical bang-bang/gravity-turn law. In the vertical channel:
+The co-state $\boldsymbol{\lambda}_v$ is therefore linear in time, so the optimal thrust direction follows a linear-tangent law. This is the 3D generalisation of bang-bang control: from rest to rest it reduces to a straight-line bang-bang with a single 180° flip. In the vertical channel:
 
 $$u_z^*(t) = -a_{max} \cdot \frac{\lambda_{v,z}(t)}{\|\boldsymbol{\lambda}_v(t)\|}$$
 
@@ -126,7 +120,9 @@ Total mission time as a function of $z_{cruise}$:
 
 $$T_{total}(z_{cruise}) = T_{takeoff}(z_{cruise}) + T_{cruise}(z_{cruise}) + T_{descent}(z_{cruise})$$
 
-$$= 2\sqrt{\frac{z_{cruise}}{a_{z,max}}} + \frac{d_{xy}}{v_{gnd}(z_{cruise})} + T_3(z_{cruise})$$
+$$= 2\sqrt{\frac{z_{cruise}}{a_{z,max}}} + \min_{\tau}\Big[\tau + T_3(z_{cruise}, \tau)\Big]$$
+
+Here $\tau$ is the time spent cruising before the descent starts, and $T_3$ is the Pontryagin transfer time from the cruise state at $\tau$. The minimum is taken over descent starts that keep the airspeed $\le v_{max}$. A descent that starts from cruise speed directly above the goal would have to overshoot and come back. For a long leg in which the cruise reaches $v_{gnd}$, this is approximately $d_{xy}/v_{gnd}$ plus terms that do not depend on the distance.
 
 Optimal cruise altitude:
 
@@ -149,7 +145,7 @@ $$E_{mission} = \int_0^{T_{mission}} P(\mathbf{v}(t), z(t)) \, dt$$
 $$\mathbf{p}(t + \Delta t) = \mathbf{p}(t) + \mathbf{v}(t)\,\Delta t + \tfrac{1}{2}\mathbf{u}(t)\,\Delta t^2$$
 $$\mathbf{v}(t + \Delta t) = \mathbf{v}(t) + \mathbf{u}(t)\,\Delta t$$
 
-with $\Delta t = 1/48$ s.
+with $\Delta t = 1/48$ s. (The implementation logs at 48 Hz but uses the exact closed-form states of each phase, so there is no integration drift.)
 
 ### Landing Condition
 
@@ -161,7 +157,7 @@ $$\|\mathbf{p}(t) - \mathbf{p}_{goal}\| < r_{land} \quad \text{and} \quad z(t) \
 
 ```python
 # Key constants
-V_MAX        = 5.0    # m/s   max horizontal speed
+V_MAX        = 5.0    # m/s   max airspeed (|v - v_wind|)
 A_Z_MAX      = 2.0    # m/s²  max vertical acceleration
 A_MAX        = 3.0    # m/s²  max 3D acceleration (descent phase)
 Z_CRUISE     = None   # m     set by optimiser (search range 1–6 m)
@@ -188,16 +184,23 @@ def wind_speed(z):
 def k_drag(z):
     return K_DRAG_0 * (1 + ALPHA_Z * z)
 
-def total_mission_time(z_cruise, d_xy):
-    T_to = 2 * np.sqrt(z_cruise / A_Z_MAX)
-    v_wind = wind_speed(z_cruise)
-    v_gnd  = np.sqrt(max(V_MAX**2 - v_wind**2, 0.1))
-    T_cr   = d_xy / v_gnd
-    T_desc = shooting_descent_time(z_cruise)  # numerical shooting
-    return T_to + T_cr + T_desc
+def ground_speed_cap(z, d_hat):
+    # wind triangle along unit bearing d_hat (corrected 2026-10-24)
+    w = np.array([wind_speed(z), 0.0])
+    w_par = w @ d_hat
+    w_perp = np.linalg.norm(w - w_par * d_hat)
+    return w_par + np.sqrt(V_MAX**2 - w_perp**2)
 
-def optimal_cruise_altitude(d_xy, z_range=np.linspace(0.5, 6.0, 56)):
-    times = [total_mission_time(z, d_xy) for z in z_range]
+def total_mission_time(z_cruise, d_hat, d_xy):
+    T_to = 2 * np.sqrt(z_cruise / A_Z_MAX)
+    v_gnd = ground_speed_cap(z_cruise, d_hat)
+    # cruise accelerates at A_MAX up to v_gnd; the descent starts after tau s
+    # tau is chosen to minimise tau + T3 subject to airspeed <= V_MAX
+    tau, T_desc = best_descent_start(z_cruise, v_gnd, d_xy)  # shooting
+    return T_to + tau + T_desc
+
+def optimal_cruise_altitude(d_hat, d_xy, z_range=np.linspace(0.5, 6.0, 56)):
+    times = [total_mission_time(z, d_hat, d_xy) for z in z_range]
     return z_range[np.argmin(times)]
 ```
 
@@ -209,7 +212,7 @@ def optimal_cruise_altitude(d_xy, z_range=np.linspace(0.5, 6.0, 56)):
 |-----------|-------|-------|
 | Depot position | (-4.0, 0.0, 0.0) m | Ground level |
 | Goal position | (3.5, 2.5, 0.0) m | Ground level |
-| Max horizontal speed | 5.0 m/s | |
+| Max airspeed | 5.0 m/s | air-relative; caps cruise ground speed via the wind triangle |
 | Max vertical acceleration | 2.0 m/s² | Takeoff bang-bang |
 | Max 3D acceleration (descent) | 3.0 m/s² | Pontryagin control bound |
 | Cruise altitude search range | 0.5 – 6.0 m | Grid of 56 points |
@@ -221,7 +224,7 @@ def optimal_cruise_altitude(d_xy, z_range=np.linspace(0.5, 6.0, 56)):
 | Altitude drag scaling $\alpha_z$ | 0.05 m$^{-1}$ | |
 | Wind speed at 2 m | 1.5 m/s | Linear profile |
 | Drone mass | 0.5 kg | |
-| Altitude bounds | [0.5, 8.0] m | |
+| Altitude bounds | cruise layer ≥ 0.5 m; flight envelope [0, 8.0] m | takeoff and landing at z = 0 |
 
 ---
 
@@ -230,7 +233,7 @@ def optimal_cruise_altitude(d_xy, z_range=np.linspace(0.5, 6.0, 56)):
 - **3D trajectory plot**: four phases color-coded (takeoff: orange, cruise: red, descent: magenta, land: green star), depot blue square
 - **Altitude vs time**: S-curve takeoff, flat cruise, Pontryagin-optimal curved descent reaching $z = 0$
 - **Speed vs time**: bang-bang vertical speed during takeoff, near-constant cruise, controlled deceleration in descent
-- **Optimal altitude sweep**: $T_{total}(z_{cruise})$ curve with minimum marked — shows trade-off between longer takeoff and less wind drag at high altitudes
+- **Optimal altitude sweep**: $T_{total}(z_{cruise})$ curve with minimum marked — shows the trade-off between a longer takeoff and a faster wind-assisted (tailwind) cruise at high altitudes. Drag is *higher* at altitude ($k_{drag}$ grows with z), so drag pushes the energy-optimal layer below the time-optimal one
 - **Wind correction vector field**: 2D slice at $z = z_{cruise}^*$ showing effective ground-speed vectors
 - **Energy breakdown**: stacked bar for each phase (takeoff, cruise, descent)
 - **Terminal metrics**: optimal $z_{cruise}^*$, total mission time, energy consumed, final landing error, touchdown speed
