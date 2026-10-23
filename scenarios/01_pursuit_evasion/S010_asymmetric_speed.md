@@ -27,9 +27,9 @@ The set of points equidistant in travel time from pursuer and evader defines the
 
 $$R_{apo} = \frac{r \cdot d}{1 - r^2}, \quad \text{centre offset} = \frac{d}{1 - r^2}$$
 
-where $d = \|\mathbf{p}_E - \mathbf{p}_P\|$ and $r = v_P / v_E$.
+where $d = \|\mathbf{p}_E - \mathbf{p}_P\|$ and $r = v_P / v_E$. The circle is the equal-time set $\|\mathbf{x} - \mathbf{p}_P\| / v_P = \|\mathbf{x} - \mathbf{p}_E\| / v_E$. Its centre lies on the line from the evader through the pursuer, at distance $d/(1-r^2)$ **from the evader** (i.e. $r^2 d/(1-r^2)$ beyond the pursuer), so for $r < 1$ the circle encloses the pursuer, not the evader.
 
-Points inside the Apollonius circle are reachable by the pursuer first; the evader is "safe" outside.
+Points inside the Apollonius circle are reachable by the pursuer first; the evader reaches every point outside first.
 
 ### Wall-Herding Velocity
 

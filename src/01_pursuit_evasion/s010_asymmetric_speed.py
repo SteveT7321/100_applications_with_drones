@@ -1,17 +1,29 @@
 """
 S010 Asymmetric Speed — Bounded Arena Trapping
 ================================================
-Evader is faster than pursuer (v_E=4.5 > v_P=3.0).  In open space, capture
-is impossible.  A bounded square arena lets the pursuer exploit walls/corners.
+Evader is faster than pursuer (v_E = 4.5 > v_P = 3.0 m/s).  In open space,
+capture is impossible.  A bounded square arena lets the pursuer exploit
+walls and corners.
 
-Strategies compared:
-  1. direct      — pure pursuit, fails when r<1
-  2. wall_herd   — blend toward evader + toward wall nearest the evader (α=0.5)
-  3. corner_trap — always aim at corner closest to evader
+Pursuer strategies:
+  1. direct      — pure pursuit
+  2. wall_herd   — blend: α·(unit vector to evader) + (1-α)·(outward normal of
+                   the wall nearest the evader), normalised to v_P
+  3. corner_trap — aim at the corner closest to the evader
+
+Evader strategies:
+  - flee  (card) — straight away from the pursuer; at a wall the outward part
+                   of the velocity is lost (it presses into the wall)
+  - aware        — flee direction plus repulsion from walls closer than
+                   D_SAFE (gain K_REPEL); at a wall it slides along the wall at
+                   full speed (in a corner it turns along a free wall)
+
+Arena rule (both players): a velocity component pointing out of the arena at
+a wall is removed; the 'aware' evader renormalises what is left.
 
 Also produces:
-  - Apollonius circle snapshots (t=0,5,10,20s)
-  - Capture time vs blend factor α sensitivity plot
+  - Apollonius (equal-time) circle snapshots
+  - Capture time vs blend factor α for both evaders
 
 Usage:
     conda activate drones
@@ -24,11 +36,7 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from matplotlib.patches import Circle
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-from src.base.drone_base import DroneBase
 
 # ── Parameters ───────────────────────────────────────────────
 ARENA      = 5.0    # ±ARENA m square (10×10 m floor)
@@ -36,296 +44,255 @@ V_PURSUER  = 3.0    # m/s
 V_EVADER   = 4.5    # m/s
 ALPHA      = 0.5    # wall-herd blend
 CAPTURE_R  = 0.15   # m
-Z_FLY      = 2.0    # m fixed altitude
 DT         = 1 / 48
-MAX_TIME   = 60.0
+MAX_TIME   = 60.0   # s
+ALPHAS     = np.round(np.linspace(0.0, 1.0, 21), 2)
+SNAP_TIMES = [0.0, 5.0, 10.0, 20.0]   # s — Apollonius snapshots (card)
+D_SAFE     = 1.5    # m — wall-aware evader: wall repulsion range
+K_REPEL    = 2.0    # wall-aware evader: repulsion gain
 
-INIT_PURSUER = np.array([0.0,  0.0,  Z_FLY])
-INIT_EVADER  = np.array([2.0,  1.5,  Z_FLY])
+INIT_PURSUER = np.array([0.0, 0.0])
+INIT_EVADER  = np.array([2.0, 1.5])
 
-CORNERS = np.array([[-ARENA, -ARENA, Z_FLY],
-                     [ ARENA, -ARENA, Z_FLY],
-                     [-ARENA,  ARENA, Z_FLY],
-                     [ ARENA,  ARENA, Z_FLY]])
-
-WALLS_DIRS = np.array([[-1, 0, 0],   # -x wall
-                        [ 1, 0, 0],   # +x wall
-                        [0, -1, 0],   # -y wall
-                        [0,  1, 0]])  # +y wall
-WALL_POS   = np.array([[-ARENA, 0, 0],
-                        [ ARENA, 0, 0],
-                        [0, -ARENA, 0],
-                        [0,  ARENA, 0]], dtype=float)
+CORNERS = np.array([[-ARENA, -ARENA], [ARENA, -ARENA],
+                    [-ARENA, ARENA], [ARENA, ARENA]])
+WALL_NORMALS = np.array([[-1.0, 0.0], [1.0, 0.0], [0.0, -1.0], [0.0, 1.0]])
 
 STRATEGIES = ['direct', 'wall_herd', 'corner_trap']
+EVADERS = ['flee', 'aware']
+LABELS = {'direct': 'Direct pursuit', 'wall_herd': f'Wall herding (α={ALPHA})',
+          'corner_trap': 'Corner trap'}
+EV_LABELS = {'flee': 'Evader: flee (card)', 'aware': 'Evader: wall-aware'}
+COLORS = {'direct': 'darkorange', 'wall_herd': 'steelblue', 'corner_trap': 'mediumseagreen'}
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '01_pursuit_evasion', 's010_asymmetric_speed',
 )
 
-RNG = np.random.default_rng(13)
+
+# ── Helpers ──────────────────────────────────────────────────
+
+def unit(v):
+    n = np.linalg.norm(v)
+    return v / n if n > 1e-12 else np.zeros_like(v)
 
 
-# ── Arena boundary enforcement ───────────────────────────────
-
-def clip_to_arena(pos):
-    pos = pos.copy()
-    pos[0] = np.clip(pos[0], -ARENA, ARENA)
-    pos[1] = np.clip(pos[1], -ARENA, ARENA)
-    return pos
-
-
-# ── Pursuer strategies ────────────────────────────────────────
-
-def cmd_direct(pos_p, pos_e):
-    d = pos_e - pos_p
-    n = np.linalg.norm(d)
-    return V_PURSUER * d / n if n > 1e-8 else np.zeros(3)
+def remove_outward(pos, d):
+    """Drop velocity components that point out of the arena at a wall."""
+    d = d.copy()
+    for k in range(2):
+        if pos[k] >= ARENA - 1e-9 and d[k] > 0:
+            d[k] = 0.0
+        if pos[k] <= -ARENA + 1e-9 and d[k] < 0:
+            d[k] = 0.0
+    return d
 
 
-def cmd_wall_herd(pos_p, pos_e, alpha=ALPHA):
-    # Direction toward evader
-    r_pe = pos_e - pos_p
-    n    = np.linalg.norm(r_pe)
-    r_pe = r_pe / n if n > 1e-8 else r_pe
+# ── Pursuer strategies (return unit direction) ───────────────
 
-    # Nearest wall to evader (wall that evader should be pushed toward)
-    dists_to_walls = [abs(pos_e[0] + ARENA),   # -x
-                      abs(pos_e[0] - ARENA),    # +x
-                      abs(pos_e[1] + ARENA),    # -y
-                      abs(pos_e[1] - ARENA)]    # +y
-    wi = np.argmin(dists_to_walls)
-    wall_pt = WALL_POS[wi].copy()
-    wall_pt[2] = Z_FLY
-    r_wall = wall_pt - pos_p
-    nw     = np.linalg.norm(r_wall)
-    r_wall = r_wall / nw if nw > 1e-8 else r_wall
-
-    v = alpha * r_pe + (1 - alpha) * r_wall
-    nv = np.linalg.norm(v)
-    return V_PURSUER * v / nv if nv > 1e-8 else np.zeros(3)
+def dir_direct(p, e, alpha=ALPHA):
+    return unit(e - p)
 
 
-def cmd_corner_trap(pos_p, pos_e):
-    # Aim at corner closest to evader
-    dists = [np.linalg.norm(pos_e - c) for c in CORNERS]
-    corner = CORNERS[np.argmin(dists)]
-    r = corner - pos_p
-    n = np.linalg.norm(r)
-    return V_PURSUER * r / n if n > 1e-8 else np.zeros(3)
+def nearest_wall_normal(e):
+    d = [e[0] + ARENA, ARENA - e[0], e[1] + ARENA, ARENA - e[1]]
+    return WALL_NORMALS[int(np.argmin(d))]
 
 
-# ── Evader strategy — flee from pursuer ──────────────────────
+def dir_wall_herd(p, e, alpha=ALPHA):
+    """α·(toward evader) + (1-α)·(outward normal of the evader's nearest wall).
+    The wall term is a direction, not a point, so it never cancels the
+    pursuit term (the old point-based version produced a zero command)."""
+    return unit(alpha * unit(e - p) + (1 - alpha) * nearest_wall_normal(e))
 
-def cmd_evader(pos_p, pos_e):
-    """Straight escape away from pursuer, with wall bounce."""
-    d = pos_e - pos_p
-    n = np.linalg.norm(d)
-    if n < 1e-8:
-        return V_EVADER * np.array([1.0, 0.0, 0.0])
-    return V_EVADER * d / n
+
+def dir_corner_trap(p, e, alpha=ALPHA):
+    corner = CORNERS[np.argmin(np.linalg.norm(CORNERS - e, axis=1))]
+    return unit(corner - p)
+
+
+PURSUERS = {'direct': dir_direct, 'wall_herd': dir_wall_herd,
+            'corner_trap': dir_corner_trap}
+
+
+# ── Evader strategies ────────────────────────────────────────
+
+def wall_repulsion(e):
+    """Sum of inward wall normals, weight (D_SAFE - δ)/D_SAFE for walls closer
+    than D_SAFE (δ = distance to the wall)."""
+    dists = np.array([e[0] + ARENA, ARENA - e[0], e[1] + ARENA, ARENA - e[1]])
+    w = np.clip((D_SAFE - dists) / D_SAFE, 0.0, 1.0)
+    return -(w[:, None] * WALL_NORMALS).sum(axis=0)
+
+
+def evader_velocity(p, e, kind):
+    d = unit(e - p)
+    if np.linalg.norm(d) < 1e-12:
+        d = np.array([1.0, 0.0])
+    if kind == 'aware':
+        d = unit(d + K_REPEL * wall_repulsion(e))
+        if np.linalg.norm(d) < 1e-12:
+            d = unit(e - p)
+    v = remove_outward(e, d)
+    if kind == 'aware':
+        if np.linalg.norm(v) < 1e-9:                  # pushing straight into wall/corner
+            v = remove_outward(e, np.array([-d[1], d[0]]))
+        v = unit(v)                                   # slide along walls at full speed
+    return V_EVADER * v
 
 
 # ── Apollonius circle ─────────────────────────────────────────
 
-def apollonius_circle(pos_p, pos_e, v_p=V_PURSUER, v_e=V_EVADER):
+def apollonius_circle(p, e, v_p=V_PURSUER, v_e=V_EVADER):
     """
-    Centre and radius of the Apollonius circle in XY plane.
-    Points inside are reachable by pursuer first.
+    Equal-time circle {X : |X-P|/v_p = |X-E|/v_e}, i.e. |X-P| = r|X-E| with
+    r = v_p/v_e.  For r < 1 it encloses the pursuer: points inside are
+    reached by the pursuer first, all points outside by the evader first.
+    Radius r·d/(1-r²); centre on the line E→P, at distance d/(1-r²) from E
+    (beyond P).
     """
     r = v_p / v_e
-    if abs(1 - r ** 2) < 1e-6:
-        return None, None   # equal speeds — circle at infinity
-    d = np.linalg.norm(pos_e[:2] - pos_p[:2])
-    R_apo    = r * d / (1 - r ** 2)
-    offset   = d / (1 - r ** 2)
-    # Centre lies on the line from P to E, offset from P
-    direction = (pos_e[:2] - pos_p[:2]) / (d + 1e-8)
-    centre = pos_p[:2] + offset * direction
-    return centre, abs(R_apo)
+    d = np.linalg.norm(e - p)
+    if abs(1 - r ** 2) < 1e-9 or d < 1e-9:
+        return None, None
+    centre = e + (p - e) / d * d / (1 - r ** 2)
+    return centre, r * d / (1 - r ** 2)
+
+
+def check_apollonius():
+    """Equal-time check on four points of the circle at t = 0."""
+    c, R = apollonius_circle(INIT_PURSUER, INIT_EVADER)
+    worst = 0.0
+    for th in np.linspace(0, 2 * np.pi, 4, endpoint=False):
+        x = c + R * np.array([np.cos(th), np.sin(th)])
+        tp = np.linalg.norm(x - INIT_PURSUER) / V_PURSUER
+        te = np.linalg.norm(x - INIT_EVADER) / V_EVADER
+        worst = max(worst, abs(tp - te))
+    inside_p = np.linalg.norm(INIT_PURSUER - c) < R
+    inside_e = np.linalg.norm(INIT_EVADER - c) < R
+    return c, R, worst, inside_p, inside_e
 
 
 # ── Simulation ────────────────────────────────────────────────
 
-def run_simulation(strategy, alpha=ALPHA):
-    pursuer = DroneBase(INIT_PURSUER.copy(), max_speed=V_PURSUER, dt=DT)
-    evader  = DroneBase(INIT_EVADER.copy(),  max_speed=V_EVADER,  dt=DT)
-
-    p_traj = [pursuer.pos.copy()]
-    e_traj = [evader.pos.copy()]
-    time_log = [0.0]
-
-    captured = False
-    cap_time = None
-    max_steps = int(MAX_TIME / DT)
-
-    for step in range(1, max_steps + 1):
-        t = step * DT
-
-        if strategy == 'direct':
-            cmd_p = cmd_direct(pursuer.pos, evader.pos)
-        elif strategy == 'wall_herd':
-            cmd_p = cmd_wall_herd(pursuer.pos, evader.pos, alpha)
-        else:
-            cmd_p = cmd_corner_trap(pursuer.pos, evader.pos)
-
-        cmd_e = cmd_evader(pursuer.pos, evader.pos)
-
-        pursuer.step(cmd_p)
-        evader.step(cmd_e)
-
-        # Enforce arena walls
-        pursuer.pos = clip_to_arena(pursuer.pos)
-        evader.pos  = clip_to_arena(evader.pos)
-
-        p_traj.append(pursuer.pos.copy())
-        e_traj.append(evader.pos.copy())
-        time_log.append(t)
-
-        if np.linalg.norm(pursuer.pos - evader.pos) < CAPTURE_R:
-            captured = True
-            cap_time = t
+def run_simulation(strategy, evader='flee', alpha=ALPHA):
+    p, e = INIT_PURSUER.astype(float).copy(), INIT_EVADER.astype(float).copy()
+    p_list, e_list = [p.copy()], [e.copy()]
+    captured, cap_time = False, None
+    for k in range(int(round(MAX_TIME / DT))):
+        vp = V_PURSUER * remove_outward(p, PURSUERS[strategy](p, e, alpha))
+        ve = evader_velocity(p, e, evader)
+        p = np.clip(p + vp * DT, -ARENA, ARENA)
+        e = np.clip(e + ve * DT, -ARENA, ARENA)
+        p_list.append(p.copy()); e_list.append(e.copy())
+        if np.linalg.norm(p - e) < CAPTURE_R:
+            captured, cap_time = True, (k + 1) * DT
             break
+    P, E = np.array(p_list), np.array(e_list)
+    return dict(p=P, e=E, t=np.arange(len(P)) * DT, d=np.linalg.norm(P - E, axis=1),
+                captured=captured, cap_time=cap_time)
 
-    return (
-        np.array(p_traj),
-        np.array(e_traj),
-        np.array(time_log),
-        captured,
-        cap_time,
-    )
+
+def describe(r):
+    """Short text summary of how a run ended."""
+    if r['captured']:
+        return f'captured @ {r["cap_time"]:.3f} s at ({r["e"][-1, 0]:.2f}, {r["e"][-1, 1]:.2f})'
+    last = r['d'][r['t'] >= MAX_TIME - 10]
+    n10 = int(round(10 / DT))
+    plen = np.sum(np.linalg.norm(np.diff(r['p'][-n10 - 1:], axis=0), axis=1))
+    elen = np.sum(np.linalg.norm(np.diff(r['e'][-n10 - 1:], axis=0), axis=1))
+    return (f'timeout {MAX_TIME:.0f} s | last 10 s: distance {last.min():.2f}–{last.max():.2f} m, '
+            f'path length pursuer {plen:.1f} m, evader {elen:.1f} m | final P '
+            f'({r["p"][-1, 0]:.2f}, {r["p"][-1, 1]:.2f}), E ({r["e"][-1, 0]:.2f}, '
+            f'{r["e"][-1, 1]:.2f})')
 
 
 # ── Plots ────────────────────────────────────────────────────
 
 def _draw_arena(ax):
-    rect = plt.Rectangle((-ARENA, -ARENA), 2*ARENA, 2*ARENA,
-                          fill=False, edgecolor='grey',
-                          linestyle='--', linewidth=1.2)
-    ax.add_patch(rect)
+    ax.add_patch(plt.Rectangle((-ARENA, -ARENA), 2 * ARENA, 2 * ARENA, fill=False,
+                               edgecolor='grey', linestyle='--', linewidth=1.2))
+    ax.scatter(CORNERS[:, 0], CORNERS[:, 1], color='grey', s=40, marker='s', zorder=3)
 
 
 def plot_trajectories_2d(results, out_dir):
-    colors = ['darkorange', 'steelblue', 'mediumseagreen']
-    labels = ['Direct Pursuit', 'Wall Herding (α=0.5)', 'Corner Trap']
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    for ax, res, color, label in zip(axes, results, colors, labels):
-        p_traj, e_traj, times, captured, cap_t = res
-        _draw_arena(ax)
-
-        # Corners
-        for c in CORNERS:
-            ax.scatter(*c[:2], color='grey', s=60, marker='s', zorder=3)
-
-        ax.plot(p_traj[:, 0], p_traj[:, 1], color=color,
-                linewidth=1.8, label='Pursuer')
-        ax.plot(e_traj[:, 0], e_traj[:, 1], color='royalblue',
-                linewidth=1.8, alpha=0.7, label='Evader')
-        ax.scatter(*p_traj[0, :2], color=color, s=70, zorder=5)
-        ax.scatter(*e_traj[0, :2], color='blue', s=70, zorder=5)
-
-        if captured:
-            ax.scatter(*p_traj[-1, :2], color='black', s=120, marker='X', zorder=6,
-                       label=f'Captured {cap_t:.2f}s')
-            status = f'Captured {cap_t:.2f} s'
-        else:
-            status = 'Timeout (60 s)'
-
-        ax.set_xlim(-ARENA - 1, ARENA + 1)
-        ax.set_ylim(-ARENA - 1, ARENA + 1)
-        ax.set_aspect('equal')
-        ax.grid(True, alpha=0.3)
-        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
-        ax.set_title(f'{label}\n{status}', fontsize=9)
-        ax.legend(fontsize=7, loc='upper left')
-
-    fig.suptitle('S010 Asymmetric Speed — Top-Down Trajectories '
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    for row, ev in enumerate(EVADERS):
+        for col, s in enumerate(STRATEGIES):
+            ax = axes[row, col]
+            r = results[(s, ev)]
+            _draw_arena(ax)
+            ax.plot(r['p'][:, 0], r['p'][:, 1], color='red', linewidth=1.4, label='Pursuer')
+            ax.plot(r['e'][:, 0], r['e'][:, 1], color='royalblue', linewidth=1.2,
+                    alpha=0.7, label='Evader')
+            ax.scatter(*r['p'][0], color='red', s=60, zorder=5)
+            ax.scatter(*r['e'][0], color='blue', s=60, zorder=5)
+            if r['captured']:
+                ax.scatter(*r['p'][-1], color='black', s=100, marker='X', zorder=6)
+                st = f'captured {r["cap_time"]:.2f} s'
+            else:
+                ax.scatter(*r['p'][-1], color='red', s=60, marker='^', zorder=6)
+                ax.scatter(*r['e'][-1], color='blue', s=60, marker='s', zorder=6)
+                st = f'no capture in {MAX_TIME:.0f} s'
+            ax.set_xlim(-ARENA - 1, ARENA + 1); ax.set_ylim(-ARENA - 1, ARENA + 1)
+            ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+            ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
+            ax.set_title(f'{LABELS[s]} vs {EV_LABELS[ev]}\n{st}', fontsize=9)
+            ax.legend(fontsize=7, loc='lower left')
+    fig.suptitle(f'S010 Asymmetric Speed — Top-Down Trajectories '
                  f'(v_P={V_PURSUER}, v_E={V_EVADER} m/s)', fontsize=11)
     plt.tight_layout()
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectories_2d.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.savefig(path, dpi=130, bbox_inches='tight')
     plt.close()
     print(f'Saved: {path}')
 
 
-def plot_apollonius_snapshots(results, out_dir):
-    """Apollonius circle snapshots at t=0,5,10,20s for wall_herd strategy."""
-    res = results[1]   # wall_herd
-    p_traj, e_traj, times, captured, cap_t = res
-
-    snap_times = [0.0, 5.0, 10.0, 20.0]
-    snap_idxs  = [np.argmin(np.abs(times - t)) for t in snap_times]
-
-    fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-    colors_snap = plt.cm.plasma(np.linspace(0.1, 0.9, 4))
-
-    for ax, si, st, color in zip(axes, snap_idxs, snap_times, colors_snap):
+def plot_apollonius_snapshots(r, title, out_dir):
+    idxs = [min(int(round(t / DT)), len(r['p']) - 1) for t in SNAP_TIMES]
+    fig, axes = plt.subplots(1, len(SNAP_TIMES), figsize=(17, 4.5))
+    for ax, si, st in zip(axes, idxs, SNAP_TIMES):
         _draw_arena(ax)
-        ax.plot(p_traj[:si+1, 0], p_traj[:si+1, 1],
-                color='red', linewidth=1.4, alpha=0.5)
-        ax.plot(e_traj[:si+1, 0], e_traj[:si+1, 1],
-                color='royalblue', linewidth=1.4, alpha=0.5)
-        ax.scatter(*p_traj[si, :2], color='red',  s=80, zorder=5, label='Pursuer')
-        ax.scatter(*e_traj[si, :2], color='blue', s=80, zorder=5, label='Evader')
-
-        centre, radius = apollonius_circle(p_traj[si], e_traj[si])
-        if centre is not None and radius < 50:
-            circ = Circle(centre, radius, fill=False,
-                          edgecolor=color, linewidth=2.0,
-                          linestyle='-', label=f'Apollonius r={radius:.1f}m')
-            ax.add_patch(circ)
-            ax.scatter(*centre, color=color, s=40, marker='+', zorder=4)
-
-        ax.set_xlim(-ARENA - 2, ARENA + 2)
-        ax.set_ylim(-ARENA - 2, ARENA + 2)
-        ax.set_aspect('equal')
-        ax.grid(True, alpha=0.3)
-        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
-        ax.set_title(f't = {st:.0f} s', fontsize=9)
-        ax.legend(fontsize=7, loc='upper right')
-
-    fig.suptitle('S010 Asymmetric Speed — Apollonius Circle Snapshots (Wall Herd)',
-                 fontsize=11)
+        ax.plot(r['p'][:si + 1, 0], r['p'][:si + 1, 1], color='red', linewidth=1.0, alpha=0.4)
+        ax.plot(r['e'][:si + 1, 0], r['e'][:si + 1, 1], color='royalblue', linewidth=1.0,
+                alpha=0.4)
+        ax.scatter(*r['p'][si], color='red', s=70, zorder=5, label='Pursuer')
+        ax.scatter(*r['e'][si], color='blue', s=70, zorder=5, label='Evader')
+        c, R = apollonius_circle(r['p'][si], r['e'][si])
+        if c is not None:
+            ax.add_patch(Circle(c, R, fill=True, facecolor='red', alpha=0.10,
+                                edgecolor='red', linewidth=1.5,
+                                label=f'Pursuer-first region (R={R:.2f} m)'))
+        ax.set_xlim(-ARENA - 2, ARENA + 2); ax.set_ylim(-ARENA - 2, ARENA + 2)
+        ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+        ax.set_title(f't = {r["t"][si]:.1f} s, d = {r["d"][si]:.2f} m', fontsize=9)
+        ax.legend(fontsize=7, loc='upper left')
+    fig.suptitle(f'S010 — Apollonius (equal-time) circle snapshots: {title}', fontsize=11)
     plt.tight_layout()
     path = os.path.join(out_dir, 'apollonius_snapshots.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.savefig(path, dpi=130, bbox_inches='tight')
     plt.close()
     print(f'Saved: {path}')
 
 
-def plot_alpha_sensitivity(out_dir):
-    """Capture time vs blend factor alpha for wall_herd strategy."""
-    alphas     = np.linspace(0.0, 1.0, 21)
-    cap_times  = []
-    captured_flags = []
-
-    for a in alphas:
-        res = run_simulation('wall_herd', alpha=a)
-        _, _, times, captured, cap_t = res
-        cap_times.append(cap_t if captured else MAX_TIME)
-        captured_flags.append(captured)
-
+def plot_alpha_sensitivity(sweep, out_dir):
     fig, ax = plt.subplots(figsize=(10, 5))
-    c_arr = np.array(cap_times)
-    f_arr = np.array(captured_flags)
-
-    ax.plot(alphas, c_arr, color='steelblue', linewidth=2.0, marker='o', markersize=5)
-    ax.scatter(alphas[f_arr],  c_arr[f_arr],  color='mediumseagreen', s=60, zorder=5,
-               label='Captured')
-    ax.scatter(alphas[~f_arr], c_arr[~f_arr], color='tomato', s=60, zorder=5,
-               marker='X', label='Timeout')
-
-    ax.axvline(ALPHA, color='grey', linestyle='--', linewidth=1.0,
-               label=f'Default α={ALPHA}')
-    ax.set_xlabel('Blend factor α  (0=wall-only, 1=pure pursuit)')
-    ax.set_ylabel('Capture time (s)  [MAX_TIME=60 if timeout]')
-    ax.set_title('S010 Asymmetric Speed — Capture Time vs Wall-Herd Blend Factor α',
-                 fontsize=10)
-    ax.legend(fontsize=9)
-    ax.grid(True, alpha=0.3)
+    for ev, mk, col in zip(EVADERS, ['o', 's'], ['steelblue', 'purple']):
+        caps = np.array([c if c is not None else np.nan for c in sweep[ev]])
+        ok = ~np.isnan(caps)
+        ax.plot(ALPHAS[ok], caps[ok], marker=mk, color=col, linewidth=1.5,
+                label=f'{EV_LABELS[ev]}: captured')
+        if (~ok).any():
+            ax.scatter(ALPHAS[~ok], np.full((~ok).sum(), MAX_TIME), marker='X', s=70,
+                       color=col, label=f'{EV_LABELS[ev]}: no capture in {MAX_TIME:.0f} s')
+    ax.axvline(ALPHA, color='grey', linestyle='--', label=f'Default α={ALPHA}')
+    ax.set_yscale('log')
+    ax.set_xlabel('Blend factor α  (0 = wall normal only, 1 = pure pursuit)')
+    ax.set_ylabel('Capture time (s, log)')
+    ax.set_title('S010 — Wall-herding capture time vs blend factor α', fontsize=10)
+    ax.legend(fontsize=8); ax.grid(True, which='both', alpha=0.3)
     plt.tight_layout()
     path = os.path.join(out_dir, 'alpha_sensitivity.png')
     plt.savefig(path, dpi=150)
@@ -334,34 +301,24 @@ def plot_alpha_sensitivity(out_dir):
 
 
 def plot_capture_bar(results, out_dir):
-    labels     = ['Direct\nPursuit', 'Wall\nHerding', 'Corner\nTrap']
-    colors     = ['darkorange', 'steelblue', 'mediumseagreen']
-    cap_times  = []
-    bar_colors = []
-    anns       = []
-
-    for res, color in zip(results, colors):
-        _, _, times, captured, cap_t = res
-        if captured:
-            cap_times.append(cap_t)
-            bar_colors.append(color)
-            anns.append(f'{cap_t:.2f} s')
-        else:
-            cap_times.append(MAX_TIME)
-            bar_colors.append('tomato')
-            anns.append('Timeout')
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    bars = ax.bar(labels, cap_times, color=bar_colors, edgecolor='black', width=0.4)
-    for bar, ann in zip(bars, anns):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                ann, ha='center', va='bottom', fontsize=10, fontweight='bold')
-    ax.set_ylabel('Capture Time (s)')
-    ax.set_title(f'S010 Asymmetric Speed — Capture Time by Strategy\n'
-                 f'(v_P={V_PURSUER}, v_E={V_EVADER} m/s, r={V_PURSUER/V_EVADER:.2f})',
+    fig, ax = plt.subplots(figsize=(10, 5))
+    w = 0.38
+    x = np.arange(len(STRATEGIES))
+    for j, (ev, hatch) in enumerate(zip(EVADERS, ['', '//'])):
+        for i, s in enumerate(STRATEGIES):
+            r = results[(s, ev)]
+            h = r['cap_time'] if r['captured'] else MAX_TIME
+            ax.bar(x[i] + (j - 0.5) * w, h, width=w, color=COLORS[s] if r['captured'] else 'tomato',
+                   edgecolor='black', hatch=hatch, label=EV_LABELS[ev] if i == 0 else None)
+            ax.text(x[i] + (j - 0.5) * w, h * 1.08,
+                    f'{h:.2f} s' if r['captured'] else 'no capture', ha='center', fontsize=8)
+    ax.set_yscale('log')
+    ax.set_xticks(x); ax.set_xticklabels([LABELS[s] for s in STRATEGIES])
+    ax.set_ylabel('Capture time (s, log)  [red = no capture in 60 s]')
+    ax.set_title('S010 — Capture time by strategy (plain = flee evader, hatched = wall-aware evader)',
                  fontsize=10)
-    ax.set_ylim(0, MAX_TIME * 1.15)
-    ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim(1, MAX_TIME * 2.5)
+    ax.grid(axis='y', which='both', alpha=0.3)
     plt.tight_layout()
     path = os.path.join(out_dir, 'capture_bar.png')
     plt.savefig(path, dpi=150)
@@ -371,84 +328,88 @@ def plot_capture_bar(results, out_dir):
 
 def save_animation(results, out_dir):
     import matplotlib.animation as animation
+    keys = [(s, 'aware') for s in STRATEGIES]
+    T_ANIM = 20.0
+    n_max = int(round(T_ANIM / DT)) + 1
+    step = int(np.ceil(n_max / 140))
+    n_frames = (n_max - 1) // step + 2
 
-    colors = ['darkorange', 'steelblue', 'mediumseagreen']
-    labels = ['Direct', 'Wall Herd', 'Corner Trap']
-
-    max_len = max(len(res[0]) for res in results)
-    step = 3
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-
-    lines_p, lines_e, dots_p, dots_e, titles = [], [], [], [], []
-    for ax, color, label, res in zip(axes, colors, labels, results):
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5.3))
+    arts = []
+    for ax, key in zip(axes, keys):
         _draw_arena(ax)
-        for c in CORNERS:
-            ax.scatter(*c[:2], color='grey', s=40, marker='s', zorder=3)
-        ax.set_xlim(-ARENA - 1, ARENA + 1)
-        ax.set_ylim(-ARENA - 1, ARENA + 1)
+        ax.set_xlim(-ARENA - 1, ARENA + 1); ax.set_ylim(-ARENA - 1, ARENA + 1)
         ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
-        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
-
-        lp, = ax.plot([], [], color=color,       linewidth=1.8, alpha=0.8)
-        le, = ax.plot([], [], color='royalblue', linewidth=1.8, alpha=0.8)
-        dp, = ax.plot([], [], '^', color=color, markersize=9, zorder=6)
-        de, = ax.plot([], [], 'bs', markersize=9, zorder=6)
-        ti  = ax.set_title(label, fontsize=9)
-        lines_p.append(lp); lines_e.append(le)
-        dots_p.append(dp); dots_e.append(de); titles.append(ti)
-
-    n_frames = max_len // step
+        lp, = ax.plot([], [], color='red', linewidth=1.2, alpha=0.8)
+        le, = ax.plot([], [], color='royalblue', linewidth=1.2, alpha=0.8)
+        dp, = ax.plot([], [], 'r^', markersize=8)
+        de, = ax.plot([], [], 'bs', markersize=8)
+        ti = ax.set_title(LABELS[key[0]], fontsize=9)
+        arts.append((key, lp, le, dp, de, ti))
 
     def update(i):
-        artists = []
-        for idx, res in enumerate(results):
-            p_traj, e_traj, times, captured, cap_t = res
-            si   = min(i * step, len(p_traj) - 1)
-            done = (i * step >= len(p_traj) - 1)
-            t    = times[si]
-            dist = np.linalg.norm(p_traj[si, :2] - e_traj[si, :2])
-
-            lines_p[idx].set_data(p_traj[:si+1, 0], p_traj[:si+1, 1])
-            lines_e[idx].set_data(e_traj[:si+1, 0], e_traj[:si+1, 1])
-            dots_p[idx].set_data([float(p_traj[si, 0])], [float(p_traj[si, 1])])
-            dots_e[idx].set_data([float(e_traj[si, 0])], [float(e_traj[si, 1])])
-
-            if done:
-                st = f'✓ Captured {cap_t:.2f}s [DONE]' if captured else f'Timeout [DONE]'
-                titles[idx].set_text(f'{labels[idx]}  t={t:.1f}s\n{st}')
+        out = []
+        for key, lp, le, dp, de, ti in arts:
+            r = results[key]
+            n = len(r['p'])
+            si = min(i * step, n - 1, n_max - 1)
+            lo = max(0, si - int(round(3.0 / DT)))          # 3 s trail
+            lp.set_data(r['p'][lo:si + 1, 0], r['p'][lo:si + 1, 1])
+            le.set_data(r['e'][lo:si + 1, 0], r['e'][lo:si + 1, 1])
+            dp.set_data([r['p'][si, 0]], [r['p'][si, 1]])
+            de.set_data([r['e'][si, 0]], [r['e'][si, 1]])
+            if r['captured'] and si == n - 1:
+                ti.set_text(f'{LABELS[key[0]]}\ncaptured {r["cap_time"]:.2f} s')
             else:
-                titles[idx].set_text(f'{labels[idx]}  t={t:.1f}s  dist={dist:.2f}m')
-            artists += [lines_p[idx], lines_e[idx], dots_p[idx], dots_e[idx], titles[idx]]
-        return artists
+                ti.set_text(f'{LABELS[key[0]]}\nt={r["t"][si]:.1f} s  dist={r["d"][si]:.2f} m')
+            out += [lp, le, dp, de, ti]
+        return out
 
-    ani = animation.FuncAnimation(fig, update, frames=n_frames,
-                                  interval=60, blit=True)
-    fig.suptitle(f'S010 Asymmetric Speed — Arena Trapping '
-                 f'(v_P={V_PURSUER}, v_E={V_EVADER} m/s)',
-                 fontsize=10)
+    ani = animation.FuncAnimation(fig, update, frames=n_frames, interval=60, blit=False)
+    fig.suptitle(f'S010 — wall-aware evader, first {T_ANIM:.0f} s (3 s trails; '
+                 f'v_P={V_PURSUER}, v_E={V_EVADER} m/s)', fontsize=10)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=16, dpi=100)
+    ani.save(path, writer='pillow', fps=16, dpi=80)
     plt.close()
-    print(f'Saved: {path}')
+    print(f'Saved: {path}  ({n_frames} frames, every {step} steps)')
 
 
 # ── Main ─────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    print(f'Speed ratio r = {V_PURSUER/V_EVADER:.3f}  (< 1 → open-space capture impossible)\n')
-    results = []
-    for strategy in STRATEGIES:
-        res = run_simulation(strategy)
-        p_traj, e_traj, times, captured, cap_t = res
-        status = f'captured @ {cap_t:.2f} s' if captured else f'timeout @ {times[-1]:.2f} s'
-        print(f'[{strategy:<12}]  {status}')
-        results.append(res)
+    r_ratio = V_PURSUER / V_EVADER
+    print(f'Speed ratio r = {r_ratio:.3f}  (< 1 → open-space capture impossible)')
+    c, R, worst, in_p, in_e = check_apollonius()
+    print(f'Apollonius circle at t=0: centre ({c[0]:.3f}, {c[1]:.3f}), R = {R:.3f} m | '
+          f'max |t_P - t_E| on the circle = {worst:.2e} s | contains pursuer: {in_p}, '
+          f'contains evader: {in_e}\n')
 
+    results = {}
+    for ev in EVADERS:
+        for s in STRATEGIES:
+            r = run_simulation(s, ev)
+            results[(s, ev)] = r
+            print(f'[{s:<11} vs {ev:<5}] {describe(r)}')
+
+    sweep = {ev: [] for ev in EVADERS}
+    print('\nWall-herding α sweep (capture time, s; "-" = no capture in 60 s):')
+    for ev in EVADERS:
+        for a in ALPHAS:
+            r = run_simulation('wall_herd', ev, alpha=a)
+            sweep[ev].append(r['cap_time'] if r['captured'] else None)
+        row = ' '.join(f'{a:.2f}:{c:.2f}' if c is not None else f'{a:.2f}:-'
+                       for a, c in zip(ALPHAS, sweep[ev]))
+        caps = [a for a, c in zip(ALPHAS, sweep[ev]) if c is not None]
+        print(f'  {ev:<5}: {row}')
+        print(f'         captured for {len(caps)}/{len(ALPHAS)} α values'
+              + (f'; α in {{{", ".join(f"{a:.2f}" for a in caps)}}}' if caps else ''))
+
+    snap_key = ('wall_herd', 'aware')
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories_2d(results, out_dir)
-    plot_apollonius_snapshots(results, out_dir)
-    plot_alpha_sensitivity(out_dir)
+    plot_apollonius_snapshots(results[snap_key],
+                              f'{LABELS[snap_key[0]]} vs {EV_LABELS[snap_key[1]]}', out_dir)
+    plot_alpha_sensitivity(sweep, out_dir)
     plot_capture_bar(results, out_dir)
     save_animation(results, out_dir)
