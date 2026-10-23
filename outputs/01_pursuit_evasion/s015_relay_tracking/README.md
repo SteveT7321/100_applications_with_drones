@@ -73,13 +73,17 @@ python src/01_pursuit_evasion/s015_relay_tracking.py
 |--------|-------|
 | Handoff events | **7** (at t = 0.80, 3.95, 7.10, 10.25, 13.40, 16.50, 19.65 s) |
 | Mean triangulation error | **1.74 m** |
+| Median triangulation error | **0.48 m** |
+| Steps with error < 0.5 m | **51.2 %** |
+| Steps with error > 2 m | **9.5 %** (38 steps) |
 | Max triangulation error | **65.38 m** |
+| Lowest best-sensor SNR on the orbit | **0.5497** |
 
 **Key Findings**:
-- The target completes ~2.1 circular orbits, triggering a handoff every ~3.15 s as it passes between adjacent sensor zones — matching the theoretical 120° spacing of the equilateral sensor triangle.
-- Outside handoff transitions, error remains below 0.5 m when two sensors observe the target from well-separated angles.
-- Error spikes up to 65 m occur precisely at handoff moments when the newly active sensor pair's bearing lines are nearly parallel, making the triangulation matrix nearly singular.
-- The equilateral triangle sensor layout ensures uniform coverage throughout the orbit: SNR never drops below 0.55 at any mid-zone point, eliminating blind spots.
+- The target completes ~2.1 circular orbits. A handoff happens every ~3.15 s as it passes between adjacent sensor zones, which matches the 120° spacing of the equilateral sensor triangle.
+- Error is below 0.5 m for only about half of the run (51.2 % of steps, median 0.48 m). Error depends on how well the two bearings cross, not on whether the target is between handoffs.
+- The large errors (> 2 m, up to 65 m) do **not** happen at the handoffs. All 38 such steps are 1.05–1.5 s after the nearest handoff, when the target crosses the straight line (baseline) between the two sensors in use. There the two bearing lines point in nearly opposite directions (crossing angle 159.5–179.8°), so they are nearly collinear and the 2×2 triangulation system is close to singular. The orbit (r = 3 m) crosses each side of the sensor triangle (2 m from the centre) twice per lap, which produces these spikes.
+- The best sensor's SNR never drops below 0.5497 on the orbit, so there are no blind spots. The second sensor, however, is often weaker: only 179 of 400 steps have two sensors above the 0.4 handoff threshold.
 
 **Top-Down Tracking Overview** (dots = triangulation estimates, coloured by active sensor):
 
@@ -101,7 +105,7 @@ python src/01_pursuit_evasion/s015_relay_tracking.py
 
 ## Extensions
 
-1. Add Kalman filter to smooth triangulation estimates at handoffs
+1. Add a Kalman filter, or pick the sensor pair with the best crossing angle, to suppress the baseline-crossing spikes
 2. Optimise sensor placement for minimum peak error across the target path
 3. Three-sensor triangulation with least-squares to eliminate singularities
 

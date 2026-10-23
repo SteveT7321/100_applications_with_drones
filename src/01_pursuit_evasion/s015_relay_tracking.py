@@ -3,8 +3,9 @@ S015 Relay Tracking
 ====================
 Three stationary sensor drones measure bearing (angle-only) to a moving
 target.  Zone-based handoff selects the two highest-SNR sensors; two-line
-triangulation estimates the target position.  Estimation error spikes at
-handoff transitions.
+triangulation estimates the target position.  Large errors occur when the
+target crosses the baseline of the two sensors in use (bearing lines nearly
+collinear), about 1.05-1.5 s after each handoff.
 
 Usage:
     conda activate drones
@@ -288,6 +289,22 @@ if __name__ == '__main__':
     print(f'Handoff events: {len(handoff_times)} at t={[f"{h:.2f}" for h in handoff_times]}')
     print(f'Mean triangulation error: {np.nanmean(errors):.4f} m')
     print(f'Max triangulation error:  {np.nanmax(errors):.4f} m')
+    print(f'Median error: {np.nanmedian(errors):.3f} m; error < 0.5 m for '
+          f'{100 * np.nanmean(errors < 0.5):.1f} % of steps, > 2 m for {100 * np.nanmean(errors > 2):.1f} %')
+    # Geometry of the large errors: crossing angle of the two bearing lines used
+    big = np.where(errors > 2.0)[0]
+    gaps, angles = [], []
+    for k in big:
+        ranked = np.argsort([snr(SENSOR_POS[i], true_pos[k]) for i in range(3)])[::-1][:2]
+        b = [np.arctan2(*(true_pos[k] - SENSOR_POS[i, :2])[::-1]) for i in ranked]
+        angles.append(np.degrees(abs((b[0] - b[1] + np.pi) % (2 * np.pi) - np.pi)))
+        gaps.append(np.min(np.abs(np.array(handoff_times) - times[k])))
+    print(f'Steps with error > 2 m: {len(big)}; time to nearest handoff {min(gaps):.2f}-{max(gaps):.2f} s; '
+          f'bearing crossing angle {min(angles):.1f}-{max(angles):.1f} deg')
+    print(f'Steps with two sensors above the {HANDOFF_THRESH} threshold: '
+          f'{int(np.sum(active_counts >= 2))} of {len(active_counts)}')
+    print(f'Lowest best-sensor SNR along the orbit: '
+          f'{min(max(snr(s, p) for s in SENSOR_POS) for p in true_pos):.4f}')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_tracking_overview(times, true_pos, est_pos, active_sensors, handoff_times, out_dir)
