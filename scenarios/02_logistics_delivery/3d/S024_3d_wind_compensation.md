@@ -1,6 +1,6 @@
 # S024 3D Upgrade — Wind Compensation
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S024 original](../S024_wind_compensation.md)
 
 ---
@@ -158,7 +158,7 @@ $\hat{\mathbf{n}}_{vert} = \hat{\mathbf{e}}_z$, then rescaled to $\|\cdot\| \leq
 | Control frequency | 48 Hz |
 | Start position $\mathbf{p}_0$ | (0, 0, 2.5) m |
 | Goal position $\mathbf{p}_{goal}$ | (40, 0, 15) m |
-| Delivery distance (3D) | $\approx 42.1$ m |
+| Delivery distance (3D) | $\approx 41.9$ m |
 | Arrival radius $r_{land}$ | 0.3 m (3D) |
 | Lateral PID gains $(k_{p,l}, k_{i,l}, k_{d,l})$ | 1.2, 0.05, 0.3 |
 | Vertical PID gains $(k_{p,v}, k_{i,v}, k_{d,v})$ | 1.5, 0.04, 0.2 |
@@ -171,7 +171,7 @@ $\hat{\mathbf{n}}_{vert} = \hat{\mathbf{e}}_z$, then rescaled to $\|\cdot\| \leq
 
 Simulation code: `src/02_logistics_delivery/3d/s024_3d_wind_compensation.py`
 
-Outputs: `outputs/02_logistics_delivery/s024_3d_wind_compensation/`
+Outputs: `outputs/02_logistics_delivery/3d/s024_3d_wind_compensation/`
 
 - **`trajectory_3d.png`**: 3D trajectory plot — three colored paths (no-comp gray, crab-angle
   orange, PID blue) ascending from origin to rooftop, with wind arrows overlaid on the

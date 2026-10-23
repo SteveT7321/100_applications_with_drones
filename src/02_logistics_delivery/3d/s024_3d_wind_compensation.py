@@ -6,16 +6,21 @@ has both horizontal (y) and vertical (z-turbulence) components. A delivery drone
 must fly 40 m from origin to a rooftop waypoint at altitude 15 m under a persistent
 crosswind. Three guidance strategies are compared in 3D:
 
-  1. No Compensation  — fly the nominal bearing in 3D, ignore wind
-  2. Crab-Angle FF    — analytically rotate the horizontal heading to null mean
-                        horizontal crosswind drift; vertical altitude hold
-  3. PID Cross-Track  — closed-loop 3D error feedback (lateral + vertical)
+  1. No Compensation  -- aim at the goal in 3D every step (pure pursuit), ignore wind
+  2. Crab-Angle FF    -- analytically rotate the horizontal heading and the pitch to
+                        null the mean crosswind and the mean updraft
+  3. PID Cross-Track  -- closed-loop feedback on lateral + vertical cross-track error
 
-Outputs (saved to outputs/02_logistics_delivery/s024_3d_wind_compensation/):
-  - trajectory_3d.png         — 3D trajectory comparison
-  - crosstrack_error.png      — lateral and vertical cross-track error vs time
-  - lateral_bar.png           — bar chart of RMS errors and final miss distances
-  - animation.gif             — animated top-down and 3D view
+Strategies are compared on cross-track RMS / peak error and flight time, for a
+showcase gust seed and a Monte-Carlo over N_MC gust seeds (same gusts for every
+strategy).  Final distance is only an arrival check: every run stops at its first
+step inside R_LAND, so it cannot rank the strategies.
+
+Outputs (saved to outputs/02_logistics_delivery/3d/s024_3d_wind_compensation/):
+  - trajectory_3d.png         -- 3D trajectory comparison (showcase seed)
+  - crosstrack_error.png      -- lateral / vertical cross-track error and ground speed
+  - lateral_bar.png           -- Monte-Carlo RMS / peak errors and flight time
+  - animation.gif             -- animated top-down and side view
 
 Usage:
     conda activate drones
@@ -51,6 +56,8 @@ TAU_GUST     = 1.5      # s,   gust correlation time constant
 DT           = 1 / 48   # s,   48 Hz control rate
 R_LAND       = 0.3      # m,   arrival radius
 T_MAX        = 90.0     # s,   safety timeout
+SEED         = 0        # showcase gust seed
+N_MC         = 50       # Monte-Carlo gust seeds SEED .. SEED+N_MC-1
 
 # Start at origin; goal is a rooftop 40 m ahead and 15 m up
 P0     = np.array([0.0,  0.0,  2.5])   # take-off altitude 2.5 m
@@ -68,11 +75,10 @@ STRATEGIES = ["none", "crab", "pid"]
 LABELS     = ["No Compensation", "Crab-Angle FF", "3D PID"]
 COLORS     = ["#888888", "#E87722", "#1F77B4"]
 
-RNG = np.random.default_rng(0)
 
 
 # ── Wind model ────────────────────────────────────────────────────────────────
-def wind_step(w_gust, dt, tau_g, sigma_h, sigma_v):
+def wind_step(w_gust, dt, tau_g, sigma_h, sigma_v, rng):
     """
     First-order Gauss-Markov gust for horizontal (x,y) and vertical (z) components.
     Returns (w_gust_new [3], w_total [3]).
@@ -80,8 +86,8 @@ def wind_step(w_gust, dt, tau_g, sigma_h, sigma_v):
     alpha = np.exp(-dt / tau_g)
     sq    = np.sqrt(1.0 - alpha ** 2)
 
-    noise_h = sq * sigma_h * RNG.standard_normal(2)
-    noise_v = sq * sigma_v * RNG.standard_normal(1)
+    noise_h = sq * sigma_h * rng.standard_normal(2)
+    noise_v = sq * sigma_v * rng.standard_normal(1)
 
     w_gust_new = np.zeros(3)
     w_gust_new[:2] = alpha * w_gust[:2] + noise_h
@@ -140,12 +146,10 @@ def cross_track_errors_3d(pos, p0, d_hat):
 
 
 # ── Single-strategy simulation ────────────────────────────────────────────────
-def run_strategy(strategy, seed=0):
+def run_strategy(strategy, seed=SEED):
     """Simulate one guidance strategy. Returns dict with traj, ect, etc."""
-    rng_local = np.random.default_rng(seed)
-    # Reset global RNG to same seed for fair comparison
-    global RNG
-    RNG = np.random.default_rng(seed)
+    # Same seed for every strategy -> identical gust sequence (fair comparison)
+    rng = np.random.default_rng(seed)
 
     pos    = P0.copy().astype(float)
     w_gust = np.zeros(3)
@@ -174,7 +178,7 @@ def run_strategy(strategy, seed=0):
     t         = 0.0
 
     while np.linalg.norm(pos - P_GOAL) > R_LAND and t < T_MAX:
-        w_gust, w_total = wind_step(w_gust, DT, TAU_GUST, SIGMA_GUST, SIGMA_GUST_Z)
+        w_gust, w_total = wind_step(w_gust, DT, TAU_GUST, SIGMA_GUST, SIGMA_GUST_Z, rng)
         wind_log.append(w_total.copy())
 
         d    = P_GOAL - pos
@@ -243,28 +247,72 @@ def run_strategy(strategy, seed=0):
         traj.append(pos.copy())
         t += DT
 
+    ect_lat = np.array(ect_lat)
+    ect_vert = np.array(ect_vert)
+    traj = np.array(traj)
+    final_dist = float(np.linalg.norm(traj[-1] - P_GOAL))
     return {
-        "traj"    : np.array(traj),
+        "traj"    : traj,
         "wind"    : np.array(wind_log),
-        "ect_lat" : np.array(ect_lat),
-        "ect_vert": np.array(ect_vert),
+        "ect_lat" : ect_lat,
+        "ect_vert": ect_vert,
         "speed"   : np.array(speed_log),
         "time"    : t,
+        "rms_lat" : float(np.sqrt(np.mean(ect_lat ** 2))),
+        "rms_vert": float(np.sqrt(np.mean(ect_vert ** 2))),
+        "max_lat" : float(np.max(np.abs(ect_lat))),
+        "max_vert": float(np.max(np.abs(ect_vert))),
+        "mean_lat": float(np.mean(ect_lat)),
+        "path_len": float(np.sum(np.linalg.norm(np.diff(traj, axis=0), axis=1))),
+        "final_dist": final_dist,
+        "arrived" : final_dist <= R_LAND,
     }
 
 
+MC_KEYS = ("time", "rms_lat", "rms_vert", "max_lat", "max_vert", "mean_lat",
+           "path_len", "final_dist", "arrived")
+
+
 # ── Run all three strategies ──────────────────────────────────────────────────
-def run_simulation(seed=0):
+def run_simulation(seed=SEED, n_mc=N_MC):
+    print(f"Showcase run (gust seed {seed}):")
     results = {}
     for strat, label in zip(STRATEGIES, LABELS):
-        results[strat] = run_strategy(strat, seed=seed)
-        r     = results[strat]
-        miss  = np.linalg.norm(r["traj"][-1] - P_GOAL)
-        rms_l = float(np.sqrt(np.mean(r["ect_lat"]  ** 2))) if len(r["ect_lat"])  else 0.0
-        rms_v = float(np.sqrt(np.mean(r["ect_vert"] ** 2))) if len(r["ect_vert"]) else 0.0
-        print(f"[{label:20s}]  steps={len(r['traj'])-1:4d}  "
-              f"flight_time={r['time']:5.2f}s  final_miss={miss:.3f}m  "
-              f"rms_lat={rms_l:.3f}m  rms_vert={rms_v:.3f}m")
+        r = run_strategy(strat, seed=seed)
+        results[strat] = r
+        print(f"  [{label:16s}] time={r['time']:5.2f}s  path={r['path_len']:5.1f}m  "
+              f"rms_lat={r['rms_lat']:.3f}m  max|lat|={r['max_lat']:.3f}m  "
+              f"mean_lat={r['mean_lat']:+.3f}m  rms_vert={r['rms_vert']:.3f}m  "
+              f"max|vert|={r['max_vert']:.3f}m  final_dist={r['final_dist']:.3f}m"
+              f"{'' if r['arrived'] else '  (TIMEOUT)'}")
+    w_bar = results["crab"]["wind"].mean(axis=0)
+    print(f"  Mean wind over the crab-FF flight: ({w_bar[0]:+.3f}, {w_bar[1]:+.3f}, {w_bar[2]:+.3f}) m/s "
+          f"(nominal mean (0, {W_MEAN_Y:+.3f}, {W_MEAN_Z:+.3f}) m/s)")
+
+    mc = {}
+    for strat in STRATEGIES:
+        runs = [run_strategy(strat, seed=seed + k) for k in range(n_mc)]
+        mc[strat] = {key: np.array([r[key] for r in runs], dtype=float) for key in MC_KEYS}
+    print(f"\nMonte-Carlo, {n_mc} gust seeds ({seed}..{seed + n_mc - 1}), mean ± std:")
+    for strat, label in zip(STRATEGIES, LABELS):
+        m = mc[strat]
+        print(f"  [{label:16s}] time={m['time'].mean():5.2f}±{m['time'].std():.2f}s  "
+              f"rms_lat={m['rms_lat'].mean():.3f}±{m['rms_lat'].std():.3f}m  "
+              f"max|lat|={m['max_lat'].mean():.3f}±{m['max_lat'].std():.3f}m  "
+              f"mean_lat={m['mean_lat'].mean():+.3f}m  "
+              f"rms_vert={m['rms_vert'].mean():.3f}±{m['rms_vert'].std():.3f}m  "
+              f"final_dist={m['final_dist'].min():.3f}-{m['final_dist'].max():.3f}m  "
+              f"arrived={int(m['arrived'].sum())}/{n_mc}")
+    p = mc["pid"]
+    print(f"\nCard expectation PID rms_lat < 0.2 m: met in "
+          f"{int((p['rms_lat'] < 0.2).sum())}/{n_mc} seeds "
+          f"(min {p['rms_lat'].min():.3f} m); "
+          f"PID rms_vert < 0.3 m: met in {int((p['rms_vert'] < 0.3).sum())}/{n_mc} seeds")
+    wins = int((mc["crab"]["rms_lat"] < mc["pid"]["rms_lat"]).sum())
+    print(f"Crab FF has lower rms_lat than PID in {wins}/{n_mc} seeds; "
+          f"PID has lower rms_vert than crab FF in "
+          f"{int((mc['pid']['rms_vert'] < mc['crab']['rms_vert']).sum())}/{n_mc} seeds")
+    results["_mc"] = mc
     return results
 
 
@@ -304,13 +352,13 @@ def plot_trajectories_3d(results):
 
     ax.set_xlabel("X (m)")
     ax.set_ylabel("Y (m)  [crosswind]")
-    ax.set_zlabel("Z (m)  [altitude]")
-    ax.set_title("S024 3D Wind Compensation — Trajectory Comparison", fontsize=13)
+    ax.set_zlabel("Z (m)  [altitude]", labelpad=10)
+    ax.set_title(f"S024 3D Wind Compensation — Trajectories (gust seed {SEED})", fontsize=13)
     ax.legend(loc="upper left", fontsize=8)
     ax.view_init(elev=22, azim=-55)
 
     out = os.path.join(OUT_DIR, "trajectory_3d.png")
-    fig.savefig(out, dpi=150, bbox_inches="tight")
+    fig.savefig(out, dpi=150, bbox_inches="tight", pad_inches=0.5)
     plt.close(fig)
     print(f"Saved: {out}")
 
@@ -327,7 +375,7 @@ def plot_crosstrack_error(results):
         ax.plot(t_ax, ect, color=col, lw=1.5, label=label, alpha=0.85)
     ax.axhline(0, color="k", lw=0.8, ls="--")
     ax.set_ylabel("Lateral error (m)")
-    ax.set_title("Lateral Cross-Track Error vs Time")
+    ax.set_title(f"Lateral Cross-Track Error vs Time (gust seed {SEED}; + = downwind, +y)")
     ax.legend(fontsize=9);  ax.grid(True, alpha=0.3)
 
     # ─ Vertical cross-track error ─
@@ -338,7 +386,7 @@ def plot_crosstrack_error(results):
         ax.plot(t_ax, ect, color=col, lw=1.5, label=label, alpha=0.85)
     ax.axhline(0, color="k", lw=0.8, ls="--")
     ax.set_ylabel("Vertical error (m)")
-    ax.set_title("Vertical Cross-Track Error vs Time")
+    ax.set_title(f"Vertical Cross-Track Error vs Time (gust seed {SEED}; + = above the nominal climb line)")
     ax.legend(fontsize=9);  ax.grid(True, alpha=0.3)
 
     # ─ Ground speed ─
@@ -352,7 +400,7 @@ def plot_crosstrack_error(results):
     ax.set_title("Ground Speed vs Time")
     ax.legend(fontsize=9);  ax.grid(True, alpha=0.3)
 
-    fig.suptitle("S024 3D Wind Compensation — Performance Metrics", fontsize=13)
+    fig.suptitle(f"S024 3D Wind Compensation — showcase run, gust seed {SEED}", fontsize=13)
     fig.tight_layout()
 
     out = os.path.join(OUT_DIR, "crosstrack_error.png")
@@ -361,38 +409,45 @@ def plot_crosstrack_error(results):
     print(f"Saved: {out}")
 
 
-# ── Plot 3 — lateral / vertical bar chart ─────────────────────────────────────
+# ── Plot 3 — Monte-Carlo error / time bar chart ──────────────────────────────
 def plot_lateral_bar(results):
-    fig, ax = plt.subplots(figsize=(9, 5))
-
-    rms_lat  = []
-    rms_vert = []
-    miss     = []
-    for strat in STRATEGIES:
-        r = results[strat]
-        rms_lat.append(float(np.sqrt(np.mean(r["ect_lat"]  ** 2))) if len(r["ect_lat"])  else 0.0)
-        rms_vert.append(float(np.sqrt(np.mean(r["ect_vert"] ** 2))) if len(r["ect_vert"]) else 0.0)
-        miss.append(float(np.linalg.norm(r["traj"][-1] - P_GOAL)))
-
-    x = np.arange(len(STRATEGIES))
-    w = 0.25
-    b1 = ax.bar(x - w,   rms_lat,  w, label="RMS lateral (m)",   color=COLORS, alpha=0.80)
-    b2 = ax.bar(x,       rms_vert, w, label="RMS vertical (m)",  color=COLORS, alpha=0.55,
-                hatch="//", edgecolor="white")
-    b3 = ax.bar(x + w,   miss,     w, label="Final miss 3D (m)", color=COLORS, alpha=0.40,
-                edgecolor="black", linewidth=0.8)
-
+    mc = results["_mc"]
+    n_mc = len(mc["pid"]["time"])
+    fig, (ax, ax_t) = plt.subplots(1, 2, figsize=(13, 5),
+                                   gridspec_kw={"width_ratios": [2.2, 1]})
+    metrics = [("rms_lat", "RMS lateral"), ("max_lat", "Peak |lateral|"),
+               ("rms_vert", "RMS vertical"), ("max_vert", "Peak |vertical|")]
+    x = np.arange(len(metrics))
+    w = 0.26
+    for i, (strat, col, label) in enumerate(zip(STRATEGIES, COLORS, LABELS)):
+        means = [mc[strat][k].mean() for k, _ in metrics]
+        stds = [mc[strat][k].std() for k, _ in metrics]
+        bars = ax.bar(x + (i - 1) * w, means, w, yerr=stds, capsize=3,
+                      color=col, alpha=0.85, label=label)
+        for b, mval, sval in zip(bars, means, stds):
+            ax.text(b.get_x() + b.get_width() / 2, mval + sval + 0.12, f"{mval:.2f}",
+                    ha="center", va="bottom", fontsize=7)
+    ax.axhline(0.2, color="red", ls="--", lw=1, label="Card target: PID RMS lateral < 0.2 m")
     ax.set_xticks(x)
-    ax.set_xticklabels(LABELS, fontsize=9)
-    ax.set_ylabel("Distance (m)")
-    ax.set_title("S024 3D Wind Compensation — Error Summary")
-    ax.legend(fontsize=9);  ax.grid(axis="y", alpha=0.3)
+    ax.set_xticklabels([lab for _, lab in metrics])
+    ax.set_ylabel("Cross-track error (m)")
+    ax.set_title(f"Cross-track error, mean ± std over {n_mc} gust seeds")
+    ax.legend(fontsize=8, loc="upper right")
+    ax.grid(axis="y", alpha=0.3)
 
-    for bars in (b1, b2, b3):
-        for bar in bars:
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.02,
-                    f"{bar.get_height():.3f}", ha="center", va="bottom", fontsize=7)
+    tm = [mc[s]["time"].mean() for s in STRATEGIES]
+    ts = [mc[s]["time"].std() for s in STRATEGIES]
+    bars = ax_t.bar(np.arange(3), tm, 0.6, yerr=ts, capsize=4, color=COLORS, alpha=0.85)
+    for b, mval in zip(bars, tm):
+        ax_t.text(b.get_x() + b.get_width() / 2, 0.3, f"{mval:.2f} s",
+                  ha="center", va="bottom", fontsize=8, color="white")
+    ax_t.set_xticks(np.arange(3))
+    ax_t.set_xticklabels(LABELS, fontsize=8)
+    ax_t.set_ylabel("Flight time to the 0.3 m arrival sphere (s)")
+    ax_t.set_title("Time to arrive")
+    ax_t.grid(axis="y", alpha=0.3)
 
+    fig.suptitle("S024 3D Wind Compensation — Monte-Carlo summary", fontsize=12)
     fig.tight_layout()
     out = os.path.join(OUT_DIR, "lateral_bar.png")
     fig.savefig(out, dpi=150, bbox_inches="tight")
@@ -404,7 +459,7 @@ def plot_lateral_bar(results):
 def save_animation(results):
     """Two-panel animation: top-down XY and side-view XZ."""
     fig, (ax_xy, ax_xz) = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("S024 3D Wind Compensation — Animation", fontsize=12)
+    fig.suptitle(f"S024 3D Wind Compensation — gust seed {SEED}", fontsize=12)
 
     trajs = [results[s]["traj"] for s in STRATEGIES]
     n_max = max(len(t) for t in trajs)
@@ -489,7 +544,7 @@ if __name__ == "__main__":
     print("S024 3D Wind Compensation — Simulation")
     print("=" * 65)
 
-    results = run_simulation(seed=0)
+    results = run_simulation(seed=SEED)
 
     print("\nGenerating plots ...")
     plot_trajectories_3d(results)
@@ -498,15 +553,6 @@ if __name__ == "__main__":
 
     print("\nGenerating animation ...")
     save_animation(results)
-
-    print("\n── Summary ───────────────────────────────────────────────────────")
-    for strat, label in zip(STRATEGIES, LABELS):
-        r     = results[strat]
-        miss  = np.linalg.norm(r["traj"][-1] - P_GOAL)
-        rms_l = float(np.sqrt(np.mean(r["ect_lat"]  ** 2))) if len(r["ect_lat"])  else 0.0
-        rms_v = float(np.sqrt(np.mean(r["ect_vert"] ** 2))) if len(r["ect_vert"]) else 0.0
-        print(f"  {label:20s}  time={r['time']:6.2f}s  "
-              f"miss={miss:.3f}m  rms_lat={rms_l:.4f}m  rms_vert={rms_v:.4f}m")
 
     print(f"\nAll outputs saved to: {OUT_DIR}")
     print("Done.")
