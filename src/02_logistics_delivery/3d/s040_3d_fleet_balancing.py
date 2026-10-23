@@ -911,6 +911,19 @@ if __name__ == '__main__':
           f'{_mean(R, "zone_switches"):.1f} | climb {_mean(R, "climb_m"):.0f} m | energy '
           f'{_mean(R, "energy"):.3f} | flight {_mean(R, "flight_km"):.2f} km | service '
           f'{_mean(R, "mean_service"):.1f} s | delivered {_mean(R, "delivered"):.2f}')
+    # paired per-stream comparison: no rebalancing vs every other variant
+    print('Paired no rebalancing vs variant, per stream (better / equal / worse; '
+          'service and energy lower = better, delivered higher = better):')
+    others = [(SHORT[s].replace(chr(10), ' '), study[s]) for s in STRATEGIES] + \
+        [(f'sweep phi_z={pz}', sweep[pz]) for pz in PHI_Z_SWEEP]
+    for name, Rb in others:
+        parts = []
+        for key, sign in (('mean_service', 1), ('energy', 1), ('delivered', -1)):
+            diff = np.array([sign * (noswap[i][key] - Rb[i][key])
+                             for i in range(len(STUDY_SEEDS))])
+            better = int(np.sum(diff < -1e-9)); worse = int(np.sum(diff > 1e-9))
+            parts.append(f'{key} {better}/{len(diff) - better - worse}/{worse}')
+        print(f'  vs {name:<16} ' + ' | '.join(parts))
     print('\n--- 2D S040 reference on the same x, y, t streams (flat world, 2D weights) ---')
     for s, R in ref2d.items():
         print(f'{s:<12} delivered {_mean(R, "delivered"):.2f} | service mean '

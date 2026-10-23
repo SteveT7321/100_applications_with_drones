@@ -206,7 +206,7 @@ $$\mathcal{J} = \frac{\bigl(\sum_{i=1}^{N} D_i\bigr)^2}{N \cdot \sum_{i=1}^{N} D
 | Cruise speed $v$ | 8.0 m/s (3D vector magnitude) |
 | Discharge coefficient $\alpha$ | $1.5 \times 10^{-5}$ m$^{-1}$ (corrected from $1.5 \times 10^{-4}$, which gives a 377 m range; same fix as 2D S040) |
 | Climb penalty factor $\gamma$ | 0.5 (extra fraction of cruise energy per m climbed) |
-| Descent regeneration $\eta_{regen}$ | 0.2 (20 % of gravitational potential recovered) |
+| Descent regeneration $\eta_{regen}$ | 0.2 (each metre descended returns 20 % of the cruise energy of one metre, $0.2\,\alpha (m_{body}+m_p) g$ per m; with $\alpha$ restored this is not 20 % of the gravitational potential) |
 | Body mass $m_{body}$ | 1.5 kg |
 | Payload mass $m_p$ | 0.3 kg |
 | Full-battery 3D range $D_{range}^{3D}$ | $1/(1.5\times10^{-5} \times 1.8 \times 9.81)$ = 3775 m of level flight (shorter with climbs) |
