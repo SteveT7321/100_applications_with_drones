@@ -1,6 +1,6 @@
 # S007 3D Upgrade — Jamming & Blind Pursuit
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S007 original](../S007_jamming_blind_pursuit.md)
 
 ---
