@@ -9,11 +9,15 @@ The pursuer uses Bayesian trajectory-smoothness classification (jerk-based)
 to distinguish the real evader from the decoy.
 
 Comparison:
-  - correct_id   : pursuer correctly identifies real evader (low-jerk track)
-  - misid        : pursuer is fooled — always chases the decoy (high-jerk track)
+  - bayes_id     : pursuer chases whichever track the jerk classifier believes is real
+  - misid        : pursuer is fooled — always chases the decoy (worst case)
   - perfect_id   : oracle pursuer — always knows the real target (upper bound)
 
-Also runs 20-seed Monte-Carlo to measure confusion rate.
+Which track index holds the real evader is drawn at random per seed, and the
+pursuer heads between the two tracks until the first classifier update, so
+the Bayesian strategy cannot win by label order.  Also runs a 20-seed
+Monte-Carlo (nominal and equal-noise) and splits the jerk proxy into its
+motion and sensor-noise parts.
 
 Usage:
     conda activate drones
@@ -31,11 +35,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.base.drone_base import DroneBase
 
 # ── Parameters ───────────────────────────────────────────────
-SIGMA_DECOY  = 0.2    # m — decoy position noise std
+SIGMA_DECOY  = 0.4    # m — decoy position noise std (card)
 SIGMA_OBS    = 0.05   # m — sensor noise on real evader observation
-T_LURE       = 5.0    # s — lure phase: decoy oscillates, then hovers
+T_LURE       = 3.0    # s — lure phase: decoy oscillates, then hovers (card)
 T_UPDATE     = 0.5    # s — Bayesian update interval
-LAMBDA_BAYES = 0.6    # update gain
+LAMBDA_BAYES = 0.5    # update gain (card)
 DECOY_AMP    = 1.5    # m — decoy lateral oscillation amplitude
 DECOY_FREQ   = 1.2    # Hz — decoy oscillation frequency
 V_PURSUER    = 5.0    # m/s
@@ -59,6 +63,16 @@ OUTPUT_DIR = os.path.join(
 
 # ── Helpers ───────────────────────────────────────────────────
 
+def decoy_velocity(t):
+    """Decoy velocity during the lure phase: +x motion plus lateral sine, speed-clamped."""
+    dy = DECOY_AMP * np.sin(2 * np.pi * DECOY_FREQ * t)
+    dy_prev = DECOY_AMP * np.sin(2 * np.pi * DECOY_FREQ * (t - DT))
+    vel = np.array([V_DECOY, (dy - dy_prev) / DT, 0.0])
+    # Clamp to reasonable speed
+    n = np.linalg.norm(vel)
+    return V_DECOY * 3 * vel / n if n > V_DECOY * 3 else vel
+
+
 def mean_jerk(vel_history):
     """Mean absolute acceleration (jerk proxy) over recent window."""
     if len(vel_history) < 2:
@@ -70,25 +84,27 @@ def mean_jerk(vel_history):
 
 # ── Simulation ────────────────────────────────────────────────
 
-def run_simulation(strategy='correct_id', seed=42):
+def run_simulation(strategy='bayes_id', seed=42, sigma_decoy=SIGMA_DECOY):
     """
-    strategy: 'correct_id' | 'misid' | 'perfect_id'
+    strategy: 'bayes_id' | 'misid' | 'perfect_id'
     Returns (p_traj, e_traj, d_traj, prob_log, times, captured, cap_time, final_target)
+    prob_log is the belief that the true evader's track is the real one.
     """
     rng = np.random.default_rng(seed)
+    real_is_t0 = rng.random() < 0.5   # track labels carry no information
 
     pursuer   = DroneBase(INIT_PURSUER.copy(), max_speed=V_PURSUER, dt=DT)
     evader    = DroneBase(INIT_EVADER.copy(),  max_speed=V_EVADER,  dt=DT)
     decoy_pos = INIT_DECOY.copy().astype(float)
 
-    # Track observations: track0 = evader (smooth), track1 = decoy (jittery)
-    track0_pos = INIT_EVADER.copy().astype(float)
-    track1_pos = INIT_DECOY.copy().astype(float)
+    # Track observations: which track is the evader is random per seed
+    track0_pos = (INIT_EVADER if real_is_t0 else INIT_DECOY).copy().astype(float)
+    track1_pos = (INIT_DECOY if real_is_t0 else INIT_EVADER).copy().astype(float)
     track0_vel_hist = [np.zeros(3)]
     track1_vel_hist = [np.zeros(3)]
 
     log_ratio  = 0.0   # log P(real|track0) / P(real|track1)
-    prob_log   = [0.5] # P(track0 = real evader)
+    prob_log   = [0.5] # P(true evader track = real)
     last_update_t = 0.0
 
     p_traj   = [pursuer.pos.copy()]
@@ -110,26 +126,20 @@ def run_simulation(strategy='correct_id', seed=42):
 
         # ── Decoy: +x motion with sinusoidal y-oscillation (high jerk) ──
         if t <= T_LURE:
-            dy = DECOY_AMP * np.sin(2 * np.pi * DECOY_FREQ * t)
-            dy_prev = DECOY_AMP * np.sin(2 * np.pi * DECOY_FREQ * (t - DT))
-            decoy_vel = np.array([V_DECOY, (dy - dy_prev) / DT, 0.0])
-            # Clamp to reasonable speed
-            dn = np.linalg.norm(decoy_vel)
-            if dn > V_DECOY * 3:
-                decoy_vel = V_DECOY * 3 * decoy_vel / dn
-            decoy_pos = decoy_pos + decoy_vel * DT
+            decoy_pos = decoy_pos + decoy_velocity(t) * DT
         else:
             # After lure phase: decoy hovers in place
             pass
         # Add Gaussian noise to decoy
-        decoy_pos_noisy = decoy_pos + rng.normal(0, SIGMA_DECOY, 3)
+        decoy_pos_noisy = decoy_pos + rng.normal(0, sigma_decoy, 3)
 
         # ── Noisy observations ──
         obs_e = evader.pos + rng.normal(0, SIGMA_OBS, 3)   # low noise
         obs_d = decoy_pos_noisy.copy()                       # high noise
 
         prev_t0 = track0_pos.copy(); prev_t1 = track1_pos.copy()
-        track0_pos = obs_e.copy(); track1_pos = obs_d.copy()
+        track0_pos = (obs_e if real_is_t0 else obs_d).copy()
+        track1_pos = (obs_d if real_is_t0 else obs_e).copy()
         track0_vel_hist.append((track0_pos - prev_t0) / DT)
         track1_vel_hist.append((track1_pos - prev_t1) / DT)
         if len(track0_vel_hist) > JERK_WINDOW:
@@ -141,16 +151,18 @@ def run_simulation(strategy='correct_id', seed=42):
             s0 = mean_jerk(track0_vel_hist)
             s1 = mean_jerk(track1_vel_hist)
             log_ratio += LAMBDA_BAYES * (s1 - s0)   # lower jerk → more likely real
-        p_real_t0 = 1.0 / (1.0 + np.exp(-log_ratio))
-        prob_log.append(p_real_t0)
+        p_real_t0 = 0.5 * (1.0 + np.tanh(0.5 * log_ratio))   # logistic, overflow-safe
+        prob_log.append(p_real_t0 if real_is_t0 else 1.0 - p_real_t0)
 
         # ── Pursuer target selection ──
         if strategy == 'perfect_id':
             target_pos = evader.pos
         elif strategy == 'misid':
-            target_pos = track1_pos   # always chase decoy
-        else:  # correct_id (Bayesian)
-            target_pos = track0_pos if p_real_t0 >= 0.5 else track1_pos
+            target_pos = obs_d        # always chase decoy
+        elif log_ratio == 0.0:        # bayes_id, no evidence yet: head between the tracks
+            target_pos = 0.5 * (track0_pos + track1_pos)
+        else:                         # bayes_id
+            target_pos = track0_pos if p_real_t0 > 0.5 else track1_pos
 
         d = target_pos - pursuer.pos
         n = np.linalg.norm(d)
@@ -176,11 +188,11 @@ def run_simulation(strategy='correct_id', seed=42):
     )
 
 
-def run_monte_carlo(n_seeds=20):
-    results = {'correct_id': [], 'misid': [], 'perfect_id': []}
+def run_monte_carlo(n_seeds=20, sigma_decoy=SIGMA_DECOY):
+    results = {'bayes_id': [], 'misid': [], 'perfect_id': []}
     for seed in range(n_seeds):
         for strat in results:
-            _, _, _, _, _, captured, cap_t, final_target = run_simulation(strat, seed)
+            _, _, _, _, _, captured, cap_t, final_target = run_simulation(strat, seed, sigma_decoy)
             results[strat].append({
                 'captured': captured, 'cap_time': cap_t,
                 'correct': final_target == 'evader',
@@ -188,11 +200,38 @@ def run_monte_carlo(n_seeds=20):
     return results
 
 
+def summarize(mc_results):
+    """Per strategy: (evader captures, decoy captures, mean evader-capture time)."""
+    out = {}
+    for strat, data in mc_results.items():
+        t_ev = [d['cap_time'] for d in data if d['captured'] and d['correct']]
+        n_dc = sum(d['captured'] and not d['correct'] for d in data)
+        out[strat] = (len(t_ev), n_dc, float(np.mean(t_ev)) if t_ev else float('nan'))
+    return out
+
+
+def jerk_breakdown(seed=42, sigma_decoy=SIGMA_DECOY):
+    """Mean jerk proxy over the lure phase: (motion only, noise only, observed)."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(1, int(T_LURE / DT) + 1) * DT
+    ev = INIT_EVADER + np.outer(t, [V_EVADER, 0.0, 0.0])
+    dc = INIT_DECOY + np.cumsum([decoy_velocity(ti) * DT for ti in t], axis=0)
+
+    def proxy(pos):
+        acc = np.diff(pos, 2, axis=0) / DT**2
+        return float(np.mean(np.linalg.norm(acc, axis=1)))
+
+    ne = rng.normal(0, SIGMA_OBS, ev.shape)
+    nd = rng.normal(0, sigma_decoy, dc.shape)
+    return {'evader': (proxy(ev), proxy(ne), proxy(ev + ne)),
+            'decoy': (proxy(dc), proxy(nd), proxy(dc + nd))}
+
+
 # ── Plots ─────────────────────────────────────────────────────
 
 def plot_trajectories(results_dict, out_dir):
-    labels = ['correct_id', 'misid', 'perfect_id']
-    titles = ['Correct ID (Bayesian)', 'Misidentification\n(chases decoy)', 'Oracle (perfect ID)']
+    labels = ['bayes_id', 'misid', 'perfect_id']
+    titles = ['Bayesian ID', 'Misidentification\n(chases decoy)', 'Oracle (perfect ID)']
     colors = ['steelblue', 'tomato', 'mediumseagreen']
     fig = plt.figure(figsize=(15, 5))
 
@@ -225,11 +264,11 @@ def plot_trajectories(results_dict, out_dir):
 
 
 def plot_classification_prob(results_dict, out_dir):
-    p_traj, e_traj, d_traj, prob_log, times, captured, cap_t, _ = results_dict['correct_id']
+    p_traj, e_traj, d_traj, prob_log, times, captured, cap_t, _ = results_dict['bayes_id']
     fig, ax = plt.subplots(figsize=(11, 5))
     t_prob = np.linspace(0, times[-1], len(prob_log))
     ax.plot(t_prob, prob_log, color='steelblue', linewidth=2.0,
-            label='P(track0 = real evader)')
+            label='P(true evader track = real)')
     ax.axhline(0.5, color='grey', linestyle='--', linewidth=1.0, label='Decision boundary')
     ax.axvline(T_LURE, color='orange', linestyle=':', linewidth=1.5,
                label=f'End of lure phase ({T_LURE}s)')
@@ -238,8 +277,8 @@ def plot_classification_prob(results_dict, out_dir):
                    label=f'Captured @ {cap_t:.2f}s')
     ax.fill_between(t_prob, 0.5, prob_log,
                     where=np.array(prob_log) >= 0.5, alpha=0.15, color='steelblue',
-                    label='Believes track0 = real')
-    ax.set_xlabel('Time (s)'); ax.set_ylabel('P(real evader = track0)')
+                    label='Believes the true evader track is real')
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('P(true evader track = real)')
     ax.set_title('S014 Decoy & Lure — Bayesian Classification Probability vs Time')
     ax.set_ylim(0, 1); ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -248,8 +287,8 @@ def plot_classification_prob(results_dict, out_dir):
 
 
 def plot_monte_carlo(mc_results, out_dir):
-    strats = ['correct_id', 'misid', 'perfect_id']
-    labels = ['Correct ID\n(Bayesian)', 'Misidentification', 'Oracle']
+    strats = ['bayes_id', 'misid', 'perfect_id']
+    labels = ['Bayesian ID', 'Misidentification', 'Oracle']
     capture_rates = []
     correct_rates = []
     mean_cap_times = []
@@ -279,7 +318,7 @@ def plot_monte_carlo(mc_results, out_dir):
         ax.set_title(title, fontsize=9); ax.set_ylabel(ylabel)
         ax.grid(axis='y', alpha=0.3)
 
-    fig.suptitle(f'S014 Decoy & Lure — Monte-Carlo Results ({len(mc_results["correct_id"])} seeds)',
+    fig.suptitle(f'S014 Decoy & Lure — Monte-Carlo Results ({len(mc_results["bayes_id"])} seeds)',
                  fontsize=10)
     plt.tight_layout()
     path = os.path.join(out_dir, 'monte_carlo.png')
@@ -289,8 +328,8 @@ def plot_monte_carlo(mc_results, out_dir):
 def save_animation(results_dict, out_dir):
     import matplotlib.animation as animation
 
-    labels = ['correct_id', 'misid', 'perfect_id']
-    titles = ['Correct ID', 'Misid', 'Oracle']
+    labels = ['bayes_id', 'misid', 'perfect_id']
+    titles = ['Bayesian ID', 'Misid', 'Oracle']
     colors = ['steelblue', 'tomato', 'mediumseagreen']
 
     max_len = max(len(results_dict[s][0]) for s in labels)
@@ -341,7 +380,7 @@ def save_animation(results_dict, out_dir):
                 st = f'Hit {final_target} {cap_t:.2f}s [DONE]' if captured else 'Timeout [DONE]'
                 ti.set_text(f'{title}  t={t:.1f}s\n{st}')
             else:
-                ti.set_text(f'{title}  t={t:.1f}s  P(real=trk0)={prob:.2f}')
+                ti.set_text(f'{title}  t={t:.1f}s  P(true trk)={prob:.2f}')
             arts += [lp, le, ld, dp, de, dd, ti]
         return arts
 
@@ -354,7 +393,7 @@ def save_animation(results_dict, out_dir):
 
 
 if __name__ == '__main__':
-    strategies = ['correct_id', 'misid', 'perfect_id']
+    strategies = ['bayes_id', 'misid', 'perfect_id']
     results_dict = {}
     for strat in strategies:
         res = run_simulation(strat, seed=42)
@@ -363,8 +402,20 @@ if __name__ == '__main__':
         print(f'[{strat:<12}]  {status}')
         results_dict[strat] = res
 
+    print('\nJerk proxy over the lure phase, m/s^2 (motion only / noise only / observed):')
+    for name, (m, nz, obs) in jerk_breakdown().items():
+        print(f'  {name:<6}  {m:7.1f} / {nz:7.1f} / {obs:7.1f}')
+    m, nz, obs = jerk_breakdown(sigma_decoy=SIGMA_OBS)['decoy']
+    print(f'  decoy at evader noise (sigma {SIGMA_OBS} m)  {m:7.1f} / {nz:7.1f} / {obs:7.1f}')
+
     print('\nRunning Monte-Carlo (20 seeds)...')
     mc = run_monte_carlo(20)
+    for label, res in [(f'nominal (decoy sigma {SIGMA_DECOY} m)', mc),
+                       (f'equal noise (decoy sigma {SIGMA_OBS} m)', run_monte_carlo(20, SIGMA_OBS))]:
+        print(f'  {label}:')
+        for strat, (n_ev, n_dc, t_ev) in summarize(res).items():
+            print(f'    {strat:<11} evader {n_ev:2d}/20  decoy {n_dc:2d}/20  '
+                  f'mean evader capture {t_ev:.2f} s')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories(results_dict, out_dir)
