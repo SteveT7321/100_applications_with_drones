@@ -19,6 +19,8 @@ Strategies (same sources, start, speeds, sensor seed per trial):
   pf3d  cs3d blended 50/50 with the direction to the 3D particle-filter posterior mean
         once the horizontal posterior std < 15 m (S045 rule); z_s estimate = posterior
         mean (the weighted-KDE mode is reported as well)
+  pf3d_eq  fairness control (Monte Carlo only): pf3d with the blended command flown at
+        the cast-and-surge command's own speed instead of v_surge
 Capture = 3D distance to the source <= 3 m.
 
 Usage:
@@ -206,7 +208,7 @@ def run_one(strategy, src, seed, record=False):
     pos = POS_START.copy()
     vel = np.zeros(3)
     nav = Nav3D(vertical=(strategy != '2d'))
-    pf = ParticleFilter3D(rng_pf) if strategy == 'pf3d' else None
+    pf = ParticleFilter3D(rng_pf) if strategy in ('pf3d', 'pf3d_eq') else None
     traj, concs, states, pf_est = [pos.copy()], [], [], []
     pf_snaps, frames = {}, []
     zgrid = np.linspace(0, 7, 141)
@@ -227,7 +229,10 @@ def run_one(strategy, src, seed, record=False):
         v_cmd, state = nav.command(pos, z, g)
         states.append(state)
         if pf is not None and pf.estimate()[1] < PF_CONF_STD:
-            v_cmd = V_SURGE * unit(0.5 * unit(v_cmd) + 0.5 * unit(pf_est[-1] - pos))
+            # pf3d: blended command at v_surge (S045 rule); pf3d_eq: at the cast-and-surge command's
+            # own speed (fairness control: no speed advantage over cs3d while casting)
+            v_pf = V_SURGE if strategy == 'pf3d' else np.linalg.norm(v_cmd)
+            v_cmd = v_pf * unit(0.5 * unit(v_cmd) + 0.5 * unit(pf_est[-1] - pos))
         if record and step % 50 == 0:
             frames.append((tt, pos.copy(), None if pf is None else pf.p.copy()))
         vel = vel + (v_cmd - vel) / TAU_V * DT
@@ -345,6 +350,15 @@ def run_simulation():
         print(f'  head-to-head {a} vs {b}: {a} faster {int(np.sum(ta < tb))}, slower {int(np.sum(ta > tb))}, '
               f'both failed {int(np.sum(np.isinf(ta) & np.isinf(tb)))}; z_s error smaller in '
               f'{int(np.sum(np.abs(summ[a]["ze"]) < np.abs(summ[b]["ze"])))}/{N_TRIALS}')
+    # fairness control: PF guidance at the same commanded speed as cast-and-surge
+    eq = [run_one('pf3d_eq', srcs[i], i) for i in range(N_TRIALS)]
+    fq = np.array([r['found'] for r in eq]); tq = np.array([r['time'] for r in eq])
+    zq = np.array([r['zs_hat'] for r in eq]) - srcs[:, 2]
+    tqi = np.where(fq, tq, np.inf); tci = np.where(summ['cs3d']['f'], summ['cs3d']['tt'], np.inf)
+    print(f'  equal-speed control (PF blend at the cast-and-surge command speed): found {fq.sum()}/{N_TRIALS}, '
+          f'time (found) median {np.median(tq[fq]):.1f} s [{np.percentile(tq[fq], 25):.1f}, {np.percentile(tq[fq], 75):.1f}], '
+          f'z_s |err| <= 0.5 m in {int(np.sum(np.abs(zq) <= ZS_TOL))}/{N_TRIALS}; vs cs3d: faster {int(np.sum(tqi < tci))}, '
+          f'slower {int(np.sum(tqi > tci))}, both failed {int(np.sum(np.isinf(tqi) & np.isinf(tci)))}')
     data.update(mc=mc, summ=summ, srcs=srcs, in_plume=ip)
     return data
 

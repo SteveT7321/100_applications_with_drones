@@ -85,7 +85,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s045_3d_plume_tracing.py
 ```
 
-The script imports the fixed 2D S045 module for $\sigma_{y,z}$, the intermittency, the constants and the 2D cast-and-surge navigator. The 3D strategies reuse that navigator for the horizontal channel. Runtime ≈ 3 min. Two runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the fixed 2D S045 module for $\sigma_{y,z}$, the intermittency, the constants and the 2D cast-and-surge navigator. The 3D strategies reuse that navigator for the horizontal channel. Runtime ≈ 3 min (including the equal-speed control). Two runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -141,14 +141,16 @@ More detail:
 | PF-guided vs 3D cast-and-surge | 34 | 0 | 6 | 7/40 |
 | PF-guided vs 2D | 34 | 1 | 5 | 34/40 |
 
+**Equal-speed fairness control.** Once its posterior is confident, PF-guided always flies its blended command at $v_{surge}$ = 1.5 m/s, even while the underlying cast-and-surge state is casting at 0.8 m/s. The control variant flies the same blend at the cast-and-surge command's own speed. It finds 34/40, with a median time over found trials of 113.3 s [102.3, 164.0], and meets the ±0.5 m $z_s$ target in 35/40. Against 3D cast-and-surge it is faster in 32 trials and slower in 2; both fail in 6.
+
 ### Key findings
 
 - **The third dimension is decisive here, as the card expects.** The fixed-altitude S045 algorithm finds the same sources 16/20 when they sit at its flight altitude, but only 3/40 when the source height is random. Even with the source within 1 m of its altitude it finds only 3/16. The plume is vertically thin near the source ($\sigma_z$ = 0.30 m at 5 m, 0.60 m at 10 m downwind). For the demo source at 4.5 m the concentration at 2 m drops from 3.006 at 20 m downwind to 0.017 at 10 m and 0.000 at 5 m. The 2D drone therefore loses the plume 10–20 m short of the source and casts without ever reconnecting. In the demo it stays 25.5 m away despite 83.5 % "contact" in the far field. The card's claim that the 2D baseline "locates $(x_s, y_s)$" holds in only 5/40 trials.
 - **Altitude hunting fixes it.** 3D cast-and-surge finds 34/40, including all 22 trials that start in the plume and all 5 with $z_s$ > 5 m that the 2D baseline cannot reach geometrically. It is faster than the 2D baseline in 32/40 trials; in the 3 trials the 2D baseline does solve, the 2D baseline is faster. The 6 remaining failures start outside the plume; casting does not find it within 600 s.
-- **The particle filter adds speed, not success.** PF-guided finds exactly the same 34/40 trials but is faster in all 34 (median 104.6 vs 190.9 s, path 133.1 vs 162.1 m), because the posterior pulls it straight toward the source once it has converged.
+- **The particle filter adds speed, not success.** PF-guided finds exactly the same 34/40 trials but is faster in all 34 (median 104.6 vs 190.9 s, path 133.1 vs 162.1 m), because the posterior pulls it straight toward the source once it has converged. This is not just a speed advantage: in the equal-speed control the PF is still faster than cast-and-surge in 32/40 trials (median 113.3 vs 190.9 s).
 - **Source-height estimation.**
   - The PF meets the card's ±0.5 m target in 35/40 trials (RMSE 0.50 m overall, 0.19 m over found trials).
-  - The 3D cast-and-surge's final altitude is an equally good estimator: within 0.5 m in 36/40,; the PF is closer in only 7/40 trials. At capture the drone is riding the plume centreline, which sits at $z_s$ near the source.
+  - The 3D cast-and-surge's final altitude is an equally good estimator: within 0.5 m in 36/40; the PF is closer in only 7/40 trials. At capture the drone is riding the plume centreline, which sits at $z_s$ near the source.
   - The 2D baseline's fixed 2 m "estimate" has RMSE 1.95 m.
   - The PF's large errors come from the 6 failed trials, where the posterior never converged. The KDE mode is no better than the posterior mean (RMSE 0.74 vs 0.50 m).
 - **Altitude profile** (demo): both 3D strategies first climb, because in the far field the vertical gradient points up toward the 4.5 m centreline. Cast-and-surge then overshoots to the 8 m ceiling and sweeps down to 0.5 m before it locks onto 4.5 m. The PF-guided drone settles at the source height well before capture.
@@ -192,6 +194,7 @@ More detail:
 | $z_s$ RMSE "for each strategy" | Cast-and-surge: final altitude; 2D: 2 m; PF: posterior mean (and KDE mode) | Only the PF has an explicit estimator. |
 | 20 Monte-Carlo runs | 40 | Tighter counts; trials 0–19 match S045's source positions in x and y. |
 | — | Consistency check of the 2D baseline at $z_s$ = 2 m | Shows the baseline reproduces S045 (16/20). |
+| — | Equal-speed PF control | Separates the PF guidance from its higher commanded speed. |
 | PF snapshots at 0, 60, 180, 360 s | 0, 60 s and at capture (88 s) | The demo run ends before 180 s. |
 | Concentration isosurface in the animation | xz slice through $y_s$ with the particle cloud | A clearer view of the vertical structure at 70 dpi. |
 
