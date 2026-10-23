@@ -61,11 +61,12 @@ also reported per floor, where floor k holds layers 5k … 5k + 4.
 | Body / gap / headroom | $r_d$ = 0.15 m, $h_d$ = 0.20 m; $g_{min}$ = 0.40 m; $h_{min}$ = 0.60 m → 2 free voxels |
 | Speeds | 0.5 m/s horizontal, $v_{z,max}$ = 0.3 m/s |
 | Δt | 0.1 s |
-| Horizon | 600 s (card); extended 3600 s |
+| Horizon | 600 s (card); extended 3600 s for every 3D run |
 | Stairwell bonus $\Delta p_{stair}$ | 2.0 s off the travel-time cost |
 | Stairwell span criterion | ≥ 2.5 m |
 | Start | (2.0, 2.0, 0.5) m → node centre (2.25, 2.25, 0.75) m |
-| Lidar seeds | 0, 1, 2 (`default_rng([seed, 0])`); seed 0 is flown to 3600 s and its first 600 s are the card-horizon result |
+| Lidar seeds | 0–9 (`default_rng([seed, 0])`). Every 3D run is flown to 3600 s and its first 600 s are its card-horizon result; the slice baseline is flown to 3600 s for seed 0 and to 600 s for seeds 1–9 |
+| Parallel processes | 8 (runs are independent; the results do not depend on the number of processes) |
 | Rubble seed | 43 |
 | Animation | vertical-passage planner, seed 0, one frame per 30 s, 121 frames |
 
@@ -82,7 +83,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s043_3d_confined_space.py
 ```
 
-The script imports the fixed 2D S043 module for the floor plan and the log-odds constants. Runtime ≈ 5 min: three 3600 s runs, six 600 s runs and the GIF. Two runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the fixed 2D S043 module for the floor plan and the log-odds constants. Runtime ≈ 3–4 min (173 s and 231 s in the two checks): 21 runs of 3600 s and 9 runs of 600 s in 8 parallel processes, plus the GIF. Two runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -93,34 +94,58 @@ The script imports the fixed 2D S043 module for the floor plan and the log-odds 
 | Quantity | Value |
 |----------|-------|
 | Occupied voxels | 37.0 % |
-| Reachable nodes / $\mathcal C_{reach}$ voxels | 32751 / 44710 (F0 11604, F1 12240, F2 12260, F3 8606) |
+| Reachable nodes / $\mathcal C_{reach}$ voxels | 32735 / 44694 (F0 11604, F1 12240, F2 12260, F3 8590) |
 | Reachable from the start layer alone | 3032 nodes = 13.6 % of $\mathcal C_{reach}$ |
 | Low-ceiling room | traversable only at layer 1 (262 nodes; 0 at layer 2) |
 | Crawl space | 48 free voxels with 0.5 m headroom, 0 reachable nodes |
 | Card horizon | 600 s × 0.5 m/s = at most 300 m of flight |
 
-### Card horizon, 600 s (3 lidar seeds)
+### Card horizon, 600 s (10 lidar seeds)
 
-| Strategy | Coverage at 600 s, seed 0 / 1 / 2 | Mean (min–max) | F0 at 600 s (seed 0) | Floor changes |
-|----------|-----------------------------------|----------------|----------------------|---------------|
-| 2D-slice baseline | 15.2 / 15.2 / 15.2 % | 15.2 % (15.2–15.2) | 58.5 % | 0 |
-| 3D frontier-nearest | 20.4 / 18.0 / 20.5 % | 19.6 % (18.0–20.5) | 78.3 % | 0 |
-| 3D + vertical-passage planner | 20.4 / 18.0 / 20.5 % | 19.6 % (18.0–20.5) | 78.3 % | 0 |
+| Strategy | Coverage at 600 s, mean (min–max) | Seed 0: total / F0 | Floor changes by 600 s |
+|----------|-----------------------------------|--------------------|------------------------|
+| 2D-slice baseline | 15.2 % (15.2–15.2) | 15.2 / 58.5 % | 0 in every seed |
+| 3D frontier-nearest | 19.4 % (17.2–20.5) | 20.4 / 78.3 % | 1 in seed 3 (at 599 s), 0 otherwise |
+| 3D + vertical-passage planner | 19.3 % (17.0–20.5) | 20.4 / 78.3 % | 0 in every seed |
 
 Head-to-head:
-- Both 3D strategies beat the slice baseline in 3/3 seeds (+4.4 points on average).
-- Frontier-nearest and the vertical-passage planner are identical in 3/3 seeds (difference +0.0).
+- Frontier-nearest beats the slice baseline in 10/10 seeds (+4.2 points on average), and so does the vertical-passage planner (10/10, +4.1 points).
+- The two 3D strategies are identical in 9/10 seeds (mean difference −0.0 points). Until the first floor change both pick the same nearest frontier on F0, so at 600 s they can only differ in seed 3, where frontier-nearest climbs at 599 s.
 
-### Extended horizon, 3600 s (seed 0)
+### Extended horizon, 3600 s (3D strategies, 10 seeds)
+
+| Seed | Frontier-nearest at 1200 / 1800 / 2400 / 3600 s | Vertical-passage planner at 1200 / 1800 / 2400 / 3600 s | Time to 50 %: nearest / VP | First floor change: nearest / VP |
+|------|----------------------------------------|----------------------------------------|----------------------------|---------------------|
+| 0 | 38.0 / 59.2 / 73.8 / 90.0 % | 26.0 / 38.2 / 52.0 / 76.2 % | 1567 / 2309 s | 666 / 1319 s |
+| 1 | 32.5 / 52.2 / 69.8 / 89.3 % | 26.0 / 40.7 / 52.0 / 80.1 % | 1750 / 2181 s | 867 / 1315 s |
+| 2 | 38.4 / 58.3 / 72.2 / 89.9 % | 26.1 / 39.8 / 52.6 / 77.1 % | 1522 / 2203 s | 622 / 1334 s |
+| 3 | 32.2 / 48.3 / 63.7 / 76.8 % | 24.3 / 30.0 / 48.2 / 68.5 % | 1863 / 2725 s | 599 / 1690 s |
+| 4 | 31.7 / 50.7 / 68.8 / 87.3 % | 25.8 / 40.0 / 51.9 / 77.3 % | 1780 / 2294 s | 899 / 1337 s |
+| 5 | 38.7 / 59.3 / 74.7 / 91.7 % | 26.1 / 37.1 / 51.2 / 74.3 % | 1528 / 2346 s | 620 / 1304 s |
+| 6 | 36.6 / 53.3 / 69.6 / 77.2 % | 26.0 / 35.8 / 48.4 / 76.5 % | 1726 / 2451 s | 664 / 1472 s |
+| 7 | 30.7 / 52.5 / 70.5 / 90.9 % | 25.8 / 38.1 / 52.2 / 80.0 % | 1744 / 2152 s | 929 / 1317 s |
+| 8 | 38.6 / 59.6 / 74.3 / 89.7 % | 26.1 / 40.8 / 52.7 / 77.7 % | 1523 / 2171 s | 620 / 1316 s |
+| 9 | 41.0 / 61.4 / 75.3 / 90.9 % | 26.1 / 41.0 / 51.3 / 77.4 % | 1463 / 2271 s | 624 / 1328 s |
+
+| Time | Frontier-nearest, mean ± std [min, max] | Vertical-passage planner, mean ± std [min, max] | Nearest higher | Difference, mean [min, max] |
+|------|-----------------------------------------|--------------------------------------------------|----------------|------------------------------|
+| 1200 s | 35.8 ± 3.5 % [30.7, 41.0] | 25.8 ± 0.5 % [24.3, 26.1] | 10/10 | +10.0 pts [+4.9, +14.9] |
+| 1800 s | 55.5 ± 4.3 % [48.3, 61.4] | 38.2 ± 3.2 % [30.0, 41.0] | 10/10 | +17.3 pts [+10.7, +22.2] |
+| 2400 s | 71.3 ± 3.4 % [63.7, 75.3] | 51.3 ± 1.5 % [48.2, 52.7] | 10/10 | +20.0 pts [+15.5, +23.9] |
+| 3600 s | 87.4 ± 5.3 % [76.8, 91.7] | 76.5 ± 3.1 % [68.5, 80.1] | 10/10 | +10.9 pts [+0.6, +17.4] |
+
+Time to 50 % coverage is 1646.6 s on average for frontier-nearest (range 1463.0–1863.0 s) and 2310.3 s for the vertical-passage planner (range 2152.0–2725.0 s). Frontier-nearest is earlier in 10/10 seeds.
+
+### Seed-0 details, 3600 s
 
 | Strategy | Coverage at 600 / 1200 / 1800 / 2400 / 3600 s | Final F0 / F1 / F2 / F3 | Time to 25 / 50 / 75 % | Path | Plans | Frontiers exhausted |
 |----------|-------------------------------------------|-------------------------|-------------------------|------|-------|---------------------|
 | 2D-slice baseline | 15.2 / 25.9 / 25.9 / 25.9 / 25.9 % | 99.9 / 0.0 / 0.0 / 0.0 % | 1095.0 s / — / — | 590.0 m | 880 | 1132.0 s |
-| 3D frontier-nearest | 20.4 / 38.0 / 59.2 / 73.8 / **90.0 %** | 80.0 / 85.2 / 97.2 / 100.0 % | **785.0 / 1567.0 / 2509.0 s** | 1788.1 m | 2646 | never |
-| 3D + vertical-passage planner | 20.4 / 26.0 / 38.2 / 52.0 / 76.2 % | 100.0 / 100.0 / 83.1 / 0.6 % | 959.0 / 2310.0 / 3579.0 s | 1791.6 m | 2447 | never |
+| 3D frontier-nearest | 20.4 / 38.0 / 59.2 / 73.8 / 90.0 % | 80.0 / 85.2 / 97.2 / 100.0 % | 785.0 / 1567.0 / 2510.0 s | 1788.1 m | 2646 | never |
+| 3D + vertical-passage planner | 20.4 / 26.0 / 38.2 / 52.0 / 76.2 % | 100.0 / 100.0 / 83.1 / 0.6 % | 959.0 / 2309.0 / 3579.0 s | 1791.6 m | 2447 | never |
 
 **Floor changes**:
-- Frontier-nearest: 666 s F0→F1, 1433 s F1→F2, 1994 s F2→F3, 3105 s F3→F2, 3599 s F2→F1.
+- Frontier-nearest: 666 s F0→F1, 1433 s F1→F2, 1994 s F2→F3, 3105 s F3→F2, 3600 s F2→F1.
 - Vertical-passage planner: 1319 s F0→F1, 2650 s F1→F2.
 
 **Vertical-passage detection log** (first detection; cross-section and span as known at that moment):
@@ -138,11 +163,11 @@ All three detected centroids lie inside the true openings.
 
 ### Key findings
 
-- **The card's 600 s horizon is too short to test the third dimension.** At 0.5 m/s the drone can fly at most 300 m, and no strategy leaves the ground floor before 600 s (first floor change at 666 s). Within the card horizon the 3D strategies still beat the 2D slice: 19.6 vs 15.2 % on average, 3/3 seeds. They do this because they also move between the three usable layers of F0: at 600 s, F0 is 78.3 % mapped against 58.5 % for the slice. The slice can only reach 13.6 % of $\mathcal C_{reach}$ as nodes, but its spherical lidar maps the headroom above it. Its ceiling is therefore 25.9 % (F0 at 99.9 %), reached when its frontiers run out at 1132.0 s.
-- **The card's vertical-passage planner is worse than plain frontier-nearest.** Over 3600 s, frontier-nearest maps 90.0 % against 76.2 % and reaches 50 % at 1567.0 s against 2310.0 s. Finish-floor-first keeps the drone on F0 until 1319 s, to take F0 from 78.3 % (at 600 s) to 100 %, and later finishes F1 to 100 % before climbing at 2650 s. Cleaning up those last frontiers is slow. Between 600 and 1200 s total coverage rises by only 5.6 points for the vertical-passage planner (20.4 → 26.0 %), against 17.6 points for frontier-nearest (20.4 → 38.0 %), which climbs to the empty F1 at 666 s. Frontier-nearest never goes back for the last 20 % of F0, but it gains far more on F1–F3 (85.2 / 97.2 / 100.0 %). The −2 s stairwell bonus has little room to matter. It is only applied once the current floor has no frontier left, and at that point every remaining frontier lies beyond a stairwell anyway.
+- **The card's 600 s horizon is too short to test the third dimension.** At 0.5 m/s the drone can fly at most 300 m. In 10 seeds only one 3D run leaves the ground floor before 600 s (seed 3, at 599 s). Within the card horizon the 3D strategies still beat the 2D slice in 10/10 seeds: 19.4 and 19.3 % against 15.2 % on average. They do this because they also move between the three usable layers of F0; in seed 0, F0 is 78.3 % mapped at 600 s against 58.5 % for the slice. The slice can only reach 13.6 % of $\mathcal C_{reach}$ as nodes, but its spherical lidar maps the headroom above it. Its ceiling is therefore 25.9 % (F0 at 99.9 %), reached when its frontiers run out at 1132.0 s (seed 0). At 600 s the two 3D strategies cannot be told apart: they are identical in 9/10 seeds, because both choose the nearest F0 frontier until a floor change.
+- **Over the 3600 s extended horizon the card's vertical-passage planner is worse than plain frontier-nearest, in every seed.** Frontier-nearest has higher coverage in 10/10 seeds at 1200, 1800, 2400 and 3600 s. The mean gap is +10.0, +17.3, +20.0 and +10.9 points; at 3600 s it is 87.4 ± 5.3 % against 76.5 ± 3.1 %. Frontier-nearest also reaches 50 % first in 10/10 seeds (1646.6 vs 2310.3 s on average). The size of the final gap varies a lot between seeds, from +0.6 points (seed 6) to +17.4 points (seed 3), but its sign never changes. The reason is visible in the first floor change: frontier-nearest climbs to the empty F1 after 599–929 s, while finish-floor-first keeps the drone on F0 until 1304–1690 s to map its last frontiers. In seed 0, total coverage rises by only 5.6 points between 600 and 1200 s for the vertical-passage planner (20.4 → 26.0 %), against 17.6 points for frontier-nearest (20.4 → 38.0 %). Frontier-nearest never goes back for the last 20 % of F0 in seed 0, but it gains far more on F1–F3 (85.2 / 97.2 / 100.0 %). The −2 s stairwell bonus has little room to matter. It is only applied once the current floor has no frontier left, and at that point every remaining frontier lies beyond a stairwell anyway. This ranking holds for this building, this sensor range and these speeds; it is not a general result.
 - **The vertical-passage detector works.** It finds all three stairwells, with centroids inside the true 2 × 2 m openings, as soon as the lidar sees through them (S1 at 144.0 s, long before either strategy uses it). The cross-section at first detection is 1.0–2.25 m² of the true 4.0 m², because only part of the opening is mapped by then.
 - **Safety constraints hold.** No strategy entered an occupied or mapped-occupied voxel (asserted on every move). The 1.0 m low-ceiling room is traversed only at the lowest layer (262 nodes, 0 at layer 2), and the 0.5 m crawl space has 0 reachable nodes, so it is excluded from $\mathcal C_{reach}$ and never entered.
-- **Seed sensitivity is small.** Coverage at 600 s varies by 2.5 points across the three lidar-noise seeds for the 3D strategies (18.0–20.5 %) and not at all for the slice (15.2 %).
+- **Seed sensitivity.** Coverage at 600 s varies by about 3.5 points across the ten lidar-noise seeds for the 3D strategies (17.0–20.5 %) and not at all for the slice (15.2 %). At 3600 s the spread is larger (frontier-nearest 76.8–91.7 %, vertical-passage planner 68.5–80.1 %), because small mapping differences change which frontier is chosen and when the drone changes floor.
 
 ### Figures
 
@@ -150,7 +175,7 @@ All three detected centroids lie inside the true openings.
 
 ![Map snapshots](map_snapshots.png)
 
-**Coverage curves**: total 3D coverage and per-floor coverage. Thick lines are seed 0 to 3600 s; thin lines are seeds 1–2 to 600 s. The dashed line marks the card horizon, and dotted lines mark the vertical-passage planner's floor changes:
+**Coverage curves**: total 3D coverage and per-floor coverage. Thick lines are seed 0; thin lines are seeds 1–9 (3D strategies to 3600 s, slice to 600 s). The dashed line marks the card horizon, and dotted lines mark the vertical-passage planner's floor changes:
 
 ![Coverage curves](coverage_curves.png)
 
@@ -176,7 +201,7 @@ All three detected centroids lie inside the true openings.
 | $T_{max}$ = 600 s | 600 s reported, plus a 3600 s extended horizon | 300 m of flight cannot leave F0. The card now notes this. |
 | Snapshots at 0, 200, 400, 600 s as isometric voxel renders | 0, 600, 1800, 3600 s as per-floor slices | Nothing happens above F0 before 600 s, and per-floor slices show the map more clearly than isometric voxels. |
 | Path coloured by floor, stairwell segments orange | Paths coloured by strategy, stairwell openings outlined in orange, altitude plot with slab bands | Same information. |
-| — | Three lidar-noise seeds at 600 s | Shows seed sensitivity. |
+| — | Ten lidar-noise seeds, every 3D run flown to 3600 s | Gives per-seed wins and spread for the strategy comparison; the 600 s results are read from the same runs. |
 
 ---
 

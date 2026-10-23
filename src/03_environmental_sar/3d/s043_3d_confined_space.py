@@ -44,6 +44,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import dijkstra
 from scipy.ndimage import label
+from concurrent.futures import ProcessPoolExecutor
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('s043_2d', os.path.join(_HERE, '..', 's043_confined_space.py'))
@@ -73,7 +74,8 @@ T_EXT        = 3600.0              # s — supplementary horizon (the card horiz
 STAIR_SPAN   = 2.5                 # m — card: a stairwell cluster spans >= 2.5 m vertically
 VP_BONUS     = 2.0                 # s — stairwell priority bonus (card: +2.0 BFS cost offset)
 START        = np.array([2.0, 2.0, 0.5])
-SEEDS        = [0, 1, 2]           # lidar-noise seeds
+SEEDS        = list(range(10))     # lidar-noise seeds 0-9
+N_WORKERS    = 8                   # parallel processes (results do not depend on it)
 ANIM_EVERY   = 300                 # steps (30 s)
 W_H, W_V     = RES / V_XY, RES / V_Z   # edge times (s)
 
@@ -105,8 +107,8 @@ def build_building():
                 i, j = rng.integers(3, NX - 5), rng.integers(3, NY - 5)
                 V[i:i + 2, j:j + 2, k0:k1] = True
     for name, s, (x0, x1), (y0, y1) in OPENINGS:  # stairwell openings (cleared over both floors)
-        V[x0:x1, y0:y1, s - 4:s + 5] = False
-        V[x0 - 1:x1 + 1, y0 - 1:y1 + 1, s] &= ~np.zeros((x1 - x0 + 2, y1 - y0 + 2), bool)
+        V[x0:x1, y0:y1, s - 4:min(s + 5, NZ - 1)] = False   # never opens the roof (layer NZ-1)
+    assert V[:, :, NZ - 1].all() and V[:, :, 0].all(), 'roof / ground slab must stay closed'
     # partly collapsed ceiling in F0 (room x 14-24, y 2-9): only layers 1-2 free (1.0 m)
     V[28:48, 4:18, 3:5] = True
     # crawl space in F0 (x 1-5, y 26-29): only layer 1 free (0.5 m) -> impassable
@@ -191,10 +193,11 @@ def scan(L, V, pos, rng):
     hit_lin = lin[np.arange(len(DIRS)), np.minimum(first, len(RS) - 1)]
     free_m = RS[None, :] < (r_meas[:, None] - RAY_STEP / 2)
     free_m &= lin != hit_lin[:, None]
-    bid = np.broadcast_to(np.arange(len(DIRS))[:, None], lin.shape)
-    pairs = np.unique(bid[free_m] * (NX * NY * NZ) + lin[free_m])
+    # one free update per (beam, voxel): a straight ray visits each voxel in one consecutive run
+    first_of_run = np.ones(lin.shape, dtype=bool)
+    first_of_run[:, 1:] = lin[:, 1:] != lin[:, :-1]
     Lf = L.reshape(-1)
-    np.add.at(Lf, pairs % (NX * NY * NZ), L_FREE)
+    np.add.at(Lf, lin[free_m & first_of_run], L_FREE)
     hits = hit_lin[hit_any & (r_meas < SENSOR_R)]
     np.add.at(Lf, hits, L_OCC)
     np.clip(Lf, L_MIN, L_MAX, out=Lf)
@@ -269,9 +272,14 @@ def run(V, reach_vox, strategy, seed, t_max=T_MAX, record=False):
     for step in range(n_steps):
         t = step * DT
         scan(L, V, pos, rng)
-        p = prob(L)
-        known_free = p < P_FREE
-        if step % 10 == 0 or step == n_steps - 1:
+        cur = node_of(pos)
+        at_node = bool(np.all(np.abs(pos - centre(cur)) <= 1e-9))
+        sample = step % 10 == 0 or step == n_steps - 1
+        plan_now = at_node and t >= next_plan_t and step < n_steps - 1
+        if sample or plan_now or step in snap_steps or (record and step % ANIM_EVERY == 0):
+            p = prob(L)                            # only evaluated when it is used
+            known_free = p < P_FREE
+        if sample:
             cov_t.append(t)
             cov.append(100 * np.sum(known_free & reach_vox) / n_reach)
             cov_f.append([100 * np.sum(known_free & fv) / max(fv.sum(), 1) for fv in floors_vox])
@@ -284,10 +292,8 @@ def run(V, reach_vox, strategy, seed, t_max=T_MAX, record=False):
             frames.append((t, p.copy(), pos.copy()))
         if step == n_steps - 1:
             break
-        cur = node_of(pos)
-        at_node = np.allclose(pos, centre(cur), atol=1e-9)
         # replan when idle at a node and the goal is gone / reached / path blocked
-        if at_node and t >= next_plan_t:
+        if plan_now:
             frv = frontier_mask(p)
             fr = frv.copy()                        # frontier NODE: its own voxel or its headroom voxel borders unknown
             fr[:, :, :-1] |= frv[:, :, 1:]
@@ -344,7 +350,7 @@ def run(V, reach_vox, strategy, seed, t_max=T_MAX, record=False):
                 pos = tgt
                 n = path.pop(0)
                 assert not V[n] and not V[n[0], n[1], n[2] + 1], 'entered an occupied voxel'
-                assert p[n] < P_OCC, 'entered a mapped-occupied voxel'
+                assert prob(L[n]) < P_OCC, 'entered a mapped-occupied voxel'
                 f_now = FLOOR_OF[n[2]]
                 if f_now != last_floor:
                     floor_switch.append((t, last_floor, f_now))
@@ -354,7 +360,7 @@ def run(V, reach_vox, strategy, seed, t_max=T_MAX, record=False):
     path_len = float(np.sum(np.linalg.norm(np.diff(traj, axis=0), axis=1)))
     return dict(cov_t=np.array(cov_t), cov=np.array(cov), cov_f=np.array(cov_f), traj=traj,
                 path_len=path_len, passages=passages, floor_switch=floor_switch, n_plans=n_plans,
-                snaps=snaps, frames=frames, exhausted_t=exhausted_t, final_p=p)
+                snaps=snaps, frames=frames, exhausted_t=exhausted_t, final_p=prob(L))
 
 
 def exh(r):
@@ -369,6 +375,14 @@ def cov_at(r, tt):
 def cov_f_at(r, tt):
     i = np.searchsorted(r['cov_t'], tt + 1e-9) - 1
     return r['cov_f'][i]
+
+
+def _job(args):
+    """One mission in a worker process (the building is rebuilt deterministically)."""
+    strategy, seed, t_max, record = args
+    V = build_building()
+    reach_vox = node_voxels(reachable_nodes(V, node_of(START)))
+    return run(V, reach_vox, strategy, seed, t_max=t_max, record=record)
 
 
 def t_reach(res, level):
@@ -398,23 +412,30 @@ def run_simulation():
         print(f'Opening {name}: slab layer {s} (z {s * RES:.1f} m), x {x0 * RES:.1f}-{x1 * RES:.1f} m, '
               f'y {y0 * RES:.1f}-{y1 * RES:.1f} m, area {(x1 - x0) * (y1 - y0) * RES ** 2:.1f} m^2')
     print(f'Card horizon check: {T_MAX:.0f} s at {V_XY} m/s is at most {T_MAX * V_XY:.0f} m of flight')
-    # seed 0 is flown for T_EXT; its first T_MAX seconds are identical to a T_MAX run (same noise stream)
-    res = {s: [] for s in STRATS}
-    ext = {}
-    print(f'=== Card horizon {T_MAX:.0f} s, lidar seeds {SEEDS} (seed {SEEDS[0]} read from its {T_EXT:.0f} s run) ===')
+    # Every 3D run is flown for T_EXT; its first T_MAX seconds are identical to a T_MAX run (same
+    # noise stream), so the card-horizon numbers are read from it.  The slice baseline is flown to
+    # T_EXT for seed 0 only (its frontiers run out long before).  Runs are independent and are
+    # executed in parallel processes; results are collected in a fixed order.
+    jobs = []
     for seed in SEEDS:
         for s in STRATS:
-            if seed == SEEDS[0]:
-                r = run(V, reach_vox, s, seed, t_max=T_EXT, record=True)
-                ext[s] = r
-            else:
-                r = run(V, reach_vox, s, seed, t_max=T_MAX)
-            res[s].append(r)
+            long_run = s != 'slice' or seed == SEEDS[0]
+            jobs.append((s, seed, T_EXT if long_run else T_MAX, seed == SEEDS[0]))
+    with ProcessPoolExecutor(max_workers=min(N_WORKERS, len(jobs))) as ex:
+        outs = list(ex.map(_job, jobs))
+    res = {s: [] for s in STRATS}
+    for (s, seed, tm, rec), r in zip(jobs, outs):
+        res[s].append(r)
+    ext = {s: res[s][0] for s in STRATS}
+    print(f'=== Card horizon {T_MAX:.0f} s, lidar seeds {SEEDS} ===')
+    for i, seed in enumerate(SEEDS):
+        for s in STRATS:
+            r = res[s][i]
             cf = cov_f_at(r, T_MAX)
             print(f'seed {seed} [{s:6s}] coverage at {T_MAX:.0f} s {cov_at(r, T_MAX):.1f} % (F0 {cf[0]:.1f} / F1 {cf[1]:.1f} / '
                   f'F2 {cf[2]:.1f} / F3 {cf[3]:.1f} %), at 200/400 s {cov_at(r, 200):.1f}/{cov_at(r, 400):.1f} %, '
                   f'floor changes by {T_MAX:.0f} s {sum(1 for x in r["floor_switch"] if x[0] <= T_MAX)}')
-    print(f'=== Summary at {T_MAX:.0f} s over seeds (mean, min-max) ===')
+    print(f'=== Summary at {T_MAX:.0f} s over {len(SEEDS)} seeds (mean, min-max) ===')
     cov600 = {s: np.array([cov_at(r, T_MAX) for r in res[s]]) for s in STRATS}
     for s in STRATS:
         c = cov600[s]
@@ -423,7 +444,28 @@ def run_simulation():
         d = cov600[a] - cov600[b]
         print(f'{a} vs {b}: higher in {int(np.sum(d > 0))}/{len(SEEDS)} seeds, equal in {int(np.sum(d == 0))} '
               f'(mean diff {d.mean():+.1f} pts)')
-    print(f'=== Extended horizon {T_EXT:.0f} s (seed {SEEDS[0]}) ===')
+    print(f'=== Extended horizon {T_EXT:.0f} s, 3D strategies, {len(SEEDS)} seeds ===')
+    marks = (1200, 1800, 2400, 3600)
+    for i, seed in enumerate(SEEDS):
+        a, b = res['near3d'][i], res['vp3d'][i]
+        fa = a['floor_switch'][0][0] if a['floor_switch'] else float('nan')
+        fb = b['floor_switch'][0][0] if b['floor_switch'] else float('nan')
+        print(f'seed {seed}: near3d ' + '/'.join(f'{cov_at(a, tt):.1f}' for tt in marks)
+              + ' %, vp3d ' + '/'.join(f'{cov_at(b, tt):.1f}' for tt in marks)
+              + f' % (at 1200/1800/2400/3600 s); time to 50 %: near3d {t_reach(a, 50):.1f} s, '
+              f'vp3d {t_reach(b, 50):.1f} s; first floor change near3d {fa:.0f} s, vp3d {fb:.0f} s')
+    for tt in marks:
+        ca = np.array([cov_at(r, tt) for r in res['near3d']]); cb = np.array([cov_at(r, tt) for r in res['vp3d']])
+        d = ca - cb
+        print(f'at {tt} s: near3d {ca.mean():.1f} +- {ca.std():.1f} % [{ca.min():.1f}, {ca.max():.1f}], vp3d '
+              f'{cb.mean():.1f} +- {cb.std():.1f} % [{cb.min():.1f}, {cb.max():.1f}]; near3d higher in '
+              f'{int(np.sum(d > 0))}/{len(SEEDS)}, vp3d higher in {int(np.sum(d < 0))}/{len(SEEDS)}, '
+              f'difference {d.mean():+.1f} pts [{d.min():+.1f}, {d.max():+.1f}]')
+    ta = np.array([t_reach(r, 50) for r in res['near3d']]); tb = np.array([t_reach(r, 50) for r in res['vp3d']])
+    print(f'time to 50 %: near3d {np.nanmean(ta):.1f} s [{np.nanmin(ta):.1f}, {np.nanmax(ta):.1f}], vp3d '
+          f'{np.nanmean(tb):.1f} s [{np.nanmin(tb):.1f}, {np.nanmax(tb):.1f}]; near3d earlier in '
+          f'{int(np.sum(ta < tb))}/{len(SEEDS)}')
+    print(f'=== Seed {SEEDS[0]} details ({T_EXT:.0f} s) ===')
     for s in STRATS:
         r = ext[s]
         cf = r['cov_f'][-1]
@@ -432,7 +474,7 @@ def run_simulation():
               f'{t_reach(r, 25):.1f}/{t_reach(r, 50):.1f}/{t_reach(r, 75):.1f} s; path {r["path_len"]:.1f} m; '
               f'plans {r["n_plans"]}; frontiers exhausted {exh(r)}')
         print(f'         floor changes: ' + (', '.join(f'{tt:.0f} s F{a}->F{b}' for tt, a, b in r['floor_switch']) or 'none'))
-    print(f'=== Vertical passage detection log (first detection, span >= {STAIR_SPAN} m) ===')
+    print(f'=== Vertical passage detection log, seed {SEEDS[0]} (first detection, span >= {STAIR_SPAN} m) ===')
     for s in ('near3d', 'vp3d'):
         for sl, c, a, span, tt in ext[s]['passages']:
             print(f'  [{s}] slab z = {sl * RES:.1f} m: centroid ({c[0]:.2f}, {c[1]:.2f}) m, free cross-section '
