@@ -180,9 +180,9 @@ def at_agl(xy, agl):
 def gradient_ascent(start, dims):
     """Gradient ascent on the soft-min objective over the coordinates in dims."""
     relays = project(start)
-    hist_bn, hist_obj, hist_agl, traj = [], [], [], [relays.copy()]
+    hist_bn, hist_obj, hist_agl, hist_sh, traj = [], [], [], [], [relays.copy()]
     for it in range(N_ITER):
-        snrs = chain_eval(relays)[0]
+        snrs, shd, _ = chain_eval(relays); hist_sh.append(int(shd.sum()))
         hist_bn.append(float(snrs.min())); hist_obj.append(objective(relays, soft=False))
         hist_agl.append(relays[:, 2] - terrain(relays[:, 0], relays[:, 1]))
         grad = np.zeros_like(relays)
@@ -195,11 +195,11 @@ def gradient_ascent(start, dims):
         check_invariants(relays)
         if (it + 1) % RECORD_EVERY == 0:
             traj.append(relays.copy())
-    snrs = chain_eval(relays)[0]
+    snrs, shd, _ = chain_eval(relays); hist_sh.append(int(shd.sum()))
     hist_bn.append(float(snrs.min())); hist_obj.append(objective(relays, soft=False))
     hist_agl.append(relays[:, 2] - terrain(relays[:, 0], relays[:, 1]))
     return dict(relays=relays, bn=np.array(hist_bn), obj=np.array(hist_obj),
-                agl=np.array(hist_agl), traj=np.array(traj))
+                agl=np.array(hist_agl), traj=np.array(traj), sh=np.array(hist_sh))
 
 
 def nelder_mead_full(start):
@@ -481,6 +481,17 @@ def report(data):
             print(f'  {LABELS[key]:13s} {s:6.0f}    | {r["bottleneck"]:10.3f} | {r["J"]:18.3f} | '
                   f'{int(r["shadow"].sum()):14d} | {", ".join(f"{a:.1f}" for a in r["agl"]):13s} | '
                   f'{run["bn"].max():.3f} (iter {int(np.argmax(run["bn"]))})')
+    print('\n-- Shadow history of each run (iterate k = state before step k+1; 3001 iterates) --')
+    for key in ('alt', 'full'):
+        for s in START_AGLS:
+            shd = data['runs'][key][s]['sh'] > 0
+            tr = np.flatnonzero(np.diff(shd.astype(int)) != 0) + 1
+            exits = [int(k) for k in tr if not shd[k]]
+            entries = [int(k) for k in tr if shd[k]]
+            print(f'  {LABELS[key]:13s} start {s:5.0f} m: shadowed iterates {int(shd.sum())}/{len(shd)}, '
+                  f'clear->shadow {len(entries)}x, shadow->clear {len(exits)}x; first exits {exits[:4]}, '
+                  f'first entries {entries[:4]}, last change at iterate {int(tr[-1]) if len(tr) else -1}, '
+                  f'final {"shadowed" if shd[-1] else "clear"}')
     bn = np.array([f['bottleneck'] for f in data['fixed']])
     sh = np.array([f['shadow'].any() for f in data['fixed']])
     clear_from = data['aglsweep'][np.argmax(~sh)]
