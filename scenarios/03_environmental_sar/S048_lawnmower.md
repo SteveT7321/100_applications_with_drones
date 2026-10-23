@@ -27,7 +27,7 @@ coverage with minimum flight distance; over-lapping wastes energy on redundant r
 and identify which configuration achieves 100% coverage at minimum energy.
 
 **Comparison configurations**:
-1. **Under-lap** — strip width $d = 12$ m (overlap ratio $\rho = 0\%$, gap between strips 2 m).
+1. **Under-lap** — strip width $d = 12$ m (overlap ratio $\rho = 1 - d/(2r_s) = -20\%$, gap between strips 2 m).
 2. **Optimal** — strip width $d^* = 10$ m (overlap ratio $\rho = 0\%$, tangent footprints, exact
    full coverage).
 3. **Over-lap** — strip width $d = 7$ m (overlap ratio $\rho = 30\%$, guaranteed coverage with
@@ -120,7 +120,12 @@ The mean number of times each scanned cell is overflown measures redundancy:
 
 $$\bar{n}_{overlap} = \frac{\sum_{(x_c,y_c)} n(x_c, y_c)}{W \cdot H}$$
 
-where $n(x_c, y_c)$ is the scan count of cell $(x_c, y_c)$. For the optimal configuration
+where $n(x_c, y_c)$ is the number of distinct passes (straight flight legs: scan strips and
+turn legs) whose swept footprint contains cell $(x_c, y_c)$. Counting every simulation time step
+instead would measure along-track sampling density, not strip overlap. The footprint must be
+swept continuously between position updates (or sampled at a spacing well below $r_s$);
+sampling it only at discrete positions $v\,\Delta t = 5$ m apart leaves uncovered slivers
+between tangent strips. For the optimal configuration
 $\bar{n}_{overlap} \approx 1.0$; for the over-lapping configuration
 $\bar{n}_{overlap} > 1$.
 
@@ -145,7 +150,7 @@ DT          = 0.5      # s — simulation timestep
 
 # Three comparison configurations: (label, overlap_ratio)
 CONFIGS = [
-    ("Under-lap (d=12m, rho=0%)",  0.0,  12.0),
+    ("Under-lap (d=12m, rho=-20%)", -0.20, 12.0),
     ("Optimal  (d=10m, rho=0%)",   0.0,  10.0),
     ("Over-lap (d=7m,  rho=30%)",  0.30,  7.0),
 ]
@@ -237,7 +242,7 @@ def run_simulation():
 | Turn time per reversal $t_{turn}$ | 4 s |
 | Grid cell size | 1 × 1 m |
 | Simulation timestep $\Delta t$ | 0.5 s |
-| Under-lap strip spacing $d$ | 12 m (0% overlap, 2 m gap) |
+| Under-lap strip spacing $d$ | 12 m ($\rho = -20\%$, 2 m gap) |
 | Optimal strip spacing $d^*$ | 10 m (0% overlap, tangent) |
 | Over-lap strip spacing $d$ | 7 m (30% overlap) |
 | Under-lap strip count $N$ | 17 strips |

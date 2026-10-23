@@ -14,7 +14,6 @@ Usage:
     python src/03_environmental_sar/s048_lawnmower.py
 """
 
-import sys
 import os
 import numpy as np
 import matplotlib
@@ -22,9 +21,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import matplotlib.colors as mcolors
-from matplotlib.collections import LineCollection
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ─────────────────────────────────────────────────────────────────
 AREA_W    = 200.0   # m  — cross-track width of search area
@@ -34,11 +30,12 @@ V_CRUISE  = 10.0    # m/s — cruise speed
 P_CRUISE  = 150.0   # W  — motor power during level cruise
 P_HOVER   = 200.0   # W  — elevated motor power during heading reversals
 T_TURN    = 4.0     # s  — time to execute one 180° heading reversal
-DT        = 0.5     # s  — simulation timestep
+DT        = 0.5     # s  — position update step (footprint is swept between steps)
+ANIM_MAX_FRAMES = 150  # GIF frame budget
 
-# Three comparison configurations: (label, overlap_ratio, strip_d_m)
+# Three comparison configurations: (label, overlap_ratio rho = 1 - d / (2 r_s), strip_d_m)
 CONFIGS = [
-    ("Under-lap\n(d=12 m, 0% overlap)", 0.0,  12.0),
+    ("Under-lap\n(d=12 m, 2 m gaps)",   -0.20, 12.0),
     ("Optimal\n(d=10 m, 0% overlap)",   0.0,  10.0),
     ("Over-lap\n(d=7 m, 30% overlap)",  0.30,  7.0),
 ]
@@ -47,8 +44,6 @@ OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '03_environmental_sar', 's048_lawnmower',
 )
-
-RNG = np.random.default_rng(0)
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -71,71 +66,88 @@ def generate_lawnmower_waypoints(area_w, area_h, strip_d, x0=0.0, y0=0.0):
     return waypoints, n_strips
 
 
+def _capsule_mask(cx, cy, p0, p1, r):
+    """Cells whose centre lies within r of the segment p0-p1 (swept footprint)."""
+    seg = p1 - p0
+    L2 = float(seg @ seg)
+    if L2 < 1e-12:
+        t = np.zeros_like(cx)
+    else:
+        t = np.clip(((cx - p0[0]) * seg[0] + (cy - p0[1]) * seg[1]) / L2, 0.0, 1.0)
+    dx = cx - (p0[0] + t * seg[0])
+    dy = cy - (p0[1] + t * seg[1])
+    return dx * dx + dy * dy <= r * r
+
+
 def simulate_coverage(waypoints, area_w, area_h, r_sensor, dt, v_cruise,
-                      x0=0.0, y0=0.0):
-    """Simulate drone flight along waypoints.
+                      snapshot_every=None):
+    """Fly the waypoint sequence at v_cruise and sweep the sensor footprint.
+
+    The drone position is advanced every dt; between two consecutive
+    positions the footprint is swept continuously (all cells within r_sensor
+    of the connecting segment are marked), so the coverage result does not
+    depend on dt.  Each straight leg between two waypoints (scan strip or
+    turn leg) counts as one *pass*; ``passes[c]`` is the number of distinct
+    passes whose swept footprint contains cell c.
 
     Returns:
-        trajectory : (T, 2) array of drone positions
-        grid       : (area_w, area_h) int32 scan-count grid
-        dist_log   : (T,) cumulative distance flown at each step
-        cov_log    : (T,) cumulative coverage fraction (0–100) at each step
+        trajectory : (T, 2) drone positions
+        passes     : (area_w, area_h) int32 distinct-pass count per cell
+        dist_log   : (T,) cumulative distance flown
+        cov_log    : (T,) cumulative coverage (%) of the area
+        snaps      : list of (step index, pass-count-so-far) if snapshot_every
     """
-    # Discretise area into 1x1 m cells
-    xs = np.arange(x0 + 0.5, x0 + area_h + 0.5, 1.0)   # along-track centres
-    ys = np.arange(y0 + 0.5, y0 + area_w + 0.5, 1.0)    # cross-track centres
-    total_cells = len(xs) * len(ys)
-    cx, cy = np.meshgrid(xs, ys)   # shape (area_w, area_h)
-    grid = np.zeros_like(cx, dtype=np.int32)
+    xs = np.arange(0.5, area_h, 1.0)    # along-track cell centres
+    ys = np.arange(0.5, area_w, 1.0)    # cross-track cell centres
+    cx, cy = np.meshgrid(xs, ys)
+    passes = np.zeros(cx.shape, dtype=np.int32)
+    covered = np.zeros(cx.shape, dtype=bool)
 
-    trajectory = []
-    dist_log   = []
-    cov_log    = []
-
-    pos       = np.array(waypoints[0], dtype=float)
-    cum_dist  = 0.0
-    trajectory.append(pos.copy())
-
-    # Initial coverage snapshot
-    d2c = np.sqrt((cx - pos[0])**2 + (cy - pos[1])**2)
-    grid[d2c <= r_sensor] += 1
-    dist_log.append(0.0)
-    cov_log.append(100.0 * np.sum(grid > 0) / total_cells)
-
+    pos = np.array(waypoints[0], dtype=float)
+    covered |= _capsule_mask(cx, cy, pos, pos, r_sensor)
+    trajectory, dist_log = [pos.copy()], [0.0]
+    cov_log = [100.0 * covered.mean()]
+    snaps = []
+    cum_dist = 0.0
     for wp in waypoints[1:]:
-        target    = np.array(wp, dtype=float)
-        direction = target - pos
-        dist      = np.linalg.norm(direction)
-        if dist < 1e-6:
+        target = np.array(wp, dtype=float)
+        dist = float(np.linalg.norm(target - pos))
+        if dist < 1e-9:
             continue
-        unit  = direction / dist
+        unit = (target - pos) / dist
         steps = max(1, int(np.ceil(dist / (v_cruise * dt))))
         step_dist = dist / steps
+        this_pass = np.zeros(cx.shape, dtype=bool)
         for _ in range(steps):
-            pos      += unit * step_dist
+            new = pos + unit * step_dist
+            m = _capsule_mask(cx, cy, pos, new, r_sensor)
+            this_pass |= m
+            covered |= m
+            pos = new
             cum_dist += step_dist
             trajectory.append(pos.copy())
-            d2c = np.sqrt((cx - pos[0])**2 + (cy - pos[1])**2)
-            grid[d2c <= r_sensor] += 1
             dist_log.append(cum_dist)
-            cov_log.append(100.0 * np.sum(grid > 0) / total_cells)
+            cov_log.append(100.0 * covered.mean())
+            if snapshot_every and (len(trajectory) - 1) % snapshot_every == 0:
+                snaps.append((len(trajectory) - 1, passes + this_pass))
+        passes += this_pass
+    if snapshot_every and snaps[-1][0] != len(trajectory) - 1:
+        snaps.append((len(trajectory) - 1, passes.copy()))
+    return (np.array(trajectory), passes, np.array(dist_log),
+            np.array(cov_log), snaps)
 
-    return (np.array(trajectory),
-            grid,
-            np.array(dist_log),
-            np.array(cov_log))
 
-
-def compute_metrics(n_strips, strip_d, area_h, grid, v_cruise=V_CRUISE,
+def compute_metrics(n_strips, strip_d, area_h, passes, v_cruise=V_CRUISE,
                     p_cruise=P_CRUISE, p_hover=P_HOVER, t_turn=T_TURN):
-    """Compute path length, energy, coverage rate, mean overlap."""
-    L      = n_strips * area_h + (n_strips - 1) * strip_d
-    E      = (p_cruise * (L / v_cruise)
-              + (p_hover - p_cruise) * t_turn * (n_strips - 1))
-    total  = grid.size
-    cov    = 100.0 * np.sum(grid > 0) / total
-    mean_ov = np.sum(grid) / total
-    return L, E, cov, mean_ov
+    """Path length, energy, coverage rate and overlap metrics."""
+    L = n_strips * area_h + (n_strips - 1) * strip_d
+    E = (p_cruise * (L / v_cruise)
+         + (p_hover - p_cruise) * t_turn * (n_strips - 1))
+    cov = 100.0 * np.mean(passes > 0)
+    mean_ov = float(np.mean(passes))                 # card: sum n / (W H)
+    mean_ov_scanned = float(passes[passes > 0].mean())
+    multi = 100.0 * np.mean(passes >= 2)
+    return L, E, cov, mean_ov, mean_ov_scanned, multi
 
 
 # ── Simulation ─────────────────────────────────────────────────────────────────
@@ -146,9 +158,9 @@ def run_simulation():
     for label, rho, strip_d in CONFIGS:
         waypoints, n_strips = generate_lawnmower_waypoints(
             AREA_W, AREA_H, strip_d)
-        traj, grid, dist_log, cov_log = simulate_coverage(
+        traj, grid, dist_log, cov_log, _ = simulate_coverage(
             waypoints, AREA_W, AREA_H, R_SENSOR, DT, V_CRUISE)
-        L, E, cov, mean_ov = compute_metrics(
+        L, E, cov, mean_ov, mean_ov_sc, multi = compute_metrics(
             n_strips, strip_d, AREA_H, grid)
         results.append({
             "label":          label,
@@ -163,11 +175,18 @@ def run_simulation():
             "energy_J":       E,
             "coverage_pct":   cov,
             "mean_overlap":   mean_ov,
+            "mean_overlap_scanned": mean_ov_sc,
+            "multi_pass_pct": multi,
+            "flight_time_s":  L / V_CRUISE + T_TURN * (n_strips - 1),
         })
         short_label = label.replace("\n", " ")
         print(f"{short_label}")
         print(f"  Strips: {n_strips}  |  Path: {L:.0f} m  |  Energy: {E/1000:.2f} kJ")
-        print(f"  Coverage: {cov:.2f}%  |  Mean overlap: {mean_ov:.3f}x")
+        print(f"  Coverage: {cov:.2f}%  |  uncovered cells: {int(np.sum(grid == 0))}")
+        print(f"  Mean passes per cell (all cells): {mean_ov:.3f}  |  "
+              f"per scanned cell: {mean_ov_sc:.3f}  |  cells seen by >=2 passes: {multi:.2f}%")
+        print(f"  Max passes on one cell: {int(grid.max())}  |  "
+              f"distance to reach final coverage: {dist_log[np.argmax(cov_log >= cov_log[-1] - 1e-9)]:.0f} m")
         print()
     return results
 
@@ -177,7 +196,8 @@ def run_simulation():
 def plot_coverage_maps(results, out_dir):
     """2D heatmap showing scan-count per cell for each configuration."""
     fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-    fig.suptitle("Coverage Maps — Scan Count per Cell", fontsize=14, fontweight='bold')
+    fig.suptitle("Coverage Maps — Distinct Passes per Cell (swept footprint)",
+                 fontsize=14, fontweight='bold')
 
     # Shared colour scale: 0 = white, 1 = light blue, 2+ = dark blue
     cmap = mcolors.LinearSegmentedColormap.from_list(
@@ -216,7 +236,7 @@ def plot_coverage_maps(results, out_dir):
 
         short = res["label"].replace("\n", " ")
         ax.set_title(
-            f"{short}\nCoverage={res['coverage_pct']:.1f}%  "
+            f"{short}\nCoverage={res['coverage_pct']:.2f}%  "
             f"d={res['strip_d']:.0f} m  N={res['n_strips']}",
             fontsize=9,
         )
@@ -226,7 +246,7 @@ def plot_coverage_maps(results, out_dir):
         ax.set_ylim(0, AREA_W)
 
         cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cbar.set_label("Scan count")
+        cbar.set_label("Distinct passes")
         cbar.set_ticks([0, 1, 2, 3])
         cbar.set_ticklabels(['0', '1', '2', '3+'])
 
@@ -246,7 +266,7 @@ def plot_flight_paths(results, out_dir):
     for ax, res in zip(axes, results):
         wp       = res["waypoints"]
         n_strips = res["n_strips"]
-        cmap_s   = plt.cm.get_cmap('tab20', n_strips)
+        cmap_s   = plt.get_cmap('tab20', n_strips)
 
         for i in range(n_strips):
             idx = i * 2
@@ -281,9 +301,9 @@ def plot_flight_paths(results, out_dir):
             (0, 0), AREA_H, AREA_W,
             linewidth=1.5, edgecolor='black', facecolor='none', linestyle='-'))
 
-    plt.tight_layout()
+    plt.tight_layout(rect=(0, 0, 1, 0.94))
     path = os.path.join(out_dir, 'flight_paths.png')
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=150, bbox_inches="tight")
     plt.close()
     print(f"Saved: {path}")
 
@@ -368,7 +388,7 @@ def plot_coverage_vs_distance(results, out_dir):
 
 
 def plot_mean_overlap(results, out_dir):
-    """Bar chart of mean scan count per cell (redundancy metric)."""
+    """Bar chart of mean distinct passes per cell (redundancy metric)."""
     labels     = [r["label"]       for r in results]
     mean_ov    = [r["mean_overlap"] for r in results]
     colors     = ['#e17055', '#00b894', '#0984e3']
@@ -378,10 +398,10 @@ def plot_mean_overlap(results, out_dir):
     bars = ax.bar(x, mean_ov, color=colors, width=0.5,
                   edgecolor='black', linewidth=0.8)
     ax.axhline(1.0, color='grey', linestyle='--', lw=1.2,
-               label='Ideal (1× overlap)')
+               label='1 pass per cell')
     ax.set_xticks(x)
     ax.set_xticklabels(labels, fontsize=9)
-    ax.set_ylabel("Mean Scan Count per Cell", fontsize=11)
+    ax.set_ylabel("Mean distinct passes per cell", fontsize=11)
     ax.set_title("Mean Overlap (Redundancy) per Configuration",
                  fontsize=12, fontweight='bold')
     ax.set_ylim(0, max(mean_ov) * 1.3)
@@ -398,98 +418,48 @@ def plot_mean_overlap(results, out_dir):
 
 
 def save_animation(results, out_dir):
-    """Animate the optimal configuration (d=10 m) showing drone progress and
-    cumulative coverage heatmap."""
+    """Animate the optimal configuration (d = 10 m): drone position and the
+    distinct-pass count per cell as it builds up (swept footprint)."""
     import matplotlib.animation as animation
 
-    # Use optimal config (index 1)
     res = results[1]
-    traj = res["trajectory"]
-    wp   = res["waypoints"]
-
-    # Precompute cumulative coverage grid at each frame
-    xs = np.arange(0.5, AREA_H + 0.5, 1.0)
-    ys = np.arange(0.5, AREA_W + 0.5, 1.0)
-    cx, cy = np.meshgrid(xs, ys)
-    grid_running = np.zeros_like(cx, dtype=np.int32)
-
-    # Decimate frames for animation size
-    step = max(1, len(traj) // 200)
-    frame_indices = list(range(0, len(traj), step))
-    if frame_indices[-1] != len(traj) - 1:
-        frame_indices.append(len(traj) - 1)
-
-    # Build list of grid snapshots at each frame
-    snapshots = []
-    pos_prev_idx = 0
-    for fi in frame_indices:
-        for k in range(pos_prev_idx, fi + 1):
-            p = traj[k]
-            d2c = np.sqrt((cx - p[0])**2 + (cy - p[1])**2)
-            grid_running[d2c <= R_SENSOR] += 1
-        pos_prev_idx = fi + 1
-        snapshots.append(np.clip(grid_running.copy(), 0, 3))
+    wp = res["waypoints"]
+    n_steps = len(res["trajectory"]) - 1
+    every = int(np.ceil(n_steps / ANIM_MAX_FRAMES))
+    traj, _, dist_log, cov_log, snaps = simulate_coverage(
+        wp, AREA_W, AREA_H, R_SENSOR, DT, V_CRUISE, snapshot_every=every)
 
     cmap = mcolors.LinearSegmentedColormap.from_list(
         "scan_cmap", ["white", "#74b9ff", "#0984e3", "#2d3436"], N=256)
-
     fig, ax = plt.subplots(figsize=(7, 7))
-    ax.set_aspect('equal')
-    ax.set_xlim(0, AREA_H)
-    ax.set_ylim(0, AREA_W)
-    ax.set_xlabel("Along-track x (m)")
-    ax.set_ylabel("Cross-track y (m)")
-    ax.set_title("Optimal Lawnmower Coverage (d=10 m)\nFrames: animated")
-
-    im = ax.imshow(
-        snapshots[0],
-        origin='lower',
-        extent=[0, AREA_H, 0, AREA_W],
-        vmin=0, vmax=3,
-        cmap=cmap,
-        aspect='equal',
-        interpolation='nearest',
-        animated=True,
-    )
+    ax.set_xlim(0, AREA_H); ax.set_ylim(0, AREA_W)
+    ax.set_xlabel("Along-track x (m)"); ax.set_ylabel("Cross-track y (m)")
+    ax.set_title(f"Optimal Lawnmower Coverage (d = {res['strip_d']:.0f} m)")
+    im = ax.imshow(np.clip(snaps[0][1], 0, 3), origin='lower',
+                   extent=[0, AREA_H, 0, AREA_W], vmin=0, vmax=3, cmap=cmap,
+                   aspect='equal', interpolation='nearest')
     drone_dot, = ax.plot([], [], 'ro', ms=6, zorder=5, label='Drone')
-    trail_line, = ax.plot([], [], '-', color='#e17055', lw=1.0, alpha=0.7,
-                          zorder=4)
-    cov_text = ax.text(0.02, 0.97, '', transform=ax.transAxes,
-                       fontsize=9, va='top', color='black',
-                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white',
-                                 alpha=0.7))
-    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Scan count')
+    trail_line, = ax.plot([], [], '-', color='#e17055', lw=1.0, alpha=0.7, zorder=4)
+    cov_text = ax.text(0.02, 0.97, '', transform=ax.transAxes, fontsize=9, va='top',
+                       bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.7))
+    cbar = plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Distinct passes')
+    cbar.set_ticks([0, 1, 2, 3]); cbar.set_ticklabels(['0', '1', '2', '3+'])
     ax.legend(loc='lower right', fontsize=8)
 
-    def init():
-        im.set_data(snapshots[0])
-        drone_dot.set_data([], [])
-        trail_line.set_data([], [])
-        cov_text.set_text('')
-        return im, drone_dot, trail_line, cov_text
-
-    def update(frame_num):
-        fi = frame_indices[frame_num]
-        im.set_data(snapshots[frame_num])
+    def update(k):
+        fi, grid_k = snaps[k]
+        im.set_data(np.clip(grid_k, 0, 3))
         drone_dot.set_data([traj[fi, 0]], [traj[fi, 1]])
-        trail_start = max(0, fi - 100)
-        trail_line.set_data(traj[trail_start:fi+1, 0],
-                            traj[trail_start:fi+1, 1])
-        covered = np.sum(snapshots[frame_num] > 0)
-        cov_pct = 100.0 * covered / snapshots[frame_num].size
-        dist = res["dist_log"][fi]
-        cov_text.set_text(f"Coverage: {cov_pct:.1f}%\nDist: {dist:.0f} m")
+        t0 = max(0, fi - 100)
+        trail_line.set_data(traj[t0:fi + 1, 0], traj[t0:fi + 1, 1])
+        cov_text.set_text(f"Coverage: {cov_log[fi]:.1f}%\nDist: {dist_log[fi]:.0f} m")
         return im, drone_dot, trail_line, cov_text
 
-    ani = animation.FuncAnimation(
-        fig, update, frames=len(frame_indices),
-        init_func=init, blit=True, interval=50,
-    )
-
+    ani = animation.FuncAnimation(fig, update, frames=len(snaps), blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
-    plt.close()
-    print(f"Saved: {path}")
+    ani.save(path, writer='pillow', fps=20, dpi=80)
+    plt.close(fig)
+    print(f"Saved: {path} ({len(snaps)} frames, every {every} steps of {DT} s)")
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
@@ -502,7 +472,7 @@ if __name__ == '__main__':
 
     # Summary table
     print("-" * 60)
-    print(f"{'Config':<30} {'N':>4} {'L (m)':>8} {'E (kJ)':>8} {'Cov%':>7} {'Overlap':>8}")
+    print(f"{'Config':<30} {'N':>4} {'L (m)':>8} {'E (kJ)':>8} {'Cov%':>7} {'Passes':>8}")
     print("-" * 60)
     for r in results:
         short = r["label"].replace("\n", " ")
