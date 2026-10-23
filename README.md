@@ -31,18 +31,18 @@ Each scenario includes a mathematical model, Python implementation, and 3D visua
 
 | # | Domain | Core Problems | Scenarios |
 |---|--------|--------------|-----------|
-| 1 | [**Pursuit & Evasion**](domains/01_pursuit_evasion/) | Differential games, optimal control | [S001–S020](#domain-1) |
-| 2 | [**Logistics & Delivery**](domains/02_logistics_delivery/) | Path planning, task assignment | [S021–S040](#domain-2) |
-| 3 | [**Environmental & SAR**](domains/03_environmental_sar/) | Coverage, information gathering | [S041–S060](#domain-3) |
-| 4 | [**Industrial & Agriculture**](domains/04_industrial_agriculture/) | Precision control, systematic paths | [S061–S080](#domain-4) |
-| 5 | [**Special Ops & Entertainment**](domains/05_special_entertainment/) | Formation control, cooperative vision | [S081–S100](#domain-5) |
+| 1 | **Pursuit & Evasion** | Differential games, optimal control | [S001–S020](#domain-1) |
+| 2 | **Logistics & Delivery** | Path planning, task assignment | [S021–S040](#domain-2) |
+| 3 | **Environmental & SAR** | Coverage, information gathering | [S041–S060](#domain-3) |
+| 4 | **Industrial & Agriculture** | Precision control, systematic paths | [S061–S080](#domain-4) |
+| 5 | **Special Ops & Entertainment** | Formation control, cooperative vision | [S081–S100](#domain-5) |
 
-Click a domain below to see every scenario; each title links to its simulation results (figures, GIF, numbers).
+Click a scenario range to jump to its list (each list can be collapsed); each title links to its simulation results (figures, GIF, numbers).
 
 <!-- SCENARIO-INDEX:START -->
 
 <a id="domain-1"></a>
-<details><summary><b>1 · Pursuit & Evasion</b> — 20/20 done</summary>
+<details open><summary><b>1 · Pursuit & Evasion</b> — 20/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -70,7 +70,7 @@ Click a domain below to see every scenario; each title links to its simulation r
 </details>
 
 <a id="domain-2"></a>
-<details><summary><b>2 · Logistics & Delivery</b> — 20/20 done</summary>
+<details open><summary><b>2 · Logistics & Delivery</b> — 20/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -98,7 +98,7 @@ Click a domain below to see every scenario; each title links to its simulation r
 </details>
 
 <a id="domain-3"></a>
-<details><summary><b>3 · Environmental & SAR</b> — 11/20 done</summary>
+<details open><summary><b>3 · Environmental & SAR</b> — 11/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -126,7 +126,7 @@ Click a domain below to see every scenario; each title links to its simulation r
 </details>
 
 <a id="domain-4"></a>
-<details><summary><b>4 · Industrial & Agriculture</b> — 0/20 done</summary>
+<details open><summary><b>4 · Industrial & Agriculture</b> — 0/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -154,7 +154,7 @@ Click a domain below to see every scenario; each title links to its simulation r
 </details>
 
 <a id="domain-5"></a>
-<details><summary><b>5 · Special Ops & Entertainment</b> — 0/20 done</summary>
+<details open><summary><b>5 · Special Ops & Entertainment</b> — 0/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|

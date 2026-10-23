@@ -48,7 +48,7 @@ def domain_block(num, folder, name):
         rows.append(f"| {sid} | {scenario} | [card]({rel(card)}) | {variant} |")
     return "\n".join([
         f'<a id="domain-{num}"></a>',
-        f"<details><summary><b>{num} · {name}</b> — {done}/{len(cards)} done</summary>",
+        f"<details open><summary><b>{num} · {name}</b> — {done}/{len(cards)} done</summary>",
         "",
         "| ID | Scenario (results) | Card | 3D |",
         "|----|--------------------|------|----|",
