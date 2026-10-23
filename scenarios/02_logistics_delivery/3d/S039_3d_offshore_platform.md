@@ -1,6 +1,6 @@
 # S039 3D Upgrade — Offshore Platform Exchange
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S039 original](../S039_offshore_platform_exchange.md)
 
 ---
@@ -73,9 +73,16 @@ $$z_{heave}(t) = A_h \sin(\omega_w t + \phi_{h})$$
 
 with wave amplitude $A_h$ and wave angular frequency $\omega_w = 2\pi / T_w$.
 
-Deck normal vector in world frame, derived from pitch $\theta_p(t)$ and roll $\phi_r(t)$:
+Deck normal vector in world frame, derived from the vessel heading $\psi_v$, pitch $\theta_p(t)$
+(about the beam axis) and roll $\phi_r(t)$ (about the fore-aft axis):
 
-$$\hat{\mathbf{n}}_{deck}(t) = R_x(\phi_r) R_y(\theta_p) \hat{\mathbf{z}}$$
+$$\hat{\mathbf{n}}_{deck}(t) = R_{ws}(t)\,\hat{\mathbf{z}}, \qquad
+R_{ws}(t) = R_z(\psi_v)\, R_y(\theta_p)\, R_x(\phi_r)$$
+
+> **Correction (2026-10, 3D implementation)**: the earlier form
+> $\hat{\mathbf{n}} = R_x(\phi_r) R_y(\theta_p)\hat{\mathbf{z}}$ applied pitch and roll about the
+> world axes, which is pitch "about the beam axis" only when $\psi_v = 0$. The heading must be
+> applied first (outermost), as above.
 
 $$\theta_p(t) = \Theta_p \sin(\omega_w t + \phi_p), \qquad
 \phi_r(t) = \Phi_r \sin(\omega_w t + \phi_r^{(0)})$$
@@ -83,6 +90,12 @@ $$\theta_p(t) = \Theta_p \sin(\omega_w t + \phi_p), \qquad
 Combined tilt magnitude used for touch-down gating:
 
 $$|\phi_{combined}(t)| = \sqrt{\theta_p(t)^2 + \phi_r(t)^2}$$
+
+> **Note (2026-10)**: $|\phi_{combined}| \le \sqrt{\Theta_p^2 + \Phi_r^2}$ for any phases. With the
+> card amplitudes $\Theta_p = 3°$, $\Phi_r = 4°$ the bound is exactly $5° = \phi_{max}$, so the
+> tilt gate can never close at the card sea state; it only binds once the sea state is escalated
+> (Extension 1). The small-angle form differs from the exact tilt
+> $\arccos(\cos\theta_p\cos\phi_r)$ by at most about 4 arcseconds here.
 
 ### Deck-Relative Coordinate Frame
 
@@ -93,14 +106,20 @@ Transformation from world frame to ship-body frame:
 
 $$\mathbf{q}_k^s = R_{sb}(t) \bigl(\mathbf{p}_k - \mathbf{p}_{deck}(t)\bigr)$$
 
-$$R_{sb}(t) = \begin{bmatrix}
+$$R_{sb}(t) = R_{ws}(t)^T = R_x(\phi_r)^T R_y(\theta_p)^T
+\begin{bmatrix}
 \cos\psi_v & \sin\psi_v & 0 \\
 -\sin\psi_v & \cos\psi_v & 0 \\
 0 & 0 & 1
-\end{bmatrix} R_x(\phi_r)^T R_y(\theta_p)^T$$
+\end{bmatrix}$$
 
-The drone is above the landing grid when $|q_{k,x}^s| < \ell_x / 2$ and
-$|q_{k,y}^s| < \ell_y / 2$ (pad half-dimensions $\ell_x = \ell_y = 1.0$ m).
+The drone is above the landing grid when $|q_{k,x}^s| < \ell_x$ and
+$|q_{k,y}^s| < \ell_y$ (pad half-dimensions $\ell_x = \ell_y = 1.0$ m, i.e. a 2 × 2 m pad as on
+the platforms).
+
+> **Correction (2026-10)**: the earlier $R_{sb}$ applied the heading rotation after the tilt
+> rotations (the inverse of the deck orientation needs the heading undone first), and the grid
+> test divided the *half*-dimensions by 2 again.
 
 ### 3D Glideslope Approach Corridor
 
@@ -157,7 +176,10 @@ Drones cruise at $z_{cruise} = 30$ m above sea level between platforms. Altitude
 - **Descent to platform**: linear altitude ramp from $z_{cruise}$ to $z_{platform} = 3.0$ m
   over horizontal distance $d_{ramp} = 100$ m.
 - **Final approach to vessel**: track $z_{cmd}(t)$ (glideslope + heave feed-forward) while
-  converging horizontally inside $d_{dock} = 15$ m.
+  converging horizontally inside $d_{dock} = 15$ m. The 8° glideslope from $z_{ref}$ meets the
+  30 m cruise altitude at $d = (30 - 5)/\tan 8° = 177.9$ m, so the descent along $z_{cmd}$ must
+  start there; at $d_{dock}$ the glideslope height above the deck is only
+  $15 \tan 8° = 2.1$ m.
 - **Holding orbit**: circular orbit at $z_{hold} = z_{platform} + 10$ m above the occupied
   platform, $R_{hold} = 30$ m.
 
