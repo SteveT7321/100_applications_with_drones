@@ -108,7 +108,7 @@ Checks printed by the script:
 | **Corner target 3D** | 3.208 s; evader stopped in the (5, 5, 5.5) corner for 1.15 s | ❌ no capture in 60 s (distance 2.74–6.38 m in the last 10 s) |
 | **Dive boost 3D** | 2.208 s, same edge, stopped 1.25 s; **0 dives** | 1.542 s at (3.50, 0, 4.70); **0 dives** |
 
-No two strategies give identical pursuer paths. At this start, direct and wall herd reach the same capture time with the same 6.25 m path. The evader starts in front of the +x face, so the wall point lies almost straight ahead.
+The strategies steer differently, but at this start direct and wall herd reach the same capture time with the same path length (6.25 m). The evader starts in front of the +x face, so the wall point lies almost straight ahead.
 
 ### Monte Carlo (50 random starts, same starts for every strategy)
 
