@@ -1,6 +1,6 @@
 # S042 3D Upgrade — Missing Person Search
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S042 original](../S042_missing_person.md)
 
 ---
@@ -55,9 +55,10 @@ information even when a drone is nominally nearby.
 **Comparison strategies**:
 1. **Terrain-aware greedy frontier** — selects the highest-belief unoccluded cell, commanding
    the terrain-following altitude profile en route.
-2. **Flat-altitude lawnmower** — systematic boustrophedon at fixed MSL altitude of 20 m
+2. **Flat-altitude lawnmower** — systematic boustrophedon at one fixed MSL altitude
    (ignores DEM; occlusion model still applied); serves as a baseline showing the cost of
-   ignoring terrain.
+   ignoring terrain. The altitude is the highest DEM point + $h_{AGL}$ (an earlier version of
+   this card said 20 m MSL, which is below the ridgetops and would fly into the terrain).
 3. **Valley-biased prior + greedy** — reweights the prior by a valley-affinity factor
    $w_{valley}(x,y)$ before search; tests whether topographic priors accelerate detection when
    lost hikers tend to shelter in valleys.
@@ -75,7 +76,11 @@ $$z_{dem}(x, y) = A_{base} \sum_{k=1}^{K} \frac{1}{2^{k-1}}
   \cos\!\left(\frac{2\pi y}{L_k} + \phi_{y,k}\right)$$
 
 with $K = 4$ octaves, base wavelength $L_1 = 80$ m, amplitude $A_{base} = 10$ m, and random
-phase offsets $\phi_{x,k}, \phi_{y,k}$. The result is clipped to $[0, 40]$ m. The DEM is
+phase offsets $\phi_{x,k}, \phi_{y,k}$, plus a base elevation of 20 m, with $L_k = L_1/2^{k-1}$.
+The octave sum spans $\pm(10 + 5 + 2.5 + 1.25) = \pm 18.75$ m, so without the 20 m base the clip to
+$[0, 40]$ m would flatten about half of the area to 0 m (an earlier version of this card had no
+base elevation). The first-octave phases are chosen so that the LKP lies on that octave's valley
+floor. The result is clipped to $[0, 40]$ m. The DEM is
 sampled on the same $400 \times 400$ grid as the belief map (resolution 0.5 m/cell).
 
 ### Drone Altitude Command
@@ -92,7 +97,10 @@ $$z_{transit}(s) = \max\!\left(z_{cmd}(\mathbf{p}(s)),\;
   \max_{s' \in [0, s]} z_{dem}(\mathbf{p}(s')) + h_{AGL}\right)$$
 
 where $\mathbf{p}(s)$ is the horizontal position linearly interpolated along the transit arc
-parameterised by arc length $s$.
+parameterised by arc length $s$. (Note: the running maximum makes the altitude non-decreasing
+along a leg, i.e. the drone never descends into a valley until it reaches the waypoint. The
+implementation follows the terrain instead, $z(s) = z_{dem}(\mathbf{p}(s)) + h_{AGL}$ at every
+1 m sample, and checks the clearance between samples.)
 
 ### Altitude-Dependent Effective Footprint Radius
 
@@ -129,7 +137,9 @@ The prior follows the same diffused Gaussian as S042, defined over 2D horizontal
 
 $$P_0(x, y) = \frac{1}{Z} \exp\!\left(-\frac{(x - x_{LKP})^2 + (y - y_{LKP})^2}{2\,\sigma_0^2}\right)$$
 
-$$\sigma_0^2 = \sigma_{LKP}^2 + 2D\Delta t, \qquad \sigma_0 \approx 17.2 \text{ m}$$
+$$\sigma_0^2 = \sigma_{LKP}^2 + 2D\Delta t, \qquad \sigma_0 = \sqrt{10^2 + 2 \cdot 0.02 \cdot 7200} \approx 19.7 \text{ m}$$
+
+(An earlier version of this card said $\sigma_0 \approx 17.2$ m; that was an arithmetic error.)
 
 **Valley-biased variant**: multiply by a terrain affinity weight before normalization:
 
@@ -150,10 +160,15 @@ $$P(z_i \mid H_{(x,y)}) =
 \begin{cases}
 P_d      & z_i = 1,\; (x,y) \in \mathcal{F}_i \\
 P_{fa}   & z_i = 1,\; (x,y) \in \mathcal{V}_i \setminus \mathcal{F}_i \\
-1        & z_i = 0,\; (x,y) \notin \mathcal{V}_i \quad \text{(occluded, no info)} \\
 1 - P_d  & z_i = 0,\; (x,y) \in \mathcal{F}_i \\
-1-P_{fa} & z_i = 0,\; (x,y) \in \mathcal{V}_i \setminus \mathcal{F}_i
+1-P_{fa} & z_i = 0,\; (x,y) \notin \mathcal{F}_i
 \end{cases}$$
+
+Every cell that is not both inside the cone and visible (outside the cone, or occluded) has the
+same likelihood $P_{fa}$ / $1 - P_{fa}$: the sensor cannot see a person there, so the
+observation carries no information about it and the constant drops out in the normalisation.
+(An earlier version gave occluded cells likelihood 1 after a miss and $1 - P_{fa}$ to other
+unseen cells, which wrongly up-weights occluded cells after every miss.)
 
 The posterior is then normalised over all grid cells as in S042.
 
@@ -214,7 +229,7 @@ where $\mathcal{G}_{safe} = \{(x,y) : \|\nabla z_{dem}(x,y)\| \leq 1.0,\; (x,y) 
 | LKP positional uncertainty $\sigma_{LKP}$ | 10.0 m |
 | Brownian diffusion coefficient $D$ | 0.02 m²/s |
 | Time since LKP $\Delta t$ | 7200 s (2 hours) |
-| Prior spread $\sigma_0$ | $\approx$ 17.2 m |
+| Prior spread $\sigma_0$ | $\approx$ 19.7 m |
 | DEM elevation range | 0 – 40 m |
 | DEM Perlin octaves $K$ | 4 |
 | DEM base wavelength $L_1$ | 80 m |
