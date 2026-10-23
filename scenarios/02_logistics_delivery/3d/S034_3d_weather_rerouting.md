@@ -1,6 +1,6 @@
 # S034 3D Upgrade — Weather Rerouting
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S034 original](../S034_weather_rerouting.md)
 
 ---
@@ -31,7 +31,7 @@ The original S034 fixes the drone at a single nominal cruise altitude of z = 20 
 
 ### 3D Voxel Grid
 
-The airspace is discretised into voxels with resolution $\Delta_{xy} = 2$ m horizontally and $\Delta_z = 2$ m vertically, giving a grid of size $N_x \times N_y \times N_z = 50 \times 50 \times 30$ voxels. Each node $v_{i,j,k}$ represents world position:
+The airspace is discretised into voxels with resolution $\Delta_{xy} = 2$ m horizontally and $\Delta_z = 2$ m vertically, giving a grid of size $N_x \times N_y \times N_z = 50 \times 50 \times 26$ nodes (z = 5, 7, ..., 55 m; *corrected from 30: 30 layers from 5 m at 2 m spacing would reach 63 m, above the 55 m ceiling*). Each node $v_{i,j,k}$ represents world position:
 
 $$\mathbf{p}_{i,j,k} = (i \,\Delta_{xy},\; j\, \Delta_{xy},\; z_{min} + k\, \Delta_z)$$
 
@@ -49,9 +49,11 @@ The effective drone ground speed along edge $(u, v)$ when flying through altitud
 
 $$v_{eff}(u,v) = v_{max} - \hat{\mathbf{e}}_{uv} \cdot \bar{W}(z_u)\,\hat{\mathbf{w}}$$
 
-where $\hat{\mathbf{e}}_{uv} = (\mathbf{p}_v - \mathbf{p}_u) / \|\mathbf{p}_v - \mathbf{p}_u\|$ is the edge unit vector. The shear-weighted edge traversal time is:
+where $\hat{\mathbf{e}}_{uv} = (\mathbf{p}_v - \mathbf{p}_u) / \|\mathbf{p}_v - \mathbf{p}_u\|$ is the edge unit vector and $\hat{\mathbf{w}}$ is the direction the wind blows **from** (flying along $\hat{\mathbf{w}}$ is flying into a headwind). The shear-weighted edge traversal time is:
 
 $$t_{edge}(u,v) = \frac{\|\mathbf{p}_v - \mathbf{p}_u\|}{v_{eff}(u,v)}$$
+
+*Correction:* because $W_{mid} = 6$ m/s exceeds $v_{max} = 5$ m/s, $v_{eff}$ is zero or negative for mid-band edges with $\hat{\mathbf{e}}_{uv} \cdot \hat{\mathbf{w}} \ge 5/6$, and $t_{edge}$ is then meaningless. Such edges (in the implementation: $v_{eff} < 0.5$ m/s) are not flyable and get infinite cost.
 
 ### 3D Ellipsoidal Hazard Cell Model
 
@@ -71,7 +73,7 @@ $$c(u,v,t) = c_{dist}(u,v) + c_{shear}(u,v) + c_{hazard}(u,v,t)$$
 
 $$c_{dist}(u,v) = \|\mathbf{p}_v - \mathbf{p}_u\|_2$$
 
-**Wind-shear energy penalty** (headwind increases energy, tailwind decreases it):
+**Wind-shear energy penalty** (headwind increases energy; a tailwind adds nothing, because of the $\max(\cdot, 0)$):
 
 $$c_{shear}(u,v) = \beta \cdot \bar{W}(z_u) \cdot \max\!\left(\hat{\mathbf{e}}_{uv} \cdot \hat{\mathbf{w}},\; 0\right) \cdot \|\mathbf{p}_v - \mathbf{p}_u\|_2$$
 
@@ -109,6 +111,12 @@ $$h(\mathbf{p}_s, \mathbf{p}_{start}) = \|\mathbf{p}_s - \mathbf{p}_{start}\|_2 
 
 where $c_{min} = 1 + \gamma \cdot \mathbf{1}[\text{altitude change required}]$ adjusts for the vertical penalty.
 
+*Correction:* this scaled heuristic is not admissible. Whenever $\mathbf{p}_s$ and $\mathbf{p}_{start}$ differ in altitude it charges $\gamma$ on the whole 3D distance, while the true cost only charges $\gamma$ on the altitude change, so D* Lite could return a suboptimal path. The implementation uses the consistent lower bound
+
+$$h(\mathbf{p}_s, \mathbf{p}_{start}) = \|\mathbf{d}\|_2 + \gamma\,|d_z| + \beta\,W_{lb}\,\max(\mathbf{d}\cdot\hat{\mathbf{w}}, 0), \qquad \mathbf{d} = \mathbf{p}_s - \mathbf{p}_{start}$$
+
+with $W_{lb}$ the weakest band wind the search may use (each term is subadditive, so the triangle inequality holds edge by edge).
+
 ### Vertical Bypass Decision Heuristic
 
 Before each D* Lite replanning call, a fast altitude-bypass check is performed. If a newly active cell $k$ intersects the remaining path, the planner computes:
@@ -118,6 +126,8 @@ $$\Delta z_{above} = c_{z,k} + c_k - z_{drone}, \quad \Delta z_{below} = z_{dron
 $$z_{bypass} = \begin{cases} z_{drone} + \Delta z_{above} + z_{margin} & \text{if } \Delta z_{above} \leq \Delta z_{below} \text{ and } z_{drone} + \Delta z_{above} \leq z_{max} \\ z_{drone} - \Delta z_{below} - z_{margin} & \text{otherwise} \end{cases}$$
 
 with $z_{margin} = 3$ m. This heuristic seeds the D* Lite warm start by temporarily removing nodes at the bypass altitude from the closed set, accelerating convergence when a simple altitude change suffices.
+
+*Correction:* the feasibility test must include the margin and the floor: the "above" option needs $c_{z,k} + c_k + z_{margin} \le z_{max}$, and the "otherwise" branch needs $c_{z,k} - c_k - z_{margin} \ge z_{min}$; if neither holds there is no vertical bypass. D* Lite has no closed set, so the warm-start seeding is not implementable as written; the implementation logs the heuristic's proposal and compares it with the path D* Lite actually returns.
 
 ### 3D Replanning Trigger
 
@@ -174,7 +184,7 @@ The vertical speed is naturally bounded by $v_{max}$ projected onto the z-axis; 
 |-----------|-------|
 | Airspace | 100 m × 100 m × 60 m |
 | Voxel resolution | 2 m × 2 m × 2 m |
-| Grid size | 50 × 50 × 30 voxels |
+| Grid size | 50 × 50 × 26 nodes (corrected from 30, see the voxel-grid section) |
 | Altitude range | 5 – 55 m |
 | Number of hazard cells | 8 |
 | Hazard horizontal semi-axes $a_k, b_k$ | 8 – 20 m (uniform) |
@@ -188,7 +198,7 @@ The vertical speed is naturally bounded by $v_{max}$ projected onto the z-axis; 
 | Vertical bypass margin $z_{margin}$ | 3 m |
 | Drone max speed $v_{max}$ | 5 m/s |
 | Time step $\Delta t$ | 0.05 s |
-| Heuristic | 3D Euclidean × $c_{min}$ |
+| Heuristic | 3D Euclidean + $\gamma \lvert d_z \rvert$ + wind lower bound (corrected; the scaled form is inadmissible) |
 
 ---
 
