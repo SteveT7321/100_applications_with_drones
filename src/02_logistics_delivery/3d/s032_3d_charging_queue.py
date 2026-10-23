@@ -668,6 +668,17 @@ def main():
                   f"visits per level (1.5/3.0/4.5 m)={v[0]:.2f}/{v[1]:.2f}/{v[2]:.2f}  "
                   f"pad busy={pb[0] * 100:.0f}/{pb[1] * 100:.0f}/{pb[2] * 100:.0f}%")
 
+    print('\nPad capacity check (pad busy = charging; drone time = '
+          f'{N_DRONES} drones x {T_SIM:.0f} s = {N_DRONES * T_SIM:.0f} drone-s):')
+    for name, m in ((f'3D thr beta={bs:.2f} FIFO', sweep['thr3d'][bs]),
+                    ('Predictive 3D FIFO', preds['pred3d'])):
+        pb = m['pad_busy']; drone_s = N_DRONES * T_SIM
+        print(f"  {name:<24} pads busy {pb.min() * 100:.0f}-{pb.max() * 100:.0f}% "
+              f"(mean {pb.mean() * 100:.1f}%, idle {100 - pb.mean() * 100:.1f}%)  "
+              f"drone time: flying {m['utilisation'] * 100:.1f}%, charging "
+              f"{pb.sum() * T_SIM / drone_s * 100:.1f}%, queue wait {m['wait_time']:.1f} drone-s "
+              f"({m['wait_time'] / drone_s * 100:.1f}%)")
+
     print('\nPaired differences in deliveries (mean, std, wins/ties/losses over seeds):')
     pairs = [('3D thr (best safe) - flat thr (best safe)', sweep['thr3d'][bs],
               sweep['flat_thr'][best_safe['flat_thr']]),
@@ -694,6 +705,18 @@ def main():
         print(f"  {lab:<32} deliveries={r['deliveries']}  stranded={r['stranded']}  "
               f"dockings per level={[int(v) for v in r['visits']]}  max waiting={int(nq.sum(axis=1).max())}  "
               f"z range=[{r['hist']['pos'][:, :, 2].min():.2f}, {r['hist']['pos'][:, :, 2].max():.2f}] m")
+        if qr == 'alt_prio':                 # pad free while a drone waits for another level
+            occ, nqa = r['hist']['occ'], r['hist']['nq']
+            tt = (np.arange(nqa.shape[0]) + 1) * DT   # same time base as plot_level_queues
+            for lf in range(N_LEVELS):
+                for lw in range(N_LEVELS):
+                    if lf == lw:
+                        continue
+                    mask = ~occ[:, lf] & (nqa[:, lw] > 0)
+                    edges = np.flatnonzero(np.diff(np.r_[0, mask.astype(int), 0]))
+                    for s0, s1 in zip(edges[::2], edges[1::2]):
+                        print(f"    pad {PAD_Z[lf]:.1f} m free while a drone waits for {PAD_Z[lw]:.1f} m: "
+                              f"t = {tt[s0]:.1f}-{tt[s1 - 1]:.1f} s")
 
     print()
     plot_trajectories_3d(recs[0], out_dir)

@@ -109,7 +109,7 @@ conda activate drones
 python src/02_logistics_delivery/3d/s032_3d_charging_queue.py
 ```
 
-The run takes about 61 s: 502 simulations plus a 151-frame GIF, measured while other simulations were running on the machine. Two runs gave byte-identical console output and output files.
+The run takes about 1–2 min: 502 simulations plus a 151-frame GIF. Measured wall-clock times were 67–106 s across runs, with other simulations running on the machine at the same time. Two runs gave byte-identical console output and output files.
 
 The script asserts these invariants every step:
 
@@ -199,7 +199,7 @@ These runs are used for the plots and the animation.
 - **Altitude-priority queuing is worse than a shared FIFO (card claim does not hold).** It loses 2.5 ± 5.0 deliveries with the 3D threshold (14 of 20 seeds worse) and 2.9 ± 4.9 with predictive 3D (13 of 20 worse). The cause is that it commits each drone to one level's queue. A pad on another level can free up first and then sit idle: 28.0 pad-s per run, against 0 for a shared queue. Queue wait rises from 72.4 to 98.3 drone-s. The card's cost also favours the top level (4.5 m busy 73 % vs 1.5 m busy 55 %). The saving it buys is small: the descent to 4.5 m instead of 1.5 m saves 3 m each way: 3 s of vertical flight and 0.042 SoC per round trip, which is about 1 s of charging. That is much less than a typical 20 s charge.
 - **Choosing the nearest free level in a shared FIFO does not help either** (−0.8 ± 4.8; 5/2/13). Its gain per visit is below the noise between seeds.
 - **The cost of the third dimension**: vertical flight takes 17–18 % of all battery energy, consistent with a rough estimate of about 3.4 m of vertical travel per delivery leg (0.024 SoC) against about 31 m horizontal (0.11 SoC), i.e. 18 %. Switching γ off raises deliveries from 167.0 to 184.4 (+17.4 ± 5.9, all 20 seeds better).
-- **Charging is the bottleneck.** The pads supply at most 36 E_cap per run. Utilisation is about 64 % with three pads, against 51 % in 2D with two pads, and the SoC traces show drones queueing at the hold point.
+- **Charging time matters, but pad capacity is not saturated.** With the 3D threshold (β = 0.20) and the shared FIFO, the pads are busy charging 65–67 % of the time (mean 66.0 %, idle 34.0 %). Of the 1800 drone-s per run (6 drones × 300 s), drones fly 63.8 %, charge 33.0 % and wait in the queue only 72.4 drone-s (4.0 %). Predictive 3D gives almost the same split (pads 65.4 % busy, wait 75.0 drone-s, 4.2 %). So the fleet loses about a third of its time to charging itself, at 0.04 E_cap/s, and very little to queueing for a pad. The pads supply at most 36 E_cap per run. Fleet utilisation (flying time) is 63.8 %, against 51 % in 2D with two pads.
 
 ### Figures
 
@@ -219,7 +219,7 @@ These runs are used for the plots and the animation.
 
 ![Policy comparison](policy_comparison.png)
 
-**Per-level queues.** Seed 42. Top: shared FIFO. Bottom: altitude-priority, with one queue per level. The coloured bands below zero show when each pad is occupied. In the bottom panel a drone waits for the 4.5 m pad while the 1.5 m pad is free, for example at t ≈ 222–237 s:
+**Per-level queues.** Seed 42. Top: shared FIFO. Bottom: altitude-priority, with one queue per level. The coloured bands below zero show when each pad is occupied. In the bottom panel a drone waits for the 4.5 m pad while another shaft is free. The script prints these intervals: the 1.5 m shaft is free at t = 121.5–138.0, 177.5–182.5 and 222.5–236.5 s, and the 3.0 m shaft at t = 120.5–127.0 and 181.0–182.5 s. In the last 1.5 m interval, the drone charging there finishes and climbs out of the shaft, leaving it free at 222.5 s:
 
 ![Level queues](level_queues.png)
 
