@@ -1,6 +1,6 @@
 # S023 3D Upgrade — Moving Landing Pad
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S023 original](../S023_moving_landing_pad.md)
 
 ---
@@ -21,7 +21,7 @@ Additionally, the approach trajectory must now incorporate a constrained descent
 
 ## Problem Definition
 
-**Setup**: A delivery drone departs a fixed shore station and must land on a moving vessel. The vessel travels at constant forward speed $v_V$ along the $x$-axis. Its deck undergoes sinusoidal heave, pitch, and roll: all three motions are periodic with vessel-specific frequencies and amplitudes. The drone receives real-time telemetry of the vessel's full pose (position + heave + pitch + roll) but must compensate for a fixed one-step sensor latency $\tau_s$.
+**Setup**: A delivery drone departs a fixed shore station and must land on a moving vessel. The vessel travels at constant forward speed $v_V$ along the $x$-axis. Its deck undergoes sinusoidal heave, pitch, and roll: all three motions are periodic with vessel-specific frequencies and amplitudes. The drone receives real-time telemetry of the vessel's full pose (position + heave + pitch + roll) but must compensate for a fixed sensor latency $\tau_s = 0.04$ s (two steps at 50 Hz; see Key Parameters).
 
 **Roles**:
 - **Drone**: quadrotor executing a three-phase guidance law — intercept (PNG), constrained approach along a descent-angle ramp, and active deck-tracking flare.
@@ -31,7 +31,7 @@ Additionally, the approach trajectory must now incorporate a constrained descent
 1. Lateral miss distance $\|\mathbf{p}_{xy,D} - \mathbf{p}_{xy,pad}\| \leq r_{pad}$
 2. Relative vertical speed at contact $|\dot{z}_D - \dot{z}_p| \leq v_{land,max}$
 3. Relative horizontal velocity mismatch $\|\dot{\mathbf{p}}_{xy,D} - \dot{\mathbf{p}}_{xy,V}\| \leq \Delta v_{max}$
-4. Landing only attempted during a **motion window** when deck heave satisfies $|z_p(t) - \bar{z}_p| \leq \delta_{heave}$ (near-crest or near-trough gate)
+4. Landing only attempted during a **motion window** when deck heave satisfies $\big||z_p(t)| - A_h\big| \leq \delta_{heave}$ and $|\dot{z}_p(t)| \leq \dot{z}_{gate}$ (near-crest or near-trough gate)
 
 ---
 
@@ -89,7 +89,7 @@ where $\psi_V$ is the vessel heading angle and $\gamma \geq \gamma_{min} = 6°$ 
 
 Commanded ramp position at time $t$ tracks the advancing ramp endpoint:
 
-$$\mathbf{p}_{cmd}^{ramp}(t) = \mathbf{p}_{pad}(t) + L_{ramp}(t)\,\hat{\mathbf{d}}_{ramp}$$
+$$\mathbf{p}_{cmd}^{ramp}(t) = \mathbf{p}_{pad}(t) - L_{ramp}(t)\,\hat{\mathbf{d}}_{ramp}$$
 
 with $L_{ramp}(t) = \|p_D - p_{pad}\|$ decaying as the drone closes.
 
@@ -105,9 +105,9 @@ $$\mathbf{a}_{xy} = K_p(\mathbf{p}_{pad,xy} - \mathbf{p}_{D,xy}) + K_v(\dot{\mat
 
 $$h_{rel}(t) = z_D(t) - z_p(t)$$
 
-$$\dot{h}_{rel,cmd}(t) = -v_{land,max} \cdot \tanh\!\left(\frac{h_{rel}}{z_{flare,rel}}\right) + \dot{z}_p(t)$$
+$$\dot{h}_{rel,cmd}(t) = -v_{land,max} \cdot \tanh\!\left(\frac{h_{rel}}{z_{flare,rel}}\right), \qquad \dot{z}_{D,cmd}(t) = \dot{h}_{rel,cmd}(t) + \dot{z}_p(t)$$
 
-$$a_z = K_{z,r}\!\left(\dot{h}_{rel,cmd} - (\dot{z}_D - \dot{z}_p)\right)$$
+$$a_z = K_{z,r}\!\left(\dot{z}_{D,cmd} - \dot{z}_D\right) = K_{z,r}\!\left(\dot{h}_{rel,cmd} - (\dot{z}_D - \dot{z}_p)\right)$$
 
 The $\dot{z}_p$ feed-forward term is critical: without it the flare controller fights the heaving deck and risks a hard contact during a downward heave cycle.
 
@@ -115,7 +115,7 @@ The $\dot{z}_p$ feed-forward term is critical: without it the flare controller f
 
 A landing attempt is only permitted if the current heave phase satisfies:
 
-$$|z_p(t)| \leq \delta_{heave} \quad \text{and} \quad |\dot{z}_p(t)| \leq \dot{z}_{gate}$$
+$$\big||z_p(t)| - A_h\big| \leq \delta_{heave} \quad \text{and} \quad |\dot{z}_p(t)| \leq \dot{z}_{gate}$$
 
 If the gate is not open, Phase 3 holds the drone in a hover at $h_{rel} = z_{hold}$ above the mean deck height, waiting for the next window.
 
@@ -134,7 +134,7 @@ $$\|\dot{\mathbf{p}}_{xy,D} - \dot{\mathbf{p}}_{xy,pad}\| \leq \Delta v_{max}$$
 - **Constrained approach ramp**: descent angle $\gamma \geq 6°$ enforced geometrically during Phase 2 to simulate superstructure clearance.
 - **Relative-velocity touchdown criterion**: success requires matching both $\dot{z}_p$ and $\dot{\mathbf{p}}_{xy,V}$ simultaneously, not just absolute velocity limits.
 - **Motion window gate**: Phase 3 entry is gated on heave amplitude and rate so the touchdown is timed to a calm portion of the heave cycle.
-- **Sensor latency model**: pad state is fed with a one-step delay $\tau_s$ to reflect the real-time telemetry lag.
+- **Sensor latency model**: pad state is fed with a two-step (0.04 s) delay $\tau_s$ to reflect the real-time telemetry lag.
 
 ---
 
@@ -163,6 +163,17 @@ $$\|\dot{\mathbf{p}}_{xy,D} - \dot{\mathbf{p}}_{xy,pad}\| \leq \Delta v_{max}$$
 | Sensor latency $\tau_s$ | 0.04 s (2 steps at 50 Hz) |
 | $z$ range | 0.0 – 20.0 m |
 | Simulation time step | 0.02 s (50 Hz) |
+
+---
+
+### Card corrections (2026-10-24, from the 3D implementation)
+
+- **Motion-window gate.** The original gate, $|z_p| \le \delta_{heave}$ **and** $|\dot z_p| \le \dot z_{gate}$, can never open with the card's numbers: wherever $|z_p| \le 0.2$ m, $|\dot z_p| \ge 2\pi f_h A_h\sqrt{1-(0.2/0.6)^2} = 0.355$ m/s $> 0.3$ m/s. The text asks for a near-crest or near-trough gate, so the heave condition is now measured from the nearest crest or trough, $\big||z_p| - A_h\big| \le \delta_{heave}$. It is open 53.5 % of the time at $A_h = 0.6$ m.
+- **Flare feed-forward.** The original law added $\dot z_p$ to the *relative* rate command and then compared it with the *relative* rate $\dot z_D - \dot z_p$. That counts the deck velocity twice: it drives $\dot z_D \to 2\dot z_p - v_{land,max}\tanh(\cdot)$. The feed-forward now enters the absolute rate command, $\dot z_{D,cmd} = \dot h_{rel,cmd} + \dot z_p$.
+- **Ramp command sign.** $\mathbf{p}_{pad} + L\hat{\mathbf{d}}_{ramp}$ lies ahead of and below the pad. The point on the approach ramp is $\mathbf{p}_{pad} - L\hat{\mathbf{d}}_{ramp}$.
+- **Latency.** The problem text said "one-step", but the parameter table says 0.04 s, which is 2 steps at 50 Hz. Two steps are used.
+- **Hard-contact direction.** Without the feed-forward, every hard contact in the simulation happens while the deck is **rising** into the drone, not during a downward heave cycle (see the README).
+- Outputs are written to `outputs/02_logistics_delivery/3d/s023_3d_moving_landing_pad/`.
 
 ---
 
