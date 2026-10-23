@@ -8,7 +8,7 @@
 
 **Setup**: A major earthquake has destroyed ground-based cellular infrastructure across a
 $2000 \times 2000$ m urban area. A population density map divides the area into $G = 40 \times 40$
-grid cells; each cell $u$ has a known population weight $\text{pop}_u \geq 0$ (people). A fleet of
+grid cells; each cell $u$ has a known population weight $\text{pop}_u \geq 0$ (persons in the cell: density in persons/km² × 0.0025 km²). A fleet of
 $K = 5$ drones is available at a single charge station $\mathbf{p}_{base}$. Each drone can hover
 at a fixed position and act as a temporary airborne cell tower, covering all population within a
 ground-projected radius $r_{cov} = 300$ m. Drones must remain airborne for the duration of the
@@ -177,13 +177,15 @@ def build_population_map(grid_n, area_size, seed=42):
     cx, cy = np.meshgrid(xs, ys)
     centroids = np.stack([cx.ravel(), cy.ravel()], axis=1)  # (N, 2)
 
-    # Three population clusters
+    # Three population clusters (densities in persons/km², converted to persons per cell)
+    cell_km2 = (2000 / grid_n / 1000) ** 2                # 0.0025 km² for a 50 m cell
     pop = np.zeros(grid_n * grid_n)
     clusters = [(400, 1600, 8000, 350), (1200, 1200, 12000, 400), (1700, 700, 6000, 250)]
     for (mx, my, peak, sigma) in clusters:
         d2 = (centroids[:, 0] - mx)**2 + (centroids[:, 1] - my)**2
         pop += peak * np.exp(-d2 / (2 * sigma**2))
-    pop += rng.uniform(0, 200, size=pop.shape)   # background noise
+    pop += rng.uniform(0, 200, size=pop.shape)   # background noise, persons/km²
+    pop *= cell_km2                               # persons per cell
     return centroids, pop
 
 def coverage(positions, centroids, pop, r_cov):
