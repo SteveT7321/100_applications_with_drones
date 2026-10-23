@@ -300,8 +300,11 @@ def train():
     def learn(model, env, steps, key):
         model.set_env(env)
         cb = EpisodeLogger()
+        n0 = model.num_timesteps
+        # SB3 rounds each learn() call up to a whole number of n_steps rollouts
         model.learn(total_timesteps=steps, callback=cb, reset_num_timesteps=False)
-        curves.setdefault(key, {'returns': [], 'captured': []})
+        curves.setdefault(key, {'returns': [], 'captured': [], 'steps': 0})
+        curves[key]['steps'] += model.num_timesteps - n0
         curves[key]['returns'] += cb.returns
         curves[key]['captured'] += cb.captured
         return cb
@@ -326,7 +329,7 @@ def train():
     for key, c in curves.items():
         cap = np.array(c['captured'], dtype=float)
         n = len(cap); q = max(1, n // 5)
-        print(f'  {key:18s} {n:4d} episodes | captured {cap[:q].mean() * 100:5.1f}% -> '
+        print(f'  {key:18s} {c["steps"]:6d} timesteps, {n:4d} episodes | captured {cap[:q].mean() * 100:5.1f}% -> '
               f'{cap[-q:].mean() * 100:5.1f}% | mean return first/last 20%: '
               f'{np.mean(c["returns"][:q]):8.2f} / {np.mean(c["returns"][-q:]):8.2f}')
     return frozen(pursuer, 'pursuer'), frozen(evader, 'evader'), curves
@@ -352,6 +355,7 @@ def simulate(pursuer, evader, n, seed, n_record=0, noise=None, diag=None):
     ang_sum, ang_cnt = 0.0, 0
     traj = [np.stack([p[:n_record], e[:n_record]], 1)] if n_record else None
     closest = np.linalg.norm(p - e, axis=1)
+    wall_hit = np.zeros(n, bool)      # evader touched a side wall before the episode ended
     for step in range(MAX_STEPS):
         base = raw_obs(p, pv, e, ev, step)
         vp = pursuer.act(base + rng.normal(0, sigma, base.shape), step)
@@ -363,6 +367,7 @@ def simulate(pursuer, evader, n, seed, n_record=0, noise=None, diag=None):
         p_new, e_new, cap = world_step(p, e, vp, ve)
         p, e, pv, ev = p_new, e_new, vp, ve
         closest = np.where(active, np.minimum(closest, np.linalg.norm(p - e, axis=1)), closest)
+        wall_hit |= active & ~cap & (np.max(np.abs(e[:, :2]), axis=1) > ARENA - 1e-6)
         newly = active & cap
         t_cap[newly] = (step + 1) * DT
         active &= ~cap
@@ -371,7 +376,7 @@ def simulate(pursuer, evader, n, seed, n_record=0, noise=None, diag=None):
         if not active.any():
             break
     if diag is not None:
-        diag.update(closest=closest, p=p, e=e)
+        diag.update(closest=closest, p=p, e=e, wall_hit=wall_hit)
     return t_cap, ang_sum / max(ang_cnt, 1), (np.array(traj) if n_record else None)
 
 
@@ -383,12 +388,17 @@ def benchmark(rl_p, rl_e):
           f'noise sigma {NOISE_SIGMA}')
     print(f'  {"pursuer":13s} {"evader":13s} {"capture":>8s} {"mean t (captured)":>18s} '
           f'{"median t":>9s} {"mean |angle(v_P, LOS)|":>23s}')
-    fails = []
+    fails, walls = [], []
     for pu in pursuers:
         for evd in evaders:
             dg = {}
             t, ang, _ = simulate(pu, evd, TEST_EPISODES, BENCH_SEED, diag=dg)
             c = ~np.isnan(t)
+            if pu.name in ('Pure pursuit', 'APF') and evd.name in ('Perpendicular', 'Spiral'):
+                w = dg['wall_hit']
+                walls.append((pu.name, evd.name, w.mean(),
+                              np.mean(t[c & ~w]) if (c & ~w).any() else np.nan,
+                              np.mean(t[c & w]) if (c & w).any() else np.nan))
             if 0 < (~c).sum() and pu.name != 'RL pursuer':
                 f = ~c
                 fails.append((pu.name, evd.name, int(f.sum()), np.median(dg['closest'][f]),
@@ -408,6 +418,12 @@ def benchmark(rl_p, rl_e):
           f'{"final distance":>15s} {"evader on a wall":>17s}')
     for a, b, k, cl, fd, wall in fails:
         print(f'  {a:13s} {b:13s} {k:7d} {cl:15.2f} m {fd:13.2f} m {wall * 100:15.0f}%')
+
+    print('\nWall contact before capture (PP vs APF; mean capture time split by wall contact):')
+    for a, b, wf, t_nw, t_w in walls:
+        fmt = lambda x: f'{x:.2f} s' if np.isfinite(x) else '—'
+        print(f'  {a:13s} {b:13s} evader touched a wall in {wf * 100:5.1f}% of episodes | '
+              f'mean t, no wall contact {fmt(t_nw):>7s} | with wall contact {fmt(t_w):>7s}')
 
     print('\nSame hand-crafted matchups without observation noise (capture rate):')
     for pu in pursuers[1:]:

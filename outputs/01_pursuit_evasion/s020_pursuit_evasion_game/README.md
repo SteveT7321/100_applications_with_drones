@@ -66,8 +66,8 @@ All agents (RL and hand-crafted) act on the same noisy observation. Both move si
 | PPO learning rate / clip range / batch size | 3×10⁻⁴ / 0.2 / 256 |
 | PPO rollout length (n_steps) | 512 |
 | Network architecture | [256, 256] MLP |
-| Phase 1 / Phase 2 timesteps | 60 000 / 60 000 |
-| Phase 3 | 4 rounds × 10 000 timesteps per agent (80 000 total) |
+| Phase 1 / Phase 2 timesteps | 60 416 / 60 416 (60 000 requested; SB3 rounds up to whole 512-step rollouts: 118 × 512) |
+| Phase 3 | 4 rounds × 10 240 timesteps per agent (10 000 requested, rounded up to 20 × 512) = 40 960 per agent, 81 920 total |
 | Training seed / benchmark seed | 0 (PPO seeds 1, 2) / 2024 |
 | Benchmark episodes per matchup | 1000 |
 
@@ -84,7 +84,7 @@ conda activate drones
 python src/01_pursuit_evasion/s020_pursuit_evasion_game.py
 ```
 
-Runtime ≈ 4 min (about 2.5 min of PPO training on one CPU thread, then 16 × 1000 vectorised benchmark episodes, a noise-free re-run of the 9 hand-crafted matchups, and a 121-frame GIF).
+Runtime ≈ 4 min (about 2.5 min of PPO training on one CPU thread, then 16 × 1000 vectorised benchmark episodes, a noise-free re-run of the 9 hand-crafted matchups, and a 122-frame GIF).
 
 ---
 
@@ -92,12 +92,12 @@ Runtime ≈ 4 min (about 2.5 min of PPO training on one CPU thread, then 16 × 1
 
 ### Training
 
-| Phase | Episodes | Captured (first 20% → last 20% of episodes) | Mean return (first 20% → last 20%) |
-|-------|----------|---------------------------------------------|------------------------------------|
-| 1: pursuer vs random evader | 100 | 0.0% → 0.0% | −14.39 → −10.60 |
-| 2: evader vs Phase-1 pursuer | 100 | 0.0% → 0.0% | 59.96 → 59.99 |
-| 3: pursuer (self-play rounds) | 68 | 0.0% → 0.0% | −9.70 → −7.90 |
-| 3: evader (self-play rounds) | 78 | 93.3% → 0.0% | −54.08 → 60.13 |
+| Phase | Timesteps | Episodes | Captured (first 20% → last 20% of episodes) | Mean return (first 20% → last 20%) |
+|-------|-----------|----------|---------------------------------------------|------------------------------------|
+| 1: pursuer vs random evader | 60 416 | 100 | 0.0% → 0.0% | −14.39 → −10.60 |
+| 2: evader vs Phase-1 pursuer | 60 416 | 100 | 0.0% → 0.0% | 59.96 → 59.99 |
+| 3: pursuer (self-play rounds) | 40 960 | 68 | 0.0% → 0.0% | −9.70 → −7.90 |
+| 3: evader (self-play rounds) | 40 960 | 78 | 93.3% → 0.0% | −54.08 → 60.13 |
 
 ### Benchmark (1000 episodes per matchup, σ = 0.1)
 
@@ -133,6 +133,8 @@ Mean angle between the pursuer's command and the LOS: RL 93.0–99.0°, PP 1.8�
 | APF | RL | 698 | 0.47 m | 0.85 m | 100% |
 | APF | Straight | 320 | 0.47 m | 0.83 m | 100% |
 
+**Wall contact before capture** (PP vs APF): perpendicular evader 0.0% / 0.0% of episodes. Spiral evader 59.1% / 59.4%, with mean capture time 5.02 / 5.00 s without wall contact and 7.74 / 10.68 s with it.
+
 **Without observation noise** (same 1000 spawns): PP 100% / 100% / 100%, PN 100.0% / 91.6% / 81.3%, APF 34.8% / 100% / 100% (against straight / perpendicular / spiral).
 
 **Key Findings**:
@@ -141,7 +143,7 @@ Mean angle between the pursuer's command and the LOS: RL 93.0–99.0°, PP 1.8�
 - **The RL evader learned something only in Phase 3.** In Phase 2 the frozen pursuer never caught it, so its return stayed at ≈ 0.1 × 600 = 60 with no signal (59.96 → 59.99). In Phase 3 the deterministic snapshot of the pursuer caught it in 93.3% of the first 20% of episodes and 0% of the last 20%: it learned to escape that pursuer. Against pure pursuit it is still caught every time, but takes the longest of the four evaders: 8.20 s mean, vs 6.65 s (straight), 5.66 s (perpendicular), 6.62 s (spiral). Against APF it survives in 69.8% of episodes, by ending on an arena wall (all 698 APF escapes).
 - **Pure pursuit is the strongest pursuer here**: 100% capture against every evader, with or without noise. The evaders are 1.5 m/s slower and the arena is bounded, so none of them can outrun a direct chase.
 - **PN misses, then flies away.** In its escapes it passes within a median 0.35–0.58 m of the evader, just outside the 0.3 m capture radius, and ends 27–43 m away. After a miss the closing speed v_c turns negative, so the PN command a = N v_c λ̇ steers away from the evader; plain PN has no re-engagement logic. Observation noise causes most of the misses against the straight evader (87.6% → 100% without noise). Against the perpendicular and spiral evaders PN misses even without noise (91.6%, 81.3%).
-- **APF cannot reach an evader on a wall.** Its wall repulsion balances the attraction 0.5 m from the wall. Every APF escape ends with the evader on a wall and the pursuer a median 0.83–0.85 m away, so the closest approach of 0.47 m never gets below the 0.3 m capture radius. Against evaders that stay off the walls (perpendicular, spiral) it behaves like pure pursuit (perpendicular: identical 5.66 s). Noise actually helps it against the straight evader: 68.0% with noise vs 34.8% without.
+- **APF cannot reach an evader on a wall.** Its wall repulsion balances the attraction 0.5 m from the wall. Every APF escape ends with the evader on a wall and the pursuer a median 0.83–0.85 m away, so the closest approach of 0.47 m never gets below the 0.3 m capture radius. Against the perpendicular evader, which never touches a wall (0.0% of episodes), it behaves exactly like pure pursuit (identical 5.66 s). The spiral evader's 11.7 m circle reaches a wall before capture in 59.4% of APF episodes (59.1% for PP). Without wall contact APF matches PP (5.00 vs 5.02 s), but with wall contact it is much slower (10.68 vs 7.74 s): the wall repulsion holds it back while the evader slides along the wall. That is why its overall spiral mean is 8.38 s vs 6.62 s for PP, with a mean angle to the LOS of 14.3° vs 2.4°. It still captures every spiral evader, because the circle carries the evader off the wall again. Noise actually helps it against the straight evader: 68.0% with noise vs 34.8% without.
 - **Does RL rediscover proportional navigation?** No. The trained pursuer does not even reproduce pure pursuit.
 - The previous README's table (e.g. "RL pursuer 100% vs RL evader", "PN 65.3% / exploitable") came from an older arena size and from a PN that started from rest without forward speed. Its APF row was pure pursuit under another name. None of it applies to this version.
 
@@ -170,7 +172,7 @@ Mean angle between the pursuer's command and the LOS: RL 93.0–99.0°, PP 1.8�
 | Card | Code | Reason |
 |------|------|--------|
 | Arena [−5, 5]³ m, capture radius 0.15 m | [−20, 20]³ m, 0.3 m, spawn 28 m apart | With ±5 m the pursuer could cross the arena 15 times in T_max; kept from the previous revision |
-| 5000 / 5000 / 10000 training episodes | 60k / 60k / 80k timesteps = 100 / 100 / 68 + 78 episodes | Runtime limit (≤ ~5 min). 346 vs 20 000 episodes, about 1/60 of the card; the RL pursuer did not learn at this budget (see findings) |
+| 5000 / 5000 / 10000 training episodes | 60 416 / 60 416 / 81 920 timesteps (`model.num_timesteps`) = 100 / 100 / 68 + 78 episodes | Runtime limit (≤ ~5 min). 346 vs 20 000 episodes, about 1/60 of the card; the RL pursuer did not learn at this budget (see findings) |
 | Phase 2: evader vs frozen Phase-1 pursuer | Same | Previous code used pure pursuit instead |
 | Phase 3: both train simultaneously | Four alternating rounds, each agent against a frozen snapshot of the other | Simplest stable self-play with single-agent PPO |
 | Observation noise σ = 0.1 m | σ = 0.1 on all 13 components; in training and benchmark; for RL and hand-crafted agents | The previous code trained with noise but benchmarked without it |
