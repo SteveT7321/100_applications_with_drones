@@ -1,6 +1,6 @@
 # S040 3D Upgrade — Fleet Load Balancing
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S040 original](../S040_fleet_load_balancing.md)
 
 ---
@@ -80,14 +80,20 @@ $$d_{ab}^{3D} = \|\mathbf{p}_b - \mathbf{p}_a\|_2
 Battery discharge flying a 3D leg of length $d^{3D}$ with altitude change $\Delta z = z_b - z_a$:
 
 $$\Delta s = \frac{\alpha \cdot (m_{body} + m_p) \cdot g \cdot d^{3D}}{E_{cap}}
-             + \frac{\gamma \cdot (m_{body} + m_p) \cdot g \cdot \max(\Delta z,\, 0)}{E_{cap}}$$
+             + \frac{\gamma \cdot \alpha \cdot (m_{body} + m_p) \cdot g \cdot \max(\Delta z,\, 0)}{E_{cap}}$$
 
 The first term is the horizontal-cruise discharge (same structure as S040). The second term
 ($\gamma \geq 0$, dimensionless climb penalty factor) adds extra energy consumption for altitude
 gain. Descents ($\Delta z < 0$) provide partial regeneration at rate $\eta_{regen}$:
 
-$$\Delta s_{regen} = \frac{\eta_{regen} \cdot (m_{body} + m_p) \cdot g \cdot |\Delta z|}{E_{cap}}
+$$\Delta s_{regen} = \frac{\eta_{regen} \cdot \alpha \cdot (m_{body} + m_p) \cdot g \cdot |\Delta z|}{E_{cap}}
   \quad \text{if } \Delta z < 0$$
+
+*Card fix (2026-10-24):* the climb and regeneration terms originally lacked the factor
+$\alpha$. With the normalised $E_{cap} = 1$ that made a single 25 m climb cost
+$0.5 \times 1.8 \times 9.81 \times 25 \approx 221$ full batteries. With $\alpha$ restored, each metre
+climbed costs an extra $\gamma$ times the cruise energy per metre, as the parameter table describes,
+and each metre descended returns $\eta_{regen}$ times it.
 
 Net discharge for one leg:
 
@@ -132,7 +138,7 @@ The feasibility set $\mathcal{A}^{3D}(t_o)$ restricts assignment to drones able 
 current queue, fly to order $o$, and return to depot with SoC above $\beta_{safe}$:
 
 $$s_i(t_o) - \frac{\alpha (m_{body} + m_p) g \bigl(L_i^{dist,3D}(t_o) + d_{extra}^{3D}(i,o) + d_{home}^{3D}(o)\bigr)}{E_{cap}}
-  - \frac{\gamma (m_{body} + m_p) g \cdot \Delta z_{climb}^{total}}{E_{cap}} \geq \beta_{safe}$$
+  - \frac{\gamma \alpha (m_{body} + m_p) g \cdot \Delta z_{climb}^{total}}{E_{cap}} \geq \beta_{safe}$$
 
 where $L_i^{dist,3D}$ is the remaining 3D queue distance, $d_{extra}^{3D}$ is the 3D distance
 added by appending order $o$ to drone $i$'s queue, $d_{home}^{3D}(o)$ is the 3D distance from
@@ -161,7 +167,9 @@ would deplete the receiving drone's battery disproportionately.
 ### 3D Return-Feasibility Threshold (Dynamic)
 
 $$s_{min}^{3D}(i) = \frac{\alpha (m_{body} + m_p) g \cdot d^{3D}(\mathbf{p}_i, \mathbf{p}_{depot})}{E_{cap}}
-  + \frac{\gamma (m_{body} + m_p) g \cdot \max(z_{depot} - z_i,\, 0)}{E_{cap}} + \beta_{safe}$$
+  + \frac{\gamma \alpha (m_{body} + m_p) g \cdot \max(z_{depot} - z_i,\, 0)}{E_{cap}} + \beta_{safe}$$
+
+With the depot on the ground ($z_{depot} = 0$) the climb term is always zero: the way home only descends.
 
 ### Jain's Fairness Index (unchanged)
 
@@ -196,12 +204,12 @@ $$\mathcal{J} = \frac{\bigl(\sum_{i=1}^{N} D_i\bigr)^2}{N \cdot \sum_{i=1}^{N} D
 | Delivery altitudes $z_o$ | 5 m / 15 m / 25 m (equal probability) |
 | Depot position $\mathbf{p}_{depot}$ | $(300, 300, 0)$ m |
 | Cruise speed $v$ | 8.0 m/s (3D vector magnitude) |
-| Discharge coefficient $\alpha$ | $1.5 \times 10^{-4}$ m$^{-1}$ |
+| Discharge coefficient $\alpha$ | $1.5 \times 10^{-5}$ m$^{-1}$ (corrected from $1.5 \times 10^{-4}$, which gives a 377 m range; same fix as 2D S040) |
 | Climb penalty factor $\gamma$ | 0.5 (extra fraction of cruise energy per m climbed) |
 | Descent regeneration $\eta_{regen}$ | 0.2 (20 % of gravitational potential recovered) |
 | Body mass $m_{body}$ | 1.5 kg |
 | Payload mass $m_p$ | 0.3 kg |
-| Full-battery 3D range $D_{range}^{3D}$ | ~3560 m (horizontal; shorter with altitude) |
+| Full-battery 3D range $D_{range}^{3D}$ | $1/(1.5\times10^{-5} \times 1.8 \times 9.81)$ = 3775 m of level flight (shorter with climbs) |
 | Charging rate $P_{chg}$ | 0.20 $E_{cap}$/s |
 | Safety SoC reserve $\beta_{safe}$ | 0.05 |
 | Load-index weights $(\phi_w, \phi_f, \phi_s, \phi_z)$ | (0.4, 0.25, 0.2, 0.15) |
