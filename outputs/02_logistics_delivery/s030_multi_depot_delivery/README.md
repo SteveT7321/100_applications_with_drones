@@ -36,9 +36,11 @@ Here $L_k$ is drone $k$'s route length, $n_m$ the number of deliveries from depo
 
 $$\text{gain}(i,j) = d_{v_{i-1},v_i} + d_{v_j,v_{j+1}} - d_{v_{i-1},v_j} - d_{v_i,v_{j+1}}$$
 
-**Open-route return**: after its last delivery, a drone flies to the nearest depot with a free docking slot (slots = fleet size):
+**Open-route return**: after its last delivery, drone $k$ lands at depot $m^*_k$, saving $\Delta R_k = d_{last_k,\,\delta(k)} - d_{last_k,\,m^*_k}$. The landing depots are chosen jointly by an optimal assignment of sorties to docking slots ($A_m$ = fleet size of depot $m$):
 
-$$m^*_k = \arg\min_{m:\,A_m>0} d_{last_k, m}, \qquad \Delta R_k = d_{last_k,\,\delta(k)} - d_{last_k,\,m^*_k}$$
+$$\max \sum_k \Delta R_k \quad \text{s.t. each depot receives} \le A_m \text{ drones and } L_k - d_{last_k,\delta(k)} + d_{last_k, m^*_k} \le R_{max}$$
+
+This is solved with `scipy.optimize.linear_sum_assignment`. Landing at home is always feasible, so the total saving is never negative.
 
 **AO convergence**: stop when $|J^{(t+1)} - J^{(t)}| < \varepsilon_{AO} = 1$. AO optimises the home-return distance; the open-route return is applied afterwards to every strategy.
 
@@ -67,10 +69,12 @@ $$m^*_k = \arg\min_{m:\,A_m>0} d_{last_k, m}, \qquad \Delta R_k = d_{last_k,\,\d
 
 - **K-Means replaced by a balanced variant.** The card's depot-anchored K-Means (centroids pulled halfway toward their depots) produced exactly the Nearest-Depot partition: the centroids never move far from the depots. It was therefore not a real third comparison, which the previous README did not mention. The size cap makes it a distinct method that optimises the card's balance term.
 - **Fleet size and inventory are now enforced.** Previously `n_drones` was unused, so a depot could fly any number of sorties.
-  - **Fleet** (one sortie per drone): this constraint binds. Nearest-Depot and Balanced K-Means use every drone at every depot (sorties [3, 2, 3, 2]). AO rejected 54 candidate partitions because a depot would have needed more sorties than drones, and its D4 routes needed the bin-packing fallback.
+  - **Fleet** (one sortie per drone): this constraint binds. Nearest-Depot and Balanced K-Means use every drone at every depot (sorties [3, 2, 3, 2]). AO rejected 54 candidate partitions as infeasible, every one because a depot would have needed more sorties than drones (54 fleet-limit failures, 0 inventory, 0 range), and its D4 routes needed the bin-packing fallback.
   - **Inventory**: it never binds. Each depot's inventory (18–25 kg) exceeds what its fleet can carry in one wave ($F_m \cdot Q$ = 6–9 kg); the largest dispatched cargo is 6.51 kg.
 - **No time-stepped simulation.** Distances and times are computed from the route geometry; the card's 0.5 s timestep is not used. The GIF samples positions from those event times.
 - AO uses nearest-neighbour + 2-opt routes, not the card's Clarke-Wright seeding.
+- **AO stopping rule.** The card stops when the change in TotalDist is below $\varepsilon_{AO}$. The code stops on the change in the objective it optimises (home-return distance + balance penalty), so a move that only changes the balance term is not treated as convergence.
+- **Open-route return.** The card picks the nearest depot with a free slot, drone by drone. Here the landing depots are assigned jointly (maximum total saving, with a range check), so no drone can be pushed to a farther depot when its home slots are taken. In this instance the result is the same as nearest-free-slot: one open return, saving 60.7 m.
 
 ---
 

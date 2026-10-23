@@ -22,8 +22,9 @@ Partition strategies:
                           the depot that lowers distance + balance penalty
                           (routes rebuilt + 2-opt), until convergence
 
-After routing, every sortie may end at the nearest depot with a free docking
-slot (open-route return, slots = fleet size).
+After routing, every sortie's landing depot is chosen by an optimal
+assignment to docking slots (slots = fleet size) that maximises the total
+return saving subject to the range limit (open-route return).
 
 Usage:
     conda activate drones
@@ -33,6 +34,7 @@ Usage:
 import os
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -76,7 +78,8 @@ DEMANDS   = _rng.uniform(0.3, 1.8, N_CUSTOMERS)
 ALL_POS = np.vstack([DEPOTS, CUSTOMERS])      # nodes: depots 0..3, then customers
 DIST_M  = cdist(ALL_POS, ALL_POS)
 N_BAR   = N_CUSTOMERS / N_DEPOTS
-INFEASIBLE = {"inventory": 0, "fleet": 0, "range": 0}   # rejected AO moves
+INFEASIBLE = {"partitions": 0, "inventory": 0, "fleet": 0, "range": 0}
+# partitions = AO candidates rejected; the others count depot-level reasons
 
 
 def route_dist(route):
@@ -169,6 +172,7 @@ def total_cost(partition):
     """Home-return distance + balance penalty (inf if infeasible)."""
     routes, ok, how = all_routes(partition)
     if not ok:
+        INFEASIBLE["partitions"] += 1
         for h in how:
             if h in INFEASIBLE:
                 INFEASIBLE[h] += 1
@@ -234,20 +238,29 @@ def alternating_optimisation():
 
 
 def open_route_return(routes_by_depot):
-    """End every sortie at the nearest depot with a free docking slot."""
-    avail = FLEET_SIZE.astype(int).copy()
-    saving, out = 0.0, []
-    for m, rr in enumerate(routes_by_depot):
-        new_rr = []
-        for r in rr:
-            last = r[-2]
-            d = DIST_M[last, :N_DEPOTS].copy()
-            d[avail <= 0] = np.inf
-            best = int(np.argmin(d))
-            avail[best] -= 1
-            saving += DIST_M[last, m] - d[best]
-            new_rr.append(r[:-1] + [best])
-        out.append(new_rr)
+    """Choose every sortie's landing depot to maximise the total saving.
+
+    Optimal assignment of sorties to docking slots (FLEET_SIZE[m] slots at
+    depot m) with scipy's linear_sum_assignment; a landing depot is allowed
+    only if the sortie's total length stays within R_MAX.  Landing at home
+    is always feasible, so the total saving is never negative."""
+    sorties = [(m, r) for m, rr in enumerate(routes_by_depot) for r in rr]
+    slots = [m for m in range(N_DEPOTS) for _ in range(FLEET_SIZE[m])]
+    big = 1e9
+    cost = np.full((len(sorties), len(slots)), big)
+    for i, (m, r) in enumerate(sorties):
+        last, home_len = r[-2], route_dist(r)
+        for j, m2 in enumerate(slots):
+            if home_len - DIST_M[last, m] + DIST_M[last, m2] <= R_MAX + 1e-9:
+                cost[i, j] = -(DIST_M[last, m] - DIST_M[last, m2])
+    rows, cols = linear_sum_assignment(cost)
+    assert np.all(cost[rows, cols] < big)
+    out = [[] for _ in range(N_DEPOTS)]
+    saving = 0.0
+    for i, j in zip(rows, cols):
+        m, r = sorties[i]
+        saving -= cost[i, j]
+        out[m].append(r[:-1] + [slots[j]])
     return out, saving
 
 
@@ -489,8 +502,10 @@ if __name__ == "__main__":
         if s == "AO":
             print(f"  AO iterations: {len(hist)}, objective "
                   + " -> ".join(f"{h:.1f}" for h in hist))
-            print(f"  Candidate moves rejected as infeasible (depot-level "
-                  f"reason counts): {INFEASIBLE}")
+            print(f"  Candidate partitions rejected as infeasible: "
+                  f"{INFEASIBLE['partitions']} (depot-level reasons: fleet "
+                  f"{INFEASIBLE['fleet']}, inventory {INFEASIBLE['inventory']},"
+                  f" range {INFEASIBLE['range']})")
         print(f"  Feasible (fleet, payload, range, inventory): {r['feasible']}")
         print(f"  Customers assigned differently from Nearest-Depot: "
               f"{moved if moved else 'none'}")
