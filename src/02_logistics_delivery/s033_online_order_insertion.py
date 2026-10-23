@@ -2,7 +2,8 @@
 S033 Online Order Insertion
 ============================
 A fleet of K=4 drones is executing pre-planned delivery routes (12 waypoints each,
-then back to the depot) when 8 new customer orders arrive between t = 10 s and 80 s.
+then back to the depot; a plan longer than the starting battery is trimmed from the
+end until it fits, see make_instance) when 8 new customer orders arrive between t = 10 s and 80 s.
 Each order has a deadline = arrival time + nearest-drone ETA + 30 s. The dispatcher
 splices every order into one drone's remaining route, subject to battery range and
 deadline feasibility. If no drone can meet the deadline, the order is queued: it is
