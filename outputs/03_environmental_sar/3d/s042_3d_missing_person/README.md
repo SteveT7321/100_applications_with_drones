@@ -92,7 +92,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s042_3d_missing_person.py
 ```
 
-The script imports the fixed 2D S042 module for the prior, the entropy, the greedy exclusion rule and the lawnmower lattice. Runtime ≈ 6–7 min: 400 Monte-Carlo missions, 4 person-absent runs, 8 demo runs and the GIF. Two runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the fixed 2D S042 module for the prior, the entropy, the greedy exclusion rule and the lawnmower lattice. Runtime ≈ 4 min alone (6–7 min with other simulations running): 400 Monte-Carlo missions, 4 person-absent runs, 8 demo runs and the GIF. Two runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
