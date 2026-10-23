@@ -22,9 +22,11 @@ Dispatch strategies
 
 No order is ever dropped: when a drone must return to recharge, its current
 order goes back to the front of its own queue (round_robin / least_queue) or
-back to the central backlog (load_index, which re-dispatches it). Every order
-ends as delivered on time (<= 120 s after arrival), delivered late, still in a
-drone queue at 400 s, or still in the backlog at 400 s.
+back to the central backlog (load_index, which re-dispatches it). A per-step
+check asserts that every order is in exactly one place (not yet arrived,
+backlog, a drone queue, in flight, delivered). At 400 s each order is
+delivered on time (<= 120 s after arrival), delivered late, in flight,
+queued on a drone, or in the backlog.
 
 Battery: Delta s = alpha (m_body + m_p) g d, alpha = 1.5e-5 1/m ->
 D_range = 1 / (1.5e-5 * 1.8 * 9.81) = 3775 m.
@@ -210,6 +212,18 @@ def jain_fairness(counts):
     return counts.sum() ** 2 / (len(counts) * (counts ** 2).sum())
 
 
+def check_conservation(orders, stream, backlog, drones):
+    """Every order is in exactly one place: not yet arrived (stream), central
+    backlog, a drone queue, in flight (a drone's current order) or delivered."""
+    places = ([id(o) for o in stream] + [id(o) for o in backlog]
+              + [id(o) for d in drones for o in d.queue]
+              + [id(d.current) for d in drones if d.current is not None]
+              + [id(o) for o in orders if o.t_deliver is not None])
+    assert len(places) == len(orders) and len(set(places)) == len(orders), \
+        'order conservation violated'
+    assert not any(d.current is not None and d.current.t_deliver is not None for d in drones)
+
+
 def make_orders(seed):
     rng = np.random.default_rng(seed)
     orders = [Order(idx=j, location=rng.uniform(*GRID, size=2),
@@ -333,6 +347,7 @@ def simulate(strategy, seed, record=False, k_dis=K_DIS):
                     pads[p] = wait_q.popleft()
                     drones[pads[p]].state = 'charging'
 
+        check_conservation(orders, stream, backlog, drones)
         log_t.append(t)
         log_imb.append(fleet_imbalance(drones))
         log_cum.append(sum(d.deliveries for d in drones))
@@ -342,20 +357,19 @@ def simulate(strategy, seed, record=False, k_dis=K_DIS):
             pos_hist.append(np.array([d.pos.copy() for d in drones]))
             soc_hist.append([d.soc for d in drones])
 
-    # accounting: every order ends in exactly one class
+    # end state (conservation was checked every step)
     on_time = [o for o in orders if o.t_deliver is not None
                and o.t_deliver - o.t_arrive <= T_PROMISE]
     late = [o for o in orders if o.t_deliver is not None
             and o.t_deliver - o.t_arrive > T_PROMISE]
-    bl_ids = {id(o) for o in backlog}
-    in_queue = [o for o in orders if o.t_deliver is None and id(o) not in bl_ids]
+    in_flight = [d.current for d in drones if d.current is not None]
+    in_queue = [o for d in drones for o in d.queue]
     in_backlog = list(backlog)
-    assert len(on_time) + len(late) + len(in_queue) + len(in_backlog) == M_ORDERS
     svc = [o.t_deliver - o.t_arrive for o in orders if o.t_deliver is not None]
     counts = [d.deliveries for d in drones]
     res = dict(strategy=strategy, seed=seed, orders=orders,
                delivered=len(on_time) + len(late), on_time=len(on_time), late=len(late),
-               in_queue=len(in_queue), in_backlog=len(in_backlog),
+               in_flight=len(in_flight), in_queue=len(in_queue), in_backlog=len(in_backlog),
                mean_service=float(np.mean(svc)) if svc else np.nan,
                p95_service=float(np.percentile(svc, 95)) if svc else np.nan,
                max_service=float(np.max(svc)) if svc else np.nan,
@@ -570,7 +584,8 @@ def plot_stress_test(stress, out_dir):
     x = np.arange(len(STRATEGIES))
     on = [np.mean([r['on_time'] for r in stress[s]]) for s in STRATEGIES]
     lt = [np.mean([r['late'] for r in stress[s]]) for s in STRATEGIES]
-    op = [np.mean([r['in_queue'] + r['in_backlog'] for r in stress[s]]) for s in STRATEGIES]
+    op = [np.mean([r['in_flight'] + r['in_queue'] + r['in_backlog'] for r in stress[s]])
+          for s in STRATEGIES]
     axes[0].bar(x, on, color='#2ecc71', edgecolor='black', label='On time (≤ 120 s)')
     axes[0].bar(x, lt, bottom=on, color='#f39c12', edgecolor='black', label='Late')
     axes[0].bar(x, op, bottom=np.array(on) + np.array(lt), color='#bbbbbb',
@@ -662,7 +677,8 @@ def print_summary(title, runs):
         R = runs[s]
         print(f'{LABELS[s]:<20} delivered {np.mean([r["delivered"] for r in R]):.2f} '
               f'(on time {np.mean([r["on_time"] for r in R]):.2f}, late '
-              f'{np.mean([r["late"] for r in R]):.2f}), open at end: in queues '
+              f'{np.mean([r["late"] for r in R]):.2f}), open at end: in flight '
+              f'{np.mean([r["in_flight"] for r in R]):.2f}, queued on a drone '
               f'{np.mean([r["in_queue"] for r in R]):.2f}, in backlog '
               f'{np.mean([r["in_backlog"] for r in R]):.2f} | service mean '
               f'{np.mean([r["mean_service"] for r in R]):.1f} s, p95 '
@@ -676,6 +692,9 @@ def print_summary(title, runs):
         best[min(STRATEGIES, key=lambda s: (runs[s][i]['mean_service'], s))] += 1
     print('Lowest mean service time per stream: ' +
           ', '.join(f'{LABELS[s]} {best[s]}' for s in STRATEGIES))
+    print('Streams with at least one recharge return: ' +
+          ', '.join(f'{LABELS[s]} {sum(1 for r in runs[s] if r["returns"] > 0)}/{len(runs[s])}'
+                    for s in STRATEGIES))
 
 
 if __name__ == '__main__':
@@ -688,8 +707,9 @@ if __name__ == '__main__':
     for s in STRATEGIES:
         r = show[s]
         print(f'{LABELS[s]:<20} delivered {r["delivered"]:>2}/{M_ORDERS} '
-              f'(on time {r["on_time"]}, late {r["late"]}), in drone queues at end '
-              f'{r["in_queue"]}, in backlog at end {r["in_backlog"]} | service mean '
+              f'(on time {r["on_time"]}, late {r["late"]}), open at end: in flight '
+              f'{r["in_flight"]}, queued on a drone {r["in_queue"]}, in backlog '
+              f'{r["in_backlog"]} | service mean '
               f'{r["mean_service"]:.1f} s, p95 {r["p95_service"]:.1f} s, max '
               f'{r["max_service"]:.1f} s | Jain {r["jain"]:.3f} | mean Lambda '
               f'{r["mean_imbalance"]:.3f} | flight {r["flight_km"]:.2f} km (max drone '
