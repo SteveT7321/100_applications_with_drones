@@ -78,6 +78,7 @@ python src/<domain>/s0xx_xxx.py
 
 ### Step 6 — 更新根目錄 README.md
 - 更新 Progress 表格的完成數字
+- 寫完 Step 7 的 outputs README 後執行 `python tools/update_readme_index.py`，重新產生 Five Domains 下的場景目錄（每題連到 outputs 結果）
 
 ### Step 7 — 寫 outputs README
 - 在 `outputs/<domain>/s0xx_xxx/README.md` 建立說明文件

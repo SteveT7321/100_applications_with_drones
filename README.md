@@ -31,11 +31,157 @@ Each scenario includes a mathematical model, Python implementation, and 3D visua
 
 | # | Domain | Core Problems | Scenarios |
 |---|--------|--------------|-----------|
-| 1 | [**Pursuit & Evasion**](domains/01_pursuit_evasion/) | Differential games, optimal control | S001–S020 |
-| 2 | [**Logistics & Delivery**](domains/02_logistics_delivery/) | Path planning, task assignment | S021–S040 |
-| 3 | [**Environmental & SAR**](domains/03_environmental_sar/) | Coverage, information gathering | S041–S060 |
-| 4 | [**Industrial & Agriculture**](domains/04_industrial_agriculture/) | Precision control, systematic paths | S061–S080 |
-| 5 | [**Special Ops & Entertainment**](domains/05_special_entertainment/) | Formation control, cooperative vision | S081–S100 |
+| 1 | [**Pursuit & Evasion**](domains/01_pursuit_evasion/) | Differential games, optimal control | [S001–S020](#domain-1) |
+| 2 | [**Logistics & Delivery**](domains/02_logistics_delivery/) | Path planning, task assignment | [S021–S040](#domain-2) |
+| 3 | [**Environmental & SAR**](domains/03_environmental_sar/) | Coverage, information gathering | [S041–S060](#domain-3) |
+| 4 | [**Industrial & Agriculture**](domains/04_industrial_agriculture/) | Precision control, systematic paths | [S061–S080](#domain-4) |
+| 5 | [**Special Ops & Entertainment**](domains/05_special_entertainment/) | Formation control, cooperative vision | [S081–S100](#domain-5) |
+
+Click a domain below to see every scenario; each title links to its simulation results (figures, GIF, numbers).
+
+<!-- SCENARIO-INDEX:START -->
+
+<a id="domain-1"></a>
+<details><summary><b>1 · Pursuit & Evasion</b> — 20/20 done</summary>
+
+| ID | Scenario (results) | Card | 3D |
+|----|--------------------|------|----|
+| S001 | [Basic Intercept](outputs/01_pursuit_evasion/s001_basic_intercept/README.md) | [card](scenarios/01_pursuit_evasion/S001_basic_intercept.md) |  |
+| S002 | [Evasive Maneuver](outputs/01_pursuit_evasion/s002_evasive_maneuver/README.md) | [card](scenarios/01_pursuit_evasion/S002_evasive_maneuver.md) | [3D](outputs/01_pursuit_evasion/3d/s002_3d_evasive_maneuver/README.md) |
+| S003 | [Low-Altitude Tracking](outputs/01_pursuit_evasion/s003_low_altitude_tracking/README.md) | [card](scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md) |  |
+| S004 | [Obstacle-Course Chase](outputs/01_pursuit_evasion/s004_obstacle_chase/README.md) | [card](scenarios/01_pursuit_evasion/S004_obstacle_chase.md) | [3D](outputs/01_pursuit_evasion/3d/s004_3d_obstacle_chase/README.md) |
+| S005 | [Stealth Approach](outputs/01_pursuit_evasion/s005_stealth_approach/README.md) | [card](scenarios/01_pursuit_evasion/S005_stealth_approach.md) | [3D](outputs/01_pursuit_evasion/3d/s005_3d_stealth_approach/README.md) |
+| S006 | [Energy Race](outputs/01_pursuit_evasion/s006_energy_race/README.md) | [card](scenarios/01_pursuit_evasion/S006_energy_race.md) | [3D](outputs/01_pursuit_evasion/3d/s006_3d_energy_race/README.md) |
+| S007 | [Jamming & Blind Pursuit](outputs/01_pursuit_evasion/s007_jamming_blind_pursuit/README.md) | [card](scenarios/01_pursuit_evasion/S007_jamming_blind_pursuit.md) | [3D](outputs/01_pursuit_evasion/3d/s007_3d_jamming_blind_pursuit/README.md) |
+| S008 | [Stochastic Pursuit — Kalman Filter Tracking](outputs/01_pursuit_evasion/s008_stochastic_pursuit/README.md) | [card](scenarios/01_pursuit_evasion/S008_stochastic_pursuit.md) | [3D](outputs/01_pursuit_evasion/3d/s008_3d_stochastic_pursuit/README.md) |
+| S009 | [Differential Game 1v1 (Differential Game — Lion & Man)](outputs/01_pursuit_evasion/s009_differential_game/README.md) | [card](scenarios/01_pursuit_evasion/S009_differential_game.md) | [3D](outputs/01_pursuit_evasion/3d/s009_3d_differential_game/README.md) |
+| S010 | [Asymmetric Speed — Bounded Arena Trapping](outputs/01_pursuit_evasion/s010_asymmetric_speed/README.md) | [card](scenarios/01_pursuit_evasion/S010_asymmetric_speed.md) | [3D](outputs/01_pursuit_evasion/3d/s010_3d_asymmetric_speed/README.md) |
+| S011 | [Swarm Encirclement](outputs/01_pursuit_evasion/s011_swarm_encirclement/README.md) | [card](scenarios/01_pursuit_evasion/S011_swarm_encirclement.md) | [3D](outputs/01_pursuit_evasion/3d/s011_3d_swarm_encirclement/README.md) |
+| S012 | [Relay Pursuit](outputs/01_pursuit_evasion/s012_relay_pursuit/README.md) | [card](scenarios/01_pursuit_evasion/S012_relay_pursuit.md) | [3D](outputs/01_pursuit_evasion/3d/s012_3d_relay_pursuit/README.md) |
+| S013 | [Pincer Movement](outputs/01_pursuit_evasion/s013_pincer_movement/README.md) | [card](scenarios/01_pursuit_evasion/S013_pincer_movement.md) | [3D](outputs/01_pursuit_evasion/3d/s013_3d_pincer_movement/README.md) |
+| S014 | [Decoy & Lure](outputs/01_pursuit_evasion/s014_decoy_lure/README.md) | [card](scenarios/01_pursuit_evasion/S014_decoy_lure.md) | [3D](outputs/01_pursuit_evasion/3d/s014_3d_decoy_lure/README.md) |
+| S015 | [Relay Tracking](outputs/01_pursuit_evasion/s015_relay_tracking/README.md) | [card](scenarios/01_pursuit_evasion/S015_relay_tracking.md) | [3D](outputs/01_pursuit_evasion/3d/s015_3d_relay_tracking/README.md) |
+| S016 | [Airspace Defense](outputs/01_pursuit_evasion/s016_airspace_defense/README.md) | [card](scenarios/01_pursuit_evasion/S016_airspace_defense.md) | [3D](outputs/01_pursuit_evasion/3d/s016_3d_airspace_defense/README.md) |
+| S017 | [Swarm vs Swarm](outputs/01_pursuit_evasion/s017_swarm_vs_swarm/README.md) | [card](scenarios/01_pursuit_evasion/S017_swarm_vs_swarm.md) | [3D](outputs/01_pursuit_evasion/3d/s017_3d_swarm_vs_swarm/README.md) |
+| S018 | [Multi-Target Intercept](outputs/01_pursuit_evasion/s018_multi_target_intercept/README.md) | [card](scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) | [3D](outputs/01_pursuit_evasion/3d/s018_3d_multi_target_intercept/README.md) |
+| S019 | [Dynamic Target Reassignment](outputs/01_pursuit_evasion/s019_dynamic_reassignment/README.md) | [card](scenarios/01_pursuit_evasion/S019_dynamic_reassignment.md) | [3D](outputs/01_pursuit_evasion/3d/s019_3d_dynamic_reassignment/README.md) |
+| S020 | [Pursuit-Evasion Game (RL Capstone)](outputs/01_pursuit_evasion/s020_pursuit_evasion_game/README.md) | [card](scenarios/01_pursuit_evasion/S020_pursuit_evasion_game.md) | [3D](outputs/01_pursuit_evasion/3d/s020_3d_pursuit_evasion_game/README.md) |
+
+</details>
+
+<a id="domain-2"></a>
+<details><summary><b>2 · Logistics & Delivery</b> — 20/20 done</summary>
+
+| ID | Scenario (results) | Card | 3D |
+|----|--------------------|------|----|
+| S021 | [Point Delivery](outputs/02_logistics_delivery/s021_point_delivery/README.md) | [card](scenarios/02_logistics_delivery/S021_point_delivery.md) |  |
+| S022 | [Obstacle Avoidance Delivery](outputs/02_logistics_delivery/s022_obstacle_avoidance_delivery/README.md) | [card](scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) | [3D](outputs/02_logistics_delivery/3d/s022_3d_obstacle_avoidance/README.md) |
+| S023 | [Moving Landing Pad](outputs/02_logistics_delivery/s023_moving_landing_pad/README.md) | [card](scenarios/02_logistics_delivery/S023_moving_landing_pad.md) |  |
+| S024 | [Wind Compensation](outputs/02_logistics_delivery/s024_wind_compensation/README.md) | [card](scenarios/02_logistics_delivery/S024_wind_compensation.md) | [3D](outputs/02_logistics_delivery/3d/s024_3d_wind_compensation/README.md) |
+| S025 | [Payload CoG Offset](outputs/02_logistics_delivery/s025_payload_cog_offset/README.md) | [card](scenarios/02_logistics_delivery/S025_payload_cog_offset.md) |  |
+| S026 | [Cooperative Heavy Lift](outputs/02_logistics_delivery/s026_cooperative_heavy_lift/README.md) | [card](scenarios/02_logistics_delivery/S026_cooperative_heavy_lift.md) |  |
+| S027 | [Aerial Refueling Relay](outputs/02_logistics_delivery/s027_aerial_refueling_relay/README.md) | [card](scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) | [3D](outputs/02_logistics_delivery/3d/s027_3d_aerial_refueling/README.md) |
+| S028 | [Cargo Escort Formation](outputs/02_logistics_delivery/s028_cargo_escort_formation/README.md) | [card](scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) | [3D](outputs/02_logistics_delivery/3d/s028_3d_cargo_escort/README.md) |
+| S029 | [Urban Logistics Scheduling](outputs/02_logistics_delivery/s029_urban_logistics_scheduling/README.md) | [card](scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md) | [3D](outputs/02_logistics_delivery/3d/s029_3d_urban_logistics/README.md) |
+| S030 | [Multi-Depot Delivery](outputs/02_logistics_delivery/s030_multi_depot_delivery/README.md) | [card](scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) |  |
+| S031 | [Path De-confliction](outputs/02_logistics_delivery/s031_path_deconfliction/README.md) | [card](scenarios/02_logistics_delivery/S031_path_deconfliction.md) |  |
+| S032 | [Charging Queue](outputs/02_logistics_delivery/s032_charging_queue/README.md) | [card](scenarios/02_logistics_delivery/S032_charging_queue.md) |  |
+| S033 | [Online Order Insertion](outputs/02_logistics_delivery/s033_online_order_insertion/README.md) | [card](scenarios/02_logistics_delivery/S033_online_order_insertion.md) |  |
+| S034 | [Weather Rerouting](outputs/02_logistics_delivery/s034_weather_rerouting/README.md) | [card](scenarios/02_logistics_delivery/S034_weather_rerouting.md) |  |
+| S035 | [UTM Simulation](outputs/02_logistics_delivery/s035_utm_simulation/README.md) | [card](scenarios/02_logistics_delivery/S035_utm_simulation.md) |  |
+| S036 | [Last-Mile Relay](outputs/02_logistics_delivery/s036_last_mile_relay/README.md) | [card](scenarios/02_logistics_delivery/S036_last_mile_relay.md) |  |
+| S037 | [Reverse Logistics](outputs/02_logistics_delivery/s037_reverse_logistics/README.md) | [card](scenarios/02_logistics_delivery/S037_reverse_logistics.md) |  |
+| S038 | [Disaster Relief Drop](outputs/02_logistics_delivery/s038_disaster_relief_drop/README.md) | [card](scenarios/02_logistics_delivery/S038_disaster_relief_drop.md) |  |
+| S039 | [Offshore Platform Exchange](outputs/02_logistics_delivery/s039_offshore_platform_exchange/README.md) | [card](scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md) |  |
+| S040 | [Fleet Load Balancing](outputs/02_logistics_delivery/s040_fleet_load_balancing/README.md) | [card](scenarios/02_logistics_delivery/S040_fleet_load_balancing.md) |  |
+
+</details>
+
+<a id="domain-3"></a>
+<details><summary><b>3 · Environmental & SAR</b> — 11/20 done</summary>
+
+| ID | Scenario (results) | Card | 3D |
+|----|--------------------|------|----|
+| S041 | [Wildfire Boundary Scan](outputs/03_environmental_sar/s041_wildfire_boundary/README.md) | [card](scenarios/03_environmental_sar/S041_wildfire_boundary.md) |  |
+| S042 | [Missing Person Localization](outputs/03_environmental_sar/s042_missing_person/README.md) | [card](scenarios/03_environmental_sar/S042_missing_person.md) |  |
+| S043 | [Confined Space Exploration](outputs/03_environmental_sar/s043_confined_space/README.md) | [card](scenarios/03_environmental_sar/S043_confined_space.md) |  |
+| S044 | [Wall Crack Inspection](outputs/03_environmental_sar/s044_wall_crack/README.md) | [card](scenarios/03_environmental_sar/S044_wall_crack.md) |  |
+| S045 | [Chemical Plume Tracing](outputs/03_environmental_sar/s045_plume_tracing/README.md) | [card](scenarios/03_environmental_sar/S045_plume_tracing.md) |  |
+| S046 | [Multi-Drone 3D Trilateration](outputs/03_environmental_sar/s046_trilateration/README.md) | [card](scenarios/03_environmental_sar/S046_trilateration.md) |  |
+| S047 | [Base Station Signal Relay](outputs/03_environmental_sar/s047_signal_relay/README.md) | [card](scenarios/03_environmental_sar/S047_signal_relay.md) |  |
+| S048 | [Full-Area Coverage Scan (Lawnmower)](outputs/03_environmental_sar/s048_lawnmower/README.md) | [card](scenarios/03_environmental_sar/S048_lawnmower.md) |  |
+| S049 | [Dynamic Zone Search](outputs/03_environmental_sar/s049_dynamic_zone/README.md) | [card](scenarios/03_environmental_sar/S049_dynamic_zone.md) |  |
+| S050 | [Swarm Cooperative Mapping (Distributed EKF-SLAM)](outputs/03_environmental_sar/s050_slam/README.md) | [card](scenarios/03_environmental_sar/S050_slam.md) |  |
+| S051 | [Post-Disaster Communication Network Restoration](outputs/03_environmental_sar/s051_post_disaster_comm/README.md) | [card](scenarios/03_environmental_sar/S051_post_disaster_comm.md) |  |
+| S052 | Glacier Melt Area Measurement *(planned)* | [card](scenarios/03_environmental_sar/S052_glacier.md) |  |
+| S053 | Coral Reef 3D Reconstruction *(planned)* | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
+| S054 | Minefield Detection *(planned)* | [card](scenarios/03_environmental_sar/S054_minefield.md) |  |
+| S055 | Coastline Oil Spill Tracking *(planned)* | [card](scenarios/03_environmental_sar/S055_oil_spill.md) |  |
+| S056 | Nuclear Plant Leak Detection (Radiation Hotspot Localization) *(planned)* | [card](scenarios/03_environmental_sar/S056_radiation.md) |  |
+| S057 | Wildlife Population Census *(planned)* | [card](scenarios/03_environmental_sar/S057_wildlife.md) |  |
+| S058 | Typhoon Eye Probing *(planned)* | [card](scenarios/03_environmental_sar/S058_typhoon.md) |  |
+| S059 | Underwater Target Sonar Marking (Surface Cooperative Localization) *(planned)* | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) |  |
+| S060 | Multi-Drone Cooperative Meteorological Measurement *(planned)* | [card](scenarios/03_environmental_sar/S060_meteorological.md) |  |
+
+</details>
+
+<a id="domain-4"></a>
+<details><summary><b>4 · Industrial & Agriculture</b> — 0/20 done</summary>
+
+| ID | Scenario (results) | Card | 3D |
+|----|--------------------|------|----|
+| S061 | Power Line Inspection *(planned)* | [card](scenarios/04_industrial_agriculture/S061_power_line.md) |  |
+| S062 | Wind Turbine Blade Inspection *(planned)* | [card](scenarios/04_industrial_agriculture/S062_wind_turbine.md) |  |
+| S063 | Single-Plant Precision Spraying *(planned)* | [card](scenarios/04_industrial_agriculture/S063_precision_spraying.md) |  |
+| S064 | Greenhouse Interior Precision Flight *(planned)* | [card](scenarios/04_industrial_agriculture/S064_greenhouse.md) |  |
+| S065 | Building 3D Modeling — Multi-Angle Scan Path *(planned)* | [card](scenarios/04_industrial_agriculture/S065_3d_scan_path.md) |  |
+| S066 | Cooperative Crane Simulation *(planned)* | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) |  |
+| S067 | Spray Coverage Overlap Optimization *(planned)* | [card](scenarios/04_industrial_agriculture/S067_spray_overlap.md) |  |
+| S068 | Large-Scale Farmland Cooperative Spraying *(planned)* | [card](scenarios/04_industrial_agriculture/S068_large_field_spray.md) |  |
+| S069 | Automated Warehouse Inventory *(planned)* | [card](scenarios/04_industrial_agriculture/S069_warehouse_inventory.md) |  |
+| S070 | Swarm Weeding Task *(planned)* | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) |  |
+| S071 | Bridge Underside Structural Inspection *(planned)* | [card](scenarios/04_industrial_agriculture/S071_bridge_inspection.md) |  |
+| S072 | Oil Pipeline Leak Detection *(planned)* | [card](scenarios/04_industrial_agriculture/S072_pipeline_leak.md) |  |
+| S073 | Solar Panel Thermal Imaging Inspection *(planned)* | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) |  |
+| S074 | Mine 3D Mapping *(planned)* | [card](scenarios/04_industrial_agriculture/S074_mine_mapping.md) |  |
+| S075 | Port Container Yard Inventory *(planned)* | [card](scenarios/04_industrial_agriculture/S075_container_yard.md) |  |
+| S076 | Extreme Heat Cooling Strategy *(planned)* | [card](scenarios/04_industrial_agriculture/S076_thermal_management.md) |  |
+| S077 | Precision Pollination Flight Pattern *(planned)* | [card](scenarios/04_industrial_agriculture/S077_pollination.md) |  |
+| S078 | Harvester Cooperative Guidance *(planned)* | [card](scenarios/04_industrial_agriculture/S078_harvester_guidance.md) |  |
+| S079 | Offshore Wind Farm Installation Assistance *(planned)* | [card](scenarios/04_industrial_agriculture/S079_offshore_wind.md) |  |
+| S080 | Underground Pipe CCTV Replacement *(planned)* | [card](scenarios/04_industrial_agriculture/S080_underground_pipe.md) |  |
+
+</details>
+
+<a id="domain-5"></a>
+<details><summary><b>5 · Special Ops & Entertainment</b> — 0/20 done</summary>
+
+| ID | Scenario (results) | Card | 3D |
+|----|--------------------|------|----|
+| S081 | Selfie Follow Mode *(planned)* | [card](scenarios/05_special_entertainment/S081_selfie_follow.md) |  |
+| S082 | FPV Racing Circuit *(planned)* | [card](scenarios/05_special_entertainment/S082_fpv_racing.md) |  |
+| S083 | Light Show Single-Drone Test *(planned)* | [card](scenarios/05_special_entertainment/S083_light_show_single.md) |  |
+| S084 | Extreme Weather Wind Resistance Test *(planned)* | [card](scenarios/05_special_entertainment/S084_wind_endurance.md) |  |
+| S085 | Drone Light Matrix Positioning *(planned)* | [card](scenarios/05_special_entertainment/S085_light_matrix.md) |  |
+| S086 | Cooperative Multi-Angle Filming *(planned)* | [card](scenarios/05_special_entertainment/S086_multi_angle_cinema.md) |  |
+| S087 | Aerial Light Show Text Display *(planned)* | [card](scenarios/05_special_entertainment/S087_led_text.md) |  |
+| S088 | Formation Geometric Shape Morphing *(planned)* | [card](scenarios/05_special_entertainment/S088_formation_morphing.md) |  |
+| S089 | Large-Scale Swarm Collision Avoidance Test *(planned)* | [card](scenarios/05_special_entertainment/S089_collision_avoidance.md) |  |
+| S090 | Racing Drone Optimal Path *(planned)* | [card](scenarios/05_special_entertainment/S090_racing_optimal.md) |  |
+| S091 | Aerial Acrobatic Maneuvers *(planned)* | [card](scenarios/05_special_entertainment/S091_acrobatics.md) |  |
+| S092 | Movie Car Chase Scene *(planned)* | [card](scenarios/05_special_entertainment/S092_movie_chase.md) |  |
+| S093 | Earthquake Rubble Search and Rescue *(planned)* | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
+| S094 | Counter-Drone Intercept *(planned)* | [card](scenarios/05_special_entertainment/S094_counter_drone.md) |  |
+| S095 | Water Surface Landing Simulation *(planned)* | [card](scenarios/05_special_entertainment/S095_water_landing.md) |  |
+| S096 | Drone Relay Race *(planned)* | [card](scenarios/05_special_entertainment/S096_relay_race.md) |  |
+| S097 | Aerial Puzzle Assembly *(planned)* | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) |  |
+| S098 | Swarm Synchronized Dance *(planned)* | [card](scenarios/05_special_entertainment/S098_synchronized_dance.md) |  |
+| S099 | Cross-Obstacle Relay Pass *(planned)* | [card](scenarios/05_special_entertainment/S099_obstacle_relay.md) |  |
+| S100 | Ultimate Grand Challenge — Multi-Domain Integration *(planned)* | [card](scenarios/05_special_entertainment/S100_grand_challenge.md) |  |
+
+</details>
+
+<!-- SCENARIO-INDEX:END -->
 
 ---
 
