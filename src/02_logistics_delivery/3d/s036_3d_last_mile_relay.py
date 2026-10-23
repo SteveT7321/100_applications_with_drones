@@ -35,7 +35,7 @@ Relay plans (all use the same flight and battery model):
   5. Terrain minimax              -- as 3, with terrain-following stations
   Minimax uses exact dynamic programming on a 0.25 m grid of relay x.
 
-Handoff (card): the outgoing drone waits on a pad on the ground, 4 m to the
+Handoff (card): the outgoing drone waits on a pad on the ground, 2 m to the
 side of the station, and launches early enough to be aligned at the
 rendezvous point when the incoming drone arrives.  It closes the gap with a
 proportional law (K = 1.5, |v_z| <= 2 m/s, |v| <= 5 m/s); capture is declared
