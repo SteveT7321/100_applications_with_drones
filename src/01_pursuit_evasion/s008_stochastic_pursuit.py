@@ -47,6 +47,7 @@ R0          = 8.0    # m
 CAPTURE_R   = 0.15   # m
 DT          = 1 / 48
 MAX_TIME    = 25.0
+P0_VEL_VAR  = V_EVADER_MAX ** 2   # (m/s)² — initial KF velocity variance (speed clamp²)
 N_MC        = 100
 ANIM_TIME   = 6.0    # s — animation shows the first 6 s
 EVADER_SEED0 = 1000
@@ -151,11 +152,18 @@ def generate_evader_trajectory(seed):
     return np.array(traj), np.array(vels)
 
 
-def run_simulation(strategy, evader_traj, evader_vel, noise_seed):
+def run_simulation(strategy, evader_traj, evader_vel, noise_seed, kf_init='meas',
+                   p0_vel_var=P0_VEL_VAR):
     """
     Same evader trajectory and same measurement-noise sequence for every
     strategy (the noise generator is re-seeded per run and one sample is
     drawn per step regardless of strategy).
+
+    kf_init = 'meas'  : the filter starts at the first measurement with zero
+                        velocity, P0 = diag(σ_meas²·I, p0_vel_var·I)
+                        (what a real tracker knows)
+              'truth' : true initial position and velocity, P0 = I
+                        (warm start, for comparison only)
 
     Returns dict: p_traj, est_pos, est_vel, meas, pos_err, vel_err, cov,
                   times, captured, cap_time
@@ -163,13 +171,15 @@ def run_simulation(strategy, evader_traj, evader_vel, noise_seed):
     rng = np.random.default_rng(noise_seed)
     pursuer = DroneBase(INIT_PURSUER.copy(), max_speed=V_PURSUER, dt=DT)
     kf = KalmanFilter3D(DT, Q_PROCESS, SIGMA_MEAS)
-    kf.init_state(evader_traj[0], EVADER_VELO.copy())
+    if kf_init == 'truth':
+        kf.init_state(evader_traj[0], EVADER_VELO.copy())
+    kf_ready = kf_init == 'truth'
 
     p_list = [pursuer.pos.copy()]
-    est_list, estv_list = [evader_traj[0].copy()], [EVADER_VELO.copy()]
-    meas_list = [evader_traj[0].copy()]
-    perr, verr = [0.0], [0.0]
-    cov_list = [np.eye(3)]
+    est_list, estv_list = [np.full(3, np.nan)], [np.full(3, np.nan)]
+    meas_list = [np.full(3, np.nan)]
+    perr, verr = [np.nan], [np.nan]
+    cov_list = [np.full((3, 3), np.nan)]
     time_list = [0.0]
     captured, cap_time = False, None
 
@@ -180,7 +190,13 @@ def run_simulation(strategy, evader_traj, evader_vel, noise_seed):
         p_e_prev = evader_traj[step - 1]
         v_e_prev = evader_vel[step - 1]
         meas = p_e_prev + rng.normal(0, SIGMA_MEAS, 3)
-        x_kf, cov = kf.step(meas)
+        if kf_ready:
+            x_kf, cov = kf.step(meas)
+        else:                                   # first measurement initialises
+            kf.init_state(meas, np.zeros(3))
+            kf.P = np.diag([SIGMA_MEAS ** 2] * 3 + [p0_vel_var] * 3)
+            x_kf, cov = kf.x.copy(), kf.P[:3, :3].copy()
+            kf_ready = True
 
         if strategy in ('kf_lead', 'kf_pure'):
             est_p, est_v = x_kf[:3], x_kf[3:]
@@ -230,6 +246,24 @@ def run_monte_carlo():
             perr[s].append(np.mean(r['pos_err'][1:]))
     return ({s: np.array(v) for s, v in caps.items()},
             {s: np.array(v) for s, v in perr.items()})
+
+
+def run_init_comparison():
+    """KF + lead capture times over the N_MC runs for three filter starts."""
+    variants = {
+        'meas, vel var 36': dict(kf_init='meas', p0_vel_var=P0_VEL_VAR),
+        'meas, vel var 1 (card P0=I)': dict(kf_init='meas', p0_vel_var=1.0),
+        'truth (warm start)': dict(kf_init='truth'),
+    }
+    out = {}
+    for name, kw in variants.items():
+        caps = []
+        for i in range(N_MC):
+            et, ev = generate_evader_trajectory(EVADER_SEED0 + i)
+            r = run_simulation('kf_lead', et, ev, NOISE_SEED0 + i, **kw)
+            caps.append(r['cap_time'] if r['captured'] else np.nan)
+        out[name] = np.array(caps)
+    return out
 
 
 # ── Plots ────────────────────────────────────────────────────
@@ -313,7 +347,7 @@ def plot_covariance_ellipses(results, evader_traj, out_dir):
     ax.plot(r['p_traj'][:, 0], r['p_traj'][:, 1], color='red', linewidth=1.8,
             label='Pursuer (KF + lead)')
     sample_step = int(round(0.5 / DT))
-    for k in range(0, n, sample_step):
+    for k in range(1, n, sample_step):
         vals, vecs = np.linalg.eigh(r['cov'][k][:2, :2])
         vals = np.maximum(vals, 0)
         w, h = 2 * 2 * np.sqrt(vals)          # 2σ full width / height
@@ -326,7 +360,7 @@ def plot_covariance_ellipses(results, evader_traj, out_dir):
     ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
     ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
     ax.set_title('S008 — Kalman filter 2σ position ellipses every 0.5 s\n'
-                 '(first ellipse = initial P = 1 m² per axis)', fontsize=10)
+                 '(first ellipse = P after initialising from the first measurement)', fontsize=10)
     ax.legend(fontsize=8)
     plt.tight_layout()
     path = os.path.join(out_dir, 'covariance_ellipses.png')
@@ -405,7 +439,7 @@ def save_animation(results, evader_traj, out_dir):
                 ti.set_text(f'{LABELS[s]}\nCaptured {r["cap_time"]:.2f} s')
             else:
                 ti.set_text(f'{LABELS[s]}\nt={r["times"][si]:.2f}s  '
-                            f'est_err={r["pos_err"][si]:.2f}m')
+                            f'est_err={np.nan_to_num(r["pos_err"][si]):.2f}m')
             out += [lp, le, dp, de, dx, ti]
         return out
 
@@ -438,7 +472,7 @@ if __name__ == '__main__':
           f'min {rng_n[late].min():.3f} m, 95th pct {np.percentile(rng_n[late], 95):.3f} m')
     rk = results['kf_lead']
     print(f'  KF mean velocity error (kf_lead run): {np.mean(rk["vel_err"][1:]):.3f} m/s')
-    same = np.allclose(results['kf_lead']['meas'][:20], results['naive']['meas'][:20])
+    same = np.allclose(results['kf_lead']['meas'][1:21], results['naive']['meas'][1:21])
     print(f'  same measurement noise for all strategies (first 20 steps): {same}')
 
     caps, perr = run_monte_carlo()
@@ -456,6 +490,17 @@ if __name__ == '__main__':
         print(f'  paired {a} vs {b}: {a} faster in {int(np.sum(ca < cb))}/{N_MC} runs, '
               f'mean difference {np.mean(ca[both] - cb[both]):+.3f} s over the '
               f'{int(both.sum())} runs where both capture')
+    gap = np.nanmean(caps['kf_lead']) - np.nanmean(caps['oracle_lead'])
+    print(f'  KF+lead vs oracle+lead: +{gap:.3f} s = '
+          f'{100 * gap / np.nanmean(caps["oracle_lead"]):.1f}% of the oracle time')
+
+    init_cmp = run_init_comparison()
+    print(f'\nKF + lead with different filter starts ({N_MC} runs; first variant = main):')
+    for name, c in init_cmp.items():
+        g = np.nanmean(c) - np.nanmean(caps['oracle_lead'])
+        print(f'  {name:<28}: captured {np.sum(~np.isnan(c))}/{N_MC}, mean {np.nanmean(c):.3f} s, '
+              f'max {np.nanmax(c):.3f} s, vs oracle+lead +{g:.3f} s '
+              f'({100 * g / np.nanmean(caps["oracle_lead"]):.1f}%)')
 
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_trajectories(results, evader_traj, out_dir)
