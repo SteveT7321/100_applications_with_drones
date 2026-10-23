@@ -1,741 +1,588 @@
 """
 S020 Pursuit-Evasion Game (RL Capstone)
 ========================================
-Capstone of the pursuit-evasion domain. Both pursuer and evader are trained
-with Proximal Policy Optimisation (PPO). The trained RL policies are benchmarked
-against hand-crafted strategies (pure pursuit, proportional navigation, APF;
-straight, perpendicular and spiral evasion). Three training phases:
+Capstone of the pursuit-evasion domain.  A pursuer and an evader are trained
+with Proximal Policy Optimisation (PPO, stable-baselines3) in a three-phase
+curriculum and then benchmarked against hand-crafted strategies:
+
   Phase 1: pursuer trains against a random evader.
-  Phase 2: evader trains against a frozen pure-pursuit pursuer (approximates
-            the frozen Phase-1 pursuer described in the scenario card).
-  Phase 3: pursuer continues training against the Phase-2 RL evader
-            (self-play refinement).
-A fast, faithful simulation of all three curriculum phases plus 300-episode
-benchmark suite and CDF analysis.
+  Phase 2: evader trains against the frozen Phase-1 RL pursuer.
+  Phase 3: self-play — pursuer and evader train in alternating rounds, each
+           against a frozen snapshot of the other's latest policy.
+
+Benchmark (every pursuer x every evader, TEST_EPISODES seeded episodes each,
+same spawn positions for every matchup):
+  pursuers: RL, pure pursuit (PP), proportional navigation (PN), artificial
+            potential field (APF: attraction to the evader + repulsion from the
+            arena walls)
+  evaders : RL, straight, perpendicular-to-LOS, spiral
+
+All agents observe the 13-D state with the same Gaussian noise (sigma = 0.1)
+that the RL agents were trained with.  Both agents act simultaneously; capture
+is detected continuously within each step.  Benchmark episodes are simulated in
+a vectorised batch.
 
 Usage:
     conda activate drones
     python src/01_pursuit_evasion/s020_pursuit_evasion_game.py
 """
 
-import sys, os
+import os
 os.environ.setdefault('KMP_DUPLICATE_LIB_OK', 'TRUE')   # avoid libomp/libiomp conflict on Windows
+import copy
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+import matplotlib.animation as animation
 
+import torch
 import gymnasium as gym
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import BaseCallback
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
 # ── Parameters ──────────────────────────────────────────────────────────────
-V_PURSUER    = 5.0          # m/s  pursuer max speed
-V_EVADER     = 3.5          # m/s  evader max speed
-# Arena sized so pursuer traverses ~3-4× in T_MAX:
-#   V_P * T_MAX / (2*ARENA) = 5*30/40 ≈ 3.75  (was 15× with ARENA=5)
-ARENA        = 20.0         # m    arena half-extent ([-20,20]^2)
-CAPTURE_R    = 0.3          # m    capture radius (scaled with arena)
+V_PURSUER    = 5.0          # m/s  pursuer speed
+V_EVADER     = 3.5          # m/s  evader speed
+ARENA        = 20.0         # m    arena half-extent (cube [-20, 20]^3)
+CAPTURE_R    = 0.3          # m    capture radius
 DT           = 0.05         # s    timestep
 T_MAX        = 30.0         # s    episode length
-# Physics-based initial separation:
-#   INIT_SEP = 2 * ARENA * 0.7 = 28 m
-#   Nominal capture at closing speed (V_P - V_E) = 1.5 m/s: ~18 s ≈ 60% of T_MAX
-INIT_R       = ARENA * 0.7  # m    spawn radius (opposite sides → sep = 2*INIT_R)
-NOISE_SIGMA  = 0.1          # m    observation noise
-EPS_VEL      = 1e-8         # safety epsilon
+MAX_STEPS    = int(round(T_MAX / DT))   # 600
+INIT_R       = ARENA * 0.7  # m    spawn radius; pursuer and evader on opposite sides (28 m apart)
+NOISE_SIGMA  = 0.1          # observation noise (m, m/s, s) on every observation component
+PN_GAIN      = 3.0          # proportional navigation gain N
+APF_D0       = 2.0          # m    APF wall influence distance
+APF_ETA      = 1.0 / 6.0    # APF repulsion gain: repulsion = attraction at 0.5 m from a wall
+SPIRAL_OMEGA = 0.3          # rad/s spiral evader heading rate
 
-# PPO hyper-parameters (from scenario card)
+# PPO hyper-parameters (scenario card)
 LEARNING_RATE = 3e-4
 CLIP_RANGE    = 0.2
 BATCH_SIZE    = 256
 NET_ARCH      = [256, 256]
-N_STEPS_PPO   = 512         # rollout buffer size (shorter = faster iteration)
+N_STEPS_PPO   = 512         # rollout length per update
 
-# Training scale (scenario card: 5000/5000/10000 episodes; scaled ~1:40 for demo)
-PHASE1_TIMESTEPS = 80_000   # ~133 episodes
-PHASE2_TIMESTEPS = 80_000
-PHASE3_TIMESTEPS = 120_000
-MAX_STEPS        = int(T_MAX / DT)   # 600 steps / episode
+# Training budget (timesteps).  Card: 5000 / 5000 / 10000 episodes (up to
+# 3.0 M / 3.0 M / 6.0 M steps); reduced to keep the script under ~5 min.
+PHASE1_TIMESTEPS = 60_000
+PHASE2_TIMESTEPS = 60_000
+PHASE3_ROUNDS    = 4
+PHASE3_STEPS_PER_ROUND = 10_000   # per agent per round -> 80 000 steps in Phase 3
 
-TEST_EPISODES    = 300
+TEST_EPISODES = 1000
+BENCH_SEED    = 2024
+SEED          = 0
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '01_pursuit_evasion', 's020_pursuit_evasion_game',
 )
 
-RNG = np.random.default_rng(0)
+OBS_SCALE = np.array([ARENA] * 3 + [V_PURSUER] * 3 + [ARENA] * 3 + [V_PURSUER] * 3 + [T_MAX],
+                     dtype=np.float32)
 
 
-# ── Hand-crafted strategies ──────────────────────────────────────────────────
+# ── Dynamics shared by training env and benchmark ───────────────────────────
 
-def _normalise(v):
-    n = np.linalg.norm(v)
-    return v / (n + EPS_VEL) if n > EPS_VEL else v
-
-
-def strategy_pure_pursuit(p_pos, e_pos):
-    """Return velocity command for pure-pursuit pursuer."""
-    return _normalise(e_pos - p_pos) * V_PURSUER
+def unit(v):
+    n = np.linalg.norm(v, axis=-1, keepdims=True)
+    return np.where(n > 1e-9, v / np.maximum(n, 1e-9), 0.0)
 
 
-def strategy_prop_nav(p_pos, p_vel, e_pos, e_vel, N_gain=3.0):
-    """Proportional Navigation pursuer velocity command."""
-    r_vec = e_pos - p_pos
-    r_dist = np.linalg.norm(r_vec) + EPS_VEL
-    los = r_vec / r_dist
-    rel_vel = e_vel - p_vel
-    los_rate = (rel_vel - np.dot(rel_vel, los) * los) / r_dist
-    accel = N_gain * V_PURSUER * los_rate
-    new_vel = p_vel + accel * DT
-    spd = np.linalg.norm(new_vel)
-    if spd > V_PURSUER:
-        new_vel = new_vel / spd * V_PURSUER
-    return new_vel
+def raw_obs(p, pv, e, ev, step):
+    """13-D observation [p_P, v_P, p_E, v_E, t_remaining] (batched)."""
+    t_rem = np.full((len(p), 1), (MAX_STEPS - step) * DT)
+    return np.concatenate([p, pv, e, ev, t_rem], axis=1)
 
 
-def strategy_apf(p_pos, e_pos):
-    """APF pursuer velocity command (attractive field)."""
-    return _normalise(e_pos - p_pos) * V_PURSUER
+def world_step(p, e, vp, ve):
+    """Move both agents for one step; return new positions and capture flags
+    (closest approach of the straight-line relative motion within the step)."""
+    p_new = np.clip(p + vp * DT, -ARENA, ARENA)
+    e_new = np.clip(e + ve * DT, -ARENA, ARENA)
+    r0 = e - p
+    d = (e_new - e) - (p_new - p)
+    dd = np.sum(d * d, axis=1)
+    s = np.where(dd > 1e-12, np.clip(-np.sum(r0 * d, axis=1) / np.maximum(dd, 1e-12), 0, 1), 0.0)
+    dmin = np.linalg.norm(r0 + s[:, None] * d, axis=1)
+    return p_new, e_new, dmin < CAPTURE_R
 
 
-def evader_random(rng):
-    """Random velocity command for evader."""
-    d = rng.standard_normal(3); d[2] = 0.0
-    return _normalise(d) * V_EVADER
+# ── Agents (batched; obs = noisy 13-D observation) ──────────────────────────
+
+class Agent:
+    speed = V_PURSUER
+    def reset(self, n, rng, p, e):
+        pass
+    def act(self, obs, step):
+        raise NotImplementedError
 
 
-def evader_straight(direction):
-    """Constant-direction evader velocity."""
-    return _normalise(direction) * V_EVADER
+class PurePursuit(Agent):
+    name = 'Pure pursuit'
+    def act(self, obs, step):
+        return unit(obs[:, 6:9] - obs[:, 0:3]) * V_PURSUER
 
 
-def evader_perpendicular(p_pos, e_pos):
-    """Perpendicular-to-LOS evader."""
-    diff = e_pos - p_pos
-    if np.linalg.norm(diff[:2]) < EPS_VEL:
-        return np.array([V_EVADER, 0.0, 0.0])
-    d2 = diff[:2] / np.linalg.norm(diff[:2])
-    perp = np.array([-d2[1], d2[0], 0.0])
-    return perp * V_EVADER
+class PropNav(Agent):
+    """Constant-speed PN: launched along the initial LOS; a = N v_c dlambda/dt turns the velocity."""
+    name = 'Prop. nav.'
+    def reset(self, n, rng, p, e):
+        self.v = unit(e - p) * V_PURSUER
+    def act(self, obs, step):
+        los = obs[:, 6:9] - obs[:, 0:3]
+        r = np.maximum(np.linalg.norm(los, axis=1, keepdims=True), 1e-6)
+        lh = los / r
+        v_rel = obs[:, 9:12] - self.v
+        lam_dot = (v_rel - np.sum(v_rel * lh, axis=1, keepdims=True) * lh) / r
+        v_c = -np.sum(v_rel * lh, axis=1, keepdims=True)
+        v_new = self.v + PN_GAIN * v_c * lam_dot * DT
+        self.v = unit(v_new) * V_PURSUER
+        return self.v
 
 
-def evader_spiral(t):
-    """Spiral evader."""
-    omega = 0.3
-    phi = omega * t
-    return np.array([np.cos(phi), np.sin(phi), 0.0]) * V_EVADER
+class APF(Agent):
+    """Attraction toward the evader + repulsion from the six arena walls (Khatib)."""
+    name = 'APF'
+    def act(self, obs, step):
+        p = obs[:, 0:3]
+        f = unit(obs[:, 6:9] - p)
+        for sign in (-1.0, 1.0):
+            dist = np.maximum(ARENA - sign * p, 1e-3)          # distance to the wall at sign*ARENA
+            rep = np.where(dist < APF_D0, APF_ETA * (1 / dist - 1 / APF_D0) / dist ** 2, 0.0)
+            f = f - sign * rep                                   # push away from that wall
+        return unit(f) * V_PURSUER
 
 
-# ── Fast episode runner (no model.predict inside) ────────────────────────────
-
-def run_episode(pursuer_fn, evader_fn, seed):
-    """
-    Run one episode using callable policy functions.
-    pursuer_fn(p_pos, p_vel, e_pos, e_vel, t) -> v_cmd (3,)
-    evader_fn (p_pos, p_vel, e_pos, e_vel, t) -> v_cmd (3,)
-    Returns capture_time or None (escaped).
-    """
-    rng = np.random.default_rng(seed)
-    angle = rng.uniform(0, 2 * np.pi)
-    p_pos = np.array([INIT_R * np.cos(angle),  INIT_R * np.sin(angle),  0.0])
-    e_pos = np.array([-INIT_R * np.cos(angle), -INIT_R * np.sin(angle), 0.0])
-    p_vel = np.zeros(3)
-    e_vel = np.zeros(3)
-    for step in range(MAX_STEPS):
-        dist = np.linalg.norm(p_pos - e_pos)
-        if dist < CAPTURE_R:
-            return step * DT
-        t = step * DT
-        p_vel = pursuer_fn(p_pos, p_vel, e_pos, e_vel, t)
-        e_vel = evader_fn(p_pos, p_vel, e_pos, e_vel, t)
-        p_pos = np.clip(p_pos + p_vel * DT, -ARENA, ARENA)
-        e_pos = np.clip(e_pos + e_vel * DT, -ARENA, ARENA)
-    return None
+class RandomEvader(Agent):
+    name = 'Random'
+    speed = V_EVADER
+    def reset(self, n, rng, p, e):
+        self.rng = rng
+    def act(self, obs, step):
+        d = self.rng.standard_normal((len(obs), 3)); d[:, 2] = 0.0
+        return unit(d) * V_EVADER
 
 
-# ── Gymnasium Environment ────────────────────────────────────────────────────
+class StraightEvader(Agent):
+    name = 'Straight'
+    speed = V_EVADER
+    def reset(self, n, rng, p, e):
+        a = rng.uniform(0, 2 * np.pi, n)
+        self.d = np.column_stack([np.cos(a), np.sin(a), np.zeros(n)])
+    def act(self, obs, step):
+        return self.d * V_EVADER
+
+
+class PerpEvader(Agent):
+    name = 'Perpendicular'
+    speed = V_EVADER
+    def act(self, obs, step):
+        diff = obs[:, 6:8] - obs[:, 0:2]
+        d2 = unit(diff)
+        return np.column_stack([-d2[:, 1], d2[:, 0], np.zeros(len(obs))]) * V_EVADER
+
+
+class SpiralEvader(Agent):
+    name = 'Spiral'
+    speed = V_EVADER
+    def act(self, obs, step):
+        phi = SPIRAL_OMEGA * step * DT
+        n = len(obs)
+        return np.tile([np.cos(phi) * V_EVADER, np.sin(phi) * V_EVADER, 0.0], (n, 1))
+
+
+class RLAgent(Agent):
+    """Deterministic PPO policy (frozen copy) acting on the scaled noisy observation."""
+    def __init__(self, policy, role):
+        self.policy = policy
+        self.policy.set_training_mode(False)
+        self.speed = V_PURSUER if role == 'pursuer' else V_EVADER
+        self.name = f'RL {role}'
+    def act(self, obs, step):
+        with torch.no_grad():
+            x = torch.as_tensor((obs / OBS_SCALE).astype(np.float32))
+            a = self.policy._predict(x, deterministic=True).numpy().astype(float)
+        a = np.clip(a, -1.0, 1.0)
+        return unit(a) * self.speed
+
+
+# ── Gymnasium environment ───────────────────────────────────────────────────
 
 class PursuitEvasionEnv(gym.Env):
     """
-    Single-pursuer single-evader environment.
-    Obs (13-D): [p_P(3), v_P(3), p_E(3), v_E(3), t_remaining(1)]
-    Act (3-D): normalised velocity command in [-1,1]^3.
-    opponent_fn(p_pos, p_vel, e_pos, e_vel, t) -> v_cmd  (hand-crafted; fast)
+    One learning agent ('pursuer' or 'evader') vs a fixed opponent Agent.
+    Obs (13-D, noisy, scaled): [p_P, v_P, p_E, v_E, t_remaining].
+    Act (3-D) in [-1, 1]^3 -> velocity = v_max * a / |a|.
+    Rewards (card): pursuer +100 capture, +0.01*(d_prev - d), -0.1*|a|/v_max per step;
+                    evader  -100 capture, +0.1 per step, +0.01*(d - d_prev).
     """
     metadata = {'render_modes': []}
 
-    def __init__(self, role='pursuer', opponent_fn=None,
-                 noise_sigma=NOISE_SIGMA, rng_seed=None):
+    def __init__(self, role, opponent, rng_seed):
         super().__init__()
-        self.role = role
-        self.opponent_fn = opponent_fn
-        self.noise_sigma = noise_sigma
-        self._rng = np.random.default_rng(rng_seed)
-
+        self.role, self.opponent = role, opponent
+        self.rng = np.random.default_rng(rng_seed)
         self.observation_space = spaces.Box(-np.inf, np.inf, shape=(13,), dtype=np.float32)
-        self.action_space      = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
+        self.action_space = spaces.Box(-1.0, 1.0, shape=(3,), dtype=np.float32)
 
-        self.pursuer_pos = None; self.pursuer_vel = None
-        self.evader_pos  = None; self.evader_vel  = None
-        self.t_step = 0; self._prev_dist = None
+    def _noisy(self):
+        o = raw_obs(self.p, self.pv, self.e, self.ev, self.step_i)
+        return o + self.rng.normal(0, NOISE_SIGMA, o.shape)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        rng = self._rng
-        angle = rng.uniform(0, 2 * np.pi)
-        self.pursuer_pos = np.array([INIT_R * np.cos(angle),  INIT_R * np.sin(angle),  0.0])
-        self.evader_pos  = np.array([-INIT_R * np.cos(angle), -INIT_R * np.sin(angle), 0.0])
-        self.pursuer_vel = np.zeros(3)
-        self.evader_vel  = np.zeros(3)
-        self.t_step = 0
-        self._prev_dist = np.linalg.norm(self.pursuer_pos - self.evader_pos)
-        return self._obs(), {}
-
-    def _obs(self):
-        t_rem = (MAX_STEPS - self.t_step) * DT
-        raw = np.concatenate([
-            self.pursuer_pos, self.pursuer_vel,
-            self.evader_pos, self.evader_vel, [t_rem]
-        ]).astype(np.float32)
-        raw += self._rng.normal(0, self.noise_sigma, size=13).astype(np.float32)
-        return raw
+        a = self.rng.uniform(0, 2 * np.pi)
+        self.p = np.array([[INIT_R * np.cos(a), INIT_R * np.sin(a), 0.0]])
+        self.e = -self.p.copy()
+        self.pv = np.zeros((1, 3)); self.ev = np.zeros((1, 3))
+        self.step_i = 0
+        self.d_prev = float(np.linalg.norm(self.p - self.e))
+        self.opponent.reset(1, self.rng, self.p, self.e)
+        self.obs = self._noisy()
+        return (self.obs[0] / OBS_SCALE).astype(np.float32), {}
 
     def step(self, action):
-        action = np.asarray(action, dtype=float)
-        t = self.t_step * DT
+        a = np.clip(np.asarray(action, dtype=float), -1.0, 1.0)
+        v_own = unit(a[None]) * (V_PURSUER if self.role == 'pursuer' else V_EVADER)
+        v_opp = self.opponent.act(self._noisy(), self.step_i)   # opponent's own noisy view
+        vp, ve = (v_own, v_opp) if self.role == 'pursuer' else (v_opp, v_own)
+        self.p, self.e, cap = world_step(self.p, self.e, vp, ve)
+        self.pv, self.ev = vp, ve
+        self.step_i += 1
+        d = float(np.linalg.norm(self.p - self.e))
+        captured = bool(cap[0])
         if self.role == 'pursuer':
-            v_p = V_PURSUER * action / (np.linalg.norm(action) + EPS_VEL)
-            self.pursuer_vel = v_p
-            self.pursuer_pos = np.clip(self.pursuer_pos + v_p * DT, -ARENA, ARENA)
-            # opponent: hand-crafted evader
-            if self.opponent_fn is not None:
-                v_e = self.opponent_fn(self.pursuer_pos, self.pursuer_vel,
-                                       self.evader_pos, self.evader_vel, t)
-            else:
-                v_e = evader_random(self._rng)
-            self.evader_vel = v_e
-            self.evader_pos = np.clip(self.evader_pos + v_e * DT, -ARENA, ARENA)
-        else:  # evader
-            v_e = V_EVADER * action / (np.linalg.norm(action) + EPS_VEL)
-            self.evader_vel = v_e
-            self.evader_pos = np.clip(self.evader_pos + v_e * DT, -ARENA, ARENA)
-            if self.opponent_fn is not None:
-                v_p = self.opponent_fn(self.pursuer_pos, self.pursuer_vel,
-                                       self.evader_pos, self.evader_vel, t)
-            else:
-                v_p = _normalise(self.evader_pos - self.pursuer_pos) * V_PURSUER
-            self.pursuer_vel = v_p
-            self.pursuer_pos = np.clip(self.pursuer_pos + v_p * DT, -ARENA, ARENA)
-
-        dist = np.linalg.norm(self.pursuer_pos - self.evader_pos)
-        captured = dist < CAPTURE_R
-        self.t_step += 1
-
-        if self.role == 'pursuer':
-            reward = 0.01 * (self._prev_dist - dist)
-            reward -= 0.1 * np.linalg.norm(action) / (V_PURSUER + EPS_VEL)
-            if captured: reward += 100.0
+            r = 0.01 * (self.d_prev - d) - 0.1 * np.linalg.norm(a) / V_PURSUER + (100.0 if captured else 0.0)
         else:
-            reward = 0.1
-            reward += 0.01 * (dist - self._prev_dist)
-            if captured: reward -= 100.0
-
-        self._prev_dist = dist
-        terminated = captured
-        truncated  = (self.t_step >= MAX_STEPS)
-        return self._obs(), float(reward), terminated, truncated, {}
+            r = 0.1 + 0.01 * (d - self.d_prev) - (100.0 if captured else 0.0)
+        self.d_prev = d
+        self.obs = self._noisy()
+        return ((self.obs[0] / OBS_SCALE).astype(np.float32), float(r), captured,
+                self.step_i >= MAX_STEPS, {})
 
 
-# ── Reward logger ────────────────────────────────────────────────────────────
-
-class RewardLogger(BaseCallback):
+class EpisodeLogger(BaseCallback):
     def __init__(self):
         super().__init__()
-        self.episode_rewards = []
-        self._cur = 0.0
-
+        self.returns, self.captured, self._cur = [], [], 0.0
     def _on_step(self):
-        self._cur += self.locals['rewards'][0]
+        self._cur += float(self.locals['rewards'][0])
         if self.locals['dones'][0]:
-            self.episode_rewards.append(self._cur)
+            info = self.locals['infos'][0]
+            self.returns.append(self._cur)
+            self.captured.append(not info.get('TimeLimit.truncated', False))
             self._cur = 0.0
         return True
 
 
-# ── Training ─────────────────────────────────────────────────────────────────
+def make_ppo(env, seed):
+    return PPO('MlpPolicy', env, verbose=0, learning_rate=LEARNING_RATE, clip_range=CLIP_RANGE,
+               batch_size=BATCH_SIZE, n_steps=N_STEPS_PPO, policy_kwargs=dict(net_arch=NET_ARCH),
+               seed=seed, device='cpu')
 
-def _make_ppo(env, seed):
-    return PPO(
-        "MlpPolicy", env, verbose=0,
-        learning_rate=LEARNING_RATE,
-        clip_range=CLIP_RANGE,
-        batch_size=BATCH_SIZE,
-        n_steps=N_STEPS_PPO,
-        policy_kwargs=dict(net_arch=NET_ARCH),
-        seed=seed,
-    )
+
+def frozen(model, role):
+    """Independent copy of the current policy (same constructor, copied weights)."""
+    pol = model.policy
+    clone = type(pol)(**pol._get_constructor_parameters())
+    clone.load_state_dict(copy.deepcopy(pol.state_dict()))
+    return RLAgent(clone, role)
+
+
+def train():
+    torch.manual_seed(SEED)
+    torch.set_num_threads(1)
+    curves = {}
+
+    def learn(model, env, steps, key):
+        model.set_env(env)
+        cb = EpisodeLogger()
+        model.learn(total_timesteps=steps, callback=cb, reset_num_timesteps=False)
+        curves.setdefault(key, {'returns': [], 'captured': []})
+        curves[key]['returns'] += cb.returns
+        curves[key]['captured'] += cb.captured
+        return cb
+
+    print('Phase 1: pursuer vs random evader ...')
+    pursuer = make_ppo(PursuitEvasionEnv('pursuer', RandomEvader(), 11), seed=SEED + 1)
+    learn(pursuer, PursuitEvasionEnv('pursuer', RandomEvader(), 11), PHASE1_TIMESTEPS, 'Phase 1: pursuer')
+
+    print('Phase 2: evader vs frozen Phase-1 pursuer ...')
+    env2 = PursuitEvasionEnv('evader', frozen(pursuer, 'pursuer'), 12)
+    evader = make_ppo(env2, seed=SEED + 2)
+    learn(evader, env2, PHASE2_TIMESTEPS, 'Phase 2: evader')
+
+    print(f'Phase 3: self-play, {PHASE3_ROUNDS} alternating rounds ...')
+    for k in range(PHASE3_ROUNDS):
+        learn(pursuer, PursuitEvasionEnv('pursuer', frozen(evader, 'evader'), 100 + k),
+              PHASE3_STEPS_PER_ROUND, 'Phase 3: pursuer')
+        learn(evader, PursuitEvasionEnv('evader', frozen(pursuer, 'pursuer'), 200 + k),
+              PHASE3_STEPS_PER_ROUND, 'Phase 3: evader')
+
+    print('\nTraining summary (episodes, capture fraction in first / last 20% of episodes):')
+    for key, c in curves.items():
+        cap = np.array(c['captured'], dtype=float)
+        n = len(cap); q = max(1, n // 5)
+        print(f'  {key:18s} {n:4d} episodes | captured {cap[:q].mean() * 100:5.1f}% -> '
+              f'{cap[-q:].mean() * 100:5.1f}% | mean return first/last 20%: '
+              f'{np.mean(c["returns"][:q]):8.2f} / {np.mean(c["returns"][-q:]):8.2f}')
+    return frozen(pursuer, 'pursuer'), frozen(evader, 'evader'), curves
+
+
+# ── Benchmark ───────────────────────────────────────────────────────────────
+
+def simulate(pursuer, evader, n, seed, n_record=0, noise=None, diag=None):
+    """
+    Vectorised episodes.  Returns capture times (nan = no capture), mean angle
+    between pursuer command and LOS, trajectories of the first n_record episodes.
+    If diag is a dict it receives per-episode closest approach and final positions.
+    """
+    sigma = NOISE_SIGMA if noise is None else noise
+    rng = np.random.default_rng(seed)
+    a = rng.uniform(0, 2 * np.pi, n)
+    p = np.column_stack([INIT_R * np.cos(a), INIT_R * np.sin(a), np.zeros(n)])
+    e = -p.copy()
+    pv = np.zeros((n, 3)); ev = np.zeros((n, 3))
+    pursuer.reset(n, rng, p, e); evader.reset(n, rng, p, e)
+    active = np.ones(n, bool)
+    t_cap = np.full(n, np.nan)
+    ang_sum, ang_cnt = 0.0, 0
+    traj = [np.stack([p[:n_record], e[:n_record]], 1)] if n_record else None
+    closest = np.linalg.norm(p - e, axis=1)
+    for step in range(MAX_STEPS):
+        base = raw_obs(p, pv, e, ev, step)
+        vp = pursuer.act(base + rng.normal(0, sigma, base.shape), step)
+        ve = evader.act(base + rng.normal(0, sigma, base.shape), step)
+        los = unit(e - p)
+        cosang = np.clip(np.sum(unit(vp) * los, axis=1), -1, 1)
+        ang_sum += float(np.degrees(np.arccos(cosang[active])).sum()); ang_cnt += int(active.sum())
+        vp[~active] = 0.0; ve[~active] = 0.0
+        p_new, e_new, cap = world_step(p, e, vp, ve)
+        p, e, pv, ev = p_new, e_new, vp, ve
+        closest = np.where(active, np.minimum(closest, np.linalg.norm(p - e, axis=1)), closest)
+        newly = active & cap
+        t_cap[newly] = (step + 1) * DT
+        active &= ~cap
+        if n_record:
+            traj.append(np.stack([p[:n_record], e[:n_record]], 1))
+        if not active.any():
+            break
+    if diag is not None:
+        diag.update(closest=closest, p=p, e=e)
+    return t_cap, ang_sum / max(ang_cnt, 1), (np.array(traj) if n_record else None)
+
+
+def benchmark(rl_p, rl_e):
+    pursuers = [rl_p, PurePursuit(), PropNav(), APF()]
+    evaders = [rl_e, StraightEvader(), PerpEvader(), SpiralEvader()]
+    res = {}
+    print(f'\nBenchmark: {TEST_EPISODES} episodes per matchup (seed {BENCH_SEED}, same spawns), '
+          f'noise sigma {NOISE_SIGMA}')
+    print(f'  {"pursuer":13s} {"evader":13s} {"capture":>8s} {"mean t (captured)":>18s} '
+          f'{"median t":>9s} {"mean |angle(v_P, LOS)|":>23s}')
+    fails = []
+    for pu in pursuers:
+        for evd in evaders:
+            dg = {}
+            t, ang, _ = simulate(pu, evd, TEST_EPISODES, BENCH_SEED, diag=dg)
+            c = ~np.isnan(t)
+            if 0 < (~c).sum() and pu.name != 'RL pursuer':
+                f = ~c
+                fails.append((pu.name, evd.name, int(f.sum()), np.median(dg['closest'][f]),
+                              np.median(np.linalg.norm(dg['p'][f] - dg['e'][f], axis=1)),
+                              np.mean(np.max(np.abs(dg['e'][f][:, :2]), axis=1) > ARENA - 1e-6)))
+            rate = c.mean()
+            med = np.median(np.where(c, t, np.inf))
+            res[(pu.name, evd.name)] = {'times': t, 'rate': rate, 'angle': ang,
+                                        'mean': float(np.mean(t[c])) if c.any() else np.nan,
+                                        'median': med}
+            mean_s = f'{np.mean(t[c]):.2f} s' if c.any() else 'no capture'
+            med_s = f'{med:.2f} s' if np.isfinite(med) else '> T_max'
+            print(f'  {pu.name:13s} {evd.name:13s} {rate * 100:7.1f}% {mean_s:>18s} {med_s:>9s} '
+                  f'{ang:20.1f} deg')
+    print('\nEscapes against the hand-crafted pursuers (median over the escaped episodes):')
+    print(f'  {"pursuer":13s} {"evader":13s} {"escapes":>7s} {"closest approach":>17s} '
+          f'{"final distance":>15s} {"evader on a wall":>17s}')
+    for a, b, k, cl, fd, wall in fails:
+        print(f'  {a:13s} {b:13s} {k:7d} {cl:15.2f} m {fd:13.2f} m {wall * 100:15.0f}%')
+
+    print('\nSame hand-crafted matchups without observation noise (capture rate):')
+    for pu in pursuers[1:]:
+        row = []
+        for evd in evaders[1:]:
+            t, _, _ = simulate(pu, evd, TEST_EPISODES, BENCH_SEED, noise=0.0)
+            row.append(f'{evd.name} {np.mean(~np.isnan(t)) * 100:5.1f}%')
+        print(f'  {pu.name:13s} ' + ' | '.join(row))
+    return res, pursuers, evaders
+
+
+def compute_quiver(rl_p, n_grid=13):
+    xs = np.linspace(-ARENA * 0.9, ARENA * 0.9, n_grid)
+    X, Y = np.meshgrid(xs, xs)
+    p = np.column_stack([X.ravel(), Y.ravel(), np.zeros(X.size)])
+    z = np.zeros_like(p)
+    v = rl_p.act(raw_obs(p, z, z, z, 0), 0)
+    los = unit(-p)
+    ang = np.degrees(np.arccos(np.clip(np.sum(unit(v) * los, axis=1), -1, 1)))
+    print(f'\nPolicy probe (evader at rest at the origin, pursuer at rest on a {n_grid}x{n_grid} grid, '
+          f'no noise): mean angle between RL command and LOS {ang.mean():.1f} deg, '
+          f'max {ang.max():.1f} deg, |v_z|/|v| mean {np.mean(np.abs(v[:, 2])) / V_PURSUER:.3f}')
+    return X, Y, v[:, 0].reshape(X.shape), v[:, 1].reshape(X.shape), ang.reshape(X.shape)
 
 
 def run_simulation():
-    """3-phase PPO training + benchmark."""
-
-    # ── Phase 1: pursuer vs random evader ───────────────────────────────────
-    print('Phase 1: pursuer trains vs random evader ...')
-    env1 = PursuitEvasionEnv(role='pursuer', opponent_fn=None, rng_seed=1)
-    cb1  = RewardLogger()
-    model_pursuer = _make_ppo(env1, seed=1)
-    model_pursuer.learn(total_timesteps=PHASE1_TIMESTEPS, callback=cb1)
-
-    # ── Phase 2: evader vs pure-pursuit pursuer ──────────────────────────────
-    print('Phase 2: evader trains vs pure-pursuit pursuer ...')
-    def _pp_opponent(p_pos, p_vel, e_pos, e_vel, t):
-        return strategy_pure_pursuit(p_pos, e_pos)
-
-    env2 = PursuitEvasionEnv(role='evader', opponent_fn=_pp_opponent, rng_seed=2)
-    cb2  = RewardLogger()
-    model_evader = _make_ppo(env2, seed=2)
-    model_evader.learn(total_timesteps=PHASE2_TIMESTEPS, callback=cb2)
-
-    # ── Phase 3: pursuer self-play vs RL evader ──────────────────────────────
-    print('Phase 3: pursuer self-play vs RL evader ...')
-
-    # Extract RL evader policy as a fast numpy callable
-    import torch
-    evader_policy_net = model_evader.policy
-    evader_policy_net.set_training_mode(False)
-
-    def _rl_evader_opponent(p_pos, p_vel, e_pos, e_vel, t):
-        t_rem = (MAX_STEPS - int(t / DT)) * DT
-        obs = np.concatenate([p_pos, p_vel, e_pos, e_vel, [t_rem]]).astype(np.float32)
-        with torch.no_grad():
-            obs_t = torch.as_tensor(obs[None])
-            action = evader_policy_net._predict(obs_t, deterministic=True).numpy()[0]
-        return V_EVADER * action / (np.linalg.norm(action) + EPS_VEL)
-
-    env3 = PursuitEvasionEnv(role='pursuer', opponent_fn=_rl_evader_opponent, rng_seed=3)
-    cb3  = RewardLogger()
-    # Fine-tune pursuer from Phase-1 weights
-    model_pursuer.set_env(env3)
-    model_pursuer.learn(total_timesteps=PHASE3_TIMESTEPS, callback=cb3, reset_num_timesteps=False)
-
-    # ── Assemble learning curves ─────────────────────────────────────────────
-    learning_curves = {
-        'Phase 1 — Pursuer vs Random':    cb1.episode_rewards,
-        'Phase 2 — Evader vs Pure-Pursuit': cb2.episode_rewards,
-        'Phase 3 — Pursuer vs RL Evader':  cb3.episode_rewards,
-    }
-
-    # ── Benchmark ───────────────────────────────────────────────────────────
-    print('Benchmarking ...')
-    # Build fast numpy functions for RL pursuer & evader
-    pursuer_policy_net = model_pursuer.policy
-    pursuer_policy_net.set_training_mode(False)
-    import torch
-
-    def _rl_pursuer_fn(p_pos, p_vel, e_pos, e_vel, t):
-        t_rem = (MAX_STEPS - int(t / DT)) * DT
-        obs = np.concatenate([p_pos, p_vel, e_pos, e_vel, [t_rem]]).astype(np.float32)
-        with torch.no_grad():
-            obs_t = torch.as_tensor(obs[None])
-            action = pursuer_policy_net._predict(obs_t, deterministic=True).numpy()[0]
-        return V_PURSUER * action / (np.linalg.norm(action) + EPS_VEL)
-
-    def _rl_evader_fn(p_pos, p_vel, e_pos, e_vel, t):
-        t_rem = (MAX_STEPS - int(t / DT)) * DT
-        obs = np.concatenate([p_pos, p_vel, e_pos, e_vel, [t_rem]]).astype(np.float32)
-        with torch.no_grad():
-            obs_t = torch.as_tensor(obs[None])
-            action = evader_policy_net._predict(obs_t, deterministic=True).numpy()[0]
-        return V_EVADER * action / (np.linalg.norm(action) + EPS_VEL)
-
-    bench_results = benchmark(
-        _rl_pursuer_fn, _rl_evader_fn,
-        lambda seed: np.random.default_rng(seed),
-    )
-
-    # ── Quiver ───────────────────────────────────────────────────────────────
-    quiver_data = compute_quiver(_rl_pursuer_fn)
-
-    return learning_curves, bench_results, quiver_data, _rl_pursuer_fn, _rl_evader_fn
+    rl_p, rl_e, curves = train()
+    res, pursuers, evaders = benchmark(rl_p, rl_e)
+    quiver = compute_quiver(rl_p)
+    return {'curves': curves, 'bench': res, 'quiver': quiver, 'rl_p': rl_p, 'rl_e': rl_e,
+            'pursuers': pursuers, 'evaders': evaders}
 
 
-# ── Benchmark ────────────────────────────────────────────────────────────────
+# ── Plots ───────────────────────────────────────────────────────────────────
 
-def benchmark(rl_pursuer_fn, rl_evader_fn, rng_factory):
-    """Run TEST_EPISODES episodes for each strategy pair."""
-    results = {}
-    n = TEST_EPISODES
-
-    def _straight_evader_fn(p_pos, p_vel, e_pos, e_vel, t, direction):
-        return evader_straight(direction)
-
-    def _perp_evader_fn(p_pos, p_vel, e_pos, e_vel, t):
-        return evader_perpendicular(p_pos, e_pos)
-
-    def _spiral_evader_fn(p_pos, p_vel, e_pos, e_vel, t):
-        return evader_spiral(t)
-
-    def _pp_pursuer_fn(p_pos, p_vel, e_pos, e_vel, t):
-        return strategy_pure_pursuit(p_pos, e_pos)
-
-    def _pn_pursuer_fn(p_pos, p_vel, e_pos, e_vel, t):
-        return strategy_prop_nav(p_pos, p_vel, e_pos, e_vel)
-
-    def _apf_pursuer_fn(p_pos, p_vel, e_pos, e_vel, t):
-        return strategy_apf(p_pos, e_pos)
-
-    # Pair RL pursuer vs hand-crafted evaders
-    for ev_name, ev_fn in [('straight', None), ('perpendicular', _perp_evader_fn),
-                            ('spiral', _spiral_evader_fn)]:
-        times = []
-        for i in range(n):
-            rng_ep = np.random.default_rng(i)
-            d_str = _normalise(rng_ep.standard_normal(3)) * V_EVADER
-            d_str[2] = 0.0
-            if ev_name == 'straight':
-                fn = lambda pp, pv, ep, ev, t, d=d_str: evader_straight(d)
-            else:
-                fn = ev_fn
-            ct = run_episode(rl_pursuer_fn, fn, seed=i)
-            times.append(ct)
-        cap = [t for t in times if t is not None]
-        results[f'RL pursuer vs {ev_name}'] = {
-            'capture_rate': len(cap) / n,
-            'mean_time': float(np.mean(cap)) if cap else T_MAX,
-            'times': times,
-        }
-
-    # RL pursuer vs RL evader
-    times = [run_episode(rl_pursuer_fn, rl_evader_fn, seed=i) for i in range(n)]
-    cap = [t for t in times if t is not None]
-    results['RL pursuer vs RL evader'] = {
-        'capture_rate': len(cap) / n,
-        'mean_time': float(np.mean(cap)) if cap else T_MAX,
-        'times': times,
-    }
-
-    # Hand-crafted pursuers vs straight evader
-    for pu_name, pu_fn in [('pure pursuit', _pp_pursuer_fn),
-                            ('prop nav', _pn_pursuer_fn),
-                            ('APF', _apf_pursuer_fn)]:
-        times = []
-        for i in range(n):
-            rng_ep = np.random.default_rng(i)
-            d_str = _normalise(rng_ep.standard_normal(3)) * V_EVADER
-            d_str[2] = 0.0
-            fn = lambda pp, pv, ep, ev, t, d=d_str: evader_straight(d)
-            ct = run_episode(pu_fn, fn, seed=i)
-            times.append(ct)
-        cap = [t for t in times if t is not None]
-        results[f'{pu_name} vs straight'] = {
-            'capture_rate': len(cap) / n,
-            'mean_time': float(np.mean(cap)) if cap else T_MAX,
-            'times': times,
-        }
-
-    # Hand-crafted pursuers vs RL evader
-    for pu_name, pu_fn in [('pure pursuit', _pp_pursuer_fn),
-                            ('prop nav', _pn_pursuer_fn)]:
-        times = [run_episode(pu_fn, rl_evader_fn, seed=i) for i in range(n)]
-        cap = [t for t in times if t is not None]
-        results[f'{pu_name} vs RL evader'] = {
-            'capture_rate': len(cap) / n,
-            'mean_time': float(np.mean(cap)) if cap else T_MAX,
-            'times': times,
-        }
-
-    return results
-
-
-# ── Quiver ───────────────────────────────────────────────────────────────────
-
-def compute_quiver(rl_pursuer_fn, n_grid=12):
-    xs = np.linspace(-ARENA * 0.8, ARENA * 0.8, n_grid)
-    ys = np.linspace(-ARENA * 0.8, ARENA * 0.8, n_grid)
-    U = np.zeros((n_grid, n_grid))
-    V = np.zeros((n_grid, n_grid))
-    e_pos = np.zeros(3); e_vel = np.zeros(3)
-    for i, x in enumerate(xs):
-        for j, y in enumerate(ys):
-            p_pos = np.array([x, y, 0.0])
-            v = rl_pursuer_fn(p_pos, np.zeros(3), e_pos, e_vel, 0.0)
-            U[j, i] = v[0]
-            V[j, i] = v[1]
-    return xs, ys, U, V
-
-
-# ── Plots ─────────────────────────────────────────────────────────────────────
-
-def plot_learning_curves(learning_curves, out_dir):
-    """Learning curves for all training phases."""
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    colors = ['steelblue', 'tomato', 'seagreen']
-
-    for ax, (label, rewards), color in zip(axes, learning_curves.items(), colors):
-        if len(rewards) == 0:
-            ax.text(0.5, 0.5, 'No data', transform=ax.transAxes, ha='center')
-            continue
-        episodes = np.arange(1, len(rewards) + 1)
-        ax.plot(episodes, rewards, color=color, alpha=0.3, lw=0.7)
-        win = max(1, len(rewards) // 15)
-        smoothed = np.convolve(rewards, np.ones(win) / win, mode='valid')
-        ax.plot(np.arange(win, len(rewards) + 1), smoothed, color=color, lw=2.0,
-                label=f'Smoothed (w={win})')
-        ax.set_title(label, fontsize=9)
-        ax.set_xlabel('Episode', fontsize=9)
-        ax.set_ylabel('Episode Return', fontsize=9)
-        ax.legend(fontsize=7)
-        ax.grid(True, alpha=0.3)
-
-    fig.suptitle('S020 PPO Learning Curves — 3-Phase Curriculum', fontsize=12)
+def plot_learning_curves(curves, out_dir):
+    fig, axes = plt.subplots(1, len(curves), figsize=(5 * len(curves), 4.5))
+    colors = ['steelblue', 'tomato', 'seagreen', 'darkorange']
+    for ax, (key, c), col in zip(axes, curves.items(), colors):
+        r = np.array(c['returns'])
+        ax.plot(np.arange(1, len(r) + 1), r, color=col, alpha=0.3, lw=0.7)
+        w = max(1, len(r) // 15)
+        if len(r) >= w:
+            ax.plot(np.arange(w, len(r) + 1), np.convolve(r, np.ones(w) / w, 'valid'), color=col, lw=2,
+                    label=f'moving mean (w={w})')
+        cap = np.array(c['captured'], float)
+        ax2 = ax.twinx()
+        ax2.plot(np.arange(w, len(cap) + 1), np.convolve(cap, np.ones(w) / w, 'valid') * 100,
+                 color='black', ls=':', lw=1.2, label='capture % (moving)')
+        ax2.set_ylim(-5, 105); ax2.set_ylabel('Capture % (moving)', fontsize=8)
+        ax.set_title(f'{key} ({len(r)} episodes)', fontsize=9)
+        ax.set_xlabel('Episode'); ax.set_ylabel('Episode return'); ax.grid(True, alpha=0.3)
+        h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+        ax.legend(h1 + h2, l1 + l2, fontsize=7, loc='best')
+    fig.suptitle('S020 PPO learning curves (Phase 3 = alternating self-play rounds)', fontsize=11)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'learning_curves.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
-def plot_quiver(quiver_data, out_dir):
-    """RL pursuer policy direction over XY plane."""
-    xs, ys, U, V = quiver_data
-    XX, YY = np.meshgrid(xs, ys)
-    mag = np.sqrt(U**2 + V**2)
-
-    fig, ax = plt.subplots(figsize=(7, 6))
-    q = ax.quiver(XX, YY, U, V, mag, cmap='plasma', scale=20, width=0.004)
-    plt.colorbar(q, ax=ax, label='Action magnitude')
-    ax.scatter(0, 0, c='limegreen', s=200, marker='*', zorder=5, label='Evader (origin)')
+def plot_quiver(quiver, out_dir):
+    X, Y, U, V, ang = quiver
+    fig, ax = plt.subplots(figsize=(7.5, 6.5))
+    q = ax.quiver(X, Y, U, V, ang, cmap='viridis', clim=(0, 180), scale=110, width=0.004)
+    plt.colorbar(q, ax=ax, label='Angle between RL command and line of sight (deg)')
+    ax.scatter(0, 0, c='royalblue', s=200, marker='^', zorder=5, label='Evader (origin, at rest)')
+    ax.add_patch(plt.Rectangle((-ARENA, -ARENA), 2 * ARENA, 2 * ARENA, fill=False, ls='--', color='grey'))
+    ax.set_xlim(-ARENA * 1.05, ARENA * 1.05); ax.set_ylim(-ARENA * 1.05, ARENA * 1.05)
     ax.set_xlabel('Pursuer X (m)'); ax.set_ylabel('Pursuer Y (m)')
-    ax.set_title('RL Pursuer Policy: Action Direction (evader at origin)', fontsize=10)
-    ax.legend(); ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
-    os.makedirs(out_dir, exist_ok=True)
+    ax.set_title('RL pursuer: commanded direction (xy part) by pursuer position\n'
+                 '(0 deg = straight at the evader, i.e. pure pursuit)', fontsize=10)
+    ax.legend(loc='upper right', fontsize=8); ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
     path = os.path.join(out_dir, 'policy_quiver.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
-def plot_performance_comparison(bench_results, out_dir):
-    """Bar chart: capture rate and mean time for all strategy pairs."""
-    keys = list(bench_results.keys())
-    labels = [k.replace(' vs ', '\nvs\n') for k in keys]
-    cap_rates  = [bench_results[k]['capture_rate'] * 100 for k in keys]
-    mean_times = [bench_results[k]['mean_time'] for k in keys]
-
-    def _color(k):
-        if k.startswith('RL pursuer'):
-            return 'seagreen'
-        if k.endswith('RL evader'):
-            return 'tomato'
-        return 'steelblue'
-    colors = [_color(k) for k in keys]
-
-    fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    x = np.arange(len(keys))
-    for ax, vals, ylabel, title, fmt in [
-        (axes[0], cap_rates,  'Capture Rate (%)',     'Capture Rate',     '{:.0f}%'),
-        (axes[1], mean_times, 'Mean Capture Time (s)', 'Mean Capture Time', '{:.1f}s'),
-    ]:
-        bars = ax.bar(x, vals, color=colors, edgecolor='black', lw=0.7)
-        for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
-                    fmt.format(v), ha='center', va='bottom', fontsize=7, fontweight='bold')
-        ax.set_xticks(x); ax.set_xticklabels(labels, fontsize=6)
-        ax.set_ylabel(ylabel, fontsize=10); ax.set_title(title, fontsize=10)
-        ax.grid(True, axis='y', alpha=0.3)
-
-    axes[0].set_ylim(0, 118)
-    axes[1].set_ylim(0, T_MAX * 1.2)
-
-    legend_patches = [
-        mpatches.Patch(color='seagreen',  label='RL pursuer'),
-        mpatches.Patch(color='tomato',    label='vs RL evader'),
-        mpatches.Patch(color='steelblue', label='Baseline'),
-    ]
-    fig.legend(handles=legend_patches, loc='upper right', fontsize=9)
-    fig.suptitle('S020 — Performance Comparison', fontsize=12)
+def plot_performance_comparison(res, pursuers, evaders, out_dir):
+    P = [p.name for p in pursuers]; E = [e.name for e in evaders]
+    rate = np.array([[res[(p, e)]['rate'] * 100 for e in E] for p in P])
+    mean = np.array([[res[(p, e)]['mean'] for e in E] for p in P])
+    fig, axes = plt.subplots(1, 2, figsize=(15, 5.5))
+    for ax, M_, title, fmt, cmap in [(axes[0], rate, 'Capture rate (%)', '{:.1f}%', 'Greens'),
+                                     (axes[1], mean, 'Mean capture time of captured episodes (s)',
+                                      '{:.2f} s', 'Oranges')]:
+        im = ax.imshow(np.nan_to_num(M_, nan=0.0), cmap=cmap, aspect='auto')
+        for i in range(len(P)):
+            for j in range(len(E)):
+                v = M_[i, j]
+                ax.text(j, i, 'no capture' if np.isnan(v) else fmt.format(v), ha='center', va='center',
+                        fontsize=10, fontweight='bold')
+        ax.set_xticks(range(len(E))); ax.set_xticklabels([f'vs {e}' for e in E])
+        ax.set_yticks(range(len(P))); ax.set_yticklabels(P)
+        ax.set_title(title, fontsize=10, fontweight='bold')
+        plt.colorbar(im, ax=ax)
+    fig.suptitle(f'S020 — every pursuer vs every evader, {TEST_EPISODES} episodes each '
+                 f'(T_max = {T_MAX:.0f} s)', fontsize=11)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'performance_comparison.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
-def plot_capture_cdf(bench_results, out_dir):
-    """CDF of capture times for key strategy pairs."""
-    plot_keys = [
-        ('RL pursuer vs straight',     'RL pursuer vs Straight',      'seagreen',       '-'),
-        ('RL pursuer vs perpendicular', 'RL pursuer vs Perpendicular', 'mediumseagreen', '--'),
-        ('RL pursuer vs spiral',        'RL pursuer vs Spiral',        'limegreen',      ':'),
-        ('RL pursuer vs RL evader',     'RL pursuer vs RL evader',     'darkgreen',      '-.'),
-        ('pure pursuit vs straight',    'Pure pursuit vs Straight',    'steelblue',      '-'),
-        ('pure pursuit vs RL evader',   'Pure pursuit vs RL evader',   'tomato',         '--'),
-        ('prop nav vs straight',        'Prop nav vs Straight',        'darkorange',     ':'),
-    ]
-
-    fig, ax = plt.subplots(figsize=(9, 6))
-    for key, label, color, ls in plot_keys:
-        if key not in bench_results:
-            continue
-        times = sorted(t if t is not None else T_MAX for t in bench_results[key]['times'])
-        n = len(times)
-        ax.step(times, np.arange(1, n + 1) / n, color=color, lw=1.8,
-                linestyle=ls, label=label, where='post')
-
-    ax.axvline(T_MAX, color='gray', lw=1.0, linestyle=':', alpha=0.6, label=f'T_MAX={T_MAX}s')
-    ax.set_xlabel('Capture Time (s)', fontsize=11)
-    ax.set_ylabel('Cumulative Probability', fontsize=11)
-    ax.set_title(f'S020 — Capture Time CDF ({TEST_EPISODES} test episodes each)', fontsize=11)
-    ax.legend(fontsize=8, loc='lower right')
-    ax.grid(True, alpha=0.35)
-    ax.set_xlim(0, T_MAX + 0.5); ax.set_ylim(0, 1.05)
-
-    os.makedirs(out_dir, exist_ok=True)
-    path = os.path.join(out_dir, 'capture_cdf.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
-
-
-def save_animation(rl_pursuer_fn, rl_evader_fn, out_dir):
-    """Animate 4 representative episodes in XY plane."""
-    import matplotlib.animation as animation
-
-    configs = [
-        ('RL Pursuer vs\nRL Evader',    rl_pursuer_fn,       rl_evader_fn),
-        ('RL Pursuer vs\nStraight',     rl_pursuer_fn,       None),
-        ('Pure Pursuit vs\nStraight',   None,                None),
-        ('RL Pursuer vs\nPerpendicular', rl_pursuer_fn,      None),
-    ]
-
-    def _collect(pu_fn, ev_fn_type, seed=42):
-        rng = np.random.default_rng(seed)
-        # Start pursuer and evader on opposite sides of the arena
-        angle = rng.uniform(0, 2 * np.pi)
-        r = ARENA * 0.75
-        p_pos = np.array([ r * np.cos(angle),  r * np.sin(angle),  0.0])
-        e_pos = np.array([-r * np.cos(angle), -r * np.sin(angle),  0.0])
-        p_vel = np.zeros(3); e_vel = np.zeros(3)
-        d_str = _normalise(rng.standard_normal(3)); d_str[2] = 0.0
-        p_traj = [p_pos.copy()]; e_traj = [e_pos.copy()]
-        for step in range(MAX_STEPS):
-            dist = np.linalg.norm(p_pos - e_pos)
-            if dist < CAPTURE_R: break
-            t = step * DT
-            if pu_fn is None:
-                p_vel = strategy_pure_pursuit(p_pos, e_pos)
-            else:
-                p_vel = pu_fn(p_pos, p_vel, e_pos, e_vel, t)
-            if ev_fn_type == 'rl':
-                e_vel = rl_evader_fn(p_pos, p_vel, e_pos, e_vel, t)
-            elif ev_fn_type == 'perp':
-                e_vel = evader_perpendicular(p_pos, e_pos)
-            else:
-                e_vel = evader_straight(d_str)
-            p_pos = np.clip(p_pos + p_vel * DT, -ARENA, ARENA)
-            e_pos = np.clip(e_pos + e_vel * DT, -ARENA, ARENA)
-            p_traj.append(p_pos.copy()); e_traj.append(e_pos.copy())
-        return np.array(p_traj), np.array(e_traj)
-
-    ev_types = ['rl', 'straight', 'straight', 'perp']
-    all_p, all_e = [], []
-    for (title, pu_fn, _), ev_type in zip(configs, ev_types):
-        p_t, e_t = _collect(pu_fn, ev_type)
-        all_p.append(p_t); all_e.append(e_t)
-
-    max_frames = max(len(t) for t in all_p)
-    step_dec   = max(1, max_frames // 300)
-
-    fig, axes = plt.subplots(2, 2, figsize=(10, 8))
-    axes_flat  = axes.flatten()
-    p_lines, e_lines, p_dots, e_dots = [], [], [], []
-
-    for ax, (title, _, _), p_t, e_t in zip(axes_flat, configs, all_p, all_e):
-        ax.set_xlim(-ARENA * 1.05, ARENA * 1.05); ax.set_ylim(-ARENA * 1.05, ARENA * 1.05)
-        ax.set_aspect('equal'); ax.set_title(title, fontsize=9)
-        ax.set_xlabel('X (m)', fontsize=7); ax.set_ylabel('Y (m)', fontsize=7)
-        ax.tick_params(labelsize=6)
-        rect = plt.Rectangle((-ARENA, -ARENA), 2 * ARENA, 2 * ARENA,
-                              fill=False, edgecolor='gray', lw=0.8, ls='--')
-        ax.add_patch(rect)
-        ax.scatter(*p_t[0, :2], c='crimson', s=40, marker='D', zorder=5)
-        ax.scatter(*e_t[0, :2], c='royalblue', s=40, marker='^', zorder=5)
-        pl, = ax.plot([], [], 'crimson', lw=1.2, alpha=0.7)
-        el, = ax.plot([], [], 'royalblue', lw=1.2, alpha=0.7, ls='--')
-        pd, = ax.plot([], [], 'o', color='crimson', ms=7)
-        ed, = ax.plot([], [], '^', color='royalblue', ms=7)
-        p_lines.append(pl); e_lines.append(el)
-        p_dots.append(pd); e_dots.append(ed)
-
-    all_artists = p_lines + e_lines + p_dots + e_dots
-
-    def init():
-        for a in all_artists: a.set_data([], [])
-        return all_artists
-
-    def update(frame):
-        for i in range(4):
-            sub_p = all_p[i][::step_dec]; sub_e = all_e[i][::step_dec]
-            fp = min(frame, len(sub_p) - 1); fe = min(frame, len(sub_e) - 1)
-            p_lines[i].set_data(sub_p[:fp+1, 0], sub_p[:fp+1, 1])
-            e_lines[i].set_data(sub_e[:fe+1, 0], sub_e[:fe+1, 1])
-            p_dots[i].set_data([sub_p[fp, 0]], [sub_p[fp, 1]])
-            e_dots[i].set_data([sub_e[fe, 0]], [sub_e[fe, 1]])
-        return all_artists
-
-    n_frames = max_frames // step_dec + 1
-    ani = animation.FuncAnimation(fig, update, frames=n_frames,
-                                  init_func=init, blit=True, interval=50)
-    fig.suptitle('S020 Pursuit-Evasion Game — RL vs Baselines', fontsize=11)
+def plot_capture_cdf(res, pursuers, evaders, out_dir):
+    fig, axes = plt.subplots(1, len(evaders), figsize=(5 * len(evaders), 4.5), sharey=True)
+    colors = {'RL pursuer': 'seagreen', 'Pure pursuit': 'crimson', 'Prop. nav.': 'darkorange', 'APF': 'grey'}
+    for ax, ev in zip(axes, evaders):
+        for pu in pursuers:
+            t = res[(pu.name, ev.name)]['times']
+            ts = np.sort(t[~np.isnan(t)])
+            ax.step(np.concatenate([[0], ts, [T_MAX]]),
+                    np.concatenate([[0], np.arange(1, len(ts) + 1), [len(ts)]]) / len(t),
+                    where='post', color=colors[pu.name], lw=1.8, label=pu.name)
+        ax.set_title(f'vs {ev.name}' + ('' if 'evader' in ev.name else ' evader'), fontsize=10)
+        ax.set_xlabel('Time (s)'); ax.set_xlim(0, T_MAX); ax.set_ylim(0, 1.02); ax.grid(True, alpha=0.3)
+    axes[0].set_ylabel('Fraction captured by time t'); axes[0].legend(fontsize=8, loc='upper left')
+    fig.suptitle(f'S020 — capture-time CDF ({TEST_EPISODES} episodes per curve; '
+                 'curve ends below 1 = escapes)', fontsize=11)
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, 'capture_cdf.png')
+    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
+
+
+def save_animation(data, out_dir):
+    """Episode 0 of four matchups (same spawn), top-down."""
+    ev = {e.name: e for e in data['evaders']}
+    pu = {p.name: p for p in data['pursuers']}
+    configs = [('RL pursuer', 'RL evader'), ('RL pursuer', 'Straight'),
+               ('Pure pursuit', 'Straight'), ('Prop. nav.', 'RL evader')]
+    trajs = []
+    for a, b in configs:
+        t, _, tr = simulate(pu[a], ev[b], TEST_EPISODES, BENCH_SEED, n_record=1)
+        trajs.append((tr[:, 0], t[0]))
+    max_len = max(len(tr[0]) for tr in trajs)
+    step = max(1, int(np.ceil(max_len / 150)))
+    frames = list(range(0, max_len, step)) + [max_len - 1]
+    fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+    arts = []
+    for ax, (a, b), (tr, tc) in zip(axes.flat, configs, trajs):
+        ax.set_xlim(-ARENA * 1.05, ARENA * 1.05); ax.set_ylim(-ARENA * 1.05, ARENA * 1.05)
+        ax.set_aspect('equal'); ax.grid(True, alpha=0.25)
+        ax.add_patch(plt.Rectangle((-ARENA, -ARENA), 2 * ARENA, 2 * ARENA, fill=False, ls='--', color='grey'))
+        ax.scatter(*tr[0, 0, :2], c='crimson', marker='D', s=40); ax.scatter(*tr[0, 1, :2], c='royalblue', marker='^', s=40)
+        pl, = ax.plot([], [], color='crimson', lw=1.3); el, = ax.plot([], [], color='royalblue', lw=1.3, ls='--')
+        pd, = ax.plot([], [], 'o', color='crimson', ms=7); ed, = ax.plot([], [], '^', color='royalblue', ms=7)
+        arts.append((ax, a, b, tr, tc, pl, el, pd, ed))
+
+    def update(f):
+        out = []
+        for ax, a, b, tr, tc, pl, el, pd, ed in arts:
+            k = min(f, len(tr) - 1)
+            pl.set_data(tr[:k + 1, 0, 0], tr[:k + 1, 0, 1]); el.set_data(tr[:k + 1, 1, 0], tr[:k + 1, 1, 1])
+            pd.set_data([tr[k, 0, 0]], [tr[k, 0, 1]]); ed.set_data([tr[k, 1, 0]], [tr[k, 1, 1]])
+            end = 'captured at %.2f s' % tc if not np.isnan(tc) else 'no capture in 30 s'
+            ax.set_title(f'{a} vs {b}' + ('' if 'evader' in b else ' evader') +
+                         f'\nt = {k * DT:.2f} s ({end})', fontsize=9)
+            out += [pl, el, pd, ed]
+        return out
+
+    ani = animation.FuncAnimation(fig, update, frames=frames, interval=50, blit=False)
+    fig.suptitle('S020 — benchmark episode 0 (red = pursuer, blue = evader)', fontsize=11)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
-    plt.close()
-    print(f'Saved: {path}')
+    ani.save(path, writer='pillow', fps=20, dpi=70)
+    plt.close(); print(f'Saved: {path}  ({len(frames)} frames)')
+    for (a, b), (tr, tc) in zip(configs, trajs):
+        print(f'  animation: {a} vs {b}: ' + (f'captured at {tc:.2f} s' if not np.isnan(tc) else 'no capture'))
 
-
-# ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    learning_curves, bench_results, quiver_data, rl_pursuer_fn, rl_evader_fn = run_simulation()
-
-    print('=' * 70)
-    print('S020 Pursuit-Evasion Game (RL Capstone) — Results')
-    print('=' * 70)
-    for key, v in bench_results.items():
-        print(f'  {key:<35s}  cap={v["capture_rate"]*100:.1f}%  '
-              f'mean_time={v["mean_time"]:.2f}s')
-    print('=' * 70)
-
-    rl_vs_str  = bench_results.get('RL pursuer vs straight', {})
-    pp_vs_str  = bench_results.get('pure pursuit vs straight', {})
-    rl_vs_rl   = bench_results.get('RL pursuer vs RL evader', {})
-    pp_vs_rl   = bench_results.get('pure pursuit vs RL evader', {})
-
-    if rl_vs_str and pp_vs_str and pp_vs_str['mean_time'] > 0:
-        delta = (pp_vs_str['mean_time'] - rl_vs_str['mean_time']) / pp_vs_str['mean_time'] * 100
-        print(f'RL pursuer vs pure pursuit (straight evader): {delta:+.1f}% time change')
-    if rl_vs_rl:
-        print(f'RL pursuer vs RL evader capture rate: {rl_vs_rl["capture_rate"]*100:.1f}%')
-        print(f'RL pursuer vs RL evader mean time   : {rl_vs_rl["mean_time"]:.2f} s')
-    if pp_vs_rl and rl_vs_rl:
-        delta2 = (pp_vs_rl['mean_time'] - rl_vs_rl['mean_time']) / (pp_vs_rl['mean_time'] + EPS_VEL) * 100
-        print(f'RL pursuer vs pure pursuit (RL evader): {delta2:+.1f}% time change')
-    print('=' * 70)
-
     out_dir = os.path.normpath(OUTPUT_DIR)
-    plot_learning_curves(learning_curves, out_dir)
-    plot_quiver(quiver_data, out_dir)
-    plot_performance_comparison(bench_results, out_dir)
-    plot_capture_cdf(bench_results, out_dir)
-    save_animation(rl_pursuer_fn, rl_evader_fn, out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    print('=' * 78)
+    print('S020 Pursuit-Evasion Game (RL Capstone)')
+    print('=' * 78)
+    data = run_simulation()
+    plot_learning_curves(data['curves'], out_dir)
+    plot_quiver(data['quiver'], out_dir)
+    plot_performance_comparison(data['bench'], data['pursuers'], data['evaders'], out_dir)
+    plot_capture_cdf(data['bench'], data['pursuers'], data['evaders'], out_dir)
+    save_animation(data, out_dir)
