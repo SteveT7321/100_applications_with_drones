@@ -33,10 +33,10 @@ $$\mathbf{A}\mathbf{f} = \mathbf{W}, \qquad \mathbf{W} = m_L\,(g\hat{\mathbf{z}}
 
 **Where the two allocations should differ** (hover geometry, gust $F_w$ in +x): only cables 1 (+x) and 2 (−x) can resist the gust, so $f_{1,2} = f_0 \mp F_w/(2\sin\alpha_0)$.
 
-- Pseudo-inverse: $f_1 < 0$ once $F_w > 2\sin\alpha_0 f_0 = 2 \times 0.6 \times 2.4525 = 2.943$ N.
+- Pseudo-inverse: $f_1 < f_{min}$ (so the QP constraint becomes active) once $F_w > 2\sin\alpha_0 (f_0 - f_{min}) = 1.2 \times 2.4025 = 2.883$ N, and $f_1 < 0$ once $F_w > 2\sin\alpha_0 f_0 = 2 \times 0.6 \times 2.4525 = 2.943$ N.
 - QP: it can shift load from cables 3/4 onto 1/2 (null-space direction (1, 1, −1, −1)). This stays feasible up to $F_w = 2\sin\alpha_0(2f_0 - 2f_{min}) = 1.2 \times 4.805 = 5.766$ N.
 
-Below 2.94 N the QP constraint is inactive and both methods must give identical results. Above 5.77 N neither method can hold every cable taut.
+Below 2.883 N the QP constraint is inactive and both methods must give identical results. Above 5.77 N neither method can hold every cable taut.
 
 ---
 
@@ -67,6 +67,9 @@ Below 2.94 N the QP constraint is inactive and both methods must give identical 
   - $m_d = 0.027$ kg (Crazyflie) cannot pull a 2.45 N cable. The script and card now use 0.5 kg.
   - The 0.1 kg single-drone payload limit made the lift impossible even with four drones (4 × 0.1 < 0.8 kg). It is now 0.3 kg.
   - The pseudo-inverse $\mathbf{A}^T(\mathbf{A}\mathbf{A}^T)^{-1}$ cannot be evaluated for the card's 6×4 matrix ($\mathbf{A}\mathbf{A}^T$ has rank ≤ 4).
+- **Cable model**: the card's cables are inextensible. Here they are stiff spring-dampers ($k_c$ = 1000 N/m, $c_c$ = 5 N·s/m; about 2.5 mm stretch at the static share), so tension follows from the physics and a cable can actually go slack.
+- **Time step**: the card integrates at $\Delta t$ = 0.01 s. Here the controller runs at 100 Hz and the stiff cable physics at 1 kHz (10 sub-steps per control step).
+- **Thrust**: the card's scalar thrust $T_i = f_i/\cos\alpha_i + m_d g$ is replaced by the vector thrust $\mathbf{u}_i = m_d(\ldots + g\hat{\mathbf{z}}) + f_i\hat{\mathbf{c}}_i$, which also supplies the horizontal cable pull, limited to $\|\mathbf{u}_i\| \le T_{max}$.
 - **Force rows only**: the card's load model is translational (point mass), so only the three force-balance rows are used, and the moment rows are dropped. The desired force includes $m_L\ddot{\mathbf{q}}_{ref}$ and the measured gust.
 - **Acceleration feed-forward** $\ddot{\mathbf{q}}_{ref}$ was added to the drone PD. Without it the drones lag their slots by $\ddot q / K_p \approx 0.2$ m. At the end of the descent the load then reaches the floor before the drones. The cables go slack, the drones sink to near load height, and the near-horizontal cables make the allocation blow up (> 60 N in a test run).
 - **Gust test added** (card Extension 4). Without a disturbance, the pseudo-inverse never goes below $f_{min}$ (0 violation steps in the 0 N and 2 N sweep rows). The QP constraint therefore never activates, and the two methods give identical results. The gust is the test that tells them apart.
@@ -114,7 +117,7 @@ The QP still has 40 physical-slack samples. A target of 0.05 N is only 0.05 mm o
 | 6.0 | 84 | 107 / 245 | 0.4936 / 0.0326 | 0.0207 / 0.3346 | 66 |
 | 7.0 | 92 | 228 / 213 | 0.3953 / 0.0102 | 0.1635 / 0.3488 | 33 |
 
-- **0 and 2 N**: identical results. The QP constraint is never active, as the 2.943 N analytic threshold predicts.
+- **0 and 2 N**: identical results. The QP constraint is never active, as the 2.883 N analytic threshold predicts.
 - **3–5 N**: the two methods split. The pseudo-inverse lets drone 1 fall inward by up to 0.36 m (0.5 − 0.1375 m) and the load error grows to 0.184 m. The QP keeps every drone within 3 mm of the cable length and the load error below 1 cm.
 - **3 N**: the PI violation count (155) is larger than at 4 N (47). At 3 N the allocation sits just below $f_{min}$ for the whole gust plateau. At 4 N it goes clearly negative, drone 1 sags, and the changed cable geometry pushes the next allocations back above $f_{min}$.
 - **6 and 7 N**: above the 5.766 N feasibility limit the QP is infeasible for 66 and 33 steps (bounded least-squares fallback). At 7 N it also lets a drone sag (0.3953 m). The QP has slightly more slack samples than PI at 7 N (228 vs 213), but its load error is still half (0.1635 vs 0.3488 m). Neither method can hold the load cleanly against a gust this large with four cables at 36.87°.
@@ -159,7 +162,7 @@ Top-down view at t = 0 s and t = 10 s (mid-gust) for both strategies; a dotted c
 ![Formation Snapshots](formation_snapshots.png)
 
 ### Gust Sweep
-Slack samples, shortest attach-to-drone distance and load error during and after the gust, for gusts of 0–7 N. The dotted line marks the analytic pseudo-inverse threshold (2.94 N) and the dashed line the QP feasibility limit (5.77 N):
+Slack samples, shortest attach-to-drone distance and load error during and after the gust, for gusts of 0–7 N. The dotted line marks where the pseudo-inverse allocation turns negative (2.94 N; it already drops below $f_{min}$ at 2.883 N) and the dashed line the QP feasibility limit (5.77 N):
 
 ![Gust Sweep](gust_sweep.png)
 
