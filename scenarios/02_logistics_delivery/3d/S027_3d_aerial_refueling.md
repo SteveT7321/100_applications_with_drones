@@ -1,6 +1,6 @@
 # S027 3D Upgrade — Aerial Refueling Relay
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S027 original](../S027_aerial_refueling_relay.md)
 
 ---
@@ -93,7 +93,11 @@ $$\Delta\mathbf{r} = \mathbf{p}_R - \mathbf{p}_T, \qquad \Delta\mathbf{v} = \mat
 $$\mathbf{u}_R = -K_p\,\Delta\mathbf{r} - K_d\,\Delta\mathbf{v} + \mathbf{a}_T$$
 
 **Phase 2 — Soft Dock** ($\|\Delta\mathbf{r}\| \leq d_{dock}$):
-$$\mathbf{u}_R = -K_{p2}\,\Delta\mathbf{r} - K_{d2}\,\Delta\mathbf{v}$$
+$$\mathbf{u}_R = -K_{p2}\,\Delta\mathbf{r} - K_{d2}\,\Delta\mathbf{v} + \mathbf{a}_T$$
+
+The Tanker-acceleration feed-forward $\mathbf{a}_T = -R_{orb}\omega_{orb}^2[\cos\phi, \sin\phi, 0]$ is needed in both
+phases. Without it, the PD tracks the circling Tanker with a steady lag of
+$a_T/\sqrt{(K_{p2}-\omega^2)^2 + (K_{d2}\omega)^2} \approx 0.25$ m $> \epsilon_p$, and the soft dock never succeeds.
 
 Docking declared successful when $\|\Delta\mathbf{r}\| < \epsilon_p$ and $\|\Delta\mathbf{v}\| < \epsilon_v$.
 
@@ -117,9 +121,9 @@ $$E_R \leftarrow E_R + \Delta E_{xfer}, \qquad E_T \leftarrow E_T - \Delta E_{xf
 | Max vertical speed $v_{z,max}$ | 2.0 m/s |
 | Flight power coefficient $k_f$ | 0.3 W·s²/m² |
 | Hover drain $k_h$ | 0.5 W |
-| Receiver initial battery $E_{0,R}$ | 40 J |
-| Tanker initial battery $E_{0,T}$ | 80 J |
-| Energy transferred $\Delta E_{xfer}$ | 30 J |
+| Receiver initial battery $E_{0,R}$ | 160 J (originally 40 J, ×4) |
+| Tanker initial battery $E_{0,T}$ | 320 J (originally 80 J, ×4) |
+| Energy transferred $\Delta E_{xfer}$ | 120 J (originally 30 J, ×4) |
 | Transfer loss $\eta_{loss}$ | 5 % |
 | Docking radius $d_{dock}$ | 0.5 m |
 | Position tolerance $\epsilon_p$ | 0.20 m |
@@ -130,6 +134,10 @@ $$E_R \leftarrow E_R + \Delta E_{xfer}, \qquad E_T \leftarrow E_T - \Delta E_{xf
 | Rendezvous fraction $\alpha$ | 0.50 |
 | DT | 0.05 s |
 | T_MAX | 120 s |
+
+Energy check: cruise power is $0.3 \cdot 5^2 + 0.5 = 8$ W, i.e. 1.6 J/m, and the 3D round trip is 136.5 m (218 J).
+The original 40 J gave only 25 m of range and could not even reach the RVZ. With 160 J (100 m of range),
+refuelling is necessary; with +120 J at the dock, the mission is feasible.
 
 ---
 

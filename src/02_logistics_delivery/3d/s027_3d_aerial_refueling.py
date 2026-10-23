@@ -1,25 +1,30 @@
 """
 S027 3D Aerial Refueling Relay
 ================================
-A delivery drone (Receiver) flies a 3-D waypoint mission at cruise altitude 10 m.
-Its battery is insufficient to complete the round trip, so a Tanker drone is dispatched
-to a rendezvous point at altitude 15 m, 5 m above the Receiver's cruise altitude.
-The Receiver must simultaneously close horizontal distance AND match the Tanker's altitude
-before executing a full 3-D soft-dock maneuver. After energy transfer the Receiver
-resumes its 3-D mission; the Tanker returns to base.
+A delivery drone (Receiver) flies a 3-D waypoint mission (climb-out, 10 m cruise,
+descent to a 5 m delivery point, return).  Its battery cannot cover the whole
+route, which the card's range trigger detects; the trigger launches a Tanker
+that flies to a loiter orbit at 15 m, 5 m above the Receiver's cruise altitude.
+The Receiver captures the rendezvous horizontally, climbs to the Tanker's
+altitude (altitude-match phase), soft-docks in all three axes with a PD law
+that includes the Tanker's acceleration as feed-forward, receives energy and
+resumes its waypoint mission; the Tanker returns to base.  A second run
+without refuelling shows the forced landing the trigger predicts.
+
+A drone whose battery reaches 0 J stops (forced landing).  The dock condition
+is checked on the recorded state of both drones before either is advanced.
 
 Outputs: trajectory_3d.png, altitude_profile.png, energy_levels.png,
          docking_detail.png, animation.gif
 
 Usage:
     conda activate drones
-    "C:\\Users\\user\\anaconda3\\envs\\drones\\python.exe" -u src/02_logistics_delivery/3d/s027_3d_aerial_refueling.py
+    python src/02_logistics_delivery/3d/s027_3d_aerial_refueling.py
 """
 
 import matplotlib
 matplotlib.use('Agg')
 
-import sys
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -27,771 +32,562 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 import matplotlib.animation as animation
 from matplotlib.lines import Line2D
 
-sys.path.insert(0, os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
-
 # ── Output directory ────────────────────────────────────────────────────────
 OUTPUT_DIR = os.path.normpath(os.path.join(
     os.path.dirname(__file__), '..', '..', '..',
     'outputs', '02_logistics_delivery', '3d', 's027_3d_aerial_refueling',
 ))
 
-# ── Parameters ──────────────────────────────────────────────────────────────
-DT          = 0.05      # s  time step
-T_MAX       = 120.0     # s  max simulation time
+# ── Parameters (card values unless noted) ──────────────────────────────────
+DT          = 0.05      # s
+T_MAX       = 120.0     # s
 
-V_CRUISE    = 5.0       # m/s  cruise speed (both drones, nominal)
+V_CRUISE    = 5.0       # m/s  cruise speed and speed limit (both drones)
 V_T_ORB     = 2.0       # m/s  tanker loiter speed
 R_ORB       = 4.0       # m    loiter radius
 Z_R_CRUISE  = 10.0      # m    receiver cruise altitude
 Z_T_LOITER  = 15.0      # m    tanker loiter altitude
 
-K_ALT       = 1.2       # altitude-match gain (1/s)
-V_Z_MAX     = 2.0       # m/s  max vertical speed for altitude match
-DELTA_Z_OK  = 0.5       # m    altitude-match tolerance
+K_ALT       = 1.2       # 1/s  altitude-match gain
+V_Z_MAX     = 2.0       # m/s  max vertical speed in altitude match
+DELTA_Z_OK  = 1.0       # m    altitude-match tolerance (card delta_z)
+V_H_ALT     = 3.5       # m/s  horizontal speed during altitude match (0.7 V)
 
-K_FLIGHT    = 0.3       # W·s²/m²  flight power coeff
-K_HOVER     = 0.5       # W        hover drain
+K_FLIGHT    = 0.3       # W s^2/m^2
+K_HOVER     = 0.5       # W
 
-E0_R        = 40.0      # J   Receiver initial battery
-E0_T        = 80.0      # J   Tanker initial battery
-E_XFER      = 30.0      # J   energy transferred at dock
-ETA_LOSS    = 0.05      # transfer loss fraction
+E_SCALE     = 4.0       # card energies x4 (card 40 J = 25 m of range, see README)
+E0_R        = 40.0 * E_SCALE   # J  receiver initial battery (160 J)
+E0_T        = 80.0 * E_SCALE   # J  tanker initial battery   (320 J)
+E_XFER      = 30.0 * E_SCALE   # J  energy transferred       (120 J)
+ETA_LOSS    = 0.05
 
-D_CAP       = 12.0      # m   rendezvous capture radius (enter docking mode)
-D_DOCK      = 0.5       # m   docking engagement radius (soft-dock gains)
-EPS_P       = 0.20      # m   position dock tolerance
-EPS_V       = 0.08      # m/s velocity dock tolerance
+D_CAP       = 12.0      # m    horizontal capture radius around the RVZ
+D_DOCK      = 0.5       # m    soft-dock engagement radius
+EPS_P       = 0.20      # m    dock position tolerance
+EPS_V       = 0.08      # m/s  dock velocity tolerance
 KP, KD      = 2.0, 1.5  # approach PD gains
 KP2, KD2    = 4.0, 2.5  # soft-dock PD gains
 
-MARGIN      = 5.0       # m   range safety margin
-ALPHA_RVZ   = 0.50      # rendezvous fraction along base-to-target
+MARGIN      = 5.0       # m    range safety margin
+ALPHA_RVZ   = 0.50      # rendezvous fraction along base -> target
+ARRIVE_R    = 0.5       # m    waypoint arrival radius
 
-# Geometry
-BASE    = np.array([0.0,  0.0,  0.0])
-TARGET  = np.array([60.0, 0.0,  0.0])
-DIST_BT = np.linalg.norm(TARGET[:2] - BASE[:2])
+BASE        = np.array([0.0, 0.0, 0.0])
+TARGET      = np.array([60.0, 0.0, 5.0])     # delivery point (descend to 5 m)
+TANKER_PAD  = np.array([0.0, 2.0, 0.0])      # tanker launch pad at the base
+W_RVZ = np.array([(1 - ALPHA_RVZ) * BASE[0] + ALPHA_RVZ * TARGET[0],
+                  (1 - ALPHA_RVZ) * BASE[1] + ALPHA_RVZ * TARGET[1],
+                  Z_T_LOITER])
+OMEGA_ORB   = V_T_ORB / R_ORB
+PHI0        = np.pi     # orbit entry point = side of the circle facing the base
 
-# Rendezvous point: midpoint along route, at tanker altitude
-W_RVZ = np.array([
-    (1 - ALPHA_RVZ) * BASE[0] + ALPHA_RVZ * TARGET[0],
-    (1 - ALPHA_RVZ) * BASE[1] + ALPHA_RVZ * TARGET[1],
-    Z_T_LOITER,
-])
-
-# Receiver waypoints (3-D mission route)
-# Base -> climb -> cruise segment 1 -> RVZ altitude (auto) -> target -> return
 WAYPOINTS_R = np.array([
-    [0.0,   0.0,  0.0],    # WP0: base (launch)
-    [5.0,   0.0,  Z_R_CRUISE],  # WP1: climb-out
-    [55.0,  0.0,  Z_R_CRUISE],  # WP2: near target
-    [60.0,  0.0,  5.0],    # WP3: target (descend slightly for delivery)
-    [55.0,  0.0,  Z_R_CRUISE],  # WP4: return climb
-    [5.0,   0.0,  Z_R_CRUISE],  # WP5: homeward
-    [0.0,   0.0,  0.0],    # WP6: base (land)
+    [0.0,  0.0, 0.0],          # WP0 base
+    [5.0,  0.0, Z_R_CRUISE],   # WP1 climb-out
+    [55.0, 0.0, Z_R_CRUISE],   # WP2 cruise
+    [60.0, 0.0, 5.0],          # WP3 delivery point (TARGET)
+    [55.0, 0.0, Z_R_CRUISE],   # WP4 return climb
+    [5.0,  0.0, Z_R_CRUISE],   # WP5 homeward
+    [0.0,  0.0, 0.0],          # WP6 base
 ])
+WP_TARGET = 3
 
-MAX_STEPS = int(T_MAX / DT)
-RNG = np.random.default_rng(0)
+CRUISE_POWER = K_FLIGHT * V_CRUISE ** 2 + K_HOVER      # 8.0 W
+ENERGY_PER_M = CRUISE_POWER / V_CRUISE                 # 1.6 J/m
 
 
-# ── Physics helpers ──────────────────────────────────────────────────────────
+# ── Helpers ─────────────────────────────────────────────────────────────────
 
 def battery_drain(speed, dt):
-    """Energy consumed in one timestep at given speed."""
     return (K_FLIGHT * speed ** 2 + K_HOVER) * dt
 
 
-def range_remaining(energy, speed):
-    """Estimated remaining range (m) given current energy and speed."""
-    power = K_FLIGHT * speed ** 2 + K_HOVER
-    if power <= 0 or speed <= 0:
+def range_remaining(energy, speed=V_CRUISE):
+    """Card model: d_rem = E / (k_f v^2 + k_h) * v."""
+    return energy / (K_FLIGHT * speed ** 2 + K_HOVER) * speed
+
+
+def route_remaining(pos, wp_idx):
+    """Length of the rest of the waypoint route from pos via WAYPOINTS_R[wp_idx:]."""
+    if wp_idx >= len(WAYPOINTS_R):
         return 0.0
-    return (energy / power) * speed
+    d = np.linalg.norm(WAYPOINTS_R[wp_idx] - pos)
+    legs = np.linalg.norm(np.diff(WAYPOINTS_R[wp_idx:], axis=0), axis=1).sum()
+    return float(d + legs)
 
 
-def clamp_speed(vel, v_max):
-    """Scale velocity vector so its norm does not exceed v_max."""
+ROUTE_LEN = route_remaining(BASE, 1)
+
+
+def orbit_state(tl):
+    """Tanker loiter position, velocity and acceleration at loiter time tl."""
+    a = OMEGA_ORB * tl + PHI0
+    c, s = np.cos(a), np.sin(a)
+    p = W_RVZ + R_ORB * np.array([c, s, 0.0])
+    v = V_T_ORB * np.array([-s, c, 0.0])
+    acc = -R_ORB * OMEGA_ORB ** 2 * np.array([c, s, 0.0])
+    return p, v, acc
+
+
+def clamp_speed(vel, v_max=V_CRUISE):
     n = np.linalg.norm(vel)
-    if n > v_max:
-        return vel * (v_max / n)
-    return vel
+    return vel * (v_max / n) if n > v_max else vel
 
 
-def loiter_pos(t, center, omega, phi0, radius):
-    """Tanker loiter position at time t (horizontal circle, constant altitude)."""
-    angle = omega * t + phi0
-    return center + np.array([radius * np.cos(angle), radius * np.sin(angle), 0.0])
+def toward(pos, goal, speed=V_CRUISE):
+    d = goal - pos
+    n = np.linalg.norm(d)
+    if n < 1e-9:
+        return np.zeros(3)
+    return d / n * min(speed, n / DT)
 
 
-def loiter_vel(t, omega, phi0, radius):
-    """Tanker loiter velocity (analytic derivative)."""
-    angle = omega * t + phi0
-    v_tang = omega * radius
-    return np.array([-v_tang * np.sin(angle), v_tang * np.cos(angle), 0.0])
+# ── Simulation ──────────────────────────────────────────────────────────────
 
+def simulate(refuel=True, soft_dock_ff=True):
+    pR, vR, ER = BASE.copy(), np.zeros(3), E0_R
+    pT, vT, ET = TANKER_PAD.copy(), np.zeros(3), E0_T
+    aT = np.zeros(3)
+    fsm_R, fsm_T = 'mission', 'at_base'
+    wp_idx = 1
+    t_loiter = 0.0
+    ev = {}
+    log = []
+    max_step_T = 0.0
+    for k in range(int(round(T_MAX / DT)) + 1):
+        t = k * DT
+        dr, dv = pR - pT, vR - vT
+        need = route_remaining(pR, wp_idx) + MARGIN if fsm_R != 'home' else 0.0
+        d_rem = range_remaining(ER)
+        log.append((t, *pR, *pT, *vR, *vT, ER, ET, d_rem, need, fsm_R, fsm_T))
 
-# ── Simulation ───────────────────────────────────────────────────────────────
-
-def run_simulation():
-    """Run the full 3-D aerial refueling simulation.
-
-    Returns
-    -------
-    dict with trajectory arrays, energy histories, event times, etc.
-    """
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    # ---- Initial conditions -------------------------------------------------
-    pos_R = BASE.copy().astype(float)
-    vel_R = np.zeros(3)
-    pos_T = BASE.copy().astype(float)
-    vel_T = np.zeros(3)
-
-    E_R = E0_R
-    E_T = E0_T
-
-    # Receiver FSM states:
-    # fly_mission -> alt_match -> docking -> deliver_resume -> return_home
-    # Tanker FSM states: fly_to_rvz -> loiter -> return_home
-    phase_R = 'fly_mission'
-    phase_T = 'fly_to_rvz'
-
-    wp_idx = 1          # next waypoint index for receiver mission
-    docked = False
-    dock_success = False
-    refuel_triggered = False
-    phi0_loiter = 0.0   # loiter start angle
-    omega_orb = V_T_ORB / R_ORB
-    loiter_start_t = None
-
-    # History buffers
-    times       = []
-    pos_R_hist  = []
-    pos_T_hist  = []
-    vel_R_hist  = []
-    vel_T_hist  = []
-    E_R_hist    = []
-    E_T_hist    = []
-    phase_R_hist = []
-
-    # Event timestamps
-    events = {
-        'refuel_trigger': None,
-        'tanker_arrive_rvz': None,
-        'alt_match_start': None,
-        'dock_start': None,
-        'dock_success': None,
-        'mission_resume': None,
-    }
-
-    t = 0.0
-    docking_active = False
-
-    for step in range(MAX_STEPS):
-        t = step * DT
-
-        # ── Record state ───────────────────────────────────────────────────
-        times.append(t)
-        pos_R_hist.append(pos_R.copy())
-        pos_T_hist.append(pos_T.copy())
-        vel_R_hist.append(vel_R.copy())
-        vel_T_hist.append(vel_T.copy())
-        E_R_hist.append(E_R)
-        E_T_hist.append(E_T)
-        phase_R_hist.append(phase_R)
-
-        # ── Receiver FSM ───────────────────────────────────────────────────
-
-        if phase_R == 'fly_mission':
-            # Check if refueling is needed
-            if not refuel_triggered:
-                d_to_target = np.linalg.norm(TARGET - pos_R)
-                d_to_base_via_target = d_to_target + np.linalg.norm(BASE - TARGET)
-                d_rem = range_remaining(E_R, V_CRUISE)
-                if d_rem < d_to_base_via_target + MARGIN:
-                    refuel_triggered = True
-                    events['refuel_trigger'] = t
-                    phase_R = 'fly_to_rvz'
-                    # Override waypoint navigation toward rvz horizontal approach point
-                else:
-                    # Normal waypoint following
-                    target_wp = WAYPOINTS_R[wp_idx]
-                    dir_r = target_wp - pos_R
-                    dist_wp = np.linalg.norm(dir_r)
-                    if dist_wp < 1.0 and wp_idx < len(WAYPOINTS_R) - 1:
-                        wp_idx += 1
-                        target_wp = WAYPOINTS_R[wp_idx]
-                        dir_r = target_wp - pos_R
-                        dist_wp = np.linalg.norm(dir_r)
-                    if dist_wp > 1e-3:
-                        vel_R = V_CRUISE * dir_r / dist_wp
-                    else:
-                        vel_R = np.zeros(3)
-
-        if phase_R == 'fly_to_rvz':
-            # Fly horizontally toward rendezvous XY, maintaining current cruise altitude
-            rvz_approach = np.array([W_RVZ[0], W_RVZ[1], Z_R_CRUISE])
-            dir_r = rvz_approach - pos_R
-            dist_h = np.linalg.norm(dir_r[:2])  # horizontal distance
-            dist_3d = np.linalg.norm(dir_r)
-
-            # Maintain Z_R_CRUISE while approaching horizontally
-            if dist_3d > 1e-3:
-                vel_R = V_CRUISE * dir_r / dist_3d
-            else:
-                vel_R = np.zeros(3)
-
-            # Transition to altitude match when close enough horizontally
-            if dist_h < D_CAP:
-                phase_R = 'alt_match'
-                events['alt_match_start'] = t
-
-        elif phase_R == 'alt_match':
-            # Horizontal approach continues, plus vertical correction to match tanker altitude
-            hor_dir = np.array([W_RVZ[0] - pos_R[0], W_RVZ[1] - pos_R[1], 0.0])
-            hor_dist = np.linalg.norm(hor_dir)
-
-            # Horizontal velocity component
-            if hor_dist > 1e-3:
-                vel_R_hor = V_CRUISE * 0.7 * hor_dir / hor_dist
-            else:
-                vel_R_hor = np.zeros(3)
-
-            # Vertical velocity component: climb to tanker altitude
-            z_err = Z_T_LOITER - pos_R[2]
-            vz = np.clip(K_ALT * z_err, -V_Z_MAX, V_Z_MAX)
-            vel_R = vel_R_hor + np.array([0.0, 0.0, vz])
-            vel_R = clamp_speed(vel_R, V_CRUISE)
-
-            # Transition to docking when altitude matched and within capture radius
-            alt_ok = abs(pos_R[2] - Z_T_LOITER) < DELTA_Z_OK
-            close_enough = np.linalg.norm(pos_R[:2] - W_RVZ[:2]) < D_CAP
-            if alt_ok and close_enough:
-                phase_R = 'docking'
-                docking_active = True
-                events['dock_start'] = t
-
-        elif phase_R == 'docking':
-            # Full 3-D PD docking controller
-            dr = pos_R - pos_T
-            dv = vel_R - vel_T
-            dist_dock = np.linalg.norm(dr)
-
-            # Tanker acceleration (finite difference of loiter velocity)
-            if loiter_start_t is not None:
-                vel_T_next = loiter_vel(t + DT, omega_orb, phi0_loiter, R_ORB)
-                acc_T = (vel_T_next - vel_T) / DT
-            else:
-                acc_T = np.zeros(3)
-
-            if dist_dock > D_DOCK:
-                # Phase 1: approach
-                u_R = -KP * dr - KD * dv + acc_T
-            else:
-                # Phase 2: soft dock
-                u_R = -KP2 * dr - KD2 * dv
-
-            vel_R = vel_R + u_R * DT
-            vel_R = clamp_speed(vel_R, V_CRUISE * 1.2)  # allow slight overspeed for catch-up
-
-            # Check docking success
-            if np.linalg.norm(dr) < EPS_P and np.linalg.norm(dv) < EPS_V:
-                if not dock_success:
-                    dock_success = True
-                    events['dock_success'] = t
-                    # Energy transfer
-                    E_R = min(E_R + E_XFER, E0_R + E_XFER)
-                    E_T -= E_XFER * (1 + ETA_LOSS)
-                    phase_R = 'deliver_resume'
-                    phase_T = 'return_home'
-                    events['mission_resume'] = t
-                    docking_active = False
-
-        elif phase_R == 'deliver_resume':
-            # Resume mission from TARGET waypoint
-            dir_r = TARGET - pos_R
-            dist = np.linalg.norm(dir_r)
-            if dist < 2.0:
-                phase_R = 'return_home'
-                wp_idx = 4  # waypoints for return
-            elif dist > 1e-3:
-                vel_R = V_CRUISE * dir_r / dist
-            else:
-                vel_R = np.zeros(3)
-
-        elif phase_R == 'return_home':
-            # Fly back to base, descend on approach
-            approach = np.array([BASE[0], BASE[1], Z_R_CRUISE if np.linalg.norm(pos_R - BASE) > 10 else 0.0])
-            dir_r = approach - pos_R
-            dist = np.linalg.norm(dir_r)
-            if np.linalg.norm(pos_R - BASE) < 2.0:
-                vel_R = np.zeros(3)  # landed
-            elif dist > 1e-3:
-                vel_R = V_CRUISE * dir_r / dist
-            else:
-                vel_R = np.zeros(3)
-
-        # ── Tanker FSM ─────────────────────────────────────────────────────
-
-        if phase_T == 'fly_to_rvz':
-            # Fly directly to rendezvous point (including altitude)
-            dir_t = W_RVZ - pos_T
-            dist_t = np.linalg.norm(dir_t)
-            if dist_t > 2.0:
-                vel_T = V_CRUISE * dir_t / dist_t
-            else:
-                # Close to rendezvous — switch to loiter
-                phase_T = 'loiter'
-                loiter_start_t = t
-                phi0_loiter = np.arctan2(pos_T[1] - W_RVZ[1], pos_T[0] - W_RVZ[0])
-                events['tanker_arrive_rvz'] = t
-                pos_T = loiter_pos(0.0, W_RVZ, omega_orb, phi0_loiter, R_ORB)
-                vel_T = loiter_vel(0.0, omega_orb, phi0_loiter, R_ORB)
-
-        elif phase_T == 'loiter':
-            elapsed = t - loiter_start_t
-            pos_T = loiter_pos(elapsed, W_RVZ, omega_orb, phi0_loiter, R_ORB)
-            vel_T = loiter_vel(elapsed, omega_orb, phi0_loiter, R_ORB)
-
-        elif phase_T == 'return_home':
-            dir_t = BASE - pos_T
-            dist_t = np.linalg.norm(dir_t)
-            if dist_t > 2.0:
-                vel_T = V_CRUISE * dir_t / dist_t
-            else:
-                vel_T = np.zeros(3)
-
-        # ── Integrate positions ────────────────────────────────────────────
-        # For loiter phase, pos_T is set analytically above; skip integration
-        if phase_T != 'loiter':
-            pos_T = pos_T + vel_T * DT
-
-        if phase_R != 'docking':
-            pos_R = pos_R + vel_R * DT
-        else:
-            pos_R = pos_R + vel_R * DT
-
-        # ── Battery drain ──────────────────────────────────────────────────
-        E_R = max(0.0, E_R - battery_drain(np.linalg.norm(vel_R), DT))
-        E_T = max(0.0, E_T - battery_drain(np.linalg.norm(vel_T), DT))
-
-        # ── Termination check ──────────────────────────────────────────────
-        if dock_success and phase_R == 'return_home' and np.linalg.norm(pos_R - BASE) < 2.0:
-            # Mission complete
-            t_end = t
-            times.append(t_end + DT)
-            pos_R_hist.append(pos_R.copy())
-            pos_T_hist.append(pos_T.copy())
-            vel_R_hist.append(vel_R.copy())
-            vel_T_hist.append(vel_T.copy())
-            E_R_hist.append(E_R)
-            E_T_hist.append(E_T)
-            phase_R_hist.append(phase_R)
+        # ---- termination ----------------------------------------------------
+        if fsm_R == 'home' and fsm_T in ('home', 'at_base'):
+            ev['complete'] = t
+            break
+        if fsm_R == 'landed' and fsm_T in ('home', 'at_base', 'landed'):
             break
 
-    # Convert to arrays
-    times      = np.array(times)
-    pos_R_hist = np.array(pos_R_hist)
-    pos_T_hist = np.array(pos_T_hist)
-    vel_R_hist = np.array(vel_R_hist)
-    vel_T_hist = np.array(vel_T_hist)
-    E_R_hist   = np.array(E_R_hist)
-    E_T_hist   = np.array(E_T_hist)
+        # ---- events on the recorded state ------------------------------------
+        if refuel and 'trigger' not in ev and fsm_R == 'mission' and d_rem < need:
+            ev['trigger'] = (t, d_rem, need)
+            fsm_T = 'to_orbit'
+        if (fsm_R == 'docking' and np.linalg.norm(dr) < EPS_P
+                and np.linalg.norm(dv) < EPS_V):
+            ev['dock'] = (t, float(np.linalg.norm(dr)), float(np.linalg.norm(dv)), k,
+                          ER, ET)
+            ER += E_XFER
+            ET -= E_XFER * (1 + ETA_LOSS)
+            ev['after_xfer'] = (ER, ET)
+            fsm_R, fsm_T = 'mission', 'return'
 
-    # Print key metrics
-    print(f"Simulation duration:   {times[-1]:.1f} s")
-    print(f"Dock success:          {dock_success}")
-    if events['refuel_trigger']:
-        print(f"Refuel trigger time:   {events['refuel_trigger']:.1f} s")
-    if events['tanker_arrive_rvz']:
-        print(f"Tanker at RVZ time:    {events['tanker_arrive_rvz']:.1f} s")
-    if events['alt_match_start']:
-        print(f"Altitude match start:  {events['alt_match_start']:.1f} s")
-    if events['dock_start']:
-        print(f"Docking start time:    {events['dock_start']:.1f} s")
-    if events['dock_success']:
-        print(f"Dock success time:     {events['dock_success']:.1f} s")
-        # Time from dock start to success
-        if events['dock_start']:
-            print(f"Docking duration:      {events['dock_success'] - events['dock_start']:.1f} s")
-    print(f"Receiver final energy: {E_R_hist[-1]:.2f} J")
-    print(f"Tanker final energy:   {E_T_hist[-1]:.2f} J")
-    alt_diff_at_rvz = Z_T_LOITER - Z_R_CRUISE
-    print(f"Altitude gap at RVZ:   {alt_diff_at_rvz:.1f} m  ({Z_R_CRUISE:.0f} m -> {Z_T_LOITER:.0f} m)")
+        # ---- Tanker guidance --------------------------------------------------
+        if fsm_T == 'to_orbit':
+            entry, _, _ = orbit_state(0.0)
+            if np.linalg.norm(entry - pT) > 1e-6:
+                vT, aT = toward(pT, entry), np.zeros(3)
+            else:
+                fsm_T, t_loiter = 'loiter', 0.0
+                ev['loiter'] = t
+        if fsm_T == 'loiter':
+            _, vT, aT = orbit_state(t_loiter)
+        elif fsm_T == 'return':
+            aT = np.zeros(3)
+            if np.linalg.norm(TANKER_PAD - pT) > 1e-6:
+                vT = toward(pT, TANKER_PAD)
+            else:
+                vT, fsm_T = np.zeros(3), 'home'
+                ev['tanker_home'] = t
+        elif fsm_T == 'landed':
+            vT, aT = np.zeros(3), np.zeros(3)
 
-    return {
-        'times': times,
-        'pos_R': pos_R_hist,
-        'pos_T': pos_T_hist,
-        'vel_R': vel_R_hist,
-        'vel_T': vel_T_hist,
-        'E_R':   E_R_hist,
-        'E_T':   E_T_hist,
-        'phases': phase_R_hist,
-        'events': events,
-        'dock_success': dock_success,
-        'W_RVZ': W_RVZ,
+        # ---- Receiver guidance ------------------------------------------------
+        if fsm_R == 'mission':
+            h_to_rvz = np.linalg.norm(pR[:2] - W_RVZ[:2])
+            if (refuel and 'trigger' in ev and 'dock' not in ev
+                    and h_to_rvz < D_CAP and wp_idx <= 2):
+                fsm_R = 'alt_match'
+                ev['alt_match'] = t
+            else:
+                if np.linalg.norm(WAYPOINTS_R[wp_idx] - pR) < ARRIVE_R:
+                    if wp_idx == WP_TARGET:
+                        ev['delivered'] = t
+                    if wp_idx == len(WAYPOINTS_R) - 1:
+                        fsm_R = 'home'
+                        ev['receiver_home'] = t
+                    else:
+                        wp_idx += 1
+                vR = toward(pR, WAYPOINTS_R[wp_idx]) if fsm_R == 'mission' else np.zeros(3)
+        if fsm_R == 'alt_match':
+            hor = np.array([W_RVZ[0] - pR[0], W_RVZ[1] - pR[1], 0.0])
+            hn = np.linalg.norm(hor)
+            v_h = hor / hn * min(V_H_ALT, hn / DT) if hn > 1e-9 else np.zeros(3)
+            vz = float(np.clip(K_ALT * (Z_T_LOITER - pR[2]), -V_Z_MAX, V_Z_MAX))
+            vR = clamp_speed(v_h + np.array([0.0, 0.0, vz]))
+            if abs(pR[2] - Z_T_LOITER) < DELTA_Z_OK:
+                if fsm_T == 'loiter':
+                    fsm_R = 'docking'
+                    ev['dock_start'] = t
+                else:
+                    fsm_R = 'hold'
+                    ev['hold'] = t
+        if fsm_R == 'hold':
+            vR = np.zeros(3)
+            if fsm_T == 'loiter':
+                fsm_R = 'docking'
+                ev['dock_start'] = t
+        if fsm_R == 'docking':
+            if np.linalg.norm(dr) > D_DOCK:
+                acc = -KP * dr - KD * dv + aT
+            else:
+                acc = -KP2 * dr - KD2 * dv + (aT if soft_dock_ff else 0.0)
+            vR = clamp_speed(vR + acc * DT)
+        if fsm_R in ('home', 'landed'):
+            vR = np.zeros(3)
+
+        # ---- integrate ------------------------------------------------------
+        pR = pR + vR * DT
+        pT_old = pT.copy()
+        if fsm_T == 'loiter':
+            t_loiter += DT
+            pT, _, _ = orbit_state(t_loiter)
+        else:
+            pT = pT + vT * DT
+        max_step_T = max(max_step_T, float(np.linalg.norm(pT - pT_old)))
+
+        # ---- battery: an empty battery is a forced landing --------------------
+        if fsm_R not in ('home', 'landed'):
+            ER -= battery_drain(np.linalg.norm(vR), DT)
+            if ER <= 0.0:
+                ER = 0.0
+                fsm_R = 'landed'
+                ev['forced_landing_R'] = (t + DT, pR.copy())
+        if fsm_T not in ('at_base', 'home', 'landed'):
+            ET -= battery_drain(np.linalg.norm(vT), DT)
+            if ET <= 0.0:
+                ET = 0.0
+                fsm_T = 'landed'
+                ev['forced_landing_T'] = (t + DT, pT.copy())
+
+    cols = list(zip(*log))
+    h = {
+        'times': np.array(cols[0]),
+        'pos_R': np.array(cols[1:4]).T, 'pos_T': np.array(cols[4:7]).T,
+        'vel_R': np.array(cols[7:10]).T, 'vel_T': np.array(cols[10:13]).T,
+        'E_R': np.array(cols[13]), 'E_T': np.array(cols[14]),
+        'd_rem': np.array(cols[15]), 'need': np.array(cols[16]),
+        'phase_R': np.array(cols[17]), 'phase_T': np.array(cols[18]),
+        'events': ev, 'max_step_T': max_step_T, 'W_RVZ': W_RVZ,
     }
+    h['phases'] = h['phase_R']
+    h['path_len_R'] = float(np.sum(np.linalg.norm(np.diff(h['pos_R'], axis=0), axis=1)))
+    return h
 
 
-# ── Plot functions ───────────────────────────────────────────────────────────
+def run_simulation():
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    print('S027 3D Aerial Refueling Relay')
+    print(f'  Route length base->target->base : {ROUTE_LEN:.2f} m '
+          f'({ROUTE_LEN * ENERGY_PER_M:.1f} J at {ENERGY_PER_M:.1f} J/m)')
+    print(f'  Receiver battery {E0_R:.0f} J -> range {range_remaining(E0_R):.1f} m; '
+          f'tanker {E0_T:.0f} J; transfer {E_XFER:.0f} J (+{ETA_LOSS:.0%} loss)')
+
+    data = simulate(refuel=True)
+    ev = data['events']
+    print('\nRefuelled run:')
+    if 'trigger' in ev:
+        tt, dr_, nd = ev['trigger']
+        print(f'  Refuel trigger      : t = {tt:.2f} s  (d_rem {dr_:.1f} m < need {nd:.1f} m)')
+    for key, lab in [('loiter', 'Tanker on orbit'), ('alt_match', 'Altitude match start'),
+                     ('hold', 'Receiver holds'), ('dock_start', 'Docking start')]:
+        if key in ev:
+            print(f'  {lab:<20s}: t = {ev[key]:.2f} s')
+    if 'dock' in ev:
+        td, drm, dvm, k, er_b, et_b = ev['dock']
+        print(f'  Dock success        : t = {td:.2f} s  (docking {td - ev["dock_start"]:.2f} s), '
+              f'|dr| {drm:.4f} m, |dv| {dvm:.4f} m/s (tol {EPS_P} m / {EPS_V} m/s)')
+        print(f'  Energy before xfer  : Receiver {er_b:.2f} J, Tanker {et_b:.2f} J')
+        print(f'  Energy after xfer   : Receiver {ev["after_xfer"][0]:.2f} J, '
+              f'Tanker {ev["after_xfer"][1]:.2f} J')
+        i0 = int(round(ev['dock_start'] / DT))
+        alt_i = int(round(ev['alt_match'] / DT))
+        print(f'  Altitude at alt-match start: Receiver {data["pos_R"][alt_i, 2]:.2f} m, '
+              f'Tanker {data["pos_T"][alt_i, 2]:.2f} m')
+        print(f'  Relative state at dock start: |dr| {np.linalg.norm(data["pos_R"][i0] - data["pos_T"][i0]):.3f} m '
+              f'(dz {data["pos_R"][i0, 2] - data["pos_T"][i0, 2]:+.3f} m), '
+              f'|dv| {np.linalg.norm(data["vel_R"][i0] - data["vel_T"][i0]):.3f} m/s')
+    else:
+        print('  Dock success        : NO')
+    for key, lab in [('delivered', 'Package delivered'), ('tanker_home', 'Tanker home'),
+                     ('receiver_home', 'Receiver home'), ('complete', 'Mission complete')]:
+        if key in ev:
+            print(f'  {lab:<20s}: t = {ev[key]:.2f} s')
+    for key, lab in [('forced_landing_R', 'Receiver'), ('forced_landing_T', 'Tanker')]:
+        if key in ev:
+            print(f'  {lab} FORCED LANDING at t = {ev[key][0]:.2f} s, pos {np.round(ev[key][1], 2)}')
+    print(f'  Final energy        : Receiver {data["E_R"][-1]:.2f} J, Tanker {data["E_T"][-1]:.2f} J')
+    print(f'  Receiver path flown : {data["path_len_R"]:.2f} m')
+    print(f'  Max tanker step     : {data["max_step_T"]:.3f} m per {DT} s '
+          f'(speed limit x DT = {V_CRUISE * DT:.3f} m; no teleport)')
+    if 'dock' in ev:
+        k = ev['dock'][3]
+        margin = data['d_rem'][k + 1:] - data['need'][k + 1:]
+        home = data['phase_R'][k + 1:] != 'home'
+        print(f'  Min range margin after refuel (d_rem - need, need incl. {MARGIN:.0f} m): '
+              f'{margin[home].min():.2f} m')
+
+    base = simulate(refuel=False)
+    bev = base['events']
+    print('\nNo-refuel run:')
+    if 'forced_landing_R' in bev:
+        tl, pl = bev['forced_landing_R']
+        print(f'  Receiver FORCED LANDING at t = {tl:.2f} s, pos ({pl[0]:.2f}, {pl[1]:.2f}, {pl[2]:.2f}) m, '
+              f'after {base["path_len_R"]:.2f} m of {ROUTE_LEN:.2f} m'
+              f'{"; package delivered" if "delivered" in bev else "; package NOT delivered"}')
+    else:
+        print('  Receiver completed without refuel')
+    data['no_refuel'] = base
+
+    chk = simulate(refuel=True, soft_dock_ff=False)
+    cev = chk['events']
+    ds = int(round(cev['dock_start'] / DT)) if 'dock_start' in cev else None
+    print('\nCheck: card soft-dock law without the a_T feed-forward:')
+    if 'dock' in cev:
+        print(f'  docks at t = {cev["dock"][0]:.2f} s')
+    elif ds is not None:
+        dk = np.nonzero(chk['phase_R'] == 'docking')[0]
+        rel = np.linalg.norm(chk['pos_R'][dk] - chk['pos_T'][dk], axis=1)
+        tail = rel[-int(round(20.0 / DT)):]
+        fl = cev.get('forced_landing_R')
+        print(f'  never docks: docking from t = {cev["dock_start"]:.2f} s until '
+              f'{"the battery is empty at t = %.2f s" % fl[0] if fl else "T_MAX"}')
+        print(f'  |dr| over the last 20 s of docking: {tail.min():.3f}-{tail.max():.3f} m '
+              f'(eps_p {EPS_P} m), expected lag a_T / sqrt((K_p2 - w^2)^2 + (K_d2 w)^2) = '
+              f'{R_ORB * OMEGA_ORB ** 2 / np.hypot(KP2 - OMEGA_ORB ** 2, KD2 * OMEGA_ORB):.3f} m')
+    return data
+
+
+# ── Plot helpers ────────────────────────────────────────────────────────────
+
+EV_STYLE = [
+    ('loiter', 'cyan', 'Tanker on orbit'),
+    ('alt_match', 'magenta', 'Alt-match start'),
+    ('dock_start', 'orange', 'Dock start'),
+    ('dock', 'green', 'Dock success / transfer'),
+    ('delivered', 'purple', 'Package delivered'),
+]
+
+
+def _ev_time(ev, key):
+    v = ev.get(key)
+    if v is None:
+        return None
+    return v[0] if isinstance(v, tuple) else v
+
+
+def _mark_events(ax, ev):
+    for key, col, lab in EV_STYLE:
+        tv = _ev_time(ev, key)
+        if tv is not None:
+            ax.axvline(tv, color=col, ls=':', lw=1.4, label=lab)
+
+
+# ── Plots ───────────────────────────────────────────────────────────────────
 
 def plot_trajectory_3d(data, out_dir):
-    """3-D trajectory of both drones with event markers."""
-    pos_R = data['pos_R']
-    pos_T = data['pos_T']
-    events = data['events']
-    times  = data['times']
-    W_RVZ  = data['W_RVZ']
-
-    fig = plt.figure(figsize=(11, 8))
+    pR, pT, ev, times = data['pos_R'], data['pos_T'], data['events'], data['times']
+    fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
-
-    # Full trajectories
-    ax.plot(pos_R[:, 0], pos_R[:, 1], pos_R[:, 2],
-            color='red',  lw=1.5, label='Receiver (red)', alpha=0.85)
-    ax.plot(pos_T[:, 0], pos_T[:, 1], pos_T[:, 2],
-            color='blue', lw=1.5, label='Tanker (blue)',  alpha=0.85)
-
-    # Highlight docking segment in yellow
-    if events['dock_start'] and events['dock_success']:
-        i0 = np.searchsorted(times, events['dock_start'])
-        i1 = np.searchsorted(times, events['dock_success'])
-        ax.plot(pos_R[i0:i1+1, 0], pos_R[i0:i1+1, 1], pos_R[i0:i1+1, 2],
-                color='gold', lw=3.0, label='Docking approach', zorder=5)
-
-    # Key markers
-    ax.scatter(*BASE,   color='black', s=80, marker='^', zorder=6, label='Base')
-    ax.scatter(*TARGET[:3], color='purple', s=80, marker='s', zorder=6, label='Target')
-    ax.scatter(*W_RVZ,  color='green', s=120, marker='*', zorder=6, label='Refueling point')
-
-    # Start positions
-    ax.scatter(*pos_R[0], color='red',  s=60, marker='o', zorder=5)
-    ax.scatter(*pos_T[0], color='blue', s=60, marker='o', zorder=5)
-
-    # Altitude reference lines (dashed)
-    ax.plot([0, 65], [0, 0], [Z_R_CRUISE, Z_R_CRUISE],
-            'r--', lw=0.6, alpha=0.4, label=f'Receiver cruise z={Z_R_CRUISE}m')
-    ax.plot([0, 65], [0, 0], [Z_T_LOITER, Z_T_LOITER],
-            'b--', lw=0.6, alpha=0.4, label=f'Tanker loiter z={Z_T_LOITER}m')
-
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-    ax.set_zlabel('Z / altitude (m)')
-    ax.set_title('S027 3D Aerial Refueling — Trajectory')
+    ax.plot(*pR.T, color='red', lw=1.5, label='Receiver', alpha=0.85)
+    ax.plot(*pT.T, color='blue', lw=1.5, label='Tanker', alpha=0.85)
+    nr = data['no_refuel']
+    ax.plot(*nr['pos_R'].T, color='red', lw=1.0, ls='--', alpha=0.5,
+            label='Receiver without refuel')
+    if 'forced_landing_R' in nr['events']:
+        ax.scatter(*nr['events']['forced_landing_R'][1], color='red', marker='x', s=90,
+                   label='Forced landing (no refuel)')
+    if 'dock' in ev:
+        i0 = int(round(ev['dock_start'] / DT))
+        i1 = ev['dock'][3]
+        ax.plot(*pR[i0:i1 + 1].T, color='gold', lw=3.0, label='Docking approach')
+    ax.scatter(*BASE, color='black', s=80, marker='^', label='Base')
+    ax.scatter(*TARGET, color='purple', s=80, marker='s', label='Delivery point')
+    ax.scatter(*W_RVZ, color='green', s=150, marker='*', label='Refueling point (RVZ)')
+    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.set_zlabel('Z / altitude (m)')
+    ax.set_title('S027 3D Aerial Refueling — Trajectories')
     ax.legend(fontsize=8, loc='upper left')
-
-    # Set sensible axis limits
-    all_x = np.concatenate([pos_R[:, 0], pos_T[:, 0]])
-    all_y = np.concatenate([pos_R[:, 1], pos_T[:, 1]])
-    all_z = np.concatenate([pos_R[:, 2], pos_T[:, 2]])
-    pad = 3.0
-    ax.set_xlim(all_x.min() - pad, all_x.max() + pad)
-    ax.set_ylim(all_y.min() - pad*3, all_y.max() + pad*3)
-    ax.set_zlim(max(0, all_z.min() - pad), all_z.max() + pad)
-
-    plt.tight_layout()
+    ax.set_xlim(-3, 63); ax.set_ylim(-12, 12); ax.set_zlim(0, 18)
+    ax.view_init(elev=22, azim=-70)
     path = os.path.join(out_dir, 'trajectory_3d.png')
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=140, bbox_inches='tight')
     plt.close()
     print(f'Saved: {path}')
 
 
 def plot_altitude_profile(data, out_dir):
-    """Altitude z(t) for both drones with event markers."""
-    times  = data['times']
-    pos_R  = data['pos_R']
-    pos_T  = data['pos_T']
-    events = data['events']
-
-    fig, ax = plt.subplots(figsize=(11, 4))
-
-    ax.plot(times, pos_R[:, 2], color='red',  lw=1.8, label='Receiver altitude')
-    ax.plot(times, pos_T[:, 2], color='blue', lw=1.8, label='Tanker altitude')
-
-    # Cruise altitude references
-    ax.axhline(Z_R_CRUISE, color='red',  ls='--', lw=0.8, alpha=0.5, label=f'Receiver cruise ({Z_R_CRUISE} m)')
-    ax.axhline(Z_T_LOITER, color='blue', ls='--', lw=0.8, alpha=0.5, label=f'Tanker loiter ({Z_T_LOITER} m)')
-
-    colors_ev = {
-        'refuel_trigger':   ('orange',  'Refuel trigger'),
-        'tanker_arrive_rvz':('cyan',    'Tanker at RVZ'),
-        'alt_match_start':  ('magenta', 'Alt-match start'),
-        'dock_start':       ('lime',    'Dock start'),
-        'dock_success':     ('green',   'Dock success'),
-    }
-    for key, (col, label) in colors_ev.items():
-        t_ev = events.get(key)
-        if t_ev is not None:
-            ax.axvline(t_ev, color=col, ls=':', lw=1.4, label=label)
-
-    # Shade the altitude gap region
-    ax.fill_between([0, times[-1]], Z_R_CRUISE, Z_T_LOITER,
-                    alpha=0.07, color='gray', label='Altitude gap')
-
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Altitude (m)')
-    ax.set_title('S027 3D — Altitude Profile: Receiver climbs 5 m to match Tanker')
-    ax.legend(fontsize=8, ncol=2)
-    ax.set_ylim(-1, Z_T_LOITER + 5)
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
+    times, pR, pT, ev = data['times'], data['pos_R'], data['pos_T'], data['events']
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    ax.plot(times, pR[:, 2], color='red', lw=1.8, label='Receiver altitude')
+    ax.plot(times, pT[:, 2], color='blue', lw=1.8, label='Tanker altitude')
+    ax.axhline(Z_R_CRUISE, color='red', ls='--', lw=0.8, alpha=0.5,
+               label=f'Receiver cruise ({Z_R_CRUISE:g} m)')
+    ax.axhline(Z_T_LOITER, color='blue', ls='--', lw=0.8, alpha=0.5,
+               label=f'Tanker loiter ({Z_T_LOITER:g} m)')
+    _mark_events(ax, ev)
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Altitude (m)')
+    ax.set_title('S027 3D — Altitude profile: the Receiver climbs 5 m to the Tanker before docking')
+    ax.legend(fontsize=8, ncol=4, loc='upper center', bbox_to_anchor=(0.5, -0.13))
+    ax.set_ylim(-1, Z_T_LOITER + 3); ax.grid(True, alpha=0.3)
     path = os.path.join(out_dir, 'altitude_profile.png')
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=140, bbox_inches='tight')
     plt.close()
     print(f'Saved: {path}')
 
 
 def plot_energy_levels(data, out_dir):
-    """Battery energy E(t) for both drones with event annotations."""
-    times  = data['times']
-    E_R    = data['E_R']
-    E_T    = data['E_T']
-    events = data['events']
-
-    fig, ax = plt.subplots(figsize=(11, 4))
-
-    ax.plot(times, E_R, color='red',  lw=1.8, label='Receiver energy')
-    ax.plot(times, E_T, color='blue', lw=1.8, label='Tanker energy')
-
-    colors_ev = {
-        'refuel_trigger':   ('orange',  'Refuel trigger'),
-        'tanker_arrive_rvz':('cyan',    'Tanker at RVZ'),
-        'alt_match_start':  ('magenta', 'Alt-match start'),
-        'dock_start':       ('lime',    'Dock start'),
-        'dock_success':     ('green',   f'Dock success\n(+{E_XFER:.0f} J to Receiver)'),
-    }
-    for key, (col, label) in colors_ev.items():
-        t_ev = events.get(key)
-        if t_ev is not None:
-            ax.axvline(t_ev, color=col, ls=':', lw=1.4, label=label)
-
-    # Annotate the energy jump
-    t_ds = events.get('dock_success')
-    if t_ds is not None:
-        idx = np.searchsorted(times, t_ds)
-        if idx < len(E_R) - 1:
-            ax.annotate(
-                f'+{E_XFER:.0f} J',
-                xy=(times[idx], E_R[idx]),
-                xytext=(times[idx] + 3, E_R[idx] + 3),
-                arrowprops=dict(arrowstyle='->', color='red'),
-                color='red', fontsize=9,
-            )
-
-    ax.set_xlabel('Time (s)')
-    ax.set_ylabel('Energy (J)')
-    ax.set_title('S027 3D — Battery Energy Levels During Aerial Refueling')
-    ax.legend(fontsize=8, ncol=2)
-    ax.set_ylim(-2, max(E0_T, E0_R + E_XFER) + 5)
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout()
+    times, ev = data['times'], data['events']
+    nr = data['no_refuel']
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    ax.plot(times, data['E_R'], color='red', lw=1.8, label='Receiver energy')
+    ax.plot(times, data['E_T'], color='blue', lw=1.8, label='Tanker energy')
+    ax.plot(nr['times'], nr['E_R'], color='red', lw=1.2, ls='--', alpha=0.6,
+            label='Receiver without refuel')
+    if 'forced_landing_R' in nr['events']:
+        tl = nr['events']['forced_landing_R'][0]
+        ax.scatter([tl], [0.0], color='red', marker='x', s=80, zorder=5,
+                   label=f'Forced landing (no refuel), t = {tl:.1f} s')
+    _mark_events(ax, ev)
+    if 'dock' in ev:
+        k = ev['dock'][3]
+        ax.annotate(f'+{E_XFER:.0f} J', xy=(times[k + 1], data['E_R'][k + 1]),
+                    xytext=(times[k + 1] + 3, data['E_R'][k + 1] + 15),
+                    arrowprops=dict(arrowstyle='->', color='red'), color='red', fontsize=9)
+    ax.set_xlabel('Time (s)'); ax.set_ylabel('Energy (J)')
+    ax.set_title('S027 3D — Battery energy (refuelled run, and Receiver without refuel)')
+    ax.legend(fontsize=8, ncol=2, loc='upper right')
+    ax.set_ylim(-5, E0_T + 10); ax.grid(True, alpha=0.3)
     path = os.path.join(out_dir, 'energy_levels.png')
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=140, bbox_inches='tight')
     plt.close()
     print(f'Saved: {path}')
 
 
 def plot_docking_detail(data, out_dir):
-    """Three-panel plot of dx, dy, dz relative motion during docking approach."""
-    times  = data['times']
-    pos_R  = data['pos_R']
-    pos_T  = data['pos_T']
-    events = data['events']
-
-    t_start = events.get('alt_match_start') or events.get('dock_start')
-    t_end   = events.get('dock_success')
-
-    if t_start is None or t_end is None:
-        print("Docking detail: insufficient event data, skipping.")
+    ev = data['events']
+    if 'dock' not in ev:
+        print('Docking detail: no dock, skipped')
         return
-
-    # Add some context before and after
-    i0 = max(0, np.searchsorted(times, t_start) - 20)
-    i1 = min(len(times) - 1, np.searchsorted(times, t_end) + 40)
-
-    t_seg  = times[i0:i1]
-    dr     = pos_R[i0:i1] - pos_T[i0:i1]
-    dr_mag = np.linalg.norm(dr, axis=1)
-
-    labels = ['Δx (m)', 'Δy (m)', 'Δz (m)']
-    colors = ['tomato', 'steelblue', 'seagreen']
-
-    fig, axes = plt.subplots(4, 1, figsize=(10, 9), sharex=True)
-
-    for i, (ax, lab, col) in enumerate(zip(axes[:3], labels, colors)):
-        ax.plot(t_seg, dr[:, i], color=col, lw=1.5)
+    times = data['times']
+    i0 = max(0, int(round(ev['alt_match'] / DT)) - 10)
+    i1 = min(len(times), ev['dock'][3] + 30)
+    t = times[i0:i1]
+    dr = data['pos_R'][i0:i1] - data['pos_T'][i0:i1]
+    dv = data['vel_R'][i0:i1] - data['vel_T'][i0:i1]
+    fig, axes = plt.subplots(5, 1, figsize=(10, 11), sharex=True)
+    for i, (lab, col) in enumerate(zip(['Δx (m)', 'Δy (m)', 'Δz (m)'],
+                                       ['tomato', 'steelblue', 'seagreen'])):
+        ax = axes[i]
+        ax.plot(t, dr[:, i], color=col, lw=1.5)
         ax.axhline(0, color='k', lw=0.6, ls='--')
-        ax.axhline( EPS_P, color='gray', lw=0.8, ls=':', alpha=0.7)
-        ax.axhline(-EPS_P, color='gray', lw=0.8, ls=':', alpha=0.7)
-        ax.set_ylabel(lab)
-        ax.grid(True, alpha=0.3)
-        if events.get('dock_start'):
-            ax.axvline(events['dock_start'], color='lime',  lw=1.2, ls='--', label='Dock start')
-        if events.get('dock_success'):
-            ax.axvline(events['dock_success'], color='green', lw=1.2, ls='--', label='Dock success')
-        ax.legend(fontsize=7)
-
-    axes[3].plot(t_seg, dr_mag, color='purple', lw=1.8, label='||Δr|| (m)')
-    axes[3].axhline(EPS_P,  color='gray',  lw=0.8, ls=':', label=f'ε_p={EPS_P}m')
-    axes[3].axhline(D_DOCK, color='orange',lw=0.8, ls=':', label=f'd_dock={D_DOCK}m')
-    if events.get('dock_start'):
-        axes[3].axvline(events['dock_start'],   color='lime',  lw=1.2, ls='--', label='Dock start')
-    if events.get('dock_success'):
-        axes[3].axvline(events['dock_success'], color='green', lw=1.2, ls='--', label='Dock success')
-    axes[3].set_ylabel('||Δr|| (m)')
-    axes[3].set_xlabel('Time (s)')
-    axes[3].legend(fontsize=7)
-    axes[3].grid(True, alpha=0.3)
-
-    fig.suptitle('S027 3D — Docking Approach: 3-D Relative Position Convergence', fontsize=11)
+        ax.set_ylabel(lab); ax.grid(True, alpha=0.3)
+    ax = axes[3]
+    ax.semilogy(t, np.maximum(np.linalg.norm(dr, axis=1), 1e-4), color='purple', lw=1.8,
+                label='|Δr|')
+    ax.axhline(EPS_P, color='red', lw=0.9, ls=':', label=f'ε_p = {EPS_P} m')
+    ax.axhline(D_DOCK, color='orange', lw=0.9, ls='--', label=f'd_dock = {D_DOCK} m')
+    ax.set_ylabel('|Δr| (m)'); ax.grid(True, alpha=0.3, which='both')
+    ax.legend(fontsize=8, loc='upper right')
+    ax = axes[4]
+    ax.semilogy(t, np.maximum(np.linalg.norm(dv, axis=1), 1e-4), color='brown', lw=1.8,
+                label='|Δv|')
+    ax.axhline(EPS_V, color='red', lw=0.9, ls=':', label=f'ε_v = {EPS_V} m/s')
+    ax.set_ylabel('|Δv| (m/s)'); ax.set_xlabel('Time (s)  (after the dock the Receiver leaves)')
+    ax.grid(True, alpha=0.3, which='both'); ax.legend(fontsize=8, loc='upper right')
+    for ax in axes:
+        for key, col, lab in EV_STYLE[1:4]:
+            tv = _ev_time(ev, key)
+            if tv is not None:
+                ax.axvline(tv, color=col, ls=':', lw=1.3)
+    handles = [Line2D([0], [0], color=c, ls=':', lw=1.3, label=l) for _, c, l in EV_STYLE[1:4]]
+    axes[0].legend(handles=handles, fontsize=8, loc='upper right')
+    fig.suptitle('S027 3D — Altitude match and docking: relative position / velocity (Receiver − Tanker)',
+                 fontsize=11)
     plt.tight_layout()
     path = os.path.join(out_dir, 'docking_detail.png')
-    plt.savefig(path, dpi=150)
+    plt.savefig(path, dpi=140)
     plt.close()
     print(f'Saved: {path}')
 
 
 def save_animation(data, out_dir):
-    """3-D animated view of both drones with energy bars."""
-    times  = data['times']
-    pos_R  = data['pos_R']
-    pos_T  = data['pos_T']
-    E_R    = data['E_R']
-    E_T    = data['E_T']
-    events = data['events']
-    W_RVZ  = data['W_RVZ']
-
-    # Downsample for animation speed
-    step = 4
-    idx  = np.arange(0, len(times), step)
-    t_an = times[idx]
-    pR   = pos_R[idx]
-    pT   = pos_T[idx]
-    eR   = E_R[idx]
-    eT   = E_T[idx]
-
-    trail_len = 40  # frames
-
-    fig = plt.figure(figsize=(12, 7))
-    ax3d = fig.add_axes([0.0, 0.15, 0.75, 0.82], projection='3d')
-    ax_eR = fig.add_axes([0.78, 0.55, 0.06, 0.35])
-    ax_eT = fig.add_axes([0.88, 0.55, 0.06, 0.35])
-
-    # Static elements
-    ax3d.scatter(*BASE,   color='black',  s=80, marker='^', zorder=6)
-    ax3d.scatter(*TARGET[:3], color='purple', s=80, marker='s', zorder=6)
-    ax3d.scatter(*W_RVZ,  color='green',  s=150, marker='*', zorder=6)
-    ax3d.text(TARGET[0], TARGET[1], TARGET[2]+1, 'Target', fontsize=7, color='purple')
-    ax3d.text(W_RVZ[0],  W_RVZ[1],  W_RVZ[2]+1, 'RVZ',    fontsize=7, color='green')
-
-    # Altitude reference planes (faint)
-    xs = np.array([0, 65, 65, 0])
-    ys = np.array([-6, -6, 6, 6])
-    ax3d.plot_surface(
-        xs.reshape(2, 2), ys.reshape(2, 2),
-        np.full((2, 2), Z_R_CRUISE),
-        alpha=0.05, color='red'
-    )
-    ax3d.plot_surface(
-        xs.reshape(2, 2), ys.reshape(2, 2),
-        np.full((2, 2), Z_T_LOITER),
-        alpha=0.05, color='blue'
-    )
-
-    # Axis limits
-    all_x = np.concatenate([pR[:, 0], pT[:, 0]])
-    all_y = np.concatenate([pR[:, 1], pT[:, 1]])
-    all_z = np.concatenate([pR[:, 2], pT[:, 2]])
-    pad = 3.0
-    ax3d.set_xlim(all_x.min() - pad, all_x.max() + pad)
-    ax3d.set_ylim(all_y.min() - pad*3, all_y.max() + pad*3)
-    ax3d.set_zlim(max(0, all_z.min() - 1), all_z.max() + pad)
-
-    ax3d.set_xlabel('X (m)', fontsize=8)
-    ax3d.set_ylabel('Y (m)', fontsize=8)
+    times, pR, pT = data['times'], data['pos_R'], data['pos_T']
+    E_R, E_T, ev = data['E_R'], data['E_T'], data['events']
+    step = 6
+    idx = list(range(0, len(times), step))
+    if idx[-1] != len(times) - 1:
+        idx.append(len(times) - 1)
+    idx = np.array(idx)
+    trail = 40
+    fig = plt.figure(figsize=(11, 6.5))
+    ax3d = fig.add_axes([0.0, 0.05, 0.75, 0.9], projection='3d')
+    ax_eR = fig.add_axes([0.80, 0.55, 0.06, 0.33])
+    ax_eT = fig.add_axes([0.90, 0.55, 0.06, 0.33])
+    ax3d.scatter(*BASE, color='black', s=60, marker='^')
+    ax3d.scatter(*TARGET, color='purple', s=60, marker='s')
+    ax3d.scatter(*W_RVZ, color='green', s=120, marker='*')
+    th = np.linspace(0, 2 * np.pi, 100)
+    ax3d.plot(W_RVZ[0] + R_ORB * np.cos(th), W_RVZ[1] + R_ORB * np.sin(th),
+              np.full_like(th, Z_T_LOITER), 'b:', lw=0.8, alpha=0.6)
+    ax3d.set_xlim(-3, 63); ax3d.set_ylim(-12, 12); ax3d.set_zlim(0, 18)
+    ax3d.set_xlabel('X (m)', fontsize=8); ax3d.set_ylabel('Y (m)', fontsize=8)
     ax3d.set_zlabel('Z (m)', fontsize=8)
-
-    # Drone markers
-    dot_R, = ax3d.plot([], [], [], 'o', color='red',  ms=8, zorder=10)
-    dot_T, = ax3d.plot([], [], [], 'o', color='blue', ms=8, zorder=10)
-    trail_R, = ax3d.plot([], [], [], '-', color='red',  lw=1.2, alpha=0.6)
-    trail_T, = ax3d.plot([], [], [], '-', color='blue', lw=1.2, alpha=0.6)
-
-    title_text = ax3d.set_title('', fontsize=10)
-
-    # Energy bar axes
-    for ax_e, label, color in [(ax_eR, 'Recv\nEnergy', 'red'), (ax_eT, 'Tanker\nEnergy', 'blue')]:
-        ax_e.set_xlim(0, 1)
-        ax_e.set_ylim(0, max(E0_T, E0_R + E_XFER))
-        ax_e.set_xticks([])
-        ax_e.set_title(label, fontsize=8, color=color)
-        ax_e.set_ylabel('J', fontsize=7)
+    ax3d.view_init(elev=22, azim=-70)
+    dot_R, = ax3d.plot([], [], [], 'o', color='red', ms=7)
+    dot_T, = ax3d.plot([], [], [], 'o', color='blue', ms=7)
+    tr_R, = ax3d.plot([], [], [], '-', color='red', lw=1.2, alpha=0.6)
+    tr_T, = ax3d.plot([], [], [], '-', color='blue', lw=1.2, alpha=0.6)
+    title = ax3d.set_title('', fontsize=10)
+    for ax_e, lab, col in [(ax_eR, 'Receiver\nenergy', 'red'), (ax_eT, 'Tanker\nenergy', 'blue')]:
+        ax_e.set_xlim(0, 1); ax_e.set_ylim(0, E0_T); ax_e.set_xticks([])
+        ax_e.set_title(lab, fontsize=8, color=col); ax_e.set_ylabel('J', fontsize=7)
         ax_e.grid(True, axis='y', alpha=0.3)
-
-    bar_R = ax_eR.bar([0.5], [E0_R], width=0.6, color='red',  alpha=0.7)
+    bar_R = ax_eR.bar([0.5], [E0_R], width=0.6, color='red', alpha=0.7)
     bar_T = ax_eT.bar([0.5], [E0_T], width=0.6, color='blue', alpha=0.7)
+    ax3d.legend(handles=[Line2D([0], [0], color='red', lw=2, label='Receiver'),
+                         Line2D([0], [0], color='blue', lw=2, label='Tanker'),
+                         Line2D([0], [0], marker='*', color='green', ls='None', ms=10, label='RVZ'),
+                         Line2D([0], [0], marker='^', color='black', ls='None', ms=8, label='Base'),
+                         Line2D([0], [0], marker='s', color='purple', ls='None', ms=8,
+                                label='Delivery point')],
+                fontsize=8, loc='upper left')
 
-    # Find dock_success frame index
-    t_ds = events.get('dock_success')
-    frame_dock = np.searchsorted(t_an, t_ds) if t_ds else None
+    def update(f):
+        i = idx[f]
+        j0 = idx[max(0, f - trail)]
+        tr_R.set_data(pR[j0:i + 1, 0], pR[j0:i + 1, 1]); tr_R.set_3d_properties(pR[j0:i + 1, 2])
+        tr_T.set_data(pT[j0:i + 1, 0], pT[j0:i + 1, 1]); tr_T.set_3d_properties(pT[j0:i + 1, 2])
+        dot_R.set_data([pR[i, 0]], [pR[i, 1]]); dot_R.set_3d_properties([pR[i, 2]])
+        dot_T.set_data([pT[i, 0]], [pT[i, 1]]); dot_T.set_3d_properties([pT[i, 2]])
+        title.set_text(f't = {times[i]:5.1f} s   Receiver phase: {data["phase_R"][i]}')
+        bar_R[0].set_height(max(0.0, E_R[i])); bar_T[0].set_height(max(0.0, E_T[i]))
+        return dot_R, dot_T, tr_R, tr_T, title
 
-    def update(frame):
-        i = frame
-        # Trail
-        i0 = max(0, i - trail_len)
-        trail_R.set_data(pR[i0:i+1, 0], pR[i0:i+1, 1])
-        trail_R.set_3d_properties(pR[i0:i+1, 2])
-        trail_T.set_data(pT[i0:i+1, 0], pT[i0:i+1, 1])
-        trail_T.set_3d_properties(pT[i0:i+1, 2])
-        # Dots
-        dot_R.set_data([pR[i, 0]], [pR[i, 1]])
-        dot_R.set_3d_properties([pR[i, 2]])
-        dot_T.set_data([pT[i, 0]], [pT[i, 1]])
-        dot_T.set_3d_properties([pT[i, 2]])
-        # Title
-        phase_label = ''
-        if t_ds and t_an[i] >= t_ds:
-            phase_label = ' [REFUELED]'
-        title_text.set_text(f't = {t_an[i]:.1f} s{phase_label}')
-        # Energy bars
-        bar_R[0].set_height(max(0, eR[i]))
-        bar_T[0].set_height(max(0, eT[i]))
-        # Color the receiver bar after dock success
-        if frame_dock and i >= frame_dock:
-            bar_R[0].set_color('limegreen')
-        return dot_R, dot_T, trail_R, trail_T, title_text, bar_R[0], bar_T[0]
-
-    legend_elements = [
-        Line2D([0], [0], color='red',    lw=2, label='Receiver'),
-        Line2D([0], [0], color='blue',   lw=2, label='Tanker'),
-        Line2D([0], [0], marker='*', color='green',  ls='None', ms=10, label='Refuel point'),
-        Line2D([0], [0], marker='^', color='black',  ls='None', ms=8,  label='Base'),
-        Line2D([0], [0], marker='s', color='purple', ls='None', ms=8,  label='Target'),
-    ]
-    ax3d.legend(handles=legend_elements, fontsize=8, loc='upper left')
-
-    ani = animation.FuncAnimation(
-        fig, update, frames=len(t_an), interval=50, blit=False
-    )
+    ani = animation.FuncAnimation(fig, update, frames=len(idx), interval=60, blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
+    ani.save(path, writer='pillow', fps=15, dpi=80)
     plt.close()
     print(f'Saved: {path}')
 
-
-# ── Main ─────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     data = run_simulation()
     out_dir = OUTPUT_DIR
     os.makedirs(out_dir, exist_ok=True)
+    print()
     plot_trajectory_3d(data, out_dir)
     plot_altitude_profile(data, out_dir)
     plot_energy_levels(data, out_dir)
     plot_docking_detail(data, out_dir)
     save_animation(data, out_dir)
-    print("All outputs saved.")
+    print('All outputs saved.')
