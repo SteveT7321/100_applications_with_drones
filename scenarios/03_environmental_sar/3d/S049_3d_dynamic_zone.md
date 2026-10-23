@@ -57,10 +57,13 @@ hand-off**.
 
 **Objective**: Minimise total time to detect all survivors in the 3D volume while maintaining
 balanced volumetric load distribution. The **volumetric coverage fraction** $C_{vol}(t)$ must
-reach at least 90% within the mission time budget. (Not achievable with these parameters: one
-5 m layer of 400 × 400 m needs ≈ 10 000 m of sweep at a 16 m swath, all 12 layers ≈ 120 km, while
-4 drones × 6 m/s × 3600 s = 86.4 km of flight at most — an upper bound of 72 % before battery swaps
-and climbs. The implementation reaches ≈ 25 %.)
+reach at least 90% within the mission time budget. (Feasible in principle: with the scan rule
+below, a straight line between voxel rows marks 4 rows (a 20 m swath), i.e. 0.83 voxels/m at a layer
+centre, and at a layer boundary the inclusive $|p_z - s_z| \le r_z$ test reaches two layers, i.e.
+1.66 voxels/m; 4 drones × 6 m/s × 3600 s = 86.4 km of flight therefore allows up to 143 424 voxel
+scans for 76 800 voxels. An earlier note here gave 72 % as an upper bound from a 16 m swath and one
+layer at a time — that was wrong. In the implementation the greedy priority waypoint rule below
+reaches only ≈ 25 %, while a lawnmower flying at layer boundaries covers 100 %.)
 
 **Comparison strategies**:
 1. **Static 3D Voronoi** — initial 3D partition fixed; no reallocation.

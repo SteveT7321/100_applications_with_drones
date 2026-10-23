@@ -18,6 +18,10 @@ Strategies (same survivor placements for all):
   weighted        - same with SoC-weighted 3D distance |x - p_k|_3 / SoC_k
   weighted_column - added: SoC-weighted, horizontal distance only (the 2D
                     partition extruded through all layers)
+  lawn / lawn2    - added: static quarters swept by boustrophedon lines 20 m
+                    apart, bottom-up, one pass per layer centre (lawn) or per
+                    layer boundary (lawn2, two layers per pass); separates the
+                    waypoint-rule effect from the vertical schedule
 
 Usage:
     conda activate drones
@@ -70,11 +74,15 @@ PRIOR = [  # alpha, (mu_x, mu_y, mu_z), sigma_xy, sigma_z  (added: card gives on
     (0.1, (200.0, 80.0, 5.0), 30.0, 10.0),
 ]
 HOMES = np.array([[20.0, 20.0, 0.0], [380.0, 20.0, 0.0], [20.0, 380.0, 0.0], [380.0, 380.0, 0.0]])
-STRATEGIES = ['static', 'equal', 'weighted', 'weighted_column']
+STRATEGIES = ['static', 'equal', 'weighted', 'weighted_column', 'lawn', 'lawn2']
+DYNAMIC = ('equal', 'weighted', 'weighted_column')
+LINE_DY = 20.0        # added: lawnmower line spacing (4 voxel rows per line: 20 m swath)
 STYLE = {'static': ('--', '#888888', 'Static 3D Voronoi'),
          'equal': ('-.', '#2196F3', 'Dynamic equal-weight 3D'),
          'weighted': ('-', '#E63946', 'Dynamic battery-weighted 3D'),
-         'weighted_column': (':', '#2a9d8f', 'Dynamic battery-weighted, columnar (2D distance)')}
+         'weighted_column': (':', '#2a9d8f', 'Dynamic battery-weighted, columnar (2D distance)'),
+         'lawn': ('-', '#6a4c93', 'Static lawnmower, 1 layer per pass (added)'),
+         'lawn2': ('-', '#ff7f0e', 'Static lawnmower, 2 layers per pass (added)')}
 DRONE_COLORS = ['#E63946', '#2196F3', '#4CAF50', '#FF9800']
 
 XY = (np.arange(NXY) + 0.5) * DXY
@@ -125,6 +133,7 @@ class Drone:
         self.pack = 0.0; self.soc = 1.0; self.mode = 'search'; self.timer = 0.0
         self.target = None; self.n_swaps = 0; self.dxy = 0.0; self.dz = 0.0
         self.hist = [self.pos.copy()]; self.layer_hist = []
+        self.wps = None; self.wi = 0
 
     @property
     def available(self):
@@ -164,6 +173,32 @@ def choose_target(d, owner, scanned, P):
     return int(cand[np.argmin(dist)])
 
 
+def lawn_waypoints(k, two_layers):
+    """Boustrophedon over drone k's initial quarter, bottom-up passes: lines along x every
+    20 m (y = 10, 30, ... inside the quarter: 4 voxel rows per line). One pass per layer centre
+    (z = 2.5, 7.5, ...) or, with two_layers, one pass per layer boundary (z = 5, 15, ..., 55),
+    where the inclusive |dz| <= r_z rule scans both adjacent layers."""
+    xlo = 0.0 if HOMES[k, 0] < AREA / 2 else AREA / 2
+    ylo = 0.0 if HOMES[k, 1] < AREA / 2 else AREA / 2
+    zs = np.arange(5.0, 60.0, 10.0) if two_layers else ZC
+    ys = ylo + LINE_DY / 2 + np.arange(int(AREA / 2 / LINE_DY)) * LINE_DY
+    wps, fwd = [], True
+    for z in zs:
+        for y in ys:
+            xa, xb = (xlo, xlo + AREA / 2) if fwd else (xlo + AREA / 2, xlo)
+            wps += [(xa, y, z), (xb, y, z)]
+            fwd = not fwd
+    return np.array(wps)
+
+
+def sweep_rate(z, y=10.0, length=200.0):
+    """Voxels scanned per metre of a straight line at altitude z (the actual scan rule)."""
+    got = set()
+    for x in np.arange(0.0, length + 1e-9, 0.5):
+        got.update(scan_voxels(np.array([x, y, z])).tolist())
+    return len(got) / length
+
+
 def run_simulation(strategy='weighted', seed=SHOW_SEED, record=True, stop_when_found=True):
     P = build_prior()
     rng = np.random.default_rng(seed)
@@ -193,8 +228,12 @@ def run_simulation(strategy='weighted', seed=SHOW_SEED, record=True, stop_when_f
 
     owner = do_partition(drones, weighted=False)
     n_differs_column = []
+    lawn = strategy in ('lawn', 'lawn2')
     for d in drones:
-        d.target = choose_target(d, owner, scanned, P)
+        if lawn:
+            d.wps = lawn_waypoints(d.k, strategy == 'lawn2'); d.target = 0
+        else:
+            d.target = choose_target(d, owner, scanned, P)
     events_log, reparts, snaps = [], [], [(0.0, owner.copy(), scanned.copy())]
     t_log, cov_log, fair_log, frames = [], [], [], []
     t, step = 0.0, 0
@@ -205,13 +244,22 @@ def run_simulation(strategy='weighted', seed=SHOW_SEED, record=True, stop_when_f
         for d in drones:
             if d.mode == 'search':
                 if d.soc < SOC_THRESH:
+                    if lawn:   # resume the interrupted line where it was left
+                        d.wps = np.insert(d.wps, d.wi, d.pos.copy(), axis=0)
                     d.mode = 'return'; d.target = None; events.append(('battery', d.k))
+                elif lawn:
+                    if d.wi >= len(d.wps):
+                        d.mode = 'idle'; events.append(('zone_done', d.k))
                 elif d.target is None or scanned[d.target]:
                     d.target = choose_target(d, owner, scanned, P)
                     if d.target is None:
                         d.mode = 'idle'; events.append(('zone_done', d.k))
                 if d.mode == 'search':
-                    d.fly_to(VOX[d.target])
+                    if lawn:
+                        if d.fly_to(d.wps[d.wi]) <= 1e-9:
+                            d.wi += 1
+                    else:
+                        d.fly_to(VOX[d.target])
                     scanned[scan_voxels(d.pos)] = True
                     for i, s in enumerate(surv):
                         if (det_t[i] is None and np.linalg.norm(d.pos[:2] - s[:2]) <= R_S
@@ -233,12 +281,16 @@ def run_simulation(strategy='weighted', seed=SHOW_SEED, record=True, stop_when_f
                     events.append(('swap_done', d.k))
             assert d.pos[2] >= -1e-9, 'below ground'
             d.hist.append(d.pos.copy())
-            d.layer_hist.append(VOX_K[d.target] if (d.mode == 'search' and d.target is not None) else -1)
+            if lawn:
+                d.layer_hist.append(int(min(d.wps[min(d.wi, len(d.wps) - 1), 2] // DZ, NZ - 1))
+                                    if d.mode == 'search' else -1)
+            else:
+                d.layer_hist.append(VOX_K[d.target] if (d.mode == 'search' and d.target is not None) else -1)
         t += DT; step += 1
         owner[scanned] = -1
         for e in events:
             events_log.append((t, *e))
-        if strategy != 'static' and events and not scanned.all() and any(d.available for d in drones):
+        if strategy in DYNAMIC and events and not scanned.all() and any(d.available for d in drones):
             jb = fairness()
             avail = [d for d in drones if d.available]
             owner = do_partition(avail, weighted=(strategy != 'equal'))
@@ -393,12 +445,13 @@ def plot_layer_gantt(R):
 
 def plot_detection(R, mc):
     fig, axes = plt.subplots(1, 2, figsize=(14, 4.8))
-    x = np.arange(N_SURV); w = 0.2
+    x = np.arange(N_SURV); w = 0.8 / len(STRATEGIES)
     for i, s in enumerate(STRATEGIES):
         r = R[(s, SHOW_SEED)]; ls, c, lab = STYLE[s]
         dt = [v if v is not None else 0 for v in r['det_t']]
-        b = axes[0].bar(x + (i - 1.5) * w, dt, w, color=c, label=lab)
-        for xi, v in zip(x + (i - 1.5) * w, r['det_t']):
+        off = (i - (len(STRATEGIES) - 1) / 2) * w
+        b = axes[0].bar(x + off, dt, w, color=c, label=lab)
+        for xi, v in zip(x + off, r['det_t']):
             if v is None:
                 axes[0].text(xi, 30, 'not found', rotation=90, fontsize=6, ha='center')
     axes[0].set_xticks(x)
@@ -471,10 +524,16 @@ def report(R):
     pz = np.array([P[VOX_K == k].sum() for k in range(NZ)])
     print('\nPrior mass per layer (z = 2.5 ... 57.5 m): ' + ', '.join(f'{100*v:.1f}%' for v in pz))
     one_layer = AREA * AREA / (2 * R_S)
-    print(f'Card-arithmetic check: one layer needs ~{one_layer:.0f} m of sweep at a {2*R_S:.0f} m swath, '
-          f'all {NZ} layers {NZ*one_layer/1000:.0f} km; 4 drones x {SPEED} m/s x {T_MAX:.0f} s = '
-          f'{K_DRONES*SPEED*T_MAX/1000:.1f} km of horizontal flight at most -> C_vol <= '
-          f'{100*K_DRONES*SPEED*T_MAX/(NZ*one_layer):.0f}% (before swaps and climbs)')
+    cap = K_DRONES * SPEED * T_MAX
+    r1, r2 = sweep_rate(Z0), sweep_rate(Z0 + DZ / 2)
+    print(f'Coverage bound from the actual scan rule (straight 200 m line between voxel rows, y = 10 m): '
+          f'{r1:.2f} voxels/m at a layer centre (z = {Z0}), {r2:.2f} voxels/m at a layer boundary '
+          f'(z = {Z0 + DZ/2:.0f}: |dz| <= {R_Z} reaches two layers)')
+    print(f'  flight capacity 4 x {SPEED} m/s x {T_MAX:.0f} s = {cap/1000:.1f} km -> best-case voxels '
+          f'{cap*r1:.0f} (1 layer/pass, C_vol <= {min(100, 100*cap*r1/N_VOX):.0f}%) or {cap*r2:.0f} '
+          f'(2 layers/pass, C_vol <= {min(100, 100*cap*r2/N_VOX):.0f}%) of {N_VOX}; '
+          f'the card arithmetic with a 16 m swath, one layer at a time, gives {100*cap/(NZ*one_layer):.0f}% '
+          f'(swaps, transits and climbs not deducted in any of these)')
     mc = {s: {} for s in STRATEGIES}
     for s in STRATEGIES:
         rs = [R[(s, sd)] for sd in range(N_MC)]
@@ -509,7 +568,8 @@ def report(R):
         worse = np.sum((fa < fb) | ((fa == fb) & (ta > tb)))
         return f'{better}/{worse}/{N_MC - better - worse}'
     print('  per placement better/worse/tie (more survivors found, then earlier last detection):')
-    for a, b in (('equal', 'static'), ('weighted', 'static'), ('weighted', 'equal'),
+    for a, b in (('lawn', 'static'), ('lawn2', 'static'), ('lawn2', 'lawn'),
+                 ('equal', 'static'), ('weighted', 'static'), ('weighted', 'equal'),
                  ('weighted', 'weighted_column')):
         print(f'    {a} vs {b}: {h2h(a, b)}')
     dc = [x for sd in range(N_MC) for x in R[('weighted', sd)]['differs_column']]
@@ -525,7 +585,8 @@ def report(R):
         dts = ', '.join('-' if v is None else f'{v:.1f}' for v in r['det_t'])
         print(f'  {STYLE[s][2]:48s}: detections [{dts}] s | C_vol at {r["t_end"]:.0f} s {100*r["coverage"]:.1f}% | '
               f'reparts {len(r["reparts"])} | swaps {r["n_swaps"]} | d_xy {sum(r["dxy"]):.0f} m, d_z {sum(r["dz"]):.0f} m | '
-              f'mean J_vol {np.nanmean(r["fair_log"]):.3f}')
+              f'mean J_vol {np.nanmean(r["fair_log"]):.3f} | scanned voxel area per metre flown '
+              f'{r["coverage"] * N_VOX * DXY * DXY / sum(r["dxy"]):.2f} m')
         if s == 'weighted' and r['reparts']:
             rp = r['reparts'][0]
             print(f'    first re-partition t = {rp[0]:.1f} s: J {rp[1]:.3f} -> {rp[2]:.3f}, SoC {rp[3]}, z {rp[4]}')
