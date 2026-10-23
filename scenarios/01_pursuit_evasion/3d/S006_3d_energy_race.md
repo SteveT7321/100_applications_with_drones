@@ -1,6 +1,6 @@
 # S006 3D Upgrade — Energy Race
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Done
 **Based on**: [S006 original](../S006_energy_race.md)
 
 ---
