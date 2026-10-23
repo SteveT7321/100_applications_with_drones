@@ -283,7 +283,7 @@ def run_region_sweep():
 
 
 def run_angle_sweep():
-    """Intruder at the card's I1 range, approach elevation varied."""
+    """Intruder at RING_RANGE (4 m, where interception is marginal), approach elevation varied."""
     out = {s: {'miss': [], 'time': [], 'outcome': []} for s in STRATEGIES}
     t_opt = []
     for el in RING_ELEV_DEG:
