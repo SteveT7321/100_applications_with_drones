@@ -104,7 +104,7 @@ The card's vertical term $\Delta^{z}_{k,i} = |z_i - z_q| + |z_q - z_{i+1}| - |z_
 
 ## Simulation Results
 
-Console output of `python src/02_logistics_delivery/3d/s033_3d_online_order.py`. Two runs gave byte-identical console output and output files. Runtime: 251 s and 284 s for the two runs (600 full simulations + a 150-frame 3D GIF, with other simulations running at the same time).
+Console output of `python src/02_logistics_delivery/3d/s033_3d_online_order.py`. Two runs gave byte-identical console output and output files. Runtime: 251–353 s across four runs (600 full simulations + a 150-frame 3D GIF, with other simulations running at the same time).
 
 ### Seed 0 (the instance in the plots)
 
