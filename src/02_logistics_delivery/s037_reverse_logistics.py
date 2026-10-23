@@ -2,29 +2,32 @@
 S037 Reverse Logistics
 ======================
 A fleet of 5 drones collects returned parcels from 12 customer locations
-scattered across a 500×500 m arena and consolidates them at a central depot.
-The problem is a Capacitated Vehicle Routing Problem with Time Windows (CVRPTW),
-solved in three stages: (1) Clarke-Wright savings initialisation, (2) 2-opt
-intra-route improvement, and (3) Or-opt inter-route relocation. Each drone is
-constrained by payload capacity Q_max and battery range R_max. Arrival-time
-propagation enforces time windows, with soft penalties for lateness.
+scattered across a 500×500 m arena (customers in [50, 450]^2) and consolidates
+them at a central depot. The problem is a Capacitated Vehicle Routing Problem
+with Time Windows (CVRPTW), solved in three stages: (1) Clarke-Wright savings
+initialisation, (2) 2-opt intra-route improvement, and (3) Or-opt inter-route
+relocation of single customers. Capacity Q_max is a hard constraint; lateness
+and range excess (R_max) are soft penalties in the cost J.
+
+The showcase instance (seed 42) is plotted and animated; the same three-stage
+pipeline is also run on N_INSTANCES further seeded instances to check whether
+the per-stage improvements generalise.
 
 Usage:
     conda activate drones
     python src/02_logistics_delivery/s037_reverse_logistics.py
 """
 
-import sys, os
+import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import matplotlib.animation as animation
 import itertools
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ─────────────────────────────────────────────────────────────────
 N_DRONES    = 5          # fleet size
@@ -37,13 +40,14 @@ MU_RANGE    = 1000.0     # penalty per metre of range excess
 DT          = 0.1        # s   — simulation timestep
 ARENA_SIZE  = 500.0      # m
 DEPOT       = np.array([250.0, 250.0])
+SHOWCASE_SEED = 42       # instance plotted / animated
+N_INSTANCES   = 30       # extra instances (seeds 0 .. 29) for the generalisation study
+GIF_FRAMES    = 150
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '02_logistics_delivery', 's037_reverse_logistics',
 )
-
-RNG = np.random.default_rng(0)   # fixed seed for reproducibility
 
 
 # ── Data classes ───────────────────────────────────────────────────────────────
@@ -112,28 +116,36 @@ def clarke_wright(customers: List[Customer]) -> List[List[int]]:
     for (i, j) in pairs:
         if len(routes) <= N_DRONES:
             break
-        ri = next((r for r in routes if r[-1] == i), None)
-        rj = next((r for r in routes if r[0] == j), None)
-        if ri is None or rj is None or ri is rj:
-            continue
-        merged = ri + rj
-        if payload(merged, customers) <= Q_MAX:
-            routes.remove(ri)
-            routes.remove(rj)
-            routes.append(merged)
+        # i at the tail of one route and j at the head of another, or vice versa
+        for a, b in ((i, j), (j, i)):
+            ra = next((r for r in routes if r[-1] == a), None)
+            rb = next((r for r in routes if r[0] == b), None)
+            if ra is None or rb is None or ra is rb:
+                continue
+            merged = ra + rb
+            if payload(merged, customers) <= Q_MAX:
+                routes.remove(ra)
+                routes.remove(rb)
+                routes.append(merged)
+                break
 
+    if len(routes) > N_DRONES:
+        # never drop customers silently
+        raise RuntimeError(f'Clarke-Wright left {len(routes)} routes for {N_DRONES} drones')
     while len(routes) < N_DRONES:
         routes.append([])
-    return routes[:N_DRONES]
+    return routes
 
 
 # ── 2-opt intra-route improvement ─────────────────────────────────────────────
 def two_opt(route: List[int], customers: List[Customer]) -> List[int]:
+    """Reverse every sub-sequence best[j..k] (0 <= j < k < n), including ones
+    that start at the first stop, and keep improving reversals."""
     best = route[:]
     improved = True
     while improved:
         improved = False
-        for j in range(1, len(best) - 1):
+        for j in range(0, len(best) - 1):
             for k in range(j + 1, len(best)):
                 candidate = best[:j] + best[j:k+1][::-1] + best[k+1:]
                 if route_cost(candidate, customers) < route_cost(best, customers) - 1e-6:
@@ -176,10 +188,9 @@ def or_opt_relocate(routes: List[List[int]], customers: List[Customer]) -> List[
 
 
 # ── Simulation ─────────────────────────────────────────────────────────────────
-def run_simulation():
-    # Generate customers with fixed seed
-    rng = np.random.default_rng(42)
-    customers = [
+def make_instance(seed: int) -> List[Customer]:
+    rng = np.random.default_rng(seed)
+    return [
         Customer(
             id=i,
             pos=rng.uniform(50, 450, size=2),
@@ -190,16 +201,32 @@ def run_simulation():
         for i in range(N_CUSTOMERS)
     ]
 
-    # Phase 1: Clarke-Wright initialisation
-    routes_cw = clarke_wright(customers)
 
-    # Phase 2: 2-opt intra-route improvement
-    routes_2opt = [two_opt(r, customers) for r in routes_cw]
+def solve(customers):
+    routes_cw = clarke_wright(customers)                          # Phase 1
+    routes_2opt = [two_opt(r, customers) for r in routes_cw]      # Phase 2
+    routes_final = or_opt_relocate(routes_2opt, customers)        # Phase 3
+    served = sorted(c for r in routes_final for c in r)
+    assert served == list(range(len(customers))), 'customer lost or duplicated'
+    assert all(payload(r, customers) <= Q_MAX + 1e-9 for r in routes_final)
+    return routes_cw, routes_2opt, routes_final
 
-    # Phase 3: Or-opt inter-route relocation
-    routes_final = or_opt_relocate(routes_2opt, customers)
 
-    return customers, routes_cw, routes_2opt, routes_final
+def run_simulation():
+    customers = make_instance(SHOWCASE_SEED)
+    routes_cw, routes_2opt, routes_final = solve(customers)
+
+    # Generalisation study over further seeded instances
+    study = []
+    for seed in range(N_INSTANCES):
+        cs = make_instance(seed)
+        r_cw, r_2o, r_fin = solve(cs)
+        study.append(dict(seed=seed,
+                          cw=compute_stage_metrics(r_cw, cs),
+                          two=compute_stage_metrics(r_2o, cs),
+                          fin=compute_stage_metrics(r_fin, cs)))
+
+    return customers, routes_cw, routes_2opt, routes_final, study
 
 
 def compute_stage_metrics(routes, customers):
@@ -218,21 +245,26 @@ def build_trajectories(routes, customers):
         if not route:
             trajs.append(np.array([[DEPOT[0], DEPOT[1]]]))
             continue
-        waypoints = [DEPOT] + [customers[i].pos for i in route] + [DEPOT]
-        # arrival times at each waypoint (0-indexed, first = depot at t=0)
-        t_wp = [0.0]
-        arrivals = compute_arrivals(route, customers)
-        t_wp.extend(arrivals)
-        # return-to-depot time
-        last_pos = customers[route[-1]].pos
-        t_return = arrivals[-1] + np.linalg.norm(DEPOT - last_pos) / V_CRUISE
-        t_wp.append(t_return)
+        # knots: (time, position); a drone that arrives before e_i hovers there
+        knots_t, knots_p = [0.0], [DEPOT]
+        t, prev = 0.0, DEPOT
+        for cid in route:
+            c = customers[cid]
+            t += np.linalg.norm(c.pos - prev) / V_CRUISE
+            knots_t.append(t)
+            knots_p.append(c.pos)
+            if t < c.e:                      # wait for the window to open
+                t = c.e
+                knots_t.append(t)
+                knots_p.append(c.pos)
+            prev = c.pos
+        t += np.linalg.norm(DEPOT - prev) / V_CRUISE
+        knots_t.append(t)
+        knots_p.append(DEPOT)
 
-        T_total = t_return
-        n_steps = max(2, int(T_total / DT) + 1)
-        ts = np.linspace(0, T_total, n_steps)
-        pos_x = np.interp(ts, t_wp, [w[0] for w in waypoints])
-        pos_y = np.interp(ts, t_wp, [w[1] for w in waypoints])
+        ts = np.arange(0.0, t + DT / 2, DT)     # sample k is time k*DT
+        pos_x = np.interp(ts, knots_t, [p[0] for p in knots_p])
+        pos_y = np.interp(ts, knots_t, [p[1] for p in knots_p])
         trajs.append(np.column_stack([pos_x, pos_y]))
     return trajs
 
@@ -249,9 +281,8 @@ def plot_route_map(customers, routes_final, out_dir):
 
     # Time-window tightness heatmap (background circles)
     for c in customers:
-        tightness = (c.l - c.e)  # wider = more relaxed
-        # normalise 0-1 (90s tight … 180s loose)
-        norm = max(0, min(1, (tightness - 30) / 150))
+        width = (c.l - c.e)  # window width, 30 s (tight) … 180 s (wide)
+        norm = max(0, min(1, (width - 30) / 150))
         color = plt.cm.RdYlGn(norm)
         ax.add_patch(plt.Circle(c.pos, 18, color=color, alpha=0.25, zorder=1))
 
@@ -301,29 +332,41 @@ def plot_route_map(customers, routes_final, out_dir):
     print(f'Saved: {path}')
 
 
-def plot_cost_comparison(customers, routes_cw, routes_2opt, routes_final, out_dir):
+def plot_cost_comparison(customers, routes_cw, routes_2opt, routes_final, study, out_dir):
+    """Left: stage metrics on the showcase instance. Right: mean over the study."""
     stages = ['Clarke-Wright', '+ 2-opt', '+ Or-opt']
-    metrics = [
+    show = [
         compute_stage_metrics(routes_cw, customers),
         compute_stage_metrics(routes_2opt, customers),
         compute_stage_metrics(routes_final, customers),
     ]
-    dists  = [m[0] for m in metrics]
-    lates  = [m[1] * LAMBDA_TW for m in metrics]  # convert to cost units
-    costs  = [m[2] for m in metrics]
+    mean = [tuple(np.mean([s[key][i] for s in study]) for i in range(3))
+            for key in ('cw', 'two', 'fin')]
 
     x = np.arange(3)
     w = 0.25
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.bar(x - w, dists,  w, label='Distance (m)',     color='steelblue')
-    ax.bar(x,     lates,  w, label='λ·Lateness (cost)', color='tomato')
-    ax.bar(x + w, costs,  w, label='Total cost J',      color='seagreen')
-    ax.set_xticks(x)
-    ax.set_xticklabels(stages)
-    ax.set_title('Cost Comparison Across Optimisation Stages')
-    ax.set_ylabel('Cost')
-    ax.legend()
-    ax.grid(axis='y', alpha=0.3)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    for ax, metrics, title in (
+            (axes[0], show, f'Showcase instance (seed {SHOWCASE_SEED})'),
+            (axes[1], mean, f'Mean over {len(study)} instances (seeds 0..{len(study)-1})')):
+        dists = [m[0] for m in metrics]
+        lates = [m[1] * LAMBDA_TW for m in metrics]  # convert to cost units
+        costs = [m[2] for m in metrics]
+        ax.bar(x - w, dists,  w, label='Distance (m)',     color='steelblue')
+        ax.bar(x,     lates,  w, label='λ·Lateness (cost)', color='tomato')
+        ax.bar(x + w, costs,  w, label='Total cost J',      color='seagreen')
+        for xs, vals in ((x - w, dists), (x, lates), (x + w, costs)):
+            for xi, v in zip(xs, vals):
+                ax.text(xi, v + 15, f'{v:.0f}', ha='center', fontsize=8)
+        ax.set_xticks(x)
+        ax.set_xticklabels(stages)
+        ax.set_ylim(0, 2500)
+        ax.set_title(title)
+        ax.set_ylabel('Cost')
+        ax.legend(loc='upper center', ncol=3, fontsize=8)
+        ax.grid(axis='y', alpha=0.3)
+    fig.suptitle('Cost Across Optimisation Stages', fontweight='bold')
+    plt.tight_layout()
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'cost_comparison.png')
@@ -341,18 +384,46 @@ def plot_payload_trace(customers, routes_final, out_dir):
         bottoms = np.cumsum([0] + weights[:-1])
         for j, (w, b) in enumerate(zip(weights, bottoms)):
             ax.bar(k, w, bottom=b, color=DRONE_COLORS[k],
-                   edgecolor='black', linewidth=0.5,
-                   label=f'D{k+1} stop {j+1}' if j == 0 else '')
+                   edgecolor='black', linewidth=0.5)
+            ax.text(k, b + w / 2, f'C{route[j]}', ha='center', va='center',
+                    fontsize=7, color='white')
+        ax.text(k, sum(weights) + 0.05, f'{sum(weights):.2f} kg', ha='center',
+                fontsize=8)
     ax.axhline(Q_MAX, color='red', ls='--', lw=1.5, label=f'Q_max = {Q_MAX} kg')
     ax.set_xticks(range(N_DRONES))
     ax.set_xticklabels([f'Drone {k+1}' for k in range(N_DRONES)])
+    ax.set_ylim(0, Q_MAX + 0.5)
     ax.set_ylabel('Cumulative payload (kg)')
-    ax.set_title('Payload Trace per Drone')
-    ax.legend(fontsize=7)
+    ax.set_title('Payload Trace per Drone (segments = pick-ups in route order)')
+    ax.legend(fontsize=8)
     ax.grid(axis='y', alpha=0.3)
 
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'payload_trace.png')
+    plt.savefig(path, dpi=150)
+    plt.close()
+    print(f'Saved: {path}')
+
+
+def plot_instance_study(study, out_dir):
+    """Per-instance cost reduction contributed by 2-opt and by Or-opt."""
+    seeds = [s['seed'] for s in study]
+    d2 = [(s['cw'][2] - s['two'][2]) / s['cw'][2] * 100 for s in study]
+    d3 = [(s['two'][2] - s['fin'][2]) / s['cw'][2] * 100 for s in study]
+    x = np.arange(len(seeds))
+    fig, ax = plt.subplots(figsize=(11, 4.5))
+    ax.bar(x - 0.2, d2, 0.4, color='#4363d8', label='2-opt step (CW → 2-opt)')
+    ax.bar(x + 0.2, d3, 0.4, color='#f58231', label='Or-opt step (2-opt → Or-opt)')
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(s) for s in seeds], fontsize=7)
+    ax.set_xlabel('Instance seed')
+    ax.set_ylabel('Reduction of J (% of Clarke-Wright J)')
+    ax.set_title(f'Contribution of each improvement step over {len(seeds)} seeded instances')
+    ax.legend(fontsize=9)
+    ax.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, 'instance_study.png')
     plt.savefig(path, dpi=150)
     plt.close()
     print(f'Saved: {path}')
@@ -397,24 +468,25 @@ def plot_time_windows(customers, routes_final, out_dir):
     print(f'Saved: {path}')
 
 
-def save_animation(customers, routes_final, out_dir):
-    import matplotlib.animation as animation
 
+
+def save_animation(customers, routes_final, out_dir):
     trajs = build_trajectories(routes_final, customers)
     max_len = max(len(t) for t in trajs)
-    # pad shorter trajectories by repeating last point
+    # pad shorter trajectories by repeating the last point (drone parked at depot)
     trajs_padded = [
         np.vstack([t, np.tile(t[-1], (max_len - len(t), 1))]) if len(t) < max_len else t
         for t in trajs
     ]
+    arrivals_all = [compute_arrivals(r, customers) if r else [] for r in routes_final]
+    steps = np.unique(np.linspace(0, max_len - 1, GIF_FRAMES).round().astype(int))
 
     fig, ax = plt.subplots(figsize=(7, 7))
     ax.set_xlim(0, ARENA_SIZE)
     ax.set_ylim(0, ARENA_SIZE)
     ax.set_aspect('equal')
-    ax.set_title('S037 Reverse Logistics — Fleet Animation')
+    title = ax.set_title('')
 
-    # Draw depot and customers
     ax.plot(*DEPOT, 's', color='black', ms=12, zorder=5)
     cust_sc = ax.scatter(
         [c.pos[0] for c in customers],
@@ -422,115 +494,83 @@ def save_animation(customers, routes_final, out_dir):
         s=[50 + c.weight * 60 for c in customers],
         c='lightblue', edgecolors='grey', linewidths=0.8, zorder=3
     )
-
-    # Drone markers
-    drone_dots = [
-        ax.plot([], [], 'o', color=DRONE_COLORS[k], ms=10, zorder=6)[0]
-        for k in range(N_DRONES)
-    ]
-    # Drone trails
-    drone_trails = [
-        ax.plot([], [], '-', color=DRONE_COLORS[k], lw=1.2, alpha=0.5)[0]
-        for k in range(N_DRONES)
-    ]
-    # Payload text per drone
-    payload_texts = [
-        ax.text(0, 0, '', fontsize=7, color=DRONE_COLORS[k],
-                ha='center', va='bottom', zorder=7)
-        for k in range(N_DRONES)
-    ]
-
-    # Pre-compute payload at each step
-    def payload_at_step(k, step, route, traj):
-        if not route:
-            return 0.0
-        arrivals = compute_arrivals(route, customers)
-        t_now = step * DT
-        collected = sum(
-            customers[route[j]].weight
-            for j in range(len(route))
-            if j < len(arrivals) and t_now >= arrivals[j]
-        )
-        return collected
-
-    step_size = max(1, max_len // 200)  # limit to ~200 frames
-
-    def init():
-        for d in drone_dots:
-            d.set_data([], [])
-        for t in drone_trails:
-            t.set_data([], [])
-        return drone_dots + drone_trails + payload_texts
+    drone_dots = [ax.plot([], [], 'o', color=DRONE_COLORS[k], ms=10, zorder=6)[0]
+                  for k in range(N_DRONES)]
+    drone_trails = [ax.plot([], [], '-', color=DRONE_COLORS[k], lw=1.2, alpha=0.5)[0]
+                    for k in range(N_DRONES)]
+    payload_texts = [ax.text(0, 0, '', fontsize=7, color=DRONE_COLORS[k],
+                             ha='center', va='bottom', zorder=7)
+                     for k in range(N_DRONES)]
 
     def animate(frame):
-        step = frame * step_size
+        step = steps[frame]
+        t_now = step * DT
         cust_colors = ['lightblue'] * N_CUSTOMERS
         for k, (route, traj) in enumerate(zip(routes_final, trajs_padded)):
-            pos = traj[min(step, len(traj)-1)]
-            trail_start = max(0, step - 40)
-            trail = traj[trail_start:step+1]
+            pos = traj[step]
+            trail = traj[max(0, step - 300):step + 1]
             drone_dots[k].set_data([pos[0]], [pos[1]])
-            if len(trail) > 1:
-                drone_trails[k].set_data(trail[:, 0], trail[:, 1])
-            # payload counter
-            pay = payload_at_step(k, step, route, traj)
+            drone_trails[k].set_data(trail[:, 0], trail[:, 1])
+            pay = sum(customers[cid].weight
+                      for cid, ta in zip(route, arrivals_all[k]) if t_now >= ta)
             payload_texts[k].set_position((pos[0], pos[1] + 12))
-            payload_texts[k].set_text(f'{pay:.1f}kg')
-            # flash picked-up customers
-            if route:
-                arrivals = compute_arrivals(route, customers)
-                t_now = step * DT
-                for j, cid in enumerate(route):
-                    if j < len(arrivals) and abs(t_now - arrivals[j]) < DT * 2:
-                        cust_colors[cid] = DRONE_COLORS[k]
-        cust_sc.set_facecolors(
-            [cust_colors[i] for i in range(N_CUSTOMERS)]
-        )
-        return drone_dots + drone_trails + payload_texts + [cust_sc]
+            payload_texts[k].set_text(f'{pay:.1f}kg' if route else '')
+            # picked-up customers take the colour of their drone
+            for cid, ta in zip(route, arrivals_all[k]):
+                if t_now >= ta:
+                    cust_colors[cid] = DRONE_COLORS[k]
+        cust_sc.set_facecolors(cust_colors)
+        title.set_text(f'S037 Reverse Logistics — t = {t_now:.0f} s')
+        return drone_dots + drone_trails + payload_texts + [cust_sc, title]
 
-    n_frames = max_len // step_size + 1
-    ani = animation.FuncAnimation(
-        fig, animate, frames=n_frames, init_func=init,
-        interval=50, blit=True
-    )
-
+    ani = animation.FuncAnimation(fig, animate, frames=len(steps), blit=False)
     os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
+    ani.save(path, writer='pillow', fps=20, dpi=90)
     plt.close()
-    print(f'Saved: {path}')
+    print(f'Saved: {path} ({len(steps)} frames)')
 
 
 # ── Main ────────────────────────────────────────────────────────────────────────
 if __name__ == '__main__':
-    customers, routes_cw, routes_2opt, routes_final = run_simulation()
+    customers, routes_cw, routes_2opt, routes_final, study = run_simulation()
 
-    # ── Print key metrics ───────────────────────────────────────────────────────
     m_cw    = compute_stage_metrics(routes_cw, customers)
     m_2opt  = compute_stage_metrics(routes_2opt, customers)
     m_final = compute_stage_metrics(routes_final, customers)
 
-    print('\n=== S037 Reverse Logistics ===')
+    print(f'\n=== S037 Reverse Logistics — showcase instance (seed {SHOWCASE_SEED}) ===')
+    print(f'Total parcel weight: {sum(c.weight for c in customers):.2f} kg '
+          f'(fleet capacity {N_DRONES * Q_MAX:.1f} kg)')
     print(f'{"Stage":<22} {"Distance(m)":>12} {"Lateness(s)":>12} {"Total Cost":>12}')
     print('-' * 62)
     for label, m in [('Clarke-Wright', m_cw), ('After 2-opt', m_2opt), ('After Or-opt', m_final)]:
         print(f'{label:<22} {m[0]:>12.1f} {m[1]:>12.1f} {m[2]:>12.1f}')
 
+    for label, rs in [('Clarke-Wright', routes_cw), ('After 2-opt', routes_2opt),
+                      ('After Or-opt', routes_final)]:
+        print(f'  {label:<14} routes: {rs}')
+
     print('\n=== Fleet Utilisation (final routes) ===')
-    print(f'{"Drone":<8} {"Stops":>6} {"Dist(m)":>10} {"Payload(kg)":>12} {"Lateness(s)":>12}')
-    print('-' * 52)
+    print(f'{"Drone":<8} {"Stops":>6} {"Dist(m)":>10} {"Payload(kg)":>12} '
+          f'{"Lateness(s)":>12} {"Return(s)":>10}')
+    print('-' * 62)
     for k, route in enumerate(routes_final):
         d = route_length(route, customers)
         p = payload(route, customers)
         v = total_violation(route, customers)
-        print(f'  D{k+1:<5} {len(route):>6} {d:>10.1f} {p:>12.2f} {v:>12.1f}')
+        if route:
+            arr = compute_arrivals(route, customers)
+            t_ret = arr[-1] + np.linalg.norm(DEPOT - customers[route[-1]].pos) / V_CRUISE
+        else:
+            t_ret = 0.0
+        print(f'  D{k+1:<5} {len(route):>6} {d:>10.1f} {p:>12.2f} {v:>12.1f} {t_ret:>10.1f}')
 
-    dist_imp = (m_cw[0] - m_final[0]) / m_cw[0] * 100 if m_cw[0] > 0 else 0
-    cost_imp = (m_cw[2] - m_final[2]) / m_cw[2] * 100 if m_cw[2] > 0 else 0
+    dist_imp = (m_cw[0] - m_final[0]) / m_cw[0] * 100
+    cost_imp = (m_cw[2] - m_final[2]) / m_cw[2] * 100
     print(f'\nDistance improvement vs CW: {dist_imp:.1f}%')
     print(f'Total cost improvement vs CW: {cost_imp:.1f}%')
 
-    # Count on-time vs late
     on_time = late_count = 0
     for route in routes_final:
         arrivals = compute_arrivals(route, customers)
@@ -541,9 +581,33 @@ if __name__ == '__main__':
                 late_count += 1
     print(f'Customers on-time: {on_time}/{N_CUSTOMERS}, late: {late_count}/{N_CUSTOMERS}')
 
+    # ── Generalisation study ────────────────────────────────────────────────
+    J_cw  = np.array([s['cw'][2] for s in study])
+    J_2o  = np.array([s['two'][2] for s in study])
+    J_fin = np.array([s['fin'][2] for s in study])
+    late_cw = np.array([s['cw'][1] for s in study])
+    late_fin = np.array([s['fin'][1] for s in study])
+    red2 = (J_cw - J_2o) / J_cw * 100
+    red3 = (J_2o - J_fin) / J_cw * 100
+    print(f'\n=== Generalisation study: {N_INSTANCES} instances (seeds 0..{N_INSTANCES-1}) ===')
+    print('seed   J_CW    J_2opt  J_Or-opt  2opt%  Or-opt%')
+    for s, a, b, c, p2, p3 in zip(range(N_INSTANCES), J_cw, J_2o, J_fin, red2, red3):
+        print(f'{s:>4} {a:>7.1f} {b:>8.1f} {c:>8.1f} {p2:>6.2f} {p3:>7.2f}')
+    print(f'Mean J  CW / 2-opt / Or-opt          : {J_cw.mean():.1f} / {J_2o.mean():.1f} / {J_fin.mean():.1f}')
+    print(f'2-opt step: improves J in {int((red2 > 1e-6).sum())}/{N_INSTANCES} instances, '
+          f'mean reduction {red2.mean():.2f}% of CW J (max {red2.max():.2f}%)')
+    print(f'Or-opt step: improves J in {int((red3 > 1e-6).sum())}/{N_INSTANCES} instances, '
+          f'mean reduction {red3.mean():.2f}% of CW J (max {red3.max():.2f}%)')
+    print(f'Or-opt step larger than 2-opt step in {int((red3 > red2 + 1e-9).sum())}/{N_INSTANCES} instances, '
+          f'2-opt larger in {int((red2 > red3 + 1e-9).sum())}, tie in '
+          f'{int((np.abs(red2 - red3) <= 1e-9).sum())}')
+    print(f'Instances with lateness > 0: CW {int((late_cw > 1e-6).sum())}/{N_INSTANCES}, '
+          f'final {int((late_fin > 1e-6).sum())}/{N_INSTANCES}')
+
     out_dir = os.path.normpath(OUTPUT_DIR)
     plot_route_map(customers, routes_final, out_dir)
-    plot_cost_comparison(customers, routes_cw, routes_2opt, routes_final, out_dir)
+    plot_cost_comparison(customers, routes_cw, routes_2opt, routes_final, study, out_dir)
     plot_payload_trace(customers, routes_final, out_dir)
     plot_time_windows(customers, routes_final, out_dir)
+    plot_instance_study(study, out_dir)
     save_animation(customers, routes_final, out_dir)

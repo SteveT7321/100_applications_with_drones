@@ -317,7 +317,7 @@ def run_simulation():
 | Parcel weight $q_i$ | 0.3 – 1.2 kg (uniform) |
 | Earliest pick-up $e_i$ | 0 – 60 s (uniform) |
 | Latest pick-up $l_i$ | 90 – 180 s (uniform) |
-| Time-window penalty $\lambda$ | 50 s/m |
+| Time-window penalty $\lambda$ | 50 (cost per s of lateness; $J$ is in metres, so m/s) |
 | Range violation penalty $\mu$ | 1 000 |
 | Simulation timestep $\Delta t$ | 0.1 s |
 
@@ -348,5 +348,5 @@ def run_simulation():
 ## Related Scenarios
 
 - Prerequisites: [S021](S021_point_delivery.md), [S029](S029_urban_logistics_scheduling.md), [S033](S033_online_order_insertion.md)
-- Follow-ups: [S036](S036_last_mile_relay.md) (relay chain for long-haul returns), [S038](S038_disaster_relief.md) (multi-objective routing under urgency)
+- Follow-ups: [S036](S036_last_mile_relay.md) (relay chain for long-haul returns), [S038](S038_disaster_relief_drop.md) (multi-objective routing under urgency)
 - Algorithm reference: Clarke-Wright (1964) savings algorithm; CVRPTW standard benchmark (Solomon instances)
