@@ -5,7 +5,7 @@ Three stationary sensor drones measure bearing (angle-only) to a moving
 target.  Zone-based handoff selects the two highest-SNR sensors; two-line
 triangulation estimates the target position.  Large errors occur when the
 target crosses the baseline of the two sensors in use (bearing lines nearly
-collinear), about 1.05-1.5 s after each handoff.
+collinear), about 1.05-1.5 s before or after a handoff.
 
 Usage:
     conda activate drones
@@ -298,8 +298,11 @@ if __name__ == '__main__':
         ranked = np.argsort([snr(SENSOR_POS[i], true_pos[k]) for i in range(3)])[::-1][:2]
         b = [np.arctan2(*(true_pos[k] - SENSOR_POS[i, :2])[::-1]) for i in ranked]
         angles.append(np.degrees(abs((b[0] - b[1] + np.pi) % (2 * np.pi) - np.pi)))
-        gaps.append(np.min(np.abs(np.array(handoff_times) - times[k])))
-    print(f'Steps with error > 2 m: {len(big)}; time to nearest handoff {min(gaps):.2f}-{max(gaps):.2f} s; '
+        d = times[k] - np.array(handoff_times)
+        gaps.append(d[np.argmin(np.abs(d))])   # signed: < 0 before the handoff
+    gaps = np.array(gaps)
+    print(f'Steps with error > 2 m: {len(big)} ({np.sum(gaps < 0)} before, {np.sum(gaps > 0)} after the nearest handoff); '
+          f'offset {gaps.min():+.2f} to {gaps.max():+.2f} s, |offset| >= {np.abs(gaps).min():.2f} s; '
           f'bearing crossing angle {min(angles):.1f}-{max(angles):.1f} deg')
     print(f'Steps with two sensors above the {HANDOFF_THRESH} threshold: '
           f'{int(np.sum(active_counts >= 2))} of {len(active_counts)}')

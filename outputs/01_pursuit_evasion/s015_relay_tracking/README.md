@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: Three stationary sensor drones arranged in an equilateral triangle measure bearing-only (angle) observations of a moving target that orbits through the sensor zone. A zone-based handoff selects the two highest-SNR sensors; two-line triangulation estimates the target position. Estimation error spikes at handoff transitions when the two bearing lines become nearly parallel.
+**Setup**: Three stationary sensor drones arranged in an equilateral triangle measure bearing-only (angle) observations of a moving target that orbits through the sensor zone. A zone-based handoff selects the two highest-SNR sensors; two-line triangulation estimates the target position. Estimation error spikes when the target crosses the baseline between the two sensors in use, where their bearing lines become nearly collinear (this happens between handoffs, not at them).
 
 **Key question**: How does relay tracking manage continuous coverage across sensor zones, and where does accuracy degrade?
 
@@ -48,7 +48,7 @@ $$x(t) = r\cos(\omega t),\quad y(t) = r\sin(\omega t),\quad \omega = V_T / r \ap
 | Target speed | 2.0 m/s |
 | Orbit radius | 3.0 m |
 | Orbit period | ≈ 9.4 s |
-| Handoff SNR threshold | 0.4 |
+| Active-sensor SNR threshold (only counts sensors; handoff uses the highest SNR) | 0.4 |
 | Simulation time | 20 s |
 | dt | 0.05 s |
 
@@ -82,8 +82,17 @@ python src/01_pursuit_evasion/s015_relay_tracking.py
 **Key Findings**:
 - The target completes ~2.1 circular orbits. A handoff happens every ~3.15 s as it passes between adjacent sensor zones, which matches the 120° spacing of the equilateral sensor triangle.
 - Error is below 0.5 m for only about half of the run (51.2 % of steps, median 0.48 m). Error depends on how well the two bearings cross, not on whether the target is between handoffs.
-- The large errors (> 2 m, up to 65 m) do **not** happen at the handoffs. All 38 such steps are 1.05–1.5 s after the nearest handoff, when the target crosses the straight line (baseline) between the two sensors in use. There the two bearing lines point in nearly opposite directions (crossing angle 159.5–179.8°), so they are nearly collinear and the 2×2 triangulation system is close to singular. The orbit (r = 3 m) crosses each side of the sensor triangle (2 m from the centre) twice per lap, which produces these spikes.
-- The best sensor's SNR never drops below 0.5497 on the orbit, so there are no blind spots. The second sensor, however, is often weaker: only 179 of 400 steps have two sensors above the 0.4 handoff threshold.
+- The large errors (> 2 m, up to 65 m) do **not** happen at the handoffs. All 38 such steps are 1.05–1.5 s away from the nearest handoff (19 before, 19 after; offsets −1.50 to +1.35 s), when the target crosses the straight line (baseline) between the two sensors in use. There the two bearing lines point in nearly opposite directions (crossing angle 159.5–179.8°), so they are nearly collinear and the 2×2 triangulation system is close to singular. The orbit (r = 3 m) crosses each side of the sensor triangle (2 m from the centre) twice per lap, which produces these spikes.
+- The best sensor's SNR never drops below 0.5497 on the orbit, so there are no blind spots. The second sensor, however, is often weaker: only 179 of 400 steps have two sensors above the 0.4 SNR threshold.
+
+### Deviations from the scenario card
+
+| Card | Implementation | Reason |
+|------|----------------|--------|
+| Target on a sinusoidal trajectory across the arena | Circular orbit, r = 3 m, through the sensor triangle | Keeps the target inside all three zones, so handoffs repeat every ~3.15 s. |
+| Handoff when SNR_i < τ and SNR_j > τ | Primary sensor = highest SNR (argmax); τ = 0.4 is only used to count active sensors | The argmax rule always has a primary sensor; with the threshold rule the target is often covered by just one sensor above τ (221 of 400 steps). |
+| Singular-system guard: det < 1e-6 | det < 1e-4 | Rejects slightly more near-parallel bearing pairs; it never triggers in this run (no step returned no estimate). |
+| Objective / expected output: error spikes at handoff moments | Spikes occur at baseline crossings, 1.05–1.5 s from handoffs | Measured result (see Key Findings); the card's expectation does not hold for this geometry. |
 
 **Top-Down Tracking Overview** (dots = triangulation estimates, coloured by active sensor):
 
