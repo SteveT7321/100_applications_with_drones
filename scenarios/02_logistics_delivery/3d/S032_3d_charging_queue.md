@@ -1,6 +1,6 @@
 # S032 3D Upgrade — Charging Queue
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S032 original](../S032_charging_queue.md)
 
 ---
