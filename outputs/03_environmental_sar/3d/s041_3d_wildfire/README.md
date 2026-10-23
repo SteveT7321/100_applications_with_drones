@@ -197,8 +197,7 @@ The deepest penetration below the plume top is 1.415 ± 0.090 m (range 1.251–1
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| "Terrain relief spans approximately ±8 m" | 0 – 8 m | The cosine term is non-negative for \|y − y_c\| ≤ L_y/2 = 100 m, which covers the whole arena. The card has been corrected. |
-| Ridge centre $(x_c, y_c)$ not given | (100, 100) m, the ignition point | Added parameter; it puts the fire on the ridge crest. |
+| Ridge centre $(x_c, y_c)$ not given; relief "approximately ±8 m" | $(x_c, y_c)$ = (100, 100) m, the ignition point, so the terrain spans 0 – 8 m | Design choice (added parameter): it puts the fire on the ridge crest. With this centre the cosine term is non-negative over the whole arena (\|y − y_c\| ≤ L_y/2 = 100 m), so the relief is 0 to 8 m rather than ±8 m. The card now notes this choice. |
 | Terrain from a bilinear-interpolated map | The analytic ridge function is evaluated exactly | Same surface without interpolation error. |
 | Vertical channel "not speed-clipped" while $\|\dot z_{max}\|$ = 2 m/s is listed | Clipped to 2 m/s | The card contradicted itself; the parameter table value is used. The card has been corrected. |
 | Time-varying $h_{flame}(t)$ | Constant 5.5 m | The wind is constant, so the card's formula gives a constant. |

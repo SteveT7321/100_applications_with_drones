@@ -73,9 +73,11 @@ The terrain elevation is a smooth ridge function:
 
 $$z_{terrain}(x, y) = A_{ridge} \cdot \exp\!\left(-\frac{(x - x_c)^2}{2\sigma_x^2}\right) \cdot \cos\!\left(\frac{\pi (y - y_c)}{L_y}\right)$$
 
-with $A_{ridge} = 8$ m, $\sigma_x = 40$ m, $L_y = 200$ m and the ridge centred on the ignition
-point, $(x_c, y_c) = (100, 100)$ m. Inside the arena $|y - y_c| \le 100$ m $= L_y/2$, so the cosine
-is never negative and the terrain spans 0 to 8 m (not $\pm 8$ m, as an earlier version of this card said).
+with $A_{ridge} = 8$ m, $\sigma_x = 40$ m, $L_y = 200$ m, so terrain relief spans approximately
+$\pm 8$ m across the arena. The ridge centre $(x_c, y_c)$ is not fixed here; the implementation
+chooses the ignition point, $(x_c, y_c) = (100, 100)$ m (design choice). With that choice
+$|y - y_c| \le 100$ m $= L_y/2$ everywhere in the arena, the cosine is never negative, and the
+terrain spans 0 to 8 m.
 
 ### Volumetric Fire Front
 
