@@ -1,6 +1,6 @@
 # S026 3D Upgrade — Cooperative Heavy Lift
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S026 original](../S026_cooperative_heavy_lift.md)
 
 ---
@@ -44,11 +44,15 @@ $$\boldsymbol{\delta}_i = \mathbf{p}_i - \mathbf{a}_i, \quad d_i = \|\boldsymbol
 
 The catenary parameter $\lambda_i$ satisfies:
 
-$$l_0 = \lambda_i \sinh\!\left(\frac{d_{i,h}}{2\lambda_i}\right) \cdot \frac{2}{\cosh(d_{i,v}/(2\lambda_i) )}$$
+$$\sqrt{l_0^2 - d_{i,v}^2} = 2\lambda_i \sinh\!\left(\frac{d_{i,h}}{2\lambda_i}\right)$$
+
+(Corrected 2026-10-24: the earlier form $l_0 = \lambda_i\sinh(d_{i,h}/2\lambda_i)\cdot 2/\cosh(d_{i,v}/2\lambda_i)$ is not the catenary length relation.)
 
 where $d_{i,h}$ and $d_{i,v}$ are the horizontal and vertical chord components. For the lightweight cables used here ($\mu \ll f_i / g$), the parabolic approximation is accurate:
 
-$$\text{sag}_i = \frac{\mu g d_i^2}{8 f_i}$$
+$$\text{sag}_i = \frac{\mu g \cos\beta_i\, d_i^2}{8 f_i}$$
+
+measured perpendicular to the chord, where $\beta_i$ is the chord's elevation above horizontal (corrected 2026-10-24: without $\cos\beta_i$ the hover sag would be 0.621 mm instead of 0.373 mm).
 
 The effective force direction at the load attachment point (bottom of cable) deviates from the straight chord by the sag angle:
 
@@ -97,6 +101,8 @@ $$\Delta \mathbf{p}_i^{damp} = -K_\eta\,\boldsymbol{\eta} \times \hat{\mathbf{z}
 
 where $s_i$ is the signed lateral offset of drone $i$ in the relevant plane, and $K_\eta = 0.3$ m/rad is the damping gain. This couples load attitude error back into drone position commands, driving $\dot{\boldsymbol{\omega}}_L \to \mathbf{0}$.
 
+> **Note (2026-10-24)**: as written the formula has units of m² and does not fix the direction of $\Delta\mathbf p_i$. The implementation uses a vertical offset $\Delta z_i = -K_\eta\,\delta_i / r_a$, where $\delta_i$ is the tilt-induced drop of attachment $i$ and $r_a = 0.15$ m. Its rate $-K_\eta\dot\delta_i/r_a$ is added to the velocity setpoint, so $K_d$ supplies the damping. A drone whose attachment drops climbs; the opposite sign was simulated and is unstable.
+
 ### Obstacle Avoidance — Vertical Separation
 
 For a cylindrical obstacle centred at $(x_o, y_o)$ with radius $r_{obs}$, if the straight-line transit at altitude $z_d$ brings any drone within clearance $d_{clear} = 0.5$ m:
@@ -106,6 +112,8 @@ $$\|\mathbf{p}_i^{xy} - \mathbf{o}^{xy}\| < r_{obs} + d_{clear}$$
 the affected drone $i$ climbs to:
 
 $$z_i^{avoid} = z_d + \Delta z_{step}, \quad \Delta z_{step} = 0.8 \text{ m}$$
+
+> **Note (2026-10-24, from the simulation)**: with $l_0 = 0.5$ m and $h_c = 0.4$ m a drone cannot rise more than $l_0 - h_c = 0.1$ m above its slot without lifting its side of the load, so $\Delta z_{step} = 0.8$ m is geometrically infeasible (simulated: 0.088 m achieved, 45° load tilt). Tension redistribution also cannot cancel the moment of an asymmetric opposite pair ($f_3\sin\alpha_3 = f_4\sin\alpha_4$ and $f_3\cos\alpha_3 = f_4\cos\alpha_4$ need $\alpha_3 = \alpha_4$). The implementation keeps this rule as a test case and adds a feasible "pair tuck": both drones of the pair climb 0.08 m along their cable spheres (moving inward). See the README in `outputs/02_logistics_delivery/3d/s026_3d_cooperative_heavy_lift/`.
 
 The remaining drones compensate by adjusting their cable tension via the QP, preventing load tilt. Once the obstacle is cleared the drone returns to $z_d$ at rate $0.3$ m/s.
 
@@ -152,17 +160,17 @@ Mission success criterion: $\Theta_L(t) < 5°$ for all $t > t_{lift}$.
 | Number of drones | 4 |
 | Load mass $m_L$ | 0.8 kg |
 | Load half-lengths $(a, b, c)$ | (0.15, 0.15, 0.05) m |
-| Load inertia $(I_{xx}, I_{yy}, I_{zz})$ | (0.0006, 0.0006, 0.0012) kg·m² |
-| Drone body mass $m_d$ | 0.027 kg |
+| Load inertia $(I_{xx}, I_{yy}, I_{zz})$ | (0.00667, 0.00667, 0.0120) kg·m² (uniform cuboid $	frac{m_L}{3}(b^2+c^2)$ etc.; corrected from 0.0006, 0.0006, 0.0012) |
+| Drone body mass $m_d$ | 0.5 kg (corrected from 0.027 kg, which cannot pull a 2.47 N cable; same fix as the 2D card) |
 | Cable rest length $l_0$ | 0.5 m |
 | Cable linear density $\mu$ | 0.005 kg/m |
-| Formation radius $s$ | 0.6 m |
+| Formation radius $s$ | 0.45 m ($a + \sqrt{l_0^2 - h_c^2}$; corrected from 0.6 m, which implies a 0.60 m cable) |
 | Nominal cable height offset $h_c$ | 0.40 m |
 | Minimum cable tension $f_{min}$ | 0.05 N |
 | Swing damping gain $K_\eta$ | 0.3 m/rad |
 | Obstacle radius $r_{obs}$ | 0.4 m |
 | Obstacle clearance $d_{clear}$ | 0.5 m |
-| Altitude step for avoidance $\Delta z_{step}$ | 0.8 m |
+| Altitude step for avoidance $\Delta z_{step}$ | 0.8 m (infeasible with $l_0 = 0.5$ m, see the note above; max $l_0 - h_c = 0.1$ m) |
 | Delivery altitude $z_d$ | 4.0 m |
 | Target position $\mathbf{q}_{goal}$ | (5.0, 3.0, 4.0) m |
 | PD gains $(K_p, K_d)$ | 4.0, 2.0 |
