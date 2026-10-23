@@ -24,7 +24,7 @@ Two poles (cylinders of radius $r_{obs} = 0.4$ m and height 4.6 m) stand beside 
 
 **Questions**: Can individual drone altitude changes get the formation past the poles while the load tilt stays below 5° and no cable goes slack? Does the QP "compensate by adjusting cable tension, preventing load tilt", as the card claims? How much do the catenary model and the damping matter?
 
-Ten configurations fly the same deterministic mission (no random inputs, so no Monte Carlo is needed). A sweep of the pole offset checks that the conclusions do not depend on where the poles are placed.
+Eleven configurations fly the same deterministic mission (no random inputs, so no Monte Carlo is needed). A sweep of the pole offset checks that the conclusions do not depend on where the poles are placed. Two extra **hover** runs separate the static question (can tension redistribution level the load when one drone tucks?) from the cruise dynamics: the box hovers at (0, 0, 4) m for 25 s with no poles, and drone 3 tucks at t = 5 s and stays tucked.
 
 | Run | Avoidance | Allocation | Damping | Cable model in the controller |
 |---|---|---|---|---|
@@ -34,10 +34,13 @@ Ten configurations fly the same deterministic mission (no random inputs, so no M
 | Single-drone tuck | triggered drone climbs 0.08 m along its cable sphere | wrench | on | catenary |
 | **Pair tuck (main)** | the triggered drone **and its opposite partner** tuck | wrench | on | catenary |
 | Single tuck, force-only | single-drone tuck | force rows only | on | catenary |
+| Single tuck, 0.05 m/s | single-drone tuck at a 0.05 m/s tuck rate (instead of 0.3 m/s) | wrench | on | catenary |
 | Pair tuck, force-only | pair tuck | force rows only | on | catenary |
 | Pair tuck, no damping | pair tuck | wrench | off | catenary |
 | Pair tuck, reversed damp. | pair tuck | wrench | sign reversed | catenary |
 | Pair tuck, straight cable | pair tuck | wrench | on | straight chord |
+| Hover single tuck | hover mission; drone 3 tucks at t = 5 s and holds | wrench | on | catenary |
+| Hover single tuck, force-only | as above | force rows only | on | catenary |
 
 The physics is the same in every run: 6-DOF load, cable weight, and stiff unilateral cables.
 
@@ -86,14 +89,16 @@ $$\mathbf u_i = m_d\big(\ddot{\mathbf q}_{ref} + K_p(\mathbf p_i^{des} - \mathbf
   - The setpoint offset is $\Delta z_i^{damp} = -\sigma K_\eta\,\delta_i/r_a$, and its rate $-\sigma K_\eta\dot\delta_i/r_a$ is added to $\dot{\mathbf p}_i^{des}$. Through $K_p$ and $K_d$ this gives tilt stiffness and tilt damping.
   - $\sigma = +1$ levels the load (a drone whose attachment drops climbs). The "reversed" run uses $\sigma = -1$.
 
-### Why a single drone cannot tuck without tilting the load
+### Statics of a single-drone tuck
 
-Take the opposite pair (3, 4) with cable angles $\alpha_3 \neq \alpha_4$ from vertical. Their attachments are at $\pm r_a$ on the top face.
+Take the opposite pair (3, 4) with cable angles $\alpha_3 \neq \alpha_4$ from vertical, and a level load. Their attachments are at $\pm r_a$ on the top face.
 
 - Force balance along $y$ needs $f_3\sin\alpha_3 = f_4\sin\alpha_4$.
-- Zero roll moment needs $f_3\cos\alpha_3 = f_4\cos\alpha_4$. Cables 1 and 2 cannot contribute to it.
+- Zero roll moment needs $f_3(r_a\cos\alpha_3 - c\sin\alpha_3) = f_4(r_a\cos\alpha_4 - c\sin\alpha_4)$. Cables 1 and 2 lie in the $x$–$z$ plane through the centroid, so they cannot contribute to it.
 
-Both can hold only if $\alpha_3 = \alpha_4$. Redistributing tension therefore **cannot** level the load when one drone of a pair changes its geometry: the 6-row system is inconsistent, and the load must tilt until the cable lines meet above its centre of mass. Moving both drones of the pair together keeps the system consistent. This is the "pair tuck".
+With $\alpha_3 \neq \alpha_4$ both hold only for $f_3 = f_4 = 0$. That **is** a solution of the full 6-row system: pair 1–2 then carries the whole load, $f_1 = f_2 = m_L g/(2\cos\alpha) = 4.905$ N, and the roll moment is zero. Roll stays pendulum-stable because the 1–2 attachments sit $c = 0.05$ m above the centre of mass. So **one asymmetric pair does not force a tilt**: redistributing tension levels the load statically by unloading that pair. With $f_{min} = 0.05$ N the wrench allocator returns $\mathbf f = (4.850, 4.850, 0.050, 0.050)$ N, which leaves a 0.0160 N force residual and a 0.0020 N·m moment residual. The force-only (2D) allocator instead spreads the load over all four cables and leaves a 0.2759 N·m roll moment.
+
+An exact level solution no longer exists when **both** pairs are asymmetric: by the same argument each asymmetric pair can be balanced only by unloading it, and both pairs cannot be unloaded. A pair tuck (both drones of a pair moving together) keeps every pair symmetric, so the allocation never has to shift the load between pairs. (An earlier version of this README said the single-pair case was impossible because it ignored the $f_3 = f_4 = 0$ solution; that was wrong.)
 
 ---
 
@@ -118,6 +123,8 @@ Both can hold only if $\alpha_3 = \alpha_4$. Redistributing tension therefore **
 | Card climb step $\Delta z_{step}$ | 0.8 m | card (geometrically infeasible, see below) |
 | Tuck climb $\Delta z_{tuck}$ | 0.08 m (radius 0.45 → 0.29 m, cable angle 36.9° → 16.3°) | added; must be < $l_0 - h_c$ = 0.1 m |
 | Climb / return rate | 0.3 m/s | card |
+| Slow tuck rate (one extra run) | 0.05 m/s | added |
+| Hover runs | load held at (0, 0, 4) m for 25 s, no poles; drone 3 tucks from t = 5 s | added |
 | Drone body radius (collision check only) | 0.10 m | added |
 | Control / physics step | 0.01 s / 0.001 s | card $\Delta t$ / added sub-steps |
 | Mission | lift 0–5 s, cruise 5–20 s, descend 20–25 s (quintic) | card total 25 s; split added |
@@ -133,7 +140,7 @@ Both can hold only if $\alpha_3 = \alpha_4$. Redistributing tension therefore **
 | Catenary relation $l_0 = \lambda\sinh(\cdot)\,2/\cosh(\cdot)$ | not used (parabolic approximation); correct form $\sqrt{l_0^2 - d_v^2} = 2\lambda\sinh(d_h/2\lambda)$ | the card's equation is wrong; card corrected |
 | Sag $= \mu g d^2/(8f)$ | $\mu g\cos\beta\,d^2/(8f)$ (perpendicular to the chord) | the card omits the chord inclination; at hover this gives 0.373 mm, not 0.621 mm; card corrected |
 | Inextensible catenary cables | stiff unilateral spring-dampers with the cable weight split half to each end; the allocator uses the card's $\hat{\mathbf c}^{bot}$ | lets a cable really go slack (as in 2D); the weight split reproduces $\hat{\mathbf c}^{bot}$ to first order |
-| $\Delta z_{step} = 0.8$ m, "remaining drones compensate via the QP, preventing load tilt" | run exactly as specified ("Card rule"); also added single-drone tuck and pair tuck | a drone cannot rise more than $l_0 - h_c = 0.1$ m above its slot without lifting its side of the load; tension cannot cancel the moment of an asymmetric pair (see the model section); card annotated |
+| $\Delta z_{step} = 0.8$ m, "remaining drones compensate via the QP, preventing load tilt" | run exactly as specified ("Card rule"); also added single-drone tuck (route and hover) and pair tuck | a drone cannot rise more than $l_0 - h_c = 0.1$ m above its slot without lifting its side of the load. The QP part of the claim holds statically for one asymmetric pair (it unloads that pair, see the model section) and at hover (max tilt 2.61°), but not for a single-drone tuck flown along the route (13.52°); card annotated |
 | Avoidance trigger on $\mathbf p_i^{xy}$ | trigger on the drone's nominal flat slot from the reference | deterministic, and avoids chatter (a tucking drone would leave the ring and untrigger itself) |
 | Damping $\Delta\mathbf p_i = -K_\eta\,\boldsymbol\eta\times\hat{\mathbf z}\cdot s_i$ | $\Delta z_i = -K_\eta\delta_i/r_a$ plus its rate in the velocity setpoint | the card's formula has units of m² and does not fix the direction. Read literally (unit $s_i$, vertical offset) it gives the reversed sign, which crashes the load here (see results). Without a rate term it would not damp |
 | $\mathbf A\mathbf f = \mathbf b_{rhs}$ with $\mathbf b_{rhs} = (0, 0, m_L g, 0, 0, 0)$ | bounded least squares (wrench) with $m_L\ddot{\mathbf q}_{ref}$ in the force rows | 6 equations and 4 unknowns: an exact solution exists only for symmetric geometry; acceleration feed-forward as in the 2D fix |
@@ -147,31 +154,40 @@ Both can hold only if $\alpha_3 = \alpha_4$. Redistributing tension therefore **
 
 ## Simulation Results
 
-All numbers come from the script's printed output. Two runs gave byte-identical stdout and output files. Run time: about 3 minutes.
+All numbers come from the script's printed output. Two runs gave byte-identical stdout and output files. Run time: about 4 minutes (231–244 s, measured while other scripts were running).
 
 **Setup checks** (printed): static tension share 2.4678 N (including half the cable weight). The hover sag is 0.373 mm, and the bottom-end direction deviates from the chord by 0.171°. A climb above the slot with a level load and a taut cable is limited to $l_0 - h_c$ = 0.10 m, against the card's 0.8 m. With one pair tucked, the predicted static split is 2.010 N (flat pair) / 2.412 N (tucked pair). The load reference passes pole 1 at t = 11.28 s and pole 2 at t = 14.15 s.
 
+**Static allocation with drone 3 tucked** (printed, level load, the load weight only):
+
+| Allocator | $f_1, f_2, f_3, f_4$ | Force residual | Roll-moment residual |
+|---|---|---|---|
+| Wrench (6 rows) | 4.850, 4.850, 0.050, 0.050 N | 0.0160 N | 0.0020 N·m |
+| Force-only (2D) | 2.291, 2.291, 3.136, 1.464 N | 0.0003 N | 0.2759 N·m |
+| Exact $f_3 = f_4 = 0$ | 4.905, 4.905, 0, 0 N | 0 | 0 |
+
 ### Main comparison (pole offset 0.8 m)
 
-| Run | Max tilt | Tilt RMS (cruise) | \|ω\| RMS (cruise) | Time > 5° | T min / max | Slack samples | Max load error | Min clearance drone / load | Max drone rise | Status |
+| Run | Max tilt | Tilt RMS (cruise) | \|ω\| RMS (cruise) | Time > 5° | T min / max | Slack samples | Max load error | Min clearance drone / cable / load | Max drone rise | Status |
 |---|---|---|---|---|---|---|---|---|---|---|
-| 2D controller, flat | 0.57° | 0.407° | 0.23 °/s | 0 s | 2.215 / 2.68 N | 0 | 0.024 m | **0.018** / 0.194 m | 0.008 m | completed |
-| 3D controller, flat | 0.26° | 0.185° | 0.11 °/s | 0 s | 2.222 / 2.68 N | 0 | 0.012 m | **0.017** / 0.194 m | 0.007 m | completed |
-| Card rule: climb 0.8 m | **45.25°** | 22.661° | 31.94 °/s | 8.20 s | 0.000 / 18.18 N | 1025 | 0.493 m | 0.066 / 0.104 m | 0.088 m | completed |
-| Single-drone tuck | **13.52°** | 3.431° | 13.28 °/s | 1.89 s | 0.000 / 5.29 N | 150 | 0.123 m | 0.188 / 0.218 m | 0.090 m | completed |
-| **Pair tuck (main)** | **0.33°** | 0.191° | 0.31 °/s | 0 s | 1.598 / 2.92 N | **0** | 0.012 m | **0.167** / 0.194 m | 0.095 m | completed |
-| Single tuck, force-only | 15.56° | 3.940° | 11.95 °/s | 2.50 s | 1.749 / 2.99 N | 0 | 0.102 m | 0.184 / 0.249 m | 0.079 m | completed |
-| Pair tuck, force-only | 0.30° | 0.192° | 0.32 °/s | 0 s | 1.809 / 2.73 N | 0 | 0.012 m | 0.167 / 0.194 m | 0.095 m | completed |
-| Pair tuck, no damping | 0.70° | 0.427° | 0.68 °/s | 0 s | 1.156 / 3.42 N | 0 | 0.012 m | 0.167 / 0.194 m | 0.095 m | completed |
-| Pair tuck, reversed damp. | 74.07° | 41.500° | 80.29 °/s | 16.69 s | 0.000 / 15.52 N | 1236 | 0.320 m | 0.180 / 0.105 m | 0.108 m | **stopped t = 24.39 s: load hit the ground** |
-| Pair tuck, straight cable | 0.33° | 0.190° | 0.31 °/s | 0 s | 1.616 / 2.91 N | 0 | 0.024 m | 0.167 / 0.194 m | 0.095 m | completed |
+| 2D controller, flat | 0.57° | 0.407° | 0.23 °/s | 0 s | 2.215 / 2.68 N | 0 | 0.024 m | **0.018** / 0.018 / 0.194 m | 0.008 m | completed |
+| 3D controller, flat | 0.26° | 0.185° | 0.11 °/s | 0 s | 2.222 / 2.68 N | 0 | 0.012 m | **0.017** / 0.017 / 0.194 m | 0.007 m | completed |
+| Card rule: climb 0.8 m | **45.25°** | 22.661° | 31.94 °/s | 8.20 s | 0.000 / 18.18 N | 1025 | 0.493 m | 0.066 / **0.035** / 0.104 m | 0.088 m | completed |
+| Single-drone tuck | **13.52°** | 3.431° | 13.28 °/s | 1.89 s | 0.000 / 5.29 N | 150 | 0.123 m | 0.188 / 0.188 / 0.218 m | 0.090 m | completed |
+| **Pair tuck (main)** | **0.33°** | 0.191° | 0.31 °/s | 0 s | 1.598 / 2.92 N | **0** | 0.012 m | **0.167** / 0.167 / 0.194 m | 0.095 m | completed |
+| Single tuck, force-only | 15.56° | 3.940° | 11.95 °/s | 2.50 s | 1.749 / 2.99 N | 0 | 0.102 m | 0.184 / 0.184 / 0.249 m | 0.079 m | completed |
+| Single tuck, 0.05 m/s | 6.07° | 2.173° | 5.46 °/s | 0.96 s | 0.000 / 4.97 N | 25 | 0.098 m | **0.081** / 0.081 / 0.206 m | 0.087 m | completed |
+| Pair tuck, force-only | 0.30° | 0.192° | 0.32 °/s | 0 s | 1.809 / 2.73 N | 0 | 0.012 m | 0.167 / 0.167 / 0.194 m | 0.095 m | completed |
+| Pair tuck, no damping | 0.70° | 0.427° | 0.68 °/s | 0 s | 1.156 / 3.42 N | 0 | 0.012 m | 0.167 / 0.167 / 0.194 m | 0.095 m | completed |
+| Pair tuck, reversed damp. | 74.07° | 41.500° | 80.29 °/s | 16.69 s | 0.000 / 15.52 N | 1236 | 0.320 m | 0.180 / 0.180 / 0.105 m | 0.108 m | **stopped t = 24.39 s: load hit the ground** |
+| Pair tuck, straight cable | 0.33° | 0.190° | 0.31 °/s | 0 s | 1.616 / 2.91 N | 0 | 0.024 m | 0.167 / 0.167 / 0.194 m | 0.095 m | completed |
 
 How to read the table:
 
-- **Clearance** is measured from the drone *centre* (or the box corners) to the pole surface. With a 0.10 m drone body, any value below 0.10 m is a collision.
-- **Cable clearance** equals the drone clearance in every run, because the closest cable point is its drone end.
+- **Clearance** is measured from the drone *centre*, from the closest of 11 points along each cable chord, and from the box corners, to the pole surface. With a 0.10 m drone body, any drone value below 0.10 m is a collision.
+- **Cable clearance** equals the drone clearance in every run except the card's climb rule. There the cable passes 0.035 m from a pole while the drone centre is 0.066 m away, because the climbing drone's cable runs underneath it. In all other runs the closest cable point is its drone end.
 - **Max drone rise** is the largest height of a drone above its attachment, minus $h_c = 0.4$ m.
-- **Max thrust** stays below the 15 N limit in every run. The peak is 12.58 N (reversed damping), and the pair tuck uses 7.69 N.
+- **Thrust.** The script records the *demanded* thrust before the 15 N clip and counts the clipped samples. No run is ever clipped (0 samples in every run, including the hover runs). The largest demand is 12.58 N (reversed damping); the pair tuck needs 7.69 N.
 
 ### Pole-offset sweep (3D controller)
 
@@ -182,14 +198,42 @@ How to read the table:
 | 0.9 m | 0.117 m / 0.26° | 0.274 m / 13.88° | 0.256 m / 0.34° | 0.294 / 0.294 m |
 | 1.0 m | 0.217 m / 0.26° | 0.358 m / 9.42° | 0.339 m / 0.33° | 0.394 / 0.394 m |
 
+### Single-drone tuck: hover vs route
+
+**Hover** (box held at (0, 0, 4) m, drone 3 tucks 0.08 m at 0.3 m/s from t = 5 s and holds to t = 25 s):
+
+| Run | Max tilt | Tilt in the last 5 s | T min | Slack samples | Final $T_1 \ldots T_4$ |
+|---|---|---|---|---|---|
+| Hover single tuck (wrench) | **2.61°** at t = 10.47 s | 1.64–1.96° (mean 1.87°) | 0.078 N | 0 | 3.032, 3.032, 1.667, 1.699 N |
+| Hover single tuck, force-only | **6.84°** at t = 5.66 s | 2.82° (constant) | 2.100 N | 0 | 2.184, 2.184, 2.471, 2.414 N |
+
+- Right after the tuck the wrench allocator does what the statics predict. At t = 5.50 s it has shifted the load onto pair 1–2 (f = 4.650, 4.650, 0.197, 0.215 N) and the tilt is 0.18°.
+- The closed loop then drifts to a slightly tilted equilibrium (1.86° at t = 6.00 s) with pair 3–4 carrying about 1.7 N again, rather than staying at the level, unloaded solution. I did not isolate the cause; the drones are soft position-controlled points, and the allocator re-solves on the tilted geometry every step. It stays below 5° throughout.
+- The force-only allocator ignores the roll moment. It overshoots to 6.84° and settles at 2.82°.
+
+**Route** (single-drone tuck, from the printed asymmetry analysis):
+
+| Run | One pair asymmetric | Both pairs asymmetric | Max tilt (state at the peak) | Max tilt in one-pair samples / both-pair samples |
+|---|---|---|---|---|
+| Single-drone tuck (0.3 m/s) | 3.53 s | 3.10 s | 13.52° at t = 13.49 s; dz = (0.080, 0, 0, 0.051) m, T = (4.95, 3.41, 0.00, 0.00) N | 10.37° / 13.52° |
+| Single tuck, force-only | 3.53 s | 3.10 s | 15.56° at t = 13.35 s | 15.46° / 15.56° |
+| Single tuck, 0.05 m/s | 2.54 s | 5.42 s | 6.07° at t = 14.23 s | 4.02° / 6.07° |
+
+Along the route the trigger ring passes over different arms in turn (drone 3, then 2, then 1 and 4). For 3.10 s one drone of *each* pair is off its slot, and then no level solution exists. Every change of which pair is asymmetric also makes the allocator move the load between pairs within the 0.27 s tuck: from the 2.47 N hover share towards the static split above (4.85 N on the symmetric pair, 0.05 N on the asymmetric one). The tilt is assigned to a state sample, but it lags the trigger changes, so the one-pair/both-pair split is only indicative. Slowing the tuck to 0.05 m/s cuts the peak from 13.52° to 6.07°, which shows the excursion is mainly dynamic. The slow tuck has a cost, though: the drone has not finished moving in when it reaches the pole, and its centre passes 0.081 m from it, a body collision.
+
 ### Key findings
 
 1. **The card's climb rule fails.** The commanded climb is up to 0.8 m above the slot (dotted lines in the altitude plot), but the drones rise at most **0.088 m** above the nominal 0.4 m: a 0.5 m cable cannot reach further. The climbing drone simply pulls its side of the box up.
    - Result: **45.25° tilt**, 1025 samples with a slack cable, tension spikes to 18.18 N and a 0.493 m load tracking error.
    - Clearance is not gained either. The drone centre still passes 0.066 m from the pole, and the cable 0.035 m: the cable runs under the drone, so climbing over a pole that is taller than the formation is impossible.
-2. **"The QP compensates, preventing load tilt" is false for a single drone.** Even with a feasible 0.08 m climb along the cable sphere, moving one drone of a pair tilts the box to **13.52°**. The tilt exceeds 5° for 1.89 s, and 150 samples have a slack cable.
-   - The 6-row allocator does only a little better than the 2D force-only allocator (15.56°). The reason is the inconsistency shown in the model section: tension cannot cancel the moment of an asymmetric pair.
-   - The 5° limit is broken at every pole offset in the sweep (9.42–13.88°).
+2. **"The QP compensates, preventing load tilt" holds statically and at hover, but not for a single-drone tuck flown along the route.**
+   - Statically it is true for one asymmetric pair: the 6-row allocator unloads that pair (f = 4.850, 4.850, 0.050, 0.050 N) and leaves only a 0.0020 N·m moment.
+   - At hover the single tuck stays below 5°: 2.61° peak, settling at 1.64–1.96°. Here the 6-row allocator clearly beats the force-only one (6.84° peak, 2.82° steady).
+   - Along the route the same 0.08 m single-drone tuck tilts the box to **13.52°**. The tilt exceeds 5° for 1.89 s, and 150 samples have a slack cable. This is a dynamic effect of tucking during cruise, not a static impossibility:
+     - the trigger moves from arm to arm, so the allocator keeps shifting the load between pairs;
+     - for 3.10 s both pairs are asymmetric, and then no level solution exists (the peak falls in such an interval);
+     - a slower 0.05 m/s tuck cuts the peak to 6.07°, but then a drone body hits a pole (0.081 m clearance).
+   - On the route the 6-row allocator does only a little better than the force-only one (13.52° vs 15.56°). The 5° limit is broken at every pole offset in the sweep (9.42–13.88°).
 3. **Tucking both drones of a pair works.** The pair tuck keeps the tilt at **0.33°**, has no slack cable (minimum tension 1.598 N), and raises the worst drone clearance from 0.017 m (flat cross: a body collision) to 0.167 m.
    - Across the sweep the pair tuck stays at 0.33–0.34° and gains 0.122–0.155 m of drone clearance over the flat cross.
    - At $e = 0.7$ m it is still not enough: 0.072 m is less than the 0.10 m drone body. At that offset the flat cross runs its drone centre 0.083 m *inside* the pole.
@@ -206,7 +250,7 @@ How to read the table:
 7. **The catenary is negligible for these cables.** The sag is 0.371 mm median and 0.641 mm max, and the end-angle deviation is 0.17°.
    - Ignoring the cable weight in the controller (straight-cable run) leaves the tilt unchanged (0.33°).
    - It roughly doubles the RMS load error (0.0172 vs 0.0085 m): the box hangs about 9 mm lower (final z 0.083 vs 0.092 m). The cause is the unmodelled cable weight, 4 × 0.5 × 0.005 × 9.81 × 0.5 ≈ 0.049 N, sagging the soft-PD drones.
-8. **Physical checks.** No run exceeds the thrust limit. The lowest box corner stays at 0.032 m or above in every completed run. The reversed-damping run is stopped at ground contact and the contact sample is discarded, so its lowest recorded corner is 0.001 m and nothing is ever below ground. The final load positions are (5.000, 3.000, 0.092) m for the pair tuck and 0.083 m for the straight-cable and 2D runs. The steady 8–17 mm sag below the reference comes from the soft drone PD ($m_d K_p$ = 2 N/m).
+8. **Physical checks.** No run ever demands more than the 15 N thrust limit: the clipped-sample count is 0 in every run. The lowest box corner stays at 0.032 m or above in every completed run. The reversed-damping run is stopped at ground contact and the contact sample is discarded, so its lowest recorded corner is 0.001 m and nothing is ever below ground. The final load positions are (5.000, 3.000, 0.092) m for the pair tuck and 0.083 m for the straight-cable and 2D runs. The steady 8–17 mm sag below the reference comes from the soft drone PD ($m_d K_p$ = 2 N/m).
 
 ---
 
@@ -220,7 +264,7 @@ Drone paths (red, orange, magenta and gold) and the box (blue) at the lift top, 
 
 ### Load Tilt
 
-Top: runs that stay below 5°, with the pair-tuck trigger windows shaded. Bottom (log scale): the card's climb rule, the single-drone tuck (with both allocators) and the reversed damping, with the single-tuck trigger windows shaded:
+Top: route runs that stay below 5°, with the pair-tuck trigger windows shaded. Middle (log scale): the card's climb rule, the single-drone tuck (both allocators, and the 0.05 m/s tuck) and the reversed damping, with the single-tuck trigger windows shaded. Bottom (log scale): the hover single tuck, wrench (solid) and force-only (dashed), with the tuck held from t = 5 s:
 
 ![Load tilt](load_tilt.png)
 

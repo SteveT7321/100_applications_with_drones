@@ -113,9 +113,9 @@ the affected drone $i$ climbs to:
 
 $$z_i^{avoid} = z_d + \Delta z_{step}, \quad \Delta z_{step} = 0.8 \text{ m}$$
 
-> **Note (2026-10-24, from the simulation)**: with $l_0 = 0.5$ m and $h_c = 0.4$ m a drone cannot rise more than $l_0 - h_c = 0.1$ m above its slot without lifting its side of the load, so $\Delta z_{step} = 0.8$ m is geometrically infeasible (simulated: 0.088 m achieved, 45° load tilt). Tension redistribution also cannot cancel the moment of an asymmetric opposite pair ($f_3\sin\alpha_3 = f_4\sin\alpha_4$ and $f_3\cos\alpha_3 = f_4\cos\alpha_4$ need $\alpha_3 = \alpha_4$). The implementation keeps this rule as a test case and adds a feasible "pair tuck": both drones of the pair climb 0.08 m along their cable spheres (moving inward). See the README in `outputs/02_logistics_delivery/3d/s026_3d_cooperative_heavy_lift/`.
+> **Note (2026-10-24, from the simulation)**: with $l_0 = 0.5$ m and $h_c = 0.4$ m a drone cannot rise more than $l_0 - h_c = 0.1$ m above its slot without lifting its side of the load, so $\Delta z_{step} = 0.8$ m is geometrically infeasible (simulated: 0.088 m achieved, 45° load tilt). Tension redistribution *can* level the load statically when only one opposite pair is asymmetric: the 6-row system then has the exact solution $f_3 = f_4 = 0$, with $f_1 = f_2 = m_L g/(2\cos\alpha) = 4.905$ N (cables 1 and 2 give no roll moment, and their attachments sit above the centre of mass, so roll is pendulum-stable); with $f_{min} = 0.05$ N the allocator returns (4.850, 4.850, 0.050, 0.050) N. In simulation a single-drone 0.08 m tuck at hover stays below 5° (2.61° peak, about 1.9° steady), but the same tuck flown along the route reaches 13.52°: the trigger moves from arm to arm, so the load is repeatedly shifted between pairs, and at times both pairs are asymmetric, when no level solution exists (a 0.05 m/s tuck cuts the peak to 6.07°). (Corrected 2026-10-25: an earlier version of this note said a single asymmetric pair could never be balanced.) The implementation keeps this rule as a test case and adds a feasible "pair tuck": both drones of the pair climb 0.08 m along their cable spheres (moving inward). See the README in `outputs/02_logistics_delivery/3d/s026_3d_cooperative_heavy_lift/`.
 
-The remaining drones compensate by adjusting their cable tension via the QP, preventing load tilt. Once the obstacle is cleared the drone returns to $z_d$ at rate $0.3$ m/s.
+The remaining drones compensate by adjusting their cable tension via the QP, preventing load tilt (statically this holds while only one opposite pair is asymmetric: the QP unloads that pair; see the note above for the dynamic limits during cruise). Once the obstacle is cleared the drone returns to $z_d$ at rate $0.3$ m/s.
 
 ### Formation Geometry in Obstacle Mode
 
@@ -160,7 +160,7 @@ Mission success criterion: $\Theta_L(t) < 5°$ for all $t > t_{lift}$.
 | Number of drones | 4 |
 | Load mass $m_L$ | 0.8 kg |
 | Load half-lengths $(a, b, c)$ | (0.15, 0.15, 0.05) m |
-| Load inertia $(I_{xx}, I_{yy}, I_{zz})$ | (0.00667, 0.00667, 0.0120) kg·m² (uniform cuboid $	frac{m_L}{3}(b^2+c^2)$ etc.; corrected from 0.0006, 0.0006, 0.0012) |
+| Load inertia $(I_{xx}, I_{yy}, I_{zz})$ | (0.00667, 0.00667, 0.0120) kg·m² (uniform cuboid $\tfrac{m_L}{3}(b^2+c^2)$ etc.; corrected from 0.0006, 0.0006, 0.0012) |
 | Drone body mass $m_d$ | 0.5 kg (corrected from 0.027 kg, which cannot pull a 2.47 N cable; same fix as the 2D card) |
 | Cable rest length $l_0$ | 0.5 m |
 | Cable linear density $\mu$ | 0.005 kg/m |

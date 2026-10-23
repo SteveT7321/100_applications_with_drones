@@ -26,6 +26,9 @@ What the 3D card adds over the 2D S026, and how it is modelled here
              l0), which narrows the cross on that side
     pair  -- as tuck1, but the opposite drone of the same pair tucks too,
              so each pair stays symmetric (no net moment on the load)
+  A single-drone tuck is also flown at hover (mission='hover': drone 3 tucks
+  at t = 5 s and holds), to separate the static allocation question from the
+  cruise dynamics, and in cruise with a slower 0.05 m/s tuck rate.
 
 Physics (1 kHz, semi-implicit Euler): drones are point masses with vector
 thrust |u| <= T_MAX; cables are stiff unilateral spring-dampers, as in the 2D
@@ -91,6 +94,8 @@ DZ_TUCK     = 0.08                   # m feasible climb along the cable sphere
 DZ_RATE     = 0.3                    # m/s climb / return rate
 R_DRONE     = 0.10                   # m drone body radius (collision check)
 E_SWEEP     = [0.7, 0.8, 0.9, 1.0]
+DZ_RATE_SLOW = 0.05                  # m/s slower tuck rate (cruise check)
+T_HOVER_TUCK = 5.0                   # s  hover mission: drone 3 tucks here
 
 # Mission
 Q0      = np.array([0.0, 0.0, 0.1])
@@ -116,18 +121,28 @@ CORNERS = np.array([[sx * HALF[0], sy * HALF[1], sz * HALF[2]]
                     for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
 CABLE_S = np.linspace(0.0, 1.0, 11)
 
-# Runs: (key, label, avoid, alloc, damp_sign, cable_model)
+# Runs: (key, label, avoid, alloc, damp_sign, cable_model, extra kwargs)
 RUNS = [
-    ('2d',      '2D controller, flat',       'flat',  'force',  0, 'straight'),
-    ('flat',    '3D controller, flat',       'flat',  'wrench', 1, 'catenary'),
-    ('climb',   'Card rule: climb 0.8 m',    'climb', 'wrench', 1, 'catenary'),
-    ('tuck1',   'Single-drone tuck',         'tuck1', 'wrench', 1, 'catenary'),
-    ('pair',    'Pair tuck (main)',          'pair',  'wrench', 1, 'catenary'),
-    ('tuck1_f', 'Single tuck, force-only',   'tuck1', 'force',  1, 'catenary'),
-    ('pair_f',  'Pair tuck, force-only',     'pair',  'force',  1, 'catenary'),
-    ('pair_nd', 'Pair tuck, no damping',     'pair',  'wrench', 0, 'catenary'),
-    ('pair_rd', 'Pair tuck, reversed damp.', 'pair',  'wrench', -1, 'catenary'),
-    ('pair_st', 'Pair tuck, straight cable', 'pair',  'wrench', 1, 'straight'),
+    ('2d',      '2D controller, flat',       'flat',  'force',  0, 'straight', {}),
+    ('flat',    '3D controller, flat',       'flat',  'wrench', 1, 'catenary', {}),
+    ('climb',   'Card rule: climb 0.8 m',    'climb', 'wrench', 1, 'catenary', {}),
+    ('tuck1',   'Single-drone tuck',         'tuck1', 'wrench', 1, 'catenary', {}),
+    ('pair',    'Pair tuck (main)',          'pair',  'wrench', 1, 'catenary', {}),
+    ('tuck1_f', 'Single tuck, force-only',   'tuck1', 'force',  1, 'catenary', {}),
+    ('tuck1_s', 'Single tuck, 0.05 m/s',     'tuck1', 'wrench', 1, 'catenary',
+     {'dz_rate': DZ_RATE_SLOW}),
+    ('pair_f',  'Pair tuck, force-only',     'pair',  'force',  1, 'catenary', {}),
+    ('pair_nd', 'Pair tuck, no damping',     'pair',  'wrench', 0, 'catenary', {}),
+    ('pair_rd', 'Pair tuck, reversed damp.', 'pair',  'wrench', -1, 'catenary', {}),
+    ('pair_st', 'Pair tuck, straight cable', 'pair',  'wrench', 1, 'straight', {}),
+]
+# Hover runs: the load hovers at Q_UP for the whole 25 s; drone 3 tucks at
+# T_HOVER_TUCK and stays tucked (no poles, no cruise acceleration).
+HOVER_RUNS = [
+    ('hov1',   'Hover single tuck',             'tuck1', 'wrench', 1, 'catenary',
+     {'mission': 'hover'}),
+    ('hov1_f', 'Hover single tuck, force-only', 'tuck1', 'force',  1, 'catenary',
+     {'mission': 'hover'}),
 ]
 
 
@@ -244,10 +259,19 @@ def clearance(points, obs):
 
 # ── Simulation ────────────────────────────────────────────────────────────────
 
+def hover_ref(t):
+    return Q_UP.copy(), np.zeros(3), np.zeros(3)
+
+
 def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
-                   e_lat=E_LAT, label=''):
-    """Simulate one mission; returns a dict of time histories."""
-    obs = obstacles(e_lat)
+                   e_lat=E_LAT, label='', mission='route', dz_rate=DZ_RATE):
+    """Simulate one mission; returns a dict of time histories.
+    mission='route': lift, cruise past the poles, descend (the main mission).
+    mission='hover': hold Q_UP for T_TOTAL; drone 3's tuck is triggered from
+    T_HOVER_TUCK on (no poles)."""
+    hover = mission == 'hover'
+    ref = hover_ref if hover else load_ref
+    obs = np.zeros((0, 2)) if hover else obstacles(e_lat)
     steps = int(round(T_TOTAL / DT)) + 1
     time = np.arange(steps) * DT
     H = {k: np.zeros((steps, N_DRONES)) for k in
@@ -260,7 +284,7 @@ def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
     n_sat = 0
 
     # Initial state: load suspended at Q0, level, cables at static tension
-    q = Q0.copy(); vq = np.zeros(3)
+    q = (Q_UP if hover else Q0).copy(); vq = np.zeros(3)
     qa = np.array([1.0, 0, 0, 0]); omega_b = np.zeros(3)
     R = np.eye(3)
     f0 = (M_LOAD * G + N_DRONES * W_CABLE_END) / (N_DRONES * H_C / L0)
@@ -276,7 +300,7 @@ def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
 
     for k in range(steps):
         t = time[k]
-        q_r, v_r, a_r = load_ref(t)
+        q_r, v_r, a_r = ref(t)
         omega_w = R @ omega_b
         c, L, T, a_pts, rb = cable_state(p, v, q, vq, R, omega_w)
 
@@ -285,12 +309,14 @@ def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
         trig = np.zeros(N_DRONES, bool)
         for o in obs:
             trig |= np.linalg.norm(slot_xy - o, axis=1) < R_OBS + D_CLEAR
+        if hover:
+            trig = np.array([False, False, t >= T_HOVER_TUCK, False])
         if avoid == 'flat':
             trig[:] = False
         elif avoid == 'pair':                  # opposite partner tucks too
             trig = trig | trig[PARTNER]
         target = np.where(trig, dz_tgt_val, 0.0)
-        dz_new = dz + np.clip(target - dz, -DZ_RATE * DT, DZ_RATE * DT)
+        dz_new = dz + np.clip(target - dz, -dz_rate * DT, dz_rate * DT)
         dz_dot = (dz_new - dz) / DT
         dz = dz_new
 
@@ -341,7 +367,7 @@ def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
                    * (p - a_pts)[:, None, :])
         H['q'][k] = q; H['q_ref'][k] = q_r; H['p'][k] = p; H['R'][k] = R
         H['omega'][k] = omega_w; H['f'][k] = f; H['T'][k] = T; H['L'][k] = L
-        H['thrust'][k] = np.minimum(un, T_MAX); H['dz'][k] = dz
+        H['thrust'][k] = un; H['dz'][k] = dz      # demanded (pre-clip) thrust
         H['trig'][k] = trig
         H['sag'][k] = sag_perp(T, L, c)
         H['clr_drone'][k] = clearance(p, obs)
@@ -353,7 +379,6 @@ def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
         # Physical invariants (simulation must never violate these)
         assert np.all(np.isfinite(p)) and np.all(np.isfinite(q))
         assert np.all(T >= 0.0) and np.all(f >= F_MIN - 1e-9)
-        assert np.all(H['thrust'][k] <= T_MAX + 1e-9)
         assert abs(np.linalg.norm(qa) - 1.0) < 1e-9
         # Mission failures: stop the run (no ground contact is modelled)
         if corners_w[:, 2].min() <= 0.0:
@@ -391,7 +416,8 @@ def run_simulation(avoid='pair', alloc='wrench', damp=1, cable='catenary',
     time = time[:n]
     tilt = np.degrees(np.arccos(np.clip(H['R'][:, 2, 2], -1, 1)))
     H.update(fail_t=fail_t, fail_why=fail_why, time=time, tilt=tilt,
-             n_sat=n_sat, obs=obs, label=label, avoid=avoid, alloc=alloc, damp=damp, cable=cable, e_lat=e_lat,
+             n_sat=n_sat, obs=obs, label=label, avoid=avoid, alloc=alloc,
+             damp=damp, cable=cable, e_lat=e_lat, mission=mission,
              pos_err=np.linalg.norm(H['q'] - H['q_ref'], axis=1))
     return H
 
@@ -520,21 +546,26 @@ def plot_trajectory_3d(d):
     _save(fig, 'trajectory_3d.png')
 
 
-def plot_load_tilt(runs):
-    fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True)
+def plot_load_tilt(runs, hov):
+    fig, axes = plt.subplots(3, 1, figsize=(12, 11), sharex=True)
+    allr = dict(runs, **hov)
     groups = [(['2d', 'flat', 'pair', 'pair_nd', 'pair_f', 'pair_st'],
-               'Runs that stay below 5° (grey: pair-tuck trigger windows)',
-               'pair'),
-              (['climb', 'tuck1', 'tuck1_f', 'pair_rd'],
-               'Runs that exceed 5° (grey: single-tuck trigger windows; '
-               'log scale)', 'tuck1')]
+               'Route runs that stay below 5° (grey: pair-tuck trigger '
+               'windows)', 'pair'),
+              (['climb', 'tuck1', 'tuck1_f', 'tuck1_s', 'pair_rd'],
+               'Route runs that exceed 5° (grey: single-tuck trigger windows; '
+               'log scale)', 'tuck1'),
+              (['hov1_f', 'hov1'],
+               f'Hover: drone 3 tucks at t = {T_HOVER_TUCK:.0f} s and holds '
+               '(grey: tuck triggered; log scale)', 'hov1')]
     cols = ['grey', 'black', 'tab:green', 'tab:orange', 'tab:purple',
             'tab:cyan']
     for ax, (keys, title, shade_key) in zip(axes, groups):
-        _shade(ax, runs[shade_key])
+        _shade(ax, allr[shade_key])
         for key, col in zip(keys, cols):
-            d = runs[key]
-            ls = '--' if key in ('pair_f', 'pair_st', 'tuck1_f') else '-'
+            d = allr[key]
+            ls = '--' if key in ('pair_f', 'pair_st', 'tuck1_f',
+                                 'hov1_f') else '-'
             extra = (f' (stopped t = {d["fail_t"]:.2f} s)'
                      if d['fail_t'] is not None else '')
             ax.plot(d['time'], d['tilt'], color=col, lw=1.2, ls=ls,
@@ -545,9 +576,10 @@ def plot_load_tilt(runs):
         ax.grid(True, alpha=0.3)
         ax.legend(fontsize=8, ncol=2)
     axes[0].set_ylim(0, 6)
-    axes[1].set_yscale('log')
-    axes[1].set_ylim(0.01, 100)
-    axes[1].set_xlabel('Time (s)')
+    for ax in axes[1:]:
+        ax.set_yscale('log')
+        ax.set_ylim(0.01, 100)
+    axes[2].set_xlabel('Time (s)')
     fig.suptitle('S026 3D — load tilt Θ_L(t)')
     plt.tight_layout()
     _save(fig, 'load_tilt.png')
@@ -824,6 +856,27 @@ def print_setup():
     print(f'  Pair-tuck static min-norm split (one pair tucked, load weight '
           f'only): {f_n:.3f} N (flat pair) / {f_n * c_t / c_n:.3f} N '
           f'(tucked pair)')
+    # Static allocation with one asymmetric pair: level load, drone 3 tucked
+    h_s = np.array([H_C, H_C, h_t, H_C])
+    c_s = np.column_stack([DIRS[:, :2] * np.sqrt(L0**2 - h_s**2)[:, None],
+                           h_s]) / L0
+    W_s = M_LOAD * G * ZHAT
+    print('  Static allocation, level load, drone 3 tucked (one asymmetric '
+          'pair 3-4):')
+    for mode in ('wrench', 'force'):
+        f_s = allocate(c_s, B_ATT, W_s, mode)
+        res_f = c_s.T @ f_s - W_s
+        res_m = np.cross(B_ATT, c_s * f_s[:, None]).sum(axis=0)
+        print(f'    {mode:6s}: f = ' + ', '.join(f'{x:.3f}' for x in f_s)
+              + f' N; force residual |.| = {np.linalg.norm(res_f):.4f} N; '
+              f'moment residual (x, y, z) = ({res_m[0]:.4f}, {res_m[1]:.4f}, '
+              f'{res_m[2]:.4f}) N m')
+    f12 = M_LOAD * G / (2 * c_s[0, 2])
+    f_x = np.array([f12, f12, 0.0, 0.0])
+    res_x = np.cross(B_ATT, c_s * f_x[:, None]).sum(axis=0)
+    print(f'    exact solution f3 = f4 = 0: f1 = f2 = {f12:.3f} N; force '
+          f'residual {np.linalg.norm(c_s.T @ f_x - W_s):.1e} N, moment '
+          f'residual {np.linalg.norm(res_x):.1e} N m')
     print(f'  Poles: r = {R_OBS} m, h = {H_OBS} m, lateral offset '
           f'{E_LAT} m; load reference abreast at t = {T_A:.2f} s and '
           f'{T_B:.2f} s')
@@ -834,7 +887,7 @@ def print_run_table(runs):
     hdr = ('run', 'tilt max', 't@max', 'tilt rms', '|w| rms', 't>5deg',
            'T min', 'T max', 'slack', 'err max', 'clr drone', 'clr cable',
            'clr load', 'rise max', 'gap min', 'corner zmin', 'thr max',
-           'status')
+           'sat', 'status')
     print(' | '.join(hdr))
     for key, d in runs.items():
         m = summarize(d)
@@ -847,12 +900,13 @@ def print_run_table(runs):
               f'{m["clr_drone"]:.3f} | {m["clr_cable"]:.3f} | '
               f'{m["clr_load"]:.3f} | {m["rise_max"]:.3f} | '
               f'{m["gap_min"]:.3f} | {m["corner_zmin"]:.3f} | '
-              f'{m["thrust_max"]:.2f} | {status}')
+              f'{m["thrust_max"]:.2f} | {m["n_sat"]} | {status}')
     print('  (tilt in deg, |w| rms in deg/s over the cruise, t>5deg in s, '
           'tensions in N, slack = samples with a cable at T = 0, '
           'clearances in m, rise = max drone height above its attachment '
           f'minus h = {H_C} m, gap min = min drone height above its '
-          'attachment, corner zmin = lowest box corner)')
+          'attachment, corner zmin = lowest box corner, thr max = max '
+          f'demanded thrust, sat = samples clipped at T_max = {T_MAX} N)')
     for key in ('2d', 'flat', 'pair', 'pair_st'):
         m = summarize(runs[key])
         print(f'  {runs[key]["label"]}: load error RMS {m["err_rms"]:.4f} m, '
@@ -884,6 +938,50 @@ def print_run_table(runs):
               + ', '.join(f'{1e3 * x:.2f}' for x in d['sag'][k]) + ' mm')
 
 
+def asym_pairs(dz):
+    """Number of opposite pairs (1-2, 3-4) whose two drones are at different
+    tuck heights, per sample."""
+    return ((np.abs(dz[:, 0] - dz[:, 1]) > 1e-9).astype(int)
+            + (np.abs(dz[:, 2] - dz[:, 3]) > 1e-9).astype(int))
+
+
+def print_single_tuck_analysis(runs, hov):
+    print('\n--- Single-drone tuck: cruise vs hover ---')
+    for key in ('tuck1', 'tuck1_f', 'tuck1_s'):
+        d = runs[key]
+        na = asym_pairs(d['dz'])
+        k = int(np.argmax(d['tilt']))
+        print(f'  {d["label"]}: one pair asymmetric {np.sum(na == 1) * DT:.2f} s, '
+              f'both pairs asymmetric {np.sum(na == 2) * DT:.2f} s; max tilt '
+              f'{d["tilt"][k]:.2f} deg at t = {d["time"][k]:.2f} s with dz = '
+              + ', '.join(f'{x:.3f}' for x in d['dz'][k]) + ' m, T = '
+              + ', '.join(f'{x:.2f}' for x in d['T'][k]) + ' N; max tilt '
+              f'while one pair asymmetric {d["tilt"][na == 1].max():.2f} deg, '
+              f'while both {d["tilt"][na == 2].max():.2f} deg')
+    print(f'  Hover runs (load held at ({Q_UP[0]:.0f}, {Q_UP[1]:.0f}, '
+          f'{Q_UP[2]:.0f}) m, drone 3 tucks {DZ_TUCK} m at {DZ_RATE} m/s from '
+          f't = {T_HOVER_TUCK:.1f} s, held to t = {T_TOTAL:.0f} s):')
+    for key, d in hov.items():
+        m = summarize(d)
+        late = d['time'] >= T_TOTAL - 5.0
+        status = ('completed' if d['fail_t'] is None
+                  else f'stopped t={d["fail_t"]:.2f} s')
+        print(f'    {d["label"]}: tilt max {m["tilt_max"]:.2f} deg at t = '
+              f'{m["t_tilt_max"]:.2f} s; last 5 s tilt '
+              f'{d["tilt"][late].min():.2f}-{d["tilt"][late].max():.2f} deg '
+              f'(mean {d["tilt"][late].mean():.2f}); T min {m["T_min"]:.3f} N, '
+              f'slack {m["n_slack"]}, sat {m["n_sat"]}; final T = '
+              + ', '.join(f'{x:.3f}' for x in d['T'][-1])
+              + ' N, final f = ' + ', '.join(f'{x:.3f}' for x in d['f'][-1])
+              + f' N; {status}')
+        for tk in (T_HOVER_TUCK + 0.5, T_HOVER_TUCK + 1.0):
+            k = int(round(tk / DT))
+            print(f'      t = {d["time"][k]:.2f} s: tilt {d["tilt"][k]:.2f} '
+                  'deg, T = ' + ', '.join(f'{x:.3f}' for x in d['T'][k])
+                  + ' N, f = ' + ', '.join(f'{x:.3f}' for x in d['f'][k])
+                  + ' N')
+
+
 def print_sweep(sweep):
     print('\n--- Pole-offset sweep (3D controller) ---')
     print('e (m) | run | clr drone | clr cable | clr load | tilt max | status')
@@ -899,9 +997,13 @@ def print_sweep(sweep):
 if __name__ == '__main__':
     print_setup()
     runs = {}
-    for key, label, avoid, alloc, damp, cable in RUNS:
-        runs[key] = run_simulation(avoid, alloc, damp, cable, label=label)
+    for key, label, avoid, alloc, damp, cable, kw in RUNS:
+        runs[key] = run_simulation(avoid, alloc, damp, cable, label=label, **kw)
     print_run_table(runs)
+    hov = {}
+    for key, label, avoid, alloc, damp, cable, kw in HOVER_RUNS:
+        hov[key] = run_simulation(avoid, alloc, damp, cable, label=label, **kw)
+    print_single_tuck_analysis(runs, hov)
 
     sweep = {'flat': [], 'tuck1': [], 'pair': []}
     for e in E_SWEEP:
@@ -910,7 +1012,8 @@ if __name__ == '__main__':
                 d = runs[key]
             else:
                 spec = next(r for r in RUNS if r[0] == key)
-                d = run_simulation(*spec[2:], e_lat=e, label=spec[1])
+                d = run_simulation(*spec[2:6], e_lat=e, label=spec[1],
+                                   **spec[6])
             m = summarize(d)
             m.update(e=e, label=d['label'],
                      status='completed' if d['fail_t'] is None
@@ -920,7 +1023,7 @@ if __name__ == '__main__':
 
     print('\nGenerating plots...')
     plot_trajectory_3d(runs['pair'])
-    plot_load_tilt(runs)
+    plot_load_tilt(runs, hov)
     plot_cable_tensions(runs)
     plot_altitude_profiles(runs)
     plot_cable_sag(runs['pair'])
