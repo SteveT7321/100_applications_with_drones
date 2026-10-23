@@ -1,6 +1,6 @@
 # S031 3D Upgrade — Path De-confliction
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S031 original](../S031_path_deconfliction.md)
 
 ---
@@ -29,6 +29,12 @@ $(250, 250, 20)$ m and flies pre-planned straight-line routes to distinct delive
 $500 \times 500 \times 45$ m column of urban airspace ($z \in [15, 60]$ m). Drones cruise at a
 nominal speed of $v = 12$ m/s. Routes are generated in 3D: goal altitudes are drawn uniformly from
 $[15, 50]$ m, making genuine 3D crossing conflicts possible even without horizontal path overlap.
+
+> **Card correction (implementation).** Straight rays from one shared depot at equal speed always
+> diverge ($\Delta\mathbf{p}_{ij}(t) = v\,t\,(\hat{\mathbf{u}}_i - \hat{\mathbf{u}}_j)$, so
+> $t_{CPA} \le 0$ for every pair), in 3D exactly as in 2D: this setup contains no conflict at all.
+> The implementation uses the fixed 2D S031 traffic instead: four edge hubs at 20 m, two drones
+> per hub (second wave 3 s later), goals on the opposite edge, and goal altitudes $\sim U[15, 50]$ m.
 
 The simulation compares four de-confliction strategies on three metrics: residual conflict count,
 total added flight distance, and maximum arrival delay.
@@ -137,10 +143,13 @@ horizontal proximity. Drones climb or descend from the depot to their assigned a
 start of the mission; this transition adds a 3D path cost:
 
 $$\Delta L_i^{(3)} = \|\mathbf{o}_i - \mathbf{o}_i^{layer}\|_3
-                   + \|\mathbf{g}_i^{layer} - \mathbf{g}_i\|_3$$
+                   + \|\mathbf{g}_i^{layer} - \mathbf{g}_i\|_3
+                   + \|\mathbf{g}_i - \mathbf{o}_i\|_{h} - \|\mathbf{g}_i - \mathbf{o}_i\|_3$$
 
 where $\mathbf{o}_i^{layer}$ and $\mathbf{g}_i^{layer}$ are the depot and goal positions adjusted
-to altitude $z_i$.
+to altitude $z_i$ and $\|\cdot\|_h$ is the horizontal distance. (Corrected: the earlier formula kept
+only the two vertical legs; the layer cruise is horizontal while the nominal path is a sloped 3D
+segment, so the last two terms, which are $\le 0$, are part of the added distance.)
 
 ### Strategy 4 — Reactive Vertical Climb-to-Avoid (New in 3D)
 
@@ -149,6 +158,10 @@ vertical avoidance waypoint directly above (or below) its current position by $\
 chosen so that the new vertical separation satisfies $d'_v \geq h_{sep} + \delta_{margin}$:
 
 $$\Delta z_{avoid} = \text{sign}(\delta_{z,ij}) \cdot (h_{sep} + \delta_{margin} - |\delta_{z,ij}|)$$
+
+with $\text{sign}(0) := +1$ (climb) — otherwise two drones at the same altitude, the most dangerous
+case, would get $\Delta z_{avoid} = 0$. If $\mathbf{w}_{vert}$ would leave $[15, 60]$ m, the drone
+passes on the other side: $\Delta z_{avoid} = -\text{sign}(\delta_{z,ij})\,(h_{sep} + \delta_{margin} + |\delta_{z,ij}|)$.
 
 The avoidance waypoint in 3D:
 
