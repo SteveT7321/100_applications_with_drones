@@ -1,6 +1,6 @@
 # S030 3D Upgrade — Multi-Depot Delivery
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S030 original](../S030_multi_depot_delivery.md)
 
 ---
@@ -86,9 +86,15 @@ $$\mathbf{p}_i^{cruise} = (x_i,\; y_i,\; z_k^{cruise}), \qquad
   = \frac{(x_j - x_i,\; y_j - y_i,\; 0)}{\|(x_j - x_i,\; y_j - y_i)\|_2}$$
 
 Each customer stop consists of a vertical descent from $z_k^{cruise}$ to $z = 1$ m for delivery,
-followed by a vertical re-climb to $z_k^{cruise}$. The energy cost of one stop-and-return climb:
+followed by a vertical re-climb to $z_k^{cruise}$. The energy cost of one stop-and-return climb
+(only the re-climb is charged, because descents are free under the arc-cost rule above):
 
-$$E_{stop} = 2 \cdot m_{drone} \cdot g \cdot (z_k^{cruise} - 1)$$
+$$E_{stop} = m_{drone} \cdot g \cdot (z_k^{cruise} - 1)$$
+
+> **Correction (implementation, 2026-10-24).** An earlier version of this card wrote
+> $E_{stop} = 2\,m_{drone}\,g\,(z_k^{cruise} - 1)$, which charges the descent as well and contradicts
+> "descents are free". The descent still counts in the range budget (path length) but not in the
+> climb energy.
 
 ### 3D Multi-Depot VRP Formulation
 
@@ -142,8 +148,14 @@ $$|z_k^{cruise} - z_{k'}^{cruise}| \geq \Delta z_{sep}
   \quad \forall k, k' \in \mathcal{K}, \; \delta(k) \neq \delta(k')$$
 
 With the tier assignment above ($z \in \{0, 15, 30\}$ m) and $\Delta z_{sep} = 5$ m, this is
-automatically satisfied. If two depots share the same tier, their drones are offset by
+satisfied between different tiers. If two depots share the same tier, their drones are offset by
 $\pm 2.5$ m within that tier.
+
+> **Correction (implementation, 2026-10-24).** D1 and D4 share the ground tier, so the
+> separation is *not* automatic, and a $-2.5$ m offset from a 0 m tier would put a fleet
+> underground. The implementation shifts the ground band up: D1 cruises at 2.5 m and D4 at 7.5 m
+> (D2 30 m, D3 15 m), giving $\geq 5$ m between all fleet layers. The guarantee holds only while
+> both drones cruise; descents to the 1 m delivery altitude cross the lower layers.
 
 ### Alternating Optimisation with 3D Costs
 
@@ -193,6 +205,9 @@ Accept the reassignment when $\Delta_{m \to m'}^{3D} < 0$ and feasibility is pre
 ---
 
 ## Expected Output
+
+Implemented in `src/02_logistics_delivery/3d/s030_3d_multi_depot.py`; outputs go to
+`outputs/02_logistics_delivery/3d/s030_3d_multi_depot/`.
 
 - 3D trajectory plot: all 10 drone paths with distinct altitude layers; depot markers at their
   true $(x, y, z)$ positions; customers shown at $z = 1$ m; open-return arcs as dashed lines
