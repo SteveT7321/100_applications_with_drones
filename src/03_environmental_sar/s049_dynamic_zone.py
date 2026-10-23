@@ -43,6 +43,7 @@ D_MAX       = 2000.0     # m — range on a full battery
 SOC_THRESH  = 0.30       # SoC below which a drone returns for a battery swap
 T_SWAP      = 60.0       # s — battery swap time at the home pad
 T_CONFIRM   = 10.0       # s — hover time to confirm a detected survivor
+HOVER_POWER_RATIO = 1.0  # hover power / cruise power (multirotor: about equal)
 TOP_M       = 20         # next target = nearest of the TOP_M highest-prior unscanned zone cells
 N_SURVIVORS = 5          # number of survivors
 DT          = 0.5        # s — simulation timestep
@@ -146,6 +147,12 @@ class DroneAgent:
     def available(self):
         """True if the drone takes part in the zone partition."""
         return self.mode in ('search', 'idle')
+
+    def hover(self):
+        """Hover for one step: drains the battery like HOVER_POWER_RATIO x
+        cruise power, i.e. HOVER_POWER_RATIO * SPEED * DT of range."""
+        self.dist_pack += HOVER_POWER_RATIO * SPEED * DT
+        self.soc = max(0.0, 1.0 - self.dist_pack / D_MAX)
 
     def fly_towards(self, point):
         """Move up to SPEED*DT towards point, drain the battery by the distance
@@ -255,6 +262,7 @@ def run_simulation(strategy='weighted', survivor_seed=SHOW_SEED, record=True):
                                 d.mode = 'confirm'; d.timer = T_CONFIRM
                                 events.append(('survivor', d.idx))
             elif d.mode == 'confirm':
+                d.hover()
                 d.timer -= DT
                 if d.timer <= 1e-9:
                     d.mode = 'search'; d.target = None
@@ -275,7 +283,8 @@ def run_simulation(strategy='weighted', survivor_seed=SHOW_SEED, record=True):
         zone_owner[scanned] = -1
         for reason, idx in events:
             event_log.append((t, reason, idx))
-        if strategy != 'static' and events and not scanned.all():
+        if (strategy != 'static' and events and not scanned.all()
+                and any(d.available for d in drones)):
             j_before = fairness()
             avail = [d for d in drones if d.available]
             zone_owner = partition(avail, weighted=(strategy == 'weighted'))
