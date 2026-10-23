@@ -1,6 +1,6 @@
 # S048 3D Upgrade — Lawnmower Coverage on Terrain
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S048 original](../S048_lawnmower.md)
 
 ---
@@ -13,13 +13,15 @@ where the drone is in the area. On real terrain this assumption breaks in two pl
 
 1. **Footprint bloat on slopes**: when the drone maintains a constant mean-sea-level (MSL) altitude
    over a hillside, its actual height above ground level (AGL) varies strip-by-strip. The nadir
-   footprint radius scales linearly with AGL, so a drone that is 2 m too high casts a footprint
-   12% wider than expected — causing false confidence in coverage — while being 2 m too low
+   footprint radius scales linearly with AGL, so a drone that is 2 m too high (10 m instead of 8 m)
+   casts a footprint 25% wider than expected — causing false confidence in coverage — while being 2 m too low
    tightens the footprint and leaves gaps.
 2. **Strip width must adapt**: on steep cross-track slopes the strip-width formula $d = 2 r_s$ no
    longer guarantees gap-free coverage because adjacent strip footprints are projected onto a
    tilted surface. The effective ground-projected width narrows by a factor of $\cos\phi$ where
-   $\phi$ is the local terrain slope angle.
+   $\phi$ is the local terrain slope angle. (Implementation note: with the horizontal-disc coverage
+   metric used below, a nadir footprint covers the same horizontal disc on a slope, so this
+   correction only adds margin; the gaps that do appear come from AGL lag on climbs.)
 
 This variant replaces the flat altitude assumption with a **terrain-following AGL controller** that
 reads a digital elevation model (DEM) and maintains a constant AGL clearance $h_{AGL}$. Strip
@@ -54,9 +56,12 @@ from the target clearance — demonstrating that the terrain-following variant a
 coverage guarantees as the flat baseline while operating over real topography.
 
 **Comparison configurations**:
-1. **Under-lap** — slope-corrected strip width $d = 12$ m (footprint gap on level ground).
-2. **Optimal** — slope-corrected strip width $d^* = 2 r_s / \cos\phi_{ct}$ (guaranteed coverage).
-3. **Over-lap** — slope-corrected strip width $d = 7$ m (30% redundant overlap on level ground).
+1. **Under-lap** — fixed strip width $d = 12$ m (4 m footprint gap on level ground with $r_s = 4$ m).
+2. **Optimal** — slope-corrected strip width $d_{slope} = 2 r_s \cos\phi_{ct}$ (maths section below;
+   an earlier version of this line said $2 r_s / \cos\phi_{ct}$, which widens the strips on slopes and
+   contradicts the maths section — both are evaluated in the implementation).
+3. **Over-lap** — fixed strip width $d = 7$ m (12.5% overlap on level ground: $1 - 7/8$; the 30% of
+   the 2D card holds for $r_s = 5$ m).
 
 ---
 
@@ -172,6 +177,13 @@ where:
 - $D_{climb} = \sum_k |\dot{z}_P(k)|\,\Delta t$ — total vertical distance traversed (up + down)
 - $P_{climb} = 250$ W — power during sustained climb
 - $v_z^{avg}$ — mean absolute vertical speed during climb/descent segments
+
+(Correction: as written, the last term charges the full 250 W on top of cruise power for every
+second of climbing *or descending*, which more than doubles the mission energy — 148.8 kJ instead of
+62.45 kJ for the under-lap run on terrain seed 0. The implementation charges the extra power
+$P_{climb} - P_{cruise} = 100$ W only while climbing at the maximum rate, i.e.
+$E_{climb} = (P_{climb} - P_{cruise})\,D_{up}/\dot{z}_{max} \approx 33$ J per metre climbed, and uses
+flight time instead of $L_{horiz}/v$ for the cruise term.)
 
 ---
 
