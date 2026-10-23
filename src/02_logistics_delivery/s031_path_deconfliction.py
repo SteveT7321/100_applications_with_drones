@@ -526,6 +526,7 @@ if __name__ == '__main__':
             print(f'  Lowest commanded speed   : {s["min_speed"]:.2f} m/s')
         if strat == 'waypoint':
             print(f'  Avoidance waypoints      : {s["n_wp"]}')
+            print('  Added distance per drone : ' + ' '.join(f'D{k+1}={v:.2f}' for k, v in enumerate(res['added_dist'])) + ' m')
         if strat == 'none':
             for (tt, i, j, x, y) in res['conflict_events']:
                 print(f'    conflict D{i+1}-D{j+1} first flagged t={tt:.1f} s')
