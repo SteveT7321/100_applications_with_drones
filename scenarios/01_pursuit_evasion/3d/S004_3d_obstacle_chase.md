@@ -1,6 +1,6 @@
 # S004 3D Upgrade — Obstacle-Course Chase
 
-**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Pursuit & Evasion | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Done
 **Based on**: [S004 original](../S004_obstacle_chase.md)
 
 ---
