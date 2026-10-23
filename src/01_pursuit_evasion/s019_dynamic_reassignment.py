@@ -1,30 +1,52 @@
 """
 S019 Dynamic Target Reassignment
 ==================================
-3 pursuers vs 3 evaders with mixed strategies (straight, spiral, random).
-Compares three assignment strategies:
-  1. Static   — Hungarian at t=0, never updated
-  2. Dynamic  — re-optimise every T_CHECK seconds using the Hungarian algorithm;
-                only reassign if improvement > DC_SWITCH (switching cost)
-  3. Greedy   — each pursuer always chases its nearest evader (no coordination)
+3 pursuers vs 3 evaders with mixed strategies (straight, spiral, random), all at
+the same altitude (z = 2 m, simulated in the horizontal plane).
 
-The dynamic approach handles unpredictable evader behaviour by periodically
-recomputing the optimal assignment, balancing responsiveness against oscillation.
+Three assignment strategies:
+  1. Static   — Hungarian at t = 0, never re-optimised.
+  2. Dynamic  — Hungarian at t = 0, re-optimised every T_CHECK seconds; the new
+                assignment is adopted only if it lowers the summed time-to-go
+                by more than DC_SWITCH.
+  3. Greedy   — every step each pursuer chases its nearest uncaptured evader.
+
+Captured evaders are never assigned.  When a pursuer's evader is captured, the
+freed pursuer joins the nearest remaining evader (static and dynamic alike), so
+the only difference between static and dynamic is the periodic re-optimisation.
+With fewer evaders than pursuers, the Hungarian step uses an augmented cost
+matrix (each remaining evader column repeated ceil(M / N_remaining) times) so
+every pursuer keeps a live target.  Any pursuer within CAPTURE_R captures.
+
+Evader behaviours (speed V_EVADER):
+  straight — fixed heading (given, or away from the pursuers' centroid at t = 0)
+  spiral   — heading SPIRAL_ANGLE (sign = circling direction) away from the current
+             flee direction (away from the pursuers' centroid): it circles round
+             the pursuers while opening the range (logarithmic spiral)
+  random   — uniformly random heading, redrawn every RANDOM_PERIOD seconds
+             from a seeded generator
+
+Scenarios:
+  card      — card start positions; straight evader flees.
+  crossing  — wide layout in which the straight evader runs across the other
+              lanes and the spiral evader circles up through them, so the
+              initial assignment goes stale.
+  Monte Carlo on the crossing layout: jittered starts, random strategy-to-evader
+  mapping, random straight heading, random spiral direction, random-evader seed.
 
 Usage:
     conda activate drones
     python src/01_pursuit_evasion/s019_dynamic_reassignment.py
 """
 
-import sys, os
+import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+import matplotlib.animation as animation
+from matplotlib.collections import LineCollection
 from scipy.optimize import linear_sum_assignment
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ─────────────────────────────────
 M           = 3            # number of pursuers
@@ -35,514 +57,471 @@ CAPTURE_R   = 0.30         # m    capture radius
 DT          = 0.05         # s    simulation timestep
 T_MAX       = 120.0        # s    max simulation time
 T_CHECK     = 1.0          # s    reassignment check period
-DC_SWITCH   = 0.5          # s    switching cost
+DC_SWITCH   = 0.5          # s    switching cost (summed time-to-go)
+DC_SWITCH_SWEEP = [0.0, 0.1, 0.25, 0.5]   # s  sensitivity sweep (Monte Carlo)
+SPIRAL_ANGLE = np.radians(60.0)   # spiral heading offset from the flee direction
+RANDOM_PERIOD = 1.0        # s    random evader heading hold time
+RANDOM_SEED = 42           # seed of the random evader (fixed scenarios)
 
-# ── Starting positions ──
-# Pursuers: 3 positions forming a triangle.
-# Evaders: 3 positions also forming a triangle, on the right side.
-#
-# Initial Hungarian assigns: P0→E0, P1→E1, P2→E2 (by proximity).
-#
-# Evader strategies designed to create TWO reassignment events:
-#   E0 (straight): runs strongly DOWNWARD (-Y), heading toward P2's zone.
-#                  After ~5 s it is closer to P2 than P0 → swap P0↔P2.
-#   E1 (spiral):   runs strongly UPWARD (+Y), heading toward P0's zone.
-#                  After ~5 s it is closer to P0 (now chasing lower) than P1.
-#   E2 (random):   random walk with +X bias.
-#
-# All pursuers start at x=0 (centre). Evaders start at x=+20 (far right).
-# This gives ~20 m initial separation → minimum intercept time = 20/1.5 ≈ 13 s
-# (if evader runs away from pursuer at V_EVADER).
-# ── Two-band layout for guaranteed reassignment improvement ──
-#
-# P0 (top)  initially chases E0 (also top) — straight evader runs DOWN → toward P1
-# P1 (bot)  initially chases E1 (also bot) — spiral evader runs UP   → toward P0
-# P2 (mid)  chases E2 (random mid)
-#
-# After ~4 s:
-#   E0 has moved DOWN 12 m (from y=12 to y=0), now MUCH closer to P1 than P0
-#   E1 has moved UP  12 m (from y=-12 to y=0), now MUCH closer to P0 than P1
-#   Static keeps P0→E0, P1→E1: both pursuers have to reverse directions (SLOW)
-#   Dynamic swaps: P1→E0 (right next to P1 now), P0→E1 (right next to P0 now)
-#   → Dynamic saves both pursuer reversal costs → lower total time
-#
-# Expected: Static total >> Dynamic total (demonstrating 2+ reassignment events)
-PURSUER_STARTS = np.array([
-    [ 0.,  12., 2.],   # P0 — top
-    [ 0.,   0., 2.],   # P1 — mid
-    [ 0., -12., 2.],   # P2 — bottom
-], dtype=float)
+SCENARIOS = {
+    'card': {
+        'P': np.array([[-5.0, -2.0], [-5.0, 0.0], [-5.0, 2.0]]),
+        'E': np.array([[ 2.0, -2.0], [ 2.0, 0.0], [ 2.0, 2.0]]),
+        'spec': [('straight', None), ('spiral', +1), ('random', None)],
+    },
+    'crossing': {
+        'P': np.array([[0.0, 12.0], [0.0, 0.0], [0.0, -12.0]]),
+        'E': np.array([[20.0, 12.0], [20.0, 0.0], [20.0, -12.0]]),
+        'spec': [('straight', -np.pi / 2), ('random', None), ('spiral', +1)],
+    },
+}
 
-EVADER_STARTS = np.array([
-    [ 20.,  12., 2.],   # E0 straight — top-right  → runs DOWNWARD toward P1 zone
-    [ 20., -12., 2.],   # E1 spiral   — bot-right  → runs UPWARD  toward P0 zone
-    [ 20.,   0., 2.],   # E2 random   — mid-right
-], dtype=float)
+# Monte Carlo (crossing layout)
+MC_TRIALS = 200
+MC_SEED   = 7
+MC_JITTER = 2.0            # m, uniform jitter of every start coordinate
 
-ARENA_XY = 50.0   # m  soft arena boundary
+STRATEGIES = ['static', 'dynamic', 'greedy']
 
 OUTPUT_DIR = os.path.join(
     os.path.dirname(__file__), '..', '..',
     'outputs', '01_pursuit_evasion', 's019_dynamic_reassignment',
 )
 
-RNG = np.random.default_rng(0)   # fixed seed for reproducibility
+
+# ── Assignment helpers ─────────────────────────
+
+def cost_matrix(pursuers, evaders):
+    """C[i, j] = |p_Pi - p_Ej| / v_P (time-to-go estimate)."""
+    return np.linalg.norm(pursuers[:, None] - evaders[None], axis=2) / V_PURSUER
 
 
-# ── Helpers ────────────────────────────────────
-
-def cost_matrix(pursuers, evaders, captured=None):
-    """Cost matrix C[i,j] = distance(P_i, E_j) / V_PURSUER.
-    Captured evaders get cost = 1e6 (excluded from assignment).
+def hungarian_live(pursuers, evaders, captured):
     """
-    C = np.zeros((M, N))
-    for i in range(M):
-        for j in range(N):
-            if captured is not None and captured[j]:
-                C[i, j] = 1e6
-            else:
-                C[i, j] = np.linalg.norm(pursuers[i] - evaders[j]) / V_PURSUER
-    return C
-
-
-def hungarian_assignment(C):
-    """Return assignment dict {pursuer_i: evader_j} via Hungarian algorithm."""
-    row_ind, col_ind = linear_sum_assignment(C)
-    return dict(zip(row_ind.tolist(), col_ind.tolist()))
-
-
-def pure_pursuit_step(pursuer_pos, target_pos, speed, dt):
-    """Move pursuer toward target at fixed speed. Returns new position."""
-    diff = target_pos - pursuer_pos
-    dist = np.linalg.norm(diff)
-    if dist < 1e-6:
-        return pursuer_pos.copy()
-    move = min(speed * dt, dist)
-    return pursuer_pos + (diff / dist) * move
-
-
-def evader_straight_step(pos, vel, dt):
-    """Straight-line escape evader. vel is a fixed direction * speed."""
-    new_pos = pos + vel * dt
-    new_pos[2] = 2.0
-    return new_pos
-
-
-def evader_spiral_step(pos, t, dt):
-    """Spiral evader: runs UPWARD toward P0's zone.
-    E1 starts bottom-right; moves at full speed upward.
-    The direction sweeps slowly from +Y toward +X (spiral).
-    omega = 0.15 rad/s → full quarter turn in ~10 s.
-
-    After ~4 s E1 has moved ~14 m upward (from y=-12 to y=+2),
-    now MUCH closer to P0 (top, y=12) than to P1 (which has chased
-    downward from y=0).
+    Optimal assignment over uncaptured evaders only.  Each live evader column is
+    repeated ceil(M / n_live) times so that every pursuer gets a live evader.
     """
-    omega = 0.15   # rad/s  — slow rightward sweep
-    phi   = omega * t
-    # Starts going +Y, slowly sweeps toward +X
-    direction = np.array([np.sin(phi), np.cos(phi), 0.0])
-    new_pos   = pos + direction * V_EVADER * dt
-    new_pos[2] = 2.0
-    return new_pos
+    live = [j for j in range(N) if not captured[j]]
+    C = cost_matrix(pursuers, evaders[live])
+    reps = int(np.ceil(M / len(live)))
+    rows, cols = linear_sum_assignment(np.tile(C, (1, reps)))
+    return {int(r): live[int(c) % len(live)] for r, c in zip(rows, cols)}
 
 
-def evader_random_step(pos, rng, dt):
-    """Random-walk evader with +X bias. Reflects at arena boundary."""
-    angle = rng.uniform(0, 2 * np.pi)
-    vel = np.array([np.cos(angle), np.sin(angle), 0.0]) * V_EVADER
-    new_pos = pos + vel * dt
-    new_pos[2] = 2.0
-    new_pos[0] = np.clip(new_pos[0], -ARENA_XY, ARENA_XY)
-    new_pos[1] = np.clip(new_pos[1], -ARENA_XY, ARENA_XY)
-    return new_pos
+def nearest_live(p, evaders, captured):
+    live = [j for j in range(N) if not captured[j]]
+    return live[int(np.argmin([np.linalg.norm(p - evaders[j]) for j in live]))]
+
+
+def assignment_cost(pursuers, evaders, assignment):
+    C = cost_matrix(pursuers, evaders)
+    return sum(C[i, j] for i, j in assignment.items())
+
+
+# ── Evader behaviours ──────────────────────────
+
+def flee_dir(e, pursuers):
+    d = e - pursuers.mean(axis=0)
+    n = np.linalg.norm(d)
+    return d / n if n > 1e-9 else np.array([1.0, 0.0])
+
+
+def rot(v, a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([c * v[0] - s * v[1], s * v[0] + c * v[1]])
+
+
+def spec_label(spec):
+    mode, prm = spec
+    if mode == 'straight':
+        return 'straight, flee' if prm is None else f'straight {np.degrees(prm):.0f}°'
+    if mode == 'spiral':
+        return 'spiral ' + ('CCW' if prm > 0 else 'CW')
+    return 'random'
 
 
 # ── Simulation ─────────────────────────────────
 
-def run_one(strategy):
-    """
-    Simulate one assignment strategy.
-    strategy: 'static' | 'dynamic' | 'greedy'
-    Returns dict with trajectories, capture times, assignment history.
-    """
-    rng_ev = np.random.default_rng(42)
+def run_one(strategy, p0, e0, spec, rng_seed, record=True, dc_switch=DC_SWITCH):
+    """Simulate one strategy.  Returns capture times, events and trajectories."""
+    rng = np.random.default_rng(rng_seed)
+    pursuers, evaders = p0.astype(float).copy(), e0.astype(float).copy()
+    captured, capture_times, capturer = [False] * N, [None] * N, [None] * N
+    straight_dir = {}
+    for j, (mode, prm) in enumerate(spec):
+        if mode == 'straight':
+            straight_dir[j] = (flee_dir(evaders[j], pursuers) if prm is None
+                               else np.array([np.cos(prm), np.sin(prm)]))
+    rand_heading = {j: rng.uniform(0, 2 * np.pi) for j in range(N)}
+    check_every = int(round(T_CHECK / DT))
+    rand_every = int(round(RANDOM_PERIOD / DT))
 
-    pursuers = PURSUER_STARTS.copy()
-    evaders  = EVADER_STARTS.copy()
+    if strategy == 'greedy':
+        assignment = {i: nearest_live(pursuers[i], evaders, captured) for i in range(M)}
+    else:
+        assignment = hungarian_live(pursuers, evaders, captured)
+    initial = dict(assignment)
+    events = []       # (t, kind, old, new, improvement)
+    best_imp = (0.0, 0.0)   # largest improvement seen at a dynamic check (value, t)
+    p_traj, e_traj, a_hist = [pursuers.copy()], [evaders.copy()], [dict(assignment)]
 
-    captured        = [False] * N
-    capture_times   = [None]  * N
+    for step in range(int(round(T_MAX / DT))):
+        t = (step + 1) * DT
+        # ── Evaders move
+        for j, (mode, prm) in enumerate(spec):
+            if captured[j]:
+                continue
+            if mode == 'straight':
+                d = straight_dir[j]
+            elif mode == 'spiral':
+                d = rot(flee_dir(evaders[j], pursuers), prm * SPIRAL_ANGLE)
+            else:
+                if step > 0 and step % rand_every == 0:
+                    rand_heading[j] = rng.uniform(0, 2 * np.pi)
+                d = np.array([np.cos(rand_heading[j]), np.sin(rand_heading[j])])
+            evaders[j] = evaders[j] + d * V_EVADER * DT
 
-    # Initial Hungarian assignment
-    C0 = cost_matrix(pursuers, evaders, captured)
-    assignment = hungarian_assignment(C0)
+        # ── Assignment update
+        if strategy == 'greedy':
+            assignment = {i: nearest_live(pursuers[i], evaders, captured) for i in range(M)}
+        elif strategy == 'dynamic' and step > 0 and step % check_every == 0:
+            new = hungarian_live(pursuers, evaders, captured)
+            imp = assignment_cost(pursuers, evaders, assignment) - \
+                assignment_cost(pursuers, evaders, new)
+            if imp > best_imp[0]:
+                best_imp = (imp, step * DT)
+            if imp > dc_switch and new != assignment:
+                events.append((step * DT, 'reoptimise', dict(assignment), dict(new), imp))
+                assignment = new
 
-    # E0 straight: runs DOWNWARD toward P1's zone
-    # E0 starts top-right; runs down. After ~4 s it's near mid-right — close to P1.
-    # Static: P0 keeps chasing E0 downward (P0 is now mid-zone, far from E1 top)
-    # Dynamic: P1 takes E0 (near P1), P0 takes E1 (near P0) — much faster!
-    straight_vel = np.array([0.0, -1.0, 0.0])
-    straight_vel = straight_vel / np.linalg.norm(straight_vel) * V_EVADER
+        # ── Pursuers move (pure pursuit, no overshoot)
+        for i in range(M):
+            d = evaders[assignment[i]] - pursuers[i]
+            n = np.linalg.norm(d)
+            if n > 1e-9:
+                pursuers[i] = pursuers[i] + d / n * min(V_PURSUER * DT, n)
 
-    max_steps = int(T_MAX / DT)
-
-    p_traj       = [pursuers.copy()]
-    e_traj       = [evaders.copy()]
-    assign_hist  = [assignment.copy()]
-    reassign_events = []
-
-    for step in range(max_steps):
-        t = step * DT
-
-        # ── Evader moves
-        new_evaders = evaders.copy()
-        if not captured[0]:
-            new_evaders[0] = evader_straight_step(evaders[0], straight_vel, DT)
-        if not captured[1]:
-            new_evaders[1] = evader_spiral_step(evaders[1], t, DT)
-        if not captured[2]:
-            new_evaders[2] = evader_random_step(evaders[2], rng_ev, DT)
-        evaders = new_evaders
-
-        # ── Reassignment logic
-        if strategy == 'static':
-            pass
-
-        elif strategy == 'dynamic':
-            # Check every T_CHECK seconds (aligned to DT grid)
-            if step > 0 and abs((t % T_CHECK)) < DT * 0.5:
-                C = cost_matrix(pursuers, evaders, captured)
-                new_assign = hungarian_assignment(C)
-
-                current_cost = sum(C[i, assignment[i]] for i in range(M))
-                new_cost     = sum(C[i, new_assign[i]]  for i in range(M))
-                improvement  = current_cost - new_cost
-
-                if improvement > DC_SWITCH:
-                    assignment = new_assign
-                    reassign_events.append(step)
-
-        elif strategy == 'greedy':
+        # ── Capture: any pursuer within CAPTURE_R of a live evader
+        for j in range(N):
+            if captured[j]:
+                continue
+            dists = np.linalg.norm(pursuers - evaders[j], axis=1)
+            if dists.min() <= CAPTURE_R:
+                captured[j], capture_times[j], capturer[j] = True, t, int(np.argmin(dists))
+        if not all(captured) and strategy != 'greedy':
+            # freed pursuers join the nearest live evader (static and dynamic)
             for i in range(M):
-                dists = [(np.linalg.norm(pursuers[i] - evaders[j]) if not captured[j] else 1e9, j)
-                         for j in range(N)]
-                assignment[i] = min(dists)[1]
-
-        # ── Pursuer moves
-        new_pursuers = pursuers.copy()
-        for i in range(M):
-            j = assignment[i]
-            if not captured[j]:
-                new_pursuers[i] = pure_pursuit_step(pursuers[i], evaders[j], V_PURSUER, DT)
-        pursuers = new_pursuers
-
-        # ── Capture check
-        for i in range(M):
-            j = assignment[i]
-            if not captured[j]:
-                if np.linalg.norm(pursuers[i] - evaders[j]) <= CAPTURE_R:
-                    captured[j] = True
-                    capture_times[j] = (step + 1) * DT
-
-        p_traj.append(pursuers.copy())
-        e_traj.append(evaders.copy())
-        assign_hist.append(assignment.copy())
-
+                if captured[assignment[i]]:
+                    old = dict(assignment)
+                    assignment[i] = nearest_live(pursuers[i], evaders, captured)
+                    events.append((t, 'freed', old, dict(assignment), None))
+        if record:
+            p_traj.append(pursuers.copy()); e_traj.append(evaders.copy())
+            a_hist.append(dict(assignment))
         if all(captured):
             break
 
-    total_time = max(t for t in capture_times if t is not None) if any(capture_times) else T_MAX
+    done = all(captured)
+    return {'capture_times': capture_times, 'capturer': capturer, 'initial': initial,
+            'total_time': max(capture_times) if done else np.nan, 'events': events,
+            'n_reopt': sum(1 for e in events if e[1] == 'reoptimise'), 'best_imp': best_imp,
+            'p_traj': np.array(p_traj), 'e_traj': np.array(e_traj), 'a_hist': a_hist,
+            'spec': spec}
 
-    return {
-        'p_traj':          np.array(p_traj),
-        'e_traj':          np.array(e_traj),
-        'assign_hist':     assign_hist,
-        'capture_times':   capture_times,
-        'total_time':      total_time,
-        'reassign_events': reassign_events,
-        'n_reassigns':     len(reassign_events),
-    }
+
+def fmt_assign(a):
+    return ', '.join(f'P{i+1}→E{j+1}' for i, j in sorted(a.items()))
+
+
+def run_fixed(name):
+    sc = SCENARIOS[name]
+    pos = lambda A: ', '.join(f'({x:g}, {y:g})' for x, y in A)
+    print(f'\nScenario "{name}": P1-P3 at {pos(sc["P"])}; E1-E3 at {pos(sc["E"])}')
+    print('  evaders: ' + ', '.join(f'E{j+1} {spec_label(s)}' for j, s in enumerate(sc['spec'])))
+    res = {}
+    for s in STRATEGIES:
+        r = run_one(s, sc['P'], sc['E'], sc['spec'], RANDOM_SEED)
+        res[s] = r
+        caps = ', '.join(f'E{j+1} {r["capture_times"][j]:.2f}s (P{r["capturer"][j]+1})'
+                         for j in range(N))
+        print(f'  {s:8s} T_mission = {r["total_time"]:.2f} s | {caps} | '
+              f're-optimisations {r["n_reopt"]}')
+        print(f'           initial: {fmt_assign(r["initial"])}')
+        if s == 'dynamic':
+            print(f'           largest improvement at a check: {r["best_imp"][0]:.3f} s '
+                  f'(t = {r["best_imp"][1]:.2f} s; threshold {DC_SWITCH} s)')
+        for t, kind, old, new, imp in r['events']:
+            extra = f' (improvement {imp:.3f} s)' if imp is not None else ''
+            print(f'           t={t:5.2f}s {kind:10s}: {fmt_assign(old)}  ->  {fmt_assign(new)}{extra}')
+    return res
+
+
+def run_monte_carlo():
+    rng = np.random.default_rng(MC_SEED)
+    base = SCENARIOS['crossing']
+    out = {s: [] for s in STRATEGIES}
+    n_reopt = []
+    sweep = {dc: ([], []) for dc in DC_SWITCH_SWEEP}
+    for _ in range(MC_TRIALS):
+        p0 = base['P'] + rng.uniform(-MC_JITTER, MC_JITTER, base['P'].shape)
+        e0 = base['E'] + rng.uniform(-MC_JITTER, MC_JITTER, base['E'].shape)
+        modes = [['straight', 'spiral', 'random'][k] for k in rng.permutation(N)]
+        spec = []
+        for mode in modes:
+            if mode == 'straight':
+                spec.append((mode, float(rng.uniform(0, 2 * np.pi))))
+            elif mode == 'spiral':
+                spec.append((mode, float(rng.choice([-1.0, 1.0]))))
+            else:
+                spec.append((mode, None))
+        seed = int(rng.integers(1_000_000))
+        for s in STRATEGIES:
+            r = run_one(s, p0, e0, spec, seed, record=False)
+            out[s].append(r['total_time'])
+            if s == 'dynamic':
+                n_reopt.append(r['n_reopt'])
+        for dc in DC_SWITCH_SWEEP:
+            r = run_one('dynamic', p0, e0, spec, seed, record=False, dc_switch=dc)
+            sweep[dc][0].append(r['total_time']); sweep[dc][1].append(r['n_reopt'])
+    out = {s: np.array(v) for s, v in out.items()}
+    n_reopt = np.array(n_reopt)
+    print(f'\nMonte Carlo on the crossing layout: {MC_TRIALS} trials (seed {MC_SEED}); starts '
+          f'jittered ±{MC_JITTER} m, random mode mapping, straight heading U[0, 360°), '
+          'spiral direction ±, random-evader seed per trial')
+    for s in STRATEGIES:
+        v = out[s]
+        print(f'  {s:8s} all captured within {T_MAX:.0f} s: {np.sum(~np.isnan(v))}/{MC_TRIALS} | '
+              f'mean {np.nanmean(v):.3f} s, median {np.nanmedian(v):.3f} s, '
+              f'min {np.nanmin(v):.2f}, max {np.nanmax(v):.2f}')
+    d = out['dynamic']
+    tol = 1e-9
+    for other in ['static', 'greedy']:
+        o = out[other]
+        ok = ~np.isnan(o) & ~np.isnan(d)
+        print(f'  dynamic vs {other:6s}: faster {np.sum(d[ok] < o[ok] - tol)}, '
+              f'tie {np.sum(np.abs(d[ok] - o[ok]) <= tol)}, slower {np.sum(d[ok] > o[ok] + tol)} '
+              f'(of {ok.sum()} trials both finished); mean ({other} - dynamic) '
+              f'{np.mean(o[ok] - d[ok]):+.3f} s')
+    w = n_reopt > 0
+    print(f'  dynamic re-optimisations per trial: mean {n_reopt.mean():.2f}; '
+          f'trials with at least one: {w.sum()}/{MC_TRIALS}')
+    if w.any():
+        st = out['static'][w] - d[w]
+        print(f'  in those {w.sum()} trials: dynamic faster {np.sum(st > tol)}, '
+              f'slower {np.sum(st < -tol)}, tie {np.sum(np.abs(st) <= tol)}; '
+              f'mean (static - dynamic) {st.mean():+.3f} s')
+    print('  switching-cost sweep (dynamic vs static, same trials):')
+    sw = {}
+    for dc in DC_SWITCH_SWEEP:
+        t, n = np.array(sweep[dc][0]), np.array(sweep[dc][1])
+        st = out['static'] - t
+        sw[dc] = {'mean_gain': float(np.mean(st)), 'mean_reopt': float(n.mean()),
+                  'faster': int(np.sum(st > tol)), 'slower': int(np.sum(st < -tol)),
+                  'mean_t': float(np.mean(t))}
+        print(f'    DC_SWITCH = {dc:4.2f} s: mean T {np.mean(t):.3f} s, re-optimisations/trial '
+              f'{n.mean():.2f}, faster {sw[dc]["faster"]}, slower {sw[dc]["slower"]}, '
+              f'mean (static - dynamic) {np.mean(st):+.3f} s')
+    return {'times': out, 'n_reopt': n_reopt, 'sweep': sw}
 
 
 def run_simulation():
-    """Run all three strategies and return combined results."""
-    static  = run_one('static')
-    dynamic = run_one('dynamic')
-    greedy  = run_one('greedy')
-    return {'static': static, 'dynamic': dynamic, 'greedy': greedy}
-
-
-# ── Plot colours ────────────────────────────────────────────────────────────
-
-PURSUER_COLORS = ['crimson', 'tomato', 'firebrick']
-EVADER_COLORS  = ['royalblue', 'steelblue', 'navy']
-STRATEGY_COLORS = {
-    'static':  'darkorange',
-    'dynamic': 'seagreen',
-    'greedy':  'mediumpurple',
-}
+    print('=' * 70)
+    print('S019 Dynamic Target Reassignment — Results')
+    print('=' * 70)
+    return {'fixed': {k: run_fixed(k) for k in SCENARIOS}, 'mc': run_monte_carlo()}
 
 
 # ── Plots ──────────────────────────────────────
 
-def plot_trajectories(data, out_dir):
-    """3D trajectories for all three strategies side-by-side."""
-    fig = plt.figure(figsize=(16, 5))
+PURSUER_COLORS = ['#e63946', '#f77f00', '#9d0208']
+EVADER_COLORS  = ['#1f77b4', '#17becf', '#6a3d9a']
+STRATEGY_COLORS = {'static': 'darkorange', 'dynamic': 'seagreen', 'greedy': 'mediumpurple'}
+TITLES = {'static': 'Static (Hungarian at t=0)', 'dynamic': 'Dynamic (re-optimise every 1 s)',
+          'greedy': 'Greedy (nearest, every step)'}
 
-    strategies = ['static', 'dynamic', 'greedy']
-    titles = ['Static (Hungarian at t=0)', 'Dynamic (Re-optimise)', 'Greedy (Nearest)']
 
-    for col, (strat, title) in enumerate(zip(strategies, titles)):
-        d = data[strat]
-        p_traj = d['p_traj']
-        e_traj = d['e_traj']
-        ct     = d['capture_times']
-        T      = d['total_time']
+def limits(runs):
+    pts = np.concatenate([np.concatenate([r['p_traj'].reshape(-1, 2), r['e_traj'].reshape(-1, 2)])
+                          for r in runs])
+    return (pts[:, 0].min() - 1, pts[:, 0].max() + 1), (pts[:, 1].min() - 1, pts[:, 1].max() + 1)
 
-        ax = fig.add_subplot(1, 3, col + 1, projection='3d')
 
+def draw_paths(ax, r, xl, yl, title):
+    P, E, A = r['p_traj'], r['e_traj'], r['a_hist']
+    for j in range(N):
+        ct = r['capture_times'][j]
+        k = int(round(ct / DT)) if ct is not None else len(E) - 1
+        ax.plot(E[:k + 1, j, 0], E[:k + 1, j, 1], '--', color=EVADER_COLORS[j], lw=1.5,
+                label=f'E{j+1} ({spec_label(r["spec"][j])})')
+        ax.scatter(*E[0, j], marker='^', s=80, color=EVADER_COLORS[j], edgecolors='black', zorder=5)
+        if ct is not None:
+            ax.scatter(*E[k, j], marker='X', s=140, color=EVADER_COLORS[j], edgecolors='black', zorder=6)
+    for i in range(M):
+        segs = np.stack([P[:-1, i], P[1:, i]], axis=1)
+        cols = [EVADER_COLORS[A[k + 1][i]] for k in range(len(segs))]
+        ax.add_collection(LineCollection(segs, colors=cols, linewidths=2.5))
+        ax.scatter(*P[0, i], s=80, color=PURSUER_COLORS[i], edgecolors='black', zorder=5)
+        ax.annotate(f'P{i+1}', P[0, i], xytext=(-16, 6), textcoords='offset points', fontsize=8)
+    for t, kind, old, new, imp in r['events']:
+        k = int(round(t / DT))
         for i in range(M):
-            ax.plot(p_traj[:, i, 0], p_traj[:, i, 1], p_traj[:, i, 2],
-                    color=PURSUER_COLORS[i], lw=1.5, alpha=0.85)
-            ax.scatter(*p_traj[0, i], color=PURSUER_COLORS[i], s=60, marker='D', zorder=5)
+            if old[i] != new[i]:
+                ax.scatter(*P[k, i], marker='o', s=110, facecolors='none',
+                           edgecolors='black' if kind == 'reoptimise' else 'grey', lw=1.8, zorder=7)
+    ax.set_xlim(*xl); ax.set_ylim(*yl); ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+    ax.set_title(title, fontsize=9)
+    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
+    ax.legend(fontsize=7, loc='best')
 
-        for j in range(N):
-            ax.plot(e_traj[:, j, 0], e_traj[:, j, 1], e_traj[:, j, 2],
-                    color=EVADER_COLORS[j], lw=1.5, alpha=0.7, linestyle='--')
-            ax.scatter(*e_traj[0, j], color=EVADER_COLORS[j], s=60, marker='^', zorder=5)
 
-        # Capture markers
-        for j in range(N):
-            if ct[j] is not None:
-                step_idx = min(int(ct[j] / DT), len(e_traj) - 1)
-                ax.scatter(*e_traj[step_idx, j], color='gold', s=120, marker='*', zorder=6)
-
-        # Reassignment event markers (dynamic only)
-        if strat == 'dynamic':
-            for ev_step in d['reassign_events']:
-                if ev_step < len(p_traj):
-                    ax.scatter(p_traj[ev_step, :, 0],
-                               p_traj[ev_step, :, 1],
-                               p_traj[ev_step, :, 2],
-                               color='lime', s=30, marker='x', zorder=7, alpha=0.8)
-
-        ax.set_title(f'{title}\nT={T:.2f}s | Reassigns:{d["n_reassigns"]}', fontsize=8)
-        ax.set_xlabel('X (m)', fontsize=7)
-        ax.set_ylabel('Y (m)', fontsize=7)
-        ax.set_zlabel('Z (m)', fontsize=7)
-
-        all_pos = np.concatenate([p_traj.reshape(-1, 3), e_traj.reshape(-1, 3)], axis=0)
-        margin = 2.0
-        ax.set_xlim(all_pos[:, 0].min() - margin, all_pos[:, 0].max() + margin)
-        ax.set_ylim(all_pos[:, 1].min() - margin, all_pos[:, 1].max() + margin)
-        ax.set_zlim(1.5, 2.5)
-        ax.tick_params(labelsize=6)
-
-    fig.suptitle('S019 Dynamic Reassignment — 3D Trajectories', fontsize=11, y=1.01)
+def plot_trajectories(fixed, out_dir):
+    """Top-down paths; each pursuer segment is coloured by the evader it is chasing."""
+    fig, axes = plt.subplots(2, 3, figsize=(18, 13))
+    for row, name in enumerate(SCENARIOS):
+        xl, yl = limits(fixed[name].values())
+        for ax, s in zip(axes[row], STRATEGIES):
+            r = fixed[name][s]
+            draw_paths(ax, r, xl, yl, f'{name}: {TITLES[s]}\nT_mission = {r["total_time"]:.2f} s, '
+                                      f're-optimisations: {r["n_reopt"]}')
+    fig.suptitle('S019 — top-down paths (z = 2 m). Pursuer path colour = evader it is chasing; X = capture;\n'
+                 'black ring = switch by re-optimisation, grey ring = freed pursuer joins nearest evader',
+                 fontsize=10)
     plt.tight_layout()
-
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'trajectories.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+    plt.savefig(path, dpi=130, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
-def plot_assignment_heatmap(data, out_dir):
-    """Assignment matrix over time: static vs dynamic."""
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-
-    for ax, strat, title in zip(axes,
-                                 ['static', 'dynamic'],
-                                 ['Static Assignment', 'Dynamic Assignment']):
-        d = data[strat]
-        n_steps = len(d['assign_hist'])
-        A = np.zeros((M, n_steps), dtype=int)
-        for t_idx, asgn in enumerate(d['assign_hist']):
-            for i in range(M):
-                A[i, t_idx] = asgn.get(i, -1)
-
-        im = ax.imshow(A, aspect='auto', cmap='tab10', vmin=0, vmax=N - 1,
-                       extent=[0, n_steps * DT, M - 0.5, -0.5])
-
-        if strat == 'dynamic':
-            for ev_step in d['reassign_events']:
-                ax.axvline(ev_step * DT, color='red', lw=1.5, linestyle='--', alpha=0.8)
-
-        ax.set_title(f'{title}  ({d["n_reassigns"]} reassignment events)', fontsize=10)
-        ax.set_xlabel('Time (s)', fontsize=9)
-        ax.set_ylabel('Pursuer Index', fontsize=9)
-        ax.set_yticks([0, 1, 2])
-        ax.set_yticklabels(['P0', 'P1', 'P2'], fontsize=8)
-
-        cbar = fig.colorbar(im, ax=ax, ticks=[0, 1, 2])
-        cbar.ax.set_yticklabels(['E0 (straight)', 'E1 (spiral)', 'E2 (random)'], fontsize=7)
-
-    fig.suptitle('S019 — Assignment Matrix over Time', fontsize=11)
-    plt.tight_layout()
-
-    os.makedirs(out_dir, exist_ok=True)
+def plot_assignment_heatmap(fixed, out_dir):
+    fig, axes = plt.subplots(3, 2, figsize=(15, 7.5))
+    cmap = matplotlib.colors.ListedColormap(EVADER_COLORS)
+    for col, name in enumerate(SCENARIOS):
+        for ax, s in zip(axes[:, col], STRATEGIES):
+            r = fixed[name][s]
+            A = np.array([[a[i] for a in r['a_hist']] for i in range(M)])
+            n = A.shape[1]
+            ax.imshow(A, aspect='auto', cmap=cmap, vmin=-0.5, vmax=N - 0.5, interpolation='nearest',
+                      extent=[-DT / 2, (n - 0.5) * DT, M - 0.5, -0.5])
+            for j, ct in enumerate(r['capture_times']):
+                if ct is not None:
+                    ax.axvline(ct, color='black', lw=1.2)
+                    ax.text(ct, -0.65, f'E{j+1}', fontsize=7, ha='center')
+            for t, kind, old, new, imp in r['events']:
+                if kind == 'reoptimise':
+                    ax.axvline(t, color='red', ls='--', lw=1.5)
+            ax.set_yticks(range(M)); ax.set_yticklabels([f'P{i+1}' for i in range(M)])
+            ax.set_title(f'{name}: {TITLES[s]}', fontsize=9, pad=12)
+        axes[-1, col].set_xlabel('Time (s)')
+    handles = [plt.Rectangle((0, 0), 1, 1, color=EVADER_COLORS[j]) for j in range(N)]
+    fig.legend(handles, [f'assigned to E{j+1}' for j in range(N)], loc='lower center', ncol=3, fontsize=8)
+    fig.suptitle('S019 — assignment over time (black line = capture, red dashed = re-optimisation switch)',
+                 fontsize=10)
+    plt.tight_layout(rect=(0, 0.04, 1, 1))
     path = os.path.join(out_dir, 'assignment_heatmap.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
-def plot_capture_comparison(data, out_dir):
-    """Bar chart: total mission time and per-evader capture times."""
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-    strategies = ['static', 'dynamic', 'greedy']
-    labels     = ['Static', 'Dynamic', 'Greedy']
-    colors     = [STRATEGY_COLORS[s] for s in strategies]
-
-    # Total mission time
+def plot_capture_comparison(fixed, mc, out_dir):
+    fig, axes = plt.subplots(1, 3, figsize=(20, 5.5))
     ax = axes[0]
-    total_times = [data[s]['total_time'] for s in strategies]
-    bars = ax.bar(labels, total_times, color=colors, edgecolor='black', linewidth=0.8)
-    for bar, t in zip(bars, total_times):
-        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.2,
-                f'{t:.2f} s', ha='center', va='bottom', fontsize=9, fontweight='bold')
-    ax.set_ylabel('Total Mission Time (s)', fontsize=10)
-    ax.set_title('Total Mission Time by Strategy', fontsize=10)
-    ax.set_ylim(0, max(total_times) * 1.25)
+    w = 0.25
+    names = list(SCENARIOS)
+    for k, s in enumerate(STRATEGIES):
+        vals = [fixed[n][s]['total_time'] for n in names]
+        bars = ax.bar(np.arange(len(names)) + (k - 1) * w, vals, w, color=STRATEGY_COLORS[s],
+                      edgecolor='black', label=s.capitalize())
+        for b, v in zip(bars, vals):
+            ax.text(b.get_x() + b.get_width() / 2, v + 0.1, f'{v:.2f}', ha='center', fontsize=8)
+    ax.set_xticks(range(len(names))); ax.set_xticklabels([f'{n} scenario' for n in names])
+    ax.set_ylabel('T_mission (s)'); ax.legend(fontsize=8)
+    ax.set_title('Fixed scenarios', fontsize=10, fontweight='bold'); ax.grid(True, alpha=0.3, axis='y')
 
-    # Per-evader capture time
     ax = axes[1]
-    x = np.arange(N)
-    width = 0.25
-    evader_labels = ['E0 (straight)', 'E1 (spiral)', 'E2 (random)']
-    for k, (strat, label, color) in enumerate(zip(strategies, labels, colors)):
-        ct = data[strat]['capture_times']
-        vals = [c if c is not None else T_MAX for c in ct]
-        ax.bar(x + k * width, vals, width, label=label, color=color,
-               edgecolor='black', linewidth=0.6)
-    ax.set_xlabel('Evader', fontsize=10)
-    ax.set_ylabel('Capture Time (s)', fontsize=10)
-    ax.set_title('Per-Evader Capture Time by Strategy', fontsize=10)
-    ax.set_xticks(x + width)
-    ax.set_xticklabels(evader_labels, fontsize=8)
-    ax.legend(fontsize=9)
-    ax.set_ylim(0, max(max(data[s]['capture_times'][j] or T_MAX
-                           for j in range(N))
-                       for s in strategies) * 1.15)
+    data = [mc['times'][s][~np.isnan(mc['times'][s])] for s in STRATEGIES]
+    bp = ax.boxplot(data, patch_artist=True, showmeans=True,
+                    meanprops=dict(marker='D', markerfacecolor='white', markeredgecolor='black'))
+    for patch, s in zip(bp['boxes'], STRATEGIES):
+        patch.set_facecolor(STRATEGY_COLORS[s])
+    for k, v in enumerate(data):
+        ax.text(k + 1.25, np.mean(v), f'{np.mean(v):.2f}', fontsize=8, va='center')
+    ax.set_xticks(range(1, 4))
+    ax.set_xticklabels([f'{s.capitalize()}\n({len(v)} finished)' for s, v in zip(STRATEGIES, data)])
+    ax.set_ylabel('T_mission (s)'); ax.grid(True, alpha=0.3, axis='y')
+    ax.set_title(f'Monte Carlo, crossing layout, {MC_TRIALS} trials (diamond = mean)',
+                 fontsize=10, fontweight='bold')
 
+    ax = axes[2]
+    dcs = list(mc['sweep'])
+    gain = [mc['sweep'][d]['mean_gain'] for d in dcs]
+    bars = ax.bar(range(len(dcs)), gain, color=['seagreen' if g > 0 else 'indianred' for g in gain],
+                  edgecolor='black')
+    for b, d in zip(bars, dcs):
+        sw = mc['sweep'][d]
+        ax.text(b.get_x() + b.get_width() / 2, b.get_height(),
+                f'{b.get_height():+.3f} s\n{sw["mean_reopt"]:.2f} switches/trial\n'
+                f'{sw["faster"]} faster / {sw["slower"]} slower',
+                ha='center', va='bottom' if b.get_height() >= 0 else 'top', fontsize=7)
+    ax.axhline(0, color='black', lw=0.8)
+    ax.set_xticks(range(len(dcs)))
+    ax.set_xticklabels([f'{d:g} s' + (' (card)' if d == DC_SWITCH else '') for d in dcs])
+    ax.set_xlabel('Switching cost DC_SWITCH'); ax.set_ylabel('Mean (static − dynamic) T_mission (s)')
+    lo, hi = min(gain + [0]), max(gain + [0])
+    ax.set_ylim(lo - 0.6 * (hi - lo + 0.05), hi + 0.6 * (hi - lo + 0.05))
+    ax.set_title('Dynamic gain over static vs switching cost', fontsize=10, fontweight='bold')
+    ax.grid(True, alpha=0.3, axis='y')
     plt.tight_layout()
-    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'capture_comparison.png')
-    plt.savefig(path, dpi=150, bbox_inches='tight')
-    plt.close()
-    print(f'Saved: {path}')
+    plt.savefig(path, dpi=150, bbox_inches='tight'); plt.close(); print(f'Saved: {path}')
 
 
-def save_animation(data, out_dir):
-    """Animate all three strategies side-by-side in 3D."""
-    import matplotlib.animation as animation
+def save_animation(fixed, out_dir):
+    """Crossing scenario, the three strategies side by side."""
+    runs = fixed['crossing']
+    xl, yl = limits(runs.values())
+    max_len = max(len(runs[s]['p_traj']) for s in STRATEGIES)
+    step = max(1, int(np.ceil(max_len / 140)))
+    frames = list(range(0, max_len, step)) + [max_len - 1]
+    fig, axes = plt.subplots(1, 3, figsize=(16, 6))
+    arts = []
+    for ax, s in zip(axes, STRATEGIES):
+        r = runs[s]
+        ax.set_xlim(*xl); ax.set_ylim(*yl); ax.set_aspect('equal'); ax.grid(True, alpha=0.3)
+        pl = [ax.plot([], [], color=PURSUER_COLORS[i], lw=1.3)[0] for i in range(M)]
+        pd = [ax.plot([], [], 'o', color=PURSUER_COLORS[i], mec='black', ms=7)[0] for i in range(M)]
+        el = [ax.plot([], [], '--', color=EVADER_COLORS[j], lw=1.2)[0] for j in range(N)]
+        ed = [ax.plot([], [], '^', color=EVADER_COLORS[j], mec='black', ms=8)[0] for j in range(N)]
+        ln = [ax.plot([], [], ':', color='grey', lw=1)[0] for i in range(M)]
+        arts.append((ax, s, r, pl, pd, el, ed, ln))
 
-    strategies = ['static', 'dynamic', 'greedy']
-    titles     = ['Static', 'Dynamic', 'Greedy']
-
-    max_steps = max(len(data[s]['p_traj']) for s in strategies)
-    step_dec  = max(1, max_steps // 120)
-
-    fig = plt.figure(figsize=(15, 5))
-    axes, p_lines, e_lines, p_dots, e_dots = [], [], [], [], []
-
-    for col, (strat, title) in enumerate(zip(strategies, titles)):
-        ax = fig.add_subplot(1, 3, col + 1, projection='3d')
-        axes.append(ax)
-        d = data[strat]
-        p_traj = d['p_traj']
-        e_traj = d['e_traj']
-
-        all_pos = np.concatenate([p_traj.reshape(-1, 3), e_traj.reshape(-1, 3)], axis=0)
-        margin  = 2.0
-        ax.set_xlim(all_pos[:, 0].min() - margin, all_pos[:, 0].max() + margin)
-        ax.set_ylim(all_pos[:, 1].min() - margin, all_pos[:, 1].max() + margin)
-        ax.set_zlim(1.5, 2.5)
-        ax.set_title(title, fontsize=9)
-        ax.set_xlabel('X', fontsize=6); ax.set_ylabel('Y', fontsize=6)
-        ax.set_zlabel('Z', fontsize=6); ax.tick_params(labelsize=5)
-
-        for i in range(M):
-            ax.scatter(*p_traj[0, i], color=PURSUER_COLORS[i], s=40, marker='D', zorder=5)
-        for j in range(N):
-            ax.scatter(*e_traj[0, j], color=EVADER_COLORS[j], s=40, marker='^', zorder=5)
-
-        pls = [ax.plot([], [], [], color=PURSUER_COLORS[i], lw=1.5)[0] for i in range(M)]
-        els = [ax.plot([], [], [], color=EVADER_COLORS[j],  lw=1.5, linestyle='--', alpha=0.8)[0]
-               for j in range(N)]
-        pds = [ax.plot([], [], [], 'o', color=PURSUER_COLORS[i], ms=6)[0] for i in range(M)]
-        eds = [ax.plot([], [], [], '^', color=EVADER_COLORS[j],  ms=6)[0] for j in range(N)]
-
-        p_lines.append(pls); e_lines.append(els)
-        p_dots.append(pds);  e_dots.append(eds)
-
-    all_artists = ([l for ls in p_lines for l in ls] + [l for ls in e_lines for l in ls] +
-                   [d for ds in p_dots  for d in ds] + [d for ds in e_dots  for d in ds])
-
-    def init():
-        for art in all_artists:
-            art.set_data([], [])
-            art.set_3d_properties([])
-        return all_artists
-
-    def update(frame):
-        for col, strat in enumerate(strategies):
-            d = data[strat]
-            sub_p = d['p_traj'][::step_dec]
-            sub_e = d['e_traj'][::step_dec]
-            fp = min(frame, len(sub_p) - 1)
-            fe = min(frame, len(sub_e) - 1)
+    def update(f):
+        out = []
+        for ax, s, r, pl, pd, el, ed, ln in arts:
+            k = min(f, len(r['p_traj']) - 1)
+            P, E, a = r['p_traj'], r['e_traj'], r['a_hist'][k]
             for i in range(M):
-                p_lines[col][i].set_data(sub_p[:fp+1, i, 0], sub_p[:fp+1, i, 1])
-                p_lines[col][i].set_3d_properties(sub_p[:fp+1, i, 2])
-                p_dots[col][i].set_data([sub_p[fp, i, 0]], [sub_p[fp, i, 1]])
-                p_dots[col][i].set_3d_properties([sub_p[fp, i, 2]])
+                pl[i].set_data(P[:k + 1, i, 0], P[:k + 1, i, 1]); pd[i].set_data([P[k, i, 0]], [P[k, i, 1]])
+                j = a[i]
+                ln[i].set_data([P[k, i, 0], E[k, j, 0]], [P[k, i, 1], E[k, j, 1]])
             for j in range(N):
-                e_lines[col][j].set_data(sub_e[:fe+1, j, 0], sub_e[:fe+1, j, 1])
-                e_lines[col][j].set_3d_properties(sub_e[:fe+1, j, 2])
-                e_dots[col][j].set_data([sub_e[fe, j, 0]], [sub_e[fe, j, 1]])
-                e_dots[col][j].set_3d_properties([sub_e[fe, j, 2]])
-        return all_artists
+                ct = r['capture_times'][j]
+                kk = min(k, int(round(ct / DT))) if ct is not None else k
+                el[j].set_data(E[:kk + 1, j, 0], E[:kk + 1, j, 1]); ed[j].set_data([E[kk, j, 0]], [E[kk, j, 1]])
+                ed[j].set_marker('X' if ct is not None and k >= int(round(ct / DT)) else '^')
+            ax.set_title(f'crossing — {s.capitalize()}\nt = {k * DT:.2f} s (dotted = current assignment)',
+                         fontsize=9)
+            out += pl + pd + el + ed + ln
+        return out
 
-    n_frames = max_steps // step_dec + 1
-    ani = animation.FuncAnimation(fig, update, frames=n_frames,
-                                  init_func=init, blit=False, interval=50)
-    fig.suptitle('S019 Dynamic Reassignment — Strategy Comparison', fontsize=10)
-    plt.tight_layout()
-
-    os.makedirs(out_dir, exist_ok=True)
+    ani = animation.FuncAnimation(fig, update, frames=frames, interval=50, blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=20, dpi=100)
-    plt.close()
-    print(f'Saved: {path}')
+    ani.save(path, writer='pillow', fps=20, dpi=80)
+    plt.close(); print(f'Saved: {path}  ({len(frames)} frames)')
 
 
 if __name__ == '__main__':
-    data = run_simulation()
-
-    print('=' * 60)
-    print('S019 Dynamic Target Reassignment — Results')
-    print('=' * 60)
-    for strat in ['static', 'dynamic', 'greedy']:
-        d = data[strat]
-        ct_str = ', '.join(f'{c:.2f}s' if c else 'N/A' for c in d['capture_times'])
-        print(f'{strat.capitalize():8s}  Total={d["total_time"]:.2f}s  '
-              f'Captures=[{ct_str}]  Reassigns={d["n_reassigns"]}')
-    print('=' * 60)
-
-    t_stat = data['static']['total_time']
-    t_dyn  = data['dynamic']['total_time']
-    t_grd  = data['greedy']['total_time']
-    print(f'Dynamic improvement vs Static  : {(t_stat - t_dyn) / t_stat * 100:+.1f}%')
-    print(f'Dynamic improvement vs Greedy  : {(t_grd  - t_dyn) / t_grd  * 100:+.1f}%')
-    print(f'Dynamic reassignment events    : {data["dynamic"]["n_reassigns"]}')
-    print('=' * 60)
-
     out_dir = os.path.normpath(OUTPUT_DIR)
-    plot_trajectories(data, out_dir)
-    plot_assignment_heatmap(data, out_dir)
-    plot_capture_comparison(data, out_dir)
-    save_animation(data, out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    data = run_simulation()
+    plot_trajectories(data['fixed'], out_dir)
+    plot_assignment_heatmap(data['fixed'], out_dir)
+    plot_capture_comparison(data['fixed'], data['mc'], out_dir)
+    save_animation(data['fixed'], out_dir)
