@@ -74,26 +74,26 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
-| S021 | [Point Delivery](outputs/02_logistics_delivery/s021_point_delivery/README.md) | [card](scenarios/02_logistics_delivery/S021_point_delivery.md) |  |
+| S021 | [Point Delivery](outputs/02_logistics_delivery/s021_point_delivery/README.md) | [card](scenarios/02_logistics_delivery/S021_point_delivery.md) | [3D](outputs/02_logistics_delivery/3d/s021_3d_point_delivery/README.md) |
 | S022 | [Obstacle Avoidance Delivery](outputs/02_logistics_delivery/s022_obstacle_avoidance_delivery/README.md) | [card](scenarios/02_logistics_delivery/S022_obstacle_avoidance_delivery.md) | [3D](outputs/02_logistics_delivery/3d/s022_3d_obstacle_avoidance/README.md) |
-| S023 | [Moving Landing Pad](outputs/02_logistics_delivery/s023_moving_landing_pad/README.md) | [card](scenarios/02_logistics_delivery/S023_moving_landing_pad.md) |  |
+| S023 | [Moving Landing Pad](outputs/02_logistics_delivery/s023_moving_landing_pad/README.md) | [card](scenarios/02_logistics_delivery/S023_moving_landing_pad.md) | [3D](outputs/02_logistics_delivery/3d/s023_3d_moving_landing_pad/README.md) |
 | S024 | [Wind Compensation](outputs/02_logistics_delivery/s024_wind_compensation/README.md) | [card](scenarios/02_logistics_delivery/S024_wind_compensation.md) | [3D](outputs/02_logistics_delivery/3d/s024_3d_wind_compensation/README.md) |
-| S025 | [Payload CoG Offset](outputs/02_logistics_delivery/s025_payload_cog_offset/README.md) | [card](scenarios/02_logistics_delivery/S025_payload_cog_offset.md) |  |
-| S026 | [Cooperative Heavy Lift](outputs/02_logistics_delivery/s026_cooperative_heavy_lift/README.md) | [card](scenarios/02_logistics_delivery/S026_cooperative_heavy_lift.md) |  |
+| S025 | [Payload CoG Offset](outputs/02_logistics_delivery/s025_payload_cog_offset/README.md) | [card](scenarios/02_logistics_delivery/S025_payload_cog_offset.md) | [3D](outputs/02_logistics_delivery/3d/s025_3d_payload_cog/README.md) |
+| S026 | [Cooperative Heavy Lift](outputs/02_logistics_delivery/s026_cooperative_heavy_lift/README.md) | [card](scenarios/02_logistics_delivery/S026_cooperative_heavy_lift.md) | [3D](outputs/02_logistics_delivery/3d/s026_3d_cooperative_heavy_lift/README.md) |
 | S027 | [Aerial Refueling Relay](outputs/02_logistics_delivery/s027_aerial_refueling_relay/README.md) | [card](scenarios/02_logistics_delivery/S027_aerial_refueling_relay.md) | [3D](outputs/02_logistics_delivery/3d/s027_3d_aerial_refueling/README.md) |
 | S028 | [Cargo Escort Formation](outputs/02_logistics_delivery/s028_cargo_escort_formation/README.md) | [card](scenarios/02_logistics_delivery/S028_cargo_escort_formation.md) | [3D](outputs/02_logistics_delivery/3d/s028_3d_cargo_escort/README.md) |
 | S029 | [Urban Logistics Scheduling](outputs/02_logistics_delivery/s029_urban_logistics_scheduling/README.md) | [card](scenarios/02_logistics_delivery/S029_urban_logistics_scheduling.md) | [3D](outputs/02_logistics_delivery/3d/s029_3d_urban_logistics/README.md) |
-| S030 | [Multi-Depot Delivery](outputs/02_logistics_delivery/s030_multi_depot_delivery/README.md) | [card](scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) |  |
-| S031 | [Path De-confliction](outputs/02_logistics_delivery/s031_path_deconfliction/README.md) | [card](scenarios/02_logistics_delivery/S031_path_deconfliction.md) |  |
-| S032 | [Charging Queue](outputs/02_logistics_delivery/s032_charging_queue/README.md) | [card](scenarios/02_logistics_delivery/S032_charging_queue.md) |  |
-| S033 | [Online Order Insertion](outputs/02_logistics_delivery/s033_online_order_insertion/README.md) | [card](scenarios/02_logistics_delivery/S033_online_order_insertion.md) |  |
-| S034 | [Weather Rerouting](outputs/02_logistics_delivery/s034_weather_rerouting/README.md) | [card](scenarios/02_logistics_delivery/S034_weather_rerouting.md) |  |
-| S035 | [UTM Simulation](outputs/02_logistics_delivery/s035_utm_simulation/README.md) | [card](scenarios/02_logistics_delivery/S035_utm_simulation.md) |  |
-| S036 | [Last-Mile Relay](outputs/02_logistics_delivery/s036_last_mile_relay/README.md) | [card](scenarios/02_logistics_delivery/S036_last_mile_relay.md) |  |
-| S037 | [Reverse Logistics](outputs/02_logistics_delivery/s037_reverse_logistics/README.md) | [card](scenarios/02_logistics_delivery/S037_reverse_logistics.md) |  |
-| S038 | [Disaster Relief Drop](outputs/02_logistics_delivery/s038_disaster_relief_drop/README.md) | [card](scenarios/02_logistics_delivery/S038_disaster_relief_drop.md) |  |
-| S039 | [Offshore Platform Exchange](outputs/02_logistics_delivery/s039_offshore_platform_exchange/README.md) | [card](scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md) |  |
-| S040 | [Fleet Load Balancing](outputs/02_logistics_delivery/s040_fleet_load_balancing/README.md) | [card](scenarios/02_logistics_delivery/S040_fleet_load_balancing.md) |  |
+| S030 | [Multi-Depot Delivery](outputs/02_logistics_delivery/s030_multi_depot_delivery/README.md) | [card](scenarios/02_logistics_delivery/S030_multi_depot_delivery.md) | [3D](outputs/02_logistics_delivery/3d/s030_3d_multi_depot/README.md) |
+| S031 | [Path De-confliction](outputs/02_logistics_delivery/s031_path_deconfliction/README.md) | [card](scenarios/02_logistics_delivery/S031_path_deconfliction.md) | [3D](outputs/02_logistics_delivery/3d/s031_3d_path_deconfliction/README.md) |
+| S032 | [Charging Queue](outputs/02_logistics_delivery/s032_charging_queue/README.md) | [card](scenarios/02_logistics_delivery/S032_charging_queue.md) | [3D](outputs/02_logistics_delivery/3d/s032_3d_charging_queue/README.md) |
+| S033 | [Online Order Insertion](outputs/02_logistics_delivery/s033_online_order_insertion/README.md) | [card](scenarios/02_logistics_delivery/S033_online_order_insertion.md) | [3D](outputs/02_logistics_delivery/3d/s033_3d_online_order/README.md) |
+| S034 | [Weather Rerouting](outputs/02_logistics_delivery/s034_weather_rerouting/README.md) | [card](scenarios/02_logistics_delivery/S034_weather_rerouting.md) | [3D](outputs/02_logistics_delivery/3d/s034_3d_weather_rerouting/README.md) |
+| S035 | [UTM Simulation](outputs/02_logistics_delivery/s035_utm_simulation/README.md) | [card](scenarios/02_logistics_delivery/S035_utm_simulation.md) | [3D](outputs/02_logistics_delivery/3d/s035_3d_utm_simulation/README.md) |
+| S036 | [Last-Mile Relay](outputs/02_logistics_delivery/s036_last_mile_relay/README.md) | [card](scenarios/02_logistics_delivery/S036_last_mile_relay.md) | [3D](outputs/02_logistics_delivery/3d/s036_3d_last_mile_relay/README.md) |
+| S037 | [Reverse Logistics](outputs/02_logistics_delivery/s037_reverse_logistics/README.md) | [card](scenarios/02_logistics_delivery/S037_reverse_logistics.md) | [3D](outputs/02_logistics_delivery/3d/s037_3d_reverse_logistics/README.md) |
+| S038 | [Disaster Relief Drop](outputs/02_logistics_delivery/s038_disaster_relief_drop/README.md) | [card](scenarios/02_logistics_delivery/S038_disaster_relief_drop.md) | [3D](outputs/02_logistics_delivery/3d/s038_3d_disaster_relief/README.md) |
+| S039 | [Offshore Platform Exchange](outputs/02_logistics_delivery/s039_offshore_platform_exchange/README.md) | [card](scenarios/02_logistics_delivery/S039_offshore_platform_exchange.md) | [3D](outputs/02_logistics_delivery/3d/s039_3d_offshore_platform/README.md) |
+| S040 | [Fleet Load Balancing](outputs/02_logistics_delivery/s040_fleet_load_balancing/README.md) | [card](scenarios/02_logistics_delivery/S040_fleet_load_balancing.md) | [3D](outputs/02_logistics_delivery/3d/s040_3d_fleet_balancing/README.md) |
 
 </details>
 
@@ -102,16 +102,16 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
-| S041 | [Wildfire Boundary Scan](outputs/03_environmental_sar/s041_wildfire_boundary/README.md) | [card](scenarios/03_environmental_sar/S041_wildfire_boundary.md) |  |
-| S042 | [Missing Person Localization](outputs/03_environmental_sar/s042_missing_person/README.md) | [card](scenarios/03_environmental_sar/S042_missing_person.md) |  |
-| S043 | [Confined Space Exploration](outputs/03_environmental_sar/s043_confined_space/README.md) | [card](scenarios/03_environmental_sar/S043_confined_space.md) |  |
-| S044 | [Wall Crack Inspection](outputs/03_environmental_sar/s044_wall_crack/README.md) | [card](scenarios/03_environmental_sar/S044_wall_crack.md) |  |
-| S045 | [Chemical Plume Tracing](outputs/03_environmental_sar/s045_plume_tracing/README.md) | [card](scenarios/03_environmental_sar/S045_plume_tracing.md) |  |
-| S046 | [Multi-Drone 3D Trilateration](outputs/03_environmental_sar/s046_trilateration/README.md) | [card](scenarios/03_environmental_sar/S046_trilateration.md) |  |
-| S047 | [Base Station Signal Relay](outputs/03_environmental_sar/s047_signal_relay/README.md) | [card](scenarios/03_environmental_sar/S047_signal_relay.md) |  |
-| S048 | [Full-Area Coverage Scan (Lawnmower)](outputs/03_environmental_sar/s048_lawnmower/README.md) | [card](scenarios/03_environmental_sar/S048_lawnmower.md) |  |
-| S049 | [Dynamic Zone Search](outputs/03_environmental_sar/s049_dynamic_zone/README.md) | [card](scenarios/03_environmental_sar/S049_dynamic_zone.md) |  |
-| S050 | [Swarm Cooperative Mapping (Distributed EKF-SLAM)](outputs/03_environmental_sar/s050_slam/README.md) | [card](scenarios/03_environmental_sar/S050_slam.md) |  |
+| S041 | [Wildfire Boundary Scan](outputs/03_environmental_sar/s041_wildfire_boundary/README.md) | [card](scenarios/03_environmental_sar/S041_wildfire_boundary.md) | [3D](outputs/03_environmental_sar/3d/s041_3d_wildfire/README.md) |
+| S042 | [Missing Person Localization](outputs/03_environmental_sar/s042_missing_person/README.md) | [card](scenarios/03_environmental_sar/S042_missing_person.md) | [3D](outputs/03_environmental_sar/3d/s042_3d_missing_person/README.md) |
+| S043 | [Confined Space Exploration](outputs/03_environmental_sar/s043_confined_space/README.md) | [card](scenarios/03_environmental_sar/S043_confined_space.md) | [3D](outputs/03_environmental_sar/3d/s043_3d_confined_space/README.md) |
+| S044 | [Wall Crack Inspection](outputs/03_environmental_sar/s044_wall_crack/README.md) | [card](scenarios/03_environmental_sar/S044_wall_crack.md) | [3D](outputs/03_environmental_sar/3d/s044_3d_wall_crack/README.md) |
+| S045 | [Chemical Plume Tracing](outputs/03_environmental_sar/s045_plume_tracing/README.md) | [card](scenarios/03_environmental_sar/S045_plume_tracing.md) | [3D](outputs/03_environmental_sar/3d/s045_3d_plume_tracing/README.md) |
+| S046 | [Multi-Drone 3D Trilateration](outputs/03_environmental_sar/s046_trilateration/README.md) | [card](scenarios/03_environmental_sar/S046_trilateration.md) | [3D](outputs/03_environmental_sar/3d/s046_3d_trilateration/README.md) |
+| S047 | [Base Station Signal Relay](outputs/03_environmental_sar/s047_signal_relay/README.md) | [card](scenarios/03_environmental_sar/S047_signal_relay.md) | [3D](outputs/03_environmental_sar/3d/s047_3d_signal_relay/README.md) |
+| S048 | [Full-Area Coverage Scan (Lawnmower)](outputs/03_environmental_sar/s048_lawnmower/README.md) | [card](scenarios/03_environmental_sar/S048_lawnmower.md) | [3D](outputs/03_environmental_sar/3d/s048_3d_lawnmower/README.md) |
+| S049 | [Dynamic Zone Search](outputs/03_environmental_sar/s049_dynamic_zone/README.md) | [card](scenarios/03_environmental_sar/S049_dynamic_zone.md) | [3D](outputs/03_environmental_sar/3d/s049_3d_dynamic_zone/README.md) |
+| S050 | [Swarm Cooperative Mapping (Distributed EKF-SLAM)](outputs/03_environmental_sar/s050_slam/README.md) | [card](scenarios/03_environmental_sar/S050_slam.md) | [3D](outputs/03_environmental_sar/3d/s050_3d_slam/README.md) |
 | S051 | [Post-Disaster Communication Network Restoration](outputs/03_environmental_sar/s051_post_disaster_comm/README.md) | [card](scenarios/03_environmental_sar/S051_post_disaster_comm.md) |  |
 | S052 | Glacier Melt Area Measurement *(planned)* | [card](scenarios/03_environmental_sar/S052_glacier.md) |  |
 | S053 | Coral Reef 3D Reconstruction *(planned)* | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
@@ -244,7 +244,7 @@ drones/
 | Special Ops & Entertainment | 0 | 20 |
 | **Total** | **51** | **100** |
 
-> **3D Upgrades**: 23 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020) and 5 in Logistics & Delivery (S022, S024, S027, S028, S029).
+> **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 

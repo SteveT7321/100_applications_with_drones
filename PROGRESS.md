@@ -15,8 +15,8 @@
 | **固定 z=0m**（本質 2D） | S020 | 位置 z=0.0，動作在 xy 平面，主圖用 2D plt.subplots |
 | **純 2D**（無 z 座標） | S015, S017 | S015 用 np.array([x,y])；S017 位置陣列為 [x,y]，視覺化用 2D |
 
-> **已完成**：S002, S004–S020 各自建立了真正 3D 升級版本，存放於
-> `scenarios/01_pursuit_evasion/3d/`、`src/01_pursuit_evasion/3d/`、`outputs/01_pursuit_evasion/3d/`。
+> **已完成**：48 個真正 3D 升級版本：S002、S004–S020（Domain 1）、S021–S040（Domain 2）、S041–S050（Domain 3），
+> 存放於各 domain 的 `scenarios/<domain>/3d/`、`src/<domain>/3d/`、`outputs/<domain>/3d/`。審查結果見 [docs/review_3d_variants.md](docs/review_3d_variants.md)。
 
 ---
 
