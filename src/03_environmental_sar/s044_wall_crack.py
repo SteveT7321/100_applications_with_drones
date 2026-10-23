@@ -95,8 +95,8 @@ def build_waypoints(pass_heights):
 def generate_cracks(n, seed=42):
     """Random crack positions and widths on the wall face."""
     rng = np.random.default_rng(seed)
-    y = rng.uniform(1.0, WALL_WIDTH - 1.0, n)
-    z = rng.uniform(1.0, WALL_HEIGHT - 1.0, n)
+    y = rng.uniform(0.5, WALL_WIDTH - 0.5, n)    # card: [0.5, W - 0.5]
+    z = rng.uniform(0.5, WALL_HEIGHT - 0.5, n)   # card: [0.5, H - 0.5]
     w = rng.uniform(0.1, 2.0, n)      # crack width in mm
     return np.stack([y, z, w], axis=1)  # shape (n, 3)
 
@@ -567,6 +567,11 @@ if __name__ == '__main__':
           f'(overlap {100 * (1 - (pass_heights[1] - pass_heights[0]) / W_STRIP):.1f}%)')
     print(f'  w_min at standoff      : {w_min_at_range(D_STANDOFF):.3f} mm; cracks wider than this: '
           f'{int(np.sum(cracks[:, 2] > w_min_at_range(D_STANDOFF)))} / {N_CRACKS}')
+    n_frames_in = np.array([np.sum((np.abs(traj[1:, 0] - c[0]) <= H_STRIP) &
+                                   (np.abs(traj[1:, 1] - c[1]) <= H_STRIP)) for c in cracks])
+    print(f'  Crack positions        : y {cracks[:, 0].min():.2f}-{cracks[:, 0].max():.2f} m, '
+          f'z {cracks[:, 1].min():.2f}-{cracks[:, 1].max():.2f} m; frames per crack min {n_frames_in.min()}, '
+          f'median {np.median(n_frames_in):.0f}; cracks never imaged: {int(np.sum(n_frames_in == 0))}')
     for lo, hi in zip([0.0, 0.5, 1.0, 1.5], [0.5, 1.0, 1.5, 2.0]):
         m = (cracks[:, 2] >= lo) & (cracks[:, 2] < hi)
         print(f'  Width {lo:.1f}-{hi:.1f} mm      : detected {int(detected[m].sum())} / {int(m.sum())}')

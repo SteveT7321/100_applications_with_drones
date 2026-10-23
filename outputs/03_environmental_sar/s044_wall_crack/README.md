@@ -6,7 +6,7 @@
 
 ## Problem Definition
 
-**Setup**: A single inspection drone flies a boustrophedon (serpentine) path along a 50 m × 20 m reinforced-concrete building facade, maintaining a constant standoff distance of 1.5 m from the wall. 40 synthetic cracks are placed at random positions (seed 42) with widths drawn from U(0.1, 2.0) mm.
+**Setup**: A single inspection drone flies a boustrophedon (serpentine) path along a 50 m × 20 m reinforced-concrete building facade, maintaining a constant standoff distance of 1.5 m from the wall. 40 synthetic cracks are placed at random positions (seed 42) in y ∈ [0.5, 49.5] m, z ∈ [0.5, 19.5] m as in the card with widths drawn from U(0.1, 2.0) mm.
 
 **Objective**: Achieve complete surface coverage while maximising the number of cracks detected. Report coverage fraction, detection rate by crack width bin, and total flight distance.
 
@@ -44,7 +44,7 @@ At the 1.5 m standoff $w_{min} = 1.732/2048 \times 1000 = 0.846$ mm, so cracks n
 | Cruise speed | 2.0 m/s |
 | Camera resolution | 2048 px |
 | Detection noise $\sigma_{noise}$ | 0.05 mm |
-| Synthetic cracks | 40 (widths U(0.1, 2.0) mm, seed 42) |
+| Synthetic cracks | 40 (y ∈ U(0.5, 49.5) m, z ∈ U(0.5, 19.5) m, widths U(0.1, 2.0) mm, seed 42) |
 | PD standoff gains $(K_p, K_d)$ | 16 s⁻², 8 s⁻¹ |
 | Wall-distance sensor noise | 0.05 m |
 | Simulation timestep | 0.05 s |
@@ -64,7 +64,9 @@ At the 1.5 m standoff $w_{min} = 1.732/2048 \times 1000 = 0.846$ mm, so cracks n
 | Total flight distance | **767.3 m** |
 | Simulation steps | 7683 |
 | Simulation time | 384.1 s (6.4 min) |
-| Standoff error | RMS 1.17 cm, mean −0.03 cm, max 4.18 cm |
+| Standoff error | RMS 1.17 cm, mean −0.01 cm, max 4.13 cm |
+| Crack positions drawn | y 2.65–48.31 m, z 0.64–16.71 m |
+| Frames in which each crack is inside the image | min 17, median 18 (no crack unimaged) |
 
 **Detection by crack width**
 
@@ -77,9 +79,9 @@ At the 1.5 m standoff $w_{min} = 1.732/2048 \times 1000 = 0.846$ mm, so cracks n
 
 **Key findings**:
 - Coverage is 95.00 %, not 100 %: the footprint spans z = 0.50–19.50 m, so the 0.5 m bands at the bottom and top of the wall (2 × 0.5 m / 20 m = 5 %) are never imaged because the passes stay inside the safe-altitude band. Every pass adds 6.0–6.5 % (8.6 % for the first), as shown in the per-pass chart.
-- Detection is limited by the camera resolution, not by coverage: every crack inside the imaged area is seen in many frames, so the outcome is set by $w_{min}$ = 0.846 mm. All 18 cracks wider than 1.0 mm are detected, none of the 10 below 0.5 mm, and 7 of the 12 in the 0.5–1.0 mm bin. One crack slightly below $w_{min}$ is detected thanks to the 0.05 mm noise term, so 25 cracks are detected although only 24 are wider than $w_{min}$.
+- Detection is limited by the camera resolution, not by coverage: with the card's placement (z ≥ 0.5 m, z ≤ 19.5 m) every crack lies inside the imaged band 0.5–19.5 m, and each one was inside the image in at least 17 frames (median 18). The outcome is therefore set by $w_{min}$ = 0.846 mm. A crack in the unimaged 0.5 m bands would be missed regardless of width; the card's placement excludes those bands, and none of the 40 drawn cracks lies below z = 0.64 m. All 18 cracks wider than 1.0 mm are detected, none of the 10 below 0.5 mm, and 7 of the 12 in the 0.5–1.0 mm bin. One crack slightly below $w_{min}$ is detected thanks to the 0.05 mm noise term, so 25 cracks are detected although only 24 are wider than $w_{min}$.
 - Flight distance 767.3 m = 15 passes × 50 m + 17.27 m of vertical transitions; at 2 m/s this takes 384.1 s.
-- The PD loop holds the 1.5 m standoff within 1.17 cm RMS (max 4.18 cm) despite 5 cm measurement noise, because the closed loop (ω_n = 4 rad/s) filters out the white measurement noise.
+- The PD loop holds the 1.5 m standoff within 1.17 cm RMS (max 4.13 cm) despite 5 cm measurement noise, because the closed loop (ω_n = 4 rad/s) filters out the white measurement noise.
 
 **Boustrophedon Trajectory** — drone path overlaid on the wall with detected cracks (red +) and missed cracks (grey circles):
 
@@ -117,8 +119,7 @@ At the 1.5 m standoff $w_{min} = 1.732/2048 \times 1000 = 0.846$ mm, so cracks n
 | Height PD controller $(K_p, K_d) = (9, 6)$ | Along-wall and vertical motion are kinematic velocity commands at 2 m/s | Only the standoff (x) axis uses the PD loop; the unused height gains were removed from the code. |
 | $w_{min} \approx 0.847\ \mu$m | $w_{min} = 0.846$ mm | Unit/arithmetic error in the card (1.732 m / 2048 px = 0.846 mm). Card corrected. |
 | Waypoint reached within 0.3 m | Waypoint reached exactly | The 0.3 m tolerance let each pass stop up to 0.3 m short of its target height, leaving part of the top band unimaged. |
-| "Standoff RMS" | RMS computed as $\sqrt{\overline{e^2}}$ (earlier version printed the standard deviation) | Correct definition (includes any mean offset; the mean error here is −0.03 cm). |
-
+| "Standoff RMS" | RMS computed as $\sqrt{\overline{e^2}}$ (earlier version printed the standard deviation) | Correct definition (includes any mean offset; the mean error here is −0.01 cm). |
 ---
 
 ## Extensions
