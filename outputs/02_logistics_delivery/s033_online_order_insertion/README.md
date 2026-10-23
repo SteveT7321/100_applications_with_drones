@@ -135,13 +135,13 @@ Cheapest insertion had a detour no larger than Nearest Drone in 18/20 instances,
 | Single instance | Seed 0 for plots + 20-instance means | One instance of 8 orders is too small to rank strategies (seed 0 ranks Nearest Drone first). |
 | — | Run continues until all drones return (cap 3000 s) | The old 230 s cap stopped the run while routes still needed ≈ 800 s, so the route map showed partial paths. |
 | Insertion position may be any segment | Never after the final depot return | The route must end at the depot. |
-| Each order has an urgency weight $w$ | Not modelled; all orders are equally urgent | The card defines $w$ but its own dispatcher rule ($k^* = rgmin delta_k$ over feasible drones) never uses it, so it would not change any decision. Using it is listed as Extension 1. |
+| Each order has an urgency weight $w$ | Not modelled; all orders are equally urgent | The card defines $w$ but its own dispatcher rule ($k^* = \arg\min \delta_k$ over feasible drones) never uses it, so it would not change any decision. Using it is listed as Extension 1. |
 
 ---
 
 ## Extensions
 
-1. Urgency-weighted insertion — use the card's urgency weight $w$ in the cost, e.g. $delta_k + w ot max(0, t_{arrive,k} - t_{deadline})$, so urgent orders may displace cheap-but-late slots
+1. Urgency-weighted insertion — use the card's urgency weight $w$ in the cost, e.g. $\delta_k + w \cdot \max(0,\, t_{arrive,k} - t_{deadline})$, so urgent orders may displace cheap-but-late slots
 2. Re-optimise full route after each insertion (not just greedy local insertion)
 3. Rejection policy — decline orders whose cheapest insertion exceeds a detour budget
 4. Multi-depot online insertion — orders can be re-assigned to a different depot drone if closer
