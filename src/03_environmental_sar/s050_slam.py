@@ -1,853 +1,745 @@
 """
 S050 Swarm Cooperative Mapping (Distributed EKF-SLAM)
 ======================================================
-Three drones explore a 200x200 m GPS-denied environment, each running an
-independent EKF-SLAM filter that estimates both the drone pose and the positions
-of observed landmarks. When drones come within communication range they exchange
-and merge local maps via SVD-based rigid alignment plus covariance-intersection
-fusion. An information-gain frontier policy drives exploration. Results are
-compared to an isolated (no communication) baseline.
+Three drones explore a 200x200 m GPS-denied environment with 30 unknown
+landmarks.  Each drone flies a *true* trajectory that differs from its
+commanded odometry by process noise; range-bearing measurements are generated
+from the true pose.  Three estimators process the SAME flight log
+(true trajectories, odometry commands and measurements):
+
+  * isolated     - one EKF-SLAM per drone, no communication
+  * distributed  - one EKF-SLAM per drone; when two drones are within
+                   COMM_RANGE they merge maps (robust consensus + SVD
+                   alignment on >= 3 common landmarks, consistency check,
+                   only landmarks the host lacks are transferred, with
+                   inflated covariance); at most once per contact or every
+                   MERGE_PERIOD while in contact
+  * centralised  - one joint EKF over all three poses and all landmarks fed
+                   with every measurement (upper bound, needs perfect comms)
+
+The drones navigate with an information-gain frontier policy that steers on
+each drone's own (isolated) on-board estimate, so the flight log does not
+depend on the estimator being evaluated.
 
 Usage:
     conda activate drones
     python src/03_environmental_sar/s050_slam.py
 """
 
-import sys
 import os
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
 from matplotlib.patches import Ellipse
 import matplotlib.animation as animation
-from dataclasses import dataclass, field
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
 # ── Parameters ─────────────────────────────────────────────────────────────────
 N_DRONES     = 3
 AREA_SIZE    = 200.0      # m, square side
-M_LANDMARKS  = 30         # true landmarks in environment
+M_LANDMARKS  = 30         # true landmarks
 DRONE_SPEED  = 3.0        # m/s
-DT           = 0.2        # s — simulation timestep
-T_MAX        = 600.0      # s — mission horizon
-N_STEPS      = int(T_MAX / DT)
+DT           = 0.2        # s
+T_MAX        = 600.0      # s
+N_STEPS      = int(round(T_MAX / DT))
 
-SENSOR_RANGE = 25.0       # m — landmark detection range
-COMM_RANGE   = 40.0       # m — inter-drone communication range
-SIGMA_RHO    = 0.3        # m — range noise std
-SIGMA_PHI    = 0.03       # rad — bearing noise std (~1.7 deg)
-
-SIGMA_AX     = 0.05       # m/s^2 acceleration noise
+SENSOR_RANGE = 25.0       # m
+COMM_RANGE   = 40.0       # m
+SIGMA_RHO    = 0.3        # m
+SIGMA_PHI    = 0.03       # rad
+SIGMA_AX     = 0.05       # m/s^2-equivalent: per-step position noise std = SIGMA_AX*DT
 SIGMA_AY     = 0.05
-SIGMA_OMEGA  = 0.02       # rad/s turn rate noise
+SIGMA_OMEGA  = 0.02       # rad/s: per-step heading noise std = SIGMA_OMEGA*DT
+P0_POSE      = 0.01       # initial pose covariance (x I3)
+OMEGA_MAX    = 1.0        # rad/s turn-rate limit
 
-MAHA_GATE    = 5.991      # chi^2(2, 0.95) data association gate
-MATCH_RADIUS = 2.0        # m — common landmark proximity threshold
-SUCCESS_R    = 1.0        # m — localisation success radius
-SNAPSHOT_DT  = 10.0       # s — quality snapshot interval
-MIN_COMMON   = 3          # min common landmarks to attempt merge
+MAHA_GATE    = 5.991      # chi2(2, 0.95): associate if d_M <= gate
+NEW_LM_GATE  = 13.816     # chi2(2, 0.999): new landmark only if min d_M > this
+MATCH_RADIUS = 2.0        # m - map-merge landmark correspondence radius
+MIN_LM_SEP   = 4.0        # m - no new landmark closer than this to an existing one
+MIN_COMMON   = 3          # min common landmarks for SVD alignment
+ALIGN_SEARCH_R = 20.0     # m - max map-to-map offset searched by the robust alignment
+ALIGN_MAX_ROT = 0.5       # rad - max relative rotation between two drones' maps
+MERGE_PERIOD = 30.0       # s - repeat merge while staying in contact
+MERGE_INFLATE = 10.0      # covariance inflation of transferred landmarks (alignment error)
+SENSED_MARGIN = 3.0       # m - host 'already sensed' area = within SENSOR_RANGE - margin of its path
+SUCCESS_R    = 1.0        # m - landmark localisation success radius
+LOOSE_R      = 5.0        # m - secondary 'landmark is in the map' radius
+SNAPSHOT_DT  = 10.0       # s - quality snapshot interval
+GRID_RES     = 5.0        # m - exploration grid
+RETARGET_DT  = 2.0        # s - frontier target refresh interval
+N_MC         = 10         # Monte Carlo noise seeds (0..N_MC-1)
+SHOW_SEED    = 0
+ANIM_FRAMES  = 120
+LANDMARK_SEED = 42
 
-R_OBS = np.diag([SIGMA_RHO**2, SIGMA_PHI**2])
+STARTS = np.array([[20.0, 20.0, 0.0], [100.0, 20.0, np.pi / 2], [180.0, 20.0, np.pi]])
+FILTER_INFLATE = 4.0     # filter uses 4x the true Q and R (EKF-SLAM consistency)
+# true noise (used to simulate truth and measurements) is SIGMA_*; the filters use
+R_OBS = FILTER_INFLATE * np.diag([SIGMA_RHO ** 2, SIGMA_PHI ** 2])
+Q_POSE = FILTER_INFLATE * np.diag([(SIGMA_AX * DT) ** 2, (SIGMA_AY * DT) ** 2,
+                                   (SIGMA_OMEGA * DT) ** 2])
+STRATS = ['isolated', 'distributed', 'centralised']
+STRAT_STYLE = {'isolated': ('#2980b9', '--'), 'distributed': ('#e74c3c', '-'),
+               'centralised': ('#27ae60', '-.')}
+DRONE_COLORS = ['#e74c3c', '#2980b9', '#27ae60']
 
-DRONE_COLORS = ['#e74c3c', '#2980b9', '#27ae60']  # red, blue, green
-
-OUTPUT_DIR = os.path.join(
-    os.path.dirname(__file__), '..', '..',
-    'outputs', '03_environmental_sar', 's050_slam',
-)
-
-RNG = np.random.default_rng(0)
-
-
-# ── EKF-SLAM State ─────────────────────────────────────────────────────────────
-@dataclass
-class EKFSLAMState:
-    """Local EKF-SLAM state for one drone."""
-    drone_id: int
-    pose: np.ndarray = field(default_factory=lambda: np.zeros(3))  # [x, y, theta]
-    landmarks: np.ndarray = field(default_factory=lambda: np.empty((0, 2)))
-    n_landmarks: int = 0
-    P: np.ndarray = field(default_factory=lambda: np.eye(3) * 0.01)
-
-    def state_dim(self):
-        return 3 + 2 * self.n_landmarks
-
-    def full_state(self):
-        return np.concatenate([self.pose, self.landmarks.ravel()])
-
-
-# ── EKF Helpers ────────────────────────────────────────────────────────────────
-def predict_step(ekf, v, omega, dt):
-    """EKF predict: propagate pose forward, landmarks unchanged."""
-    x, y, th = ekf.pose
-    n = ekf.n_landmarks
-    dim = 3 + 2 * n
-
-    ekf.pose = np.array([
-        x + v * dt * np.cos(th),
-        y + v * dt * np.sin(th),
-        th + omega * dt,
-    ])
-
-    F = np.eye(dim)
-    F[0, 2] = -v * dt * np.sin(th)
-    F[1, 2] =  v * dt * np.cos(th)
-
-    Q = np.zeros((dim, dim))
-    Q[0, 0] = (SIGMA_AX * dt) ** 2
-    Q[1, 1] = (SIGMA_AY * dt) ** 2
-    Q[2, 2] = (SIGMA_OMEGA * dt) ** 2
-
-    ekf.P = F @ ekf.P @ F.T + Q
-    return ekf
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', '..',
+                          'outputs', '03_environmental_sar', 's050_slam')
 
 
-def observation_jacobian(ekf, lm_idx):
-    """Return H (2 x dim) and predicted range/bearing for landmark lm_idx."""
-    x, y, th = ekf.pose
-    lx, ly = ekf.landmarks[lm_idx]
-    dx, dy = lx - x, ly - y
-    rho = np.sqrt(dx ** 2 + dy ** 2) + 1e-9
-    dim = ekf.state_dim()
-
-    H = np.zeros((2, dim))
-    H[0, 0] = -dx / rho;  H[0, 1] = -dy / rho;  H[0, 2] = 0.0
-    H[1, 0] =  dy / rho**2; H[1, 1] = -dx / rho**2; H[1, 2] = -1.0
-    li = 3 + 2 * lm_idx
-    H[0, li] =  dx / rho;   H[0, li+1] =  dy / rho
-    H[1, li] = -dy / rho**2; H[1, li+1] =  dx / rho**2
-
-    pred_phi = np.arctan2(dy, dx) - th
-    return H, rho, pred_phi
+def wrap(a):
+    return np.arctan2(np.sin(a), np.cos(a))
 
 
-def ekf_update(ekf, lm_idx, z_rho, z_phi):
-    """EKF update for one range-bearing observation."""
-    H, pred_rho, pred_phi = observation_jacobian(ekf, lm_idx)
-    nu = np.array([z_rho - pred_rho, z_phi - pred_phi])
-    nu[1] = np.arctan2(np.sin(nu[1]), np.cos(nu[1]))
+# ── EKF-SLAM filter (handles 1 pose = local filter or 3 poses = centralised) ─────
+class SlamFilter:
+    def __init__(self, poses):
+        self.n_pose = len(poses)
+        self.X = np.concatenate([p.copy() for p in poses]).astype(float)
+        self.P = np.eye(3 * self.n_pose) * P0_POSE
+        self.lm0 = 3 * self.n_pose            # index of first landmark
 
-    S = H @ ekf.P @ H.T + R_OBS
-    try:
-        K = ekf.P @ H.T @ np.linalg.inv(S)
-    except np.linalg.LinAlgError:
-        return ekf
+    @property
+    def n_lm(self):
+        return (len(self.X) - self.lm0) // 2
 
-    full = ekf.full_state() + K @ nu
-    ekf.pose = full[:3]
-    if ekf.n_landmarks > 0:
-        ekf.landmarks = full[3:].reshape(-1, 2)
-    ekf.P = (np.eye(ekf.state_dim()) - K @ H) @ ekf.P
-    return ekf
+    @property
+    def landmarks(self):
+        return self.X[self.lm0:].reshape(-1, 2)
+
+    def lm_cov(self, j):
+        l = self.lm0 + 2 * j
+        return self.P[l:l + 2, l:l + 2]
+
+    def pose(self, k):
+        return self.X[3 * k:3 * k + 3]
+
+    def predict(self, k, v, omega):
+        p = 3 * k
+        th = self.X[p + 2]
+        F = np.array([[1, 0, -v * DT * np.sin(th)], [0, 1, v * DT * np.cos(th)], [0, 0, 1.0]])
+        self.X[p] += v * DT * np.cos(th)
+        self.X[p + 1] += v * DT * np.sin(th)
+        self.X[p + 2] = wrap(th + omega * DT)
+        self.P[p:p + 3, :] = F @ self.P[p:p + 3, :]
+        self.P[:, p:p + 3] = self.P[:, p:p + 3] @ F.T
+        self.P[p:p + 3, p:p + 3] += Q_POSE
+
+    def _obs_blocks(self, k, js):
+        """Predicted (rho, phi), sparse Jacobians (n,2,5) and index sets (n,5)."""
+        x, y, th = self.pose(k)
+        L = self.landmarks[js]
+        dx, dy = L[:, 0] - x, L[:, 1] - y
+        q = np.maximum(dx ** 2 + dy ** 2, 1e-12)
+        rho = np.sqrt(q)
+        phi = wrap(np.arctan2(dy, dx) - th)
+        H = np.zeros((len(js), 2, 5))
+        H[:, 0, 0] = -dx / rho; H[:, 0, 1] = -dy / rho
+        H[:, 1, 0] = dy / q;    H[:, 1, 1] = -dx / q;   H[:, 1, 2] = -1.0
+        H[:, 0, 3] = dx / rho;  H[:, 0, 4] = dy / rho
+        H[:, 1, 3] = -dy / q;   H[:, 1, 4] = dx / q
+        p = 3 * k
+        l = self.lm0 + 2 * np.asarray(js)
+        idx = np.stack([np.full_like(l, p), np.full_like(l, p + 1), np.full_like(l, p + 2),
+                        l, l + 1], axis=1)
+        return rho, phi, H, idx
+
+    def associate(self, k, z):
+        """Return (best landmark index or -1, its Mahalanobis distance)."""
+        if self.n_lm == 0:
+            return -1, np.inf
+        x, y, _ = self.pose(k)
+        d_e = np.linalg.norm(self.landmarks - [x, y], axis=1)
+        js = np.flatnonzero(d_e < SENSOR_RANGE + 15.0)
+        if len(js) == 0:
+            return -1, np.inf
+        rho, phi, H, idx = self._obs_blocks(k, js)
+        Pb = self.P[idx[:, :, None], idx[:, None, :]]
+        S = H @ Pb @ np.transpose(H, (0, 2, 1)) + R_OBS
+        nu = np.stack([z[0] - rho, wrap(z[1] - phi)], axis=1)
+        d = np.einsum('ni,ni->n', nu, np.linalg.solve(S, nu[:, :, None])[:, :, 0])
+        b = int(np.argmin(d))
+        return int(js[b]), float(d[b])
+
+    def update(self, k, j, z):
+        rho, phi, H, idx = self._obs_blocks(k, [j])
+        H, idx = H[0], idx[0]
+        S = H @ self.P[np.ix_(idx, idx)] @ H.T + R_OBS
+        K = self.P[:, idx] @ H.T @ np.linalg.inv(S)
+        nu = np.array([z[0] - rho[0], wrap(z[1] - phi[0])])
+        self.X += K @ nu
+        self.X[3 * k + 2] = wrap(self.X[3 * k + 2])
+        self.P -= K @ S @ K.T
+        self.P = 0.5 * (self.P + self.P.T)
+
+    def add_landmark_from_obs(self, k, z):
+        """Initialise a landmark with full cross-covariance to the existing state."""
+        p = 3 * k
+        x, y, th = self.pose(k)
+        a = th + z[1]
+        lm = np.array([x + z[0] * np.cos(a), y + z[0] * np.sin(a)])
+        Jx = np.array([[1, 0, -z[0] * np.sin(a)], [0, 1, z[0] * np.cos(a)]])
+        Jz = np.array([[np.cos(a), -z[0] * np.sin(a)], [np.sin(a), z[0] * np.cos(a)]])
+        n = len(self.X)
+        Pn = np.zeros((n + 2, n + 2))
+        Pn[:n, :n] = self.P
+        cross = Jx @ self.P[p:p + 3, :]
+        Pn[n:, :n] = cross
+        Pn[:n, n:] = cross.T
+        Pn[n:, n:] = Jx @ self.P[p:p + 3, p:p + 3] @ Jx.T + Jz @ R_OBS @ Jz.T
+        self.X = np.concatenate([self.X, lm])
+        self.P = Pn
+
+    def add_landmark(self, lm, cov):
+        n = len(self.X)
+        Pn = np.zeros((n + 2, n + 2))
+        Pn[:n, :n] = self.P
+        Pn[n:, n:] = cov
+        self.X = np.concatenate([self.X, lm])
+        self.P = Pn
+
+    def process(self, k, z):
+        """Data association + update / initialise for one measurement."""
+        j, d = self.associate(k, z)
+        if j >= 0 and d <= MAHA_GATE:
+            self.update(k, j, z)
+        elif d > NEW_LM_GATE:
+            x, y, th = self.pose(k)
+            cand = np.array([x + z[0] * np.cos(th + z[1]), y + z[0] * np.sin(th + z[1])])
+            if self.n_lm == 0 or np.min(np.linalg.norm(self.landmarks - cand, axis=1)) >= MIN_LM_SEP:
+                self.add_landmark_from_obs(k, z)
+        # otherwise ambiguous: measurement discarded
 
 
-def data_association(ekf, z_rho, z_phi):
-    """Nearest-neighbour with Mahalanobis gate. Returns landmark index or -1."""
-    best_dist = np.inf
-    best_idx = -1
-    for j in range(ekf.n_landmarks):
-        H, pred_rho, pred_phi = observation_jacobian(ekf, j)
-        nu = np.array([z_rho - pred_rho, z_phi - pred_phi])
-        nu[1] = np.arctan2(np.sin(nu[1]), np.cos(nu[1]))
-        S = H @ ekf.P @ H.T + R_OBS
-        try:
-            d_maha = float(nu @ np.linalg.inv(S) @ nu)
-        except np.linalg.LinAlgError:
+def _one_to_one(A, B, radius):
+    """Greedy one-to-one nearest pairs (index in A, index in B) closer than radius."""
+    if len(A) == 0 or len(B) == 0:
+        return []
+    D = np.linalg.norm(A[:, None, :] - B[None, :, :], axis=2)
+    pairs, used_a, used_b = [], set(), set()
+    for flat in np.argsort(D, axis=None):
+        i, j = np.unravel_index(flat, D.shape)
+        if D[i, j] >= radius:
+            break
+        if i in used_a or j in used_b:
             continue
-        if d_maha < best_dist:
-            best_dist = d_maha
-            best_idx = j
-    if best_dist <= MAHA_GATE:
-        return best_idx
-    return -1
+        pairs.append((int(i), int(j))); used_a.add(i); used_b.add(j)
+    return pairs
 
 
-def initialise_landmark(ekf, z_rho, z_phi):
-    """Append a new landmark to the EKF state."""
-    x, y, th = ekf.pose
-    global_angle = th + z_phi
-    lx = x + z_rho * np.cos(global_angle)
-    ly = y + z_rho * np.sin(global_angle)
-
-    Jinv = np.zeros((2, 5))
-    Jinv[0, 0] = 1.0; Jinv[0, 2] = -z_rho * np.sin(global_angle)
-    Jinv[0, 3] = np.cos(global_angle)
-    Jinv[0, 4] = -z_rho * np.sin(global_angle)
-    Jinv[1, 1] = 1.0; Jinv[1, 2] =  z_rho * np.cos(global_angle)
-    Jinv[1, 3] = np.sin(global_angle)
-    Jinv[1, 4] =  z_rho * np.cos(global_angle)
-
-    src_cov = np.zeros((5, 5))
-    src_cov[:3, :3] = ekf.P[:3, :3]
-    src_cov[3:, 3:] = R_OBS
-    P_ll = Jinv @ src_cov @ Jinv.T
-
-    old_dim = ekf.state_dim()
-    new_dim = old_dim + 2
-    new_P = np.zeros((new_dim, new_dim))
-    new_P[:old_dim, :old_dim] = ekf.P
-    new_P[old_dim:, old_dim:] = P_ll
-
-    if ekf.n_landmarks > 0:
-        ekf.landmarks = np.vstack([ekf.landmarks, [lx, ly]])
-    else:
-        ekf.landmarks = np.array([[lx, ly]])
-    ekf.n_landmarks += 1
-    ekf.P = new_P
-    return ekf
+def _svd_align(Lh, Lv):
+    """Least-squares rigid transform (R, t) with Lh ~ R Lv + t (card's SVD solution)."""
+    mu_h, mu_v = Lh.mean(0), Lv.mean(0)
+    U, _, Vt = np.linalg.svd((Lh - mu_h).T @ (Lv - mu_v))
+    D = np.diag([1.0, np.sign(np.linalg.det(U @ Vt))])
+    R = U @ D @ Vt
+    return R, mu_h - R @ mu_v
 
 
-def merge_maps(host, visitor):
+def robust_align(Lh, Lv):
     """
-    Merge visitor's map into host using SVD alignment + covariance intersection.
-    Returns number of common landmarks found.
+    Deterministic consensus alignment of two drifted maps.  Hypotheses come
+    from two correspondences (a<->b, c<->d) that lie within ALIGN_SEARCH_R of each
+    other and have consistent inter-landmark distances (|Dh_ac - Dv_bd| < 1 m);
+    rotation limited to ALIGN_MAX_ROT.  The hypothesis with most one-to-one
+    inliers (< MATCH_RADIUS) wins and is refined by SVD on its inliers.
+    Returns (R, t, inlier pairs).
     """
-    if visitor.n_landmarks == 0 or host.n_landmarks == 0:
-        return 0
-
-    # Find common landmarks
-    common_host, common_vis = [], []
-    for vi in range(visitor.n_landmarks):
-        vl = visitor.landmarks[vi]
-        dists = np.linalg.norm(host.landmarks - vl, axis=1)
-        if dists.min() < MATCH_RADIUS:
-            hi = int(np.argmin(dists))
-            if hi not in common_host:
-                common_host.append(hi)
-                common_vis.append(vi)
-
-    if len(common_host) < MIN_COMMON:
-        return len(common_host)
-
-    # SVD rigid alignment: visitor -> host frame
-    Lh = host.landmarks[common_host]
-    Lv = visitor.landmarks[common_vis]
-    mu_h = Lh.mean(axis=0)
-    mu_v = Lv.mean(axis=0)
-    W = (Lh - mu_h).T @ (Lv - mu_v)
-    try:
-        U, _, Vt = np.linalg.svd(W)
-    except np.linalg.LinAlgError:
-        return len(common_host)
-
-    R_align = U @ Vt
-    if np.linalg.det(R_align) < 0:
-        Vt[-1, :] *= -1
-        R_align = U @ Vt
-    t_align = mu_h - R_align @ mu_v
-
-    # Fuse non-common visitor landmarks into host
-    for vi in range(visitor.n_landmarks):
-        if vi in common_vis:
-            continue
-        lv_t = R_align @ visitor.landmarks[vi] + t_align
-        P_v = visitor.P[3 + 2*vi: 3 + 2*vi + 2, 3 + 2*vi: 3 + 2*vi + 2]
-
-        if host.n_landmarks > 0:
-            dists = np.linalg.norm(host.landmarks - lv_t, axis=1)
-            if dists.min() < MATCH_RADIUS:
-                hi = int(np.argmin(dists))
-                P_h = host.P[3 + 2*hi: 3 + 2*hi + 2, 3 + 2*hi: 3 + 2*hi + 2]
-                try:
-                    K_m = P_h @ np.linalg.inv(P_h + P_v)
-                except np.linalg.LinAlgError:
-                    continue
-                host.landmarks[hi] = host.landmarks[hi] + K_m @ (lv_t - host.landmarks[hi])
-                host.P[3 + 2*hi: 3 + 2*hi + 2, 3 + 2*hi: 3 + 2*hi + 2] = (np.eye(2) - K_m) @ P_h
+    Dc = np.linalg.norm(Lh[:, None, :] - Lv[None, :, :], axis=2)
+    cand = np.argwhere(Dc < ALIGN_SEARCH_R)
+    Dh = np.linalg.norm(Lh[:, None] - Lh[None], axis=2)
+    Dv = np.linalg.norm(Lv[:, None] - Lv[None], axis=2)
+    best = (0, np.inf, np.eye(2), np.zeros(2))
+    for a, b in cand:
+        ok = ((cand[:, 0] != a) & (cand[:, 1] != b)
+              & (np.abs(Dh[a, cand[:, 0]] - Dv[b, cand[:, 1]]) < 1.0)
+              & (Dh[a, cand[:, 0]] > 3.0))
+        for c, d in cand[ok]:
+            ang = (np.arctan2(*(Lh[c] - Lh[a])[::-1]) - np.arctan2(*(Lv[d] - Lv[b])[::-1]))
+            ang = wrap(ang)
+            if abs(ang) > ALIGN_MAX_ROT:
                 continue
+            R = np.array([[np.cos(ang), -np.sin(ang)], [np.sin(ang), np.cos(ang)]])
+            t = Lh[a] - R @ Lv[b]
+            Lt = Lv @ R.T + t
+            dmin = np.linalg.norm(Lh[:, None] - Lt[None], axis=2).min(0)
+            inl = dmin < MATCH_RADIUS
+            score = (int(inl.sum()), float(np.sum(dmin[inl] ** 2)))
+            if score[0] > best[0] or (score[0] == best[0] and score[1] < best[1]):
+                best = (score[0], score[1], R, t)
+    if best[0] < MIN_COMMON:
+        return None, None, []
+    R, t = best[2], best[3]
+    pairs = _one_to_one(Lh, Lv @ R.T + t, MATCH_RADIUS)
+    if len(pairs) >= MIN_COMMON:
+        R, t = _svd_align(Lh[[i for i, _ in pairs]], Lv[[j for _, j in pairs]])
+        pairs = _one_to_one(Lh, Lv @ R.T + t, MATCH_RADIUS)
+    return R, t, pairs
 
-        # Add as new landmark to host
-        old_dim = host.state_dim()
-        new_dim = old_dim + 2
-        new_P = np.zeros((new_dim, new_dim))
-        new_P[:old_dim, :old_dim] = host.P
-        new_P[old_dim:, old_dim:] = P_v
-        if host.n_landmarks > 0:
-            host.landmarks = np.vstack([host.landmarks, lv_t])
-        else:
-            host.landmarks = lv_t[np.newaxis]
-        host.n_landmarks += 1
-        host.P = new_P
 
-    return len(common_host)
-
-
-# ── Navigation policy ──────────────────────────────────────────────────────────
-def frontier_policy(ekf, explored_grid, grid_res, rng, other_targets):
+def merge_maps(host, vis_L, vis_C, host_sensed=None):
     """
-    Information-gain frontier policy. Returns turn rate omega.
-    explored_grid: boolean array (W, W) — cells within sensor range of past positions.
+    Merge a visitor map snapshot (landmarks vis_L, 2x2 covariances vis_C) into
+    host, transferring only NEW information:
+      1. robust alignment of the visitor map onto the host map;
+      2. common landmarks are used only for the alignment and a consistency
+         check (chi2(2, 0.999) on the combined covariance); if fewer than
+         MIN_COMMON or fewer than half of them pass, the merge is rejected;
+      3. visitor landmarks the host does not have are appended with covariance
+         MERGE_INFLATE x (rotated visitor covariance) and no cross-correlation,
+         unless they are within MIN_LM_SEP of a host landmark, statistically
+         compatible with one, or inside the area the host has sensed itself.
+    Host landmark estimates and the host pose are not modified (fusing landmarks
+    that both maps already contain double-counts information exchanged in
+    earlier merges and made the filters overconfident).
+    Returns (n_common, n_consistent, n_added); n_consistent < 0 marks a rejected merge.
     """
-    W = explored_grid.shape[0]
-    x, y, th = ekf.pose
-    cx, cy = int(x / grid_res), int(y / grid_res)
+    if len(vis_L) == 0 or host.n_lm == 0:
+        return 0, 0, 0
+    R, t, pairs = robust_align(host.landmarks, vis_L)
+    if len(pairs) < MIN_COMMON:
+        return len(pairs), 0, 0
+    Lt = vis_L @ R.T + t
+    Ct = np.einsum('ij,njk,lk->nil', R, vis_C, R)
+    # statistical consistency of every geometric match
+    good = []
+    for i, j in pairs:
+        dlt = Lt[j] - host.landmarks[i]
+        d2 = float(dlt @ np.linalg.solve(host.lm_cov(i) + MERGE_INFLATE * Ct[j], dlt))
+        if d2 <= NEW_LM_GATE:
+            good.append((i, j))
+    if len(good) < MIN_COMMON or len(good) < 0.5 * len(pairs):
+        return len(pairs), -len(good), 0      # maps disagree: merge rejected
+    matched_v = {j for _, j in pairs}
+    n_added = 0
+    for j in range(len(Lt)):
+        if j in matched_v:
+            continue
+        diff = host.landmarks - Lt[j]
+        if np.min(np.linalg.norm(diff, axis=1)) < MIN_LM_SEP:
+            continue
+        if host_sensed is not None:
+            ix = int(np.clip(Lt[j][0] // GRID_RES, 0, W_CELLS - 1))
+            iy = int(np.clip(Lt[j][1] // GRID_RES, 0, W_CELLS - 1))
+            if host_sensed[iy, ix]:
+                continue      # host has sensed this area: landmark would be a duplicate
+        # skip if statistically compatible with an existing host landmark
+        S = np.array([host.lm_cov(i) for i in range(host.n_lm)]) + MERGE_INFLATE * Ct[j]
+        d2 = np.einsum('ni,ni->n', diff, np.linalg.solve(S, diff[:, :, None])[:, :, 0])
+        if d2.min() <= NEW_LM_GATE:
+            continue
+        host.add_landmark(Lt[j], MERGE_INFLATE * Ct[j])
+        n_added += 1
+    return len(pairs), len(good), n_added
 
-    # Find frontier cells (unexplored cells adjacent to explored ones)
-    # Sample candidate waypoints on unexplored grid
-    unexplored_mask = ~explored_grid
-    if not unexplored_mask.any():
-        # Fully explored: wander randomly
-        return rng.uniform(-0.3, 0.3)
 
-    # Candidate waypoints: unexplored cells
-    ys, xs = np.where(unexplored_mask)
-    if len(xs) == 0:
-        return rng.uniform(-0.3, 0.3)
+# ── Frontier policy ────────────────────────────────────────────────────────────
+W_CELLS = int(AREA_SIZE / GRID_RES)
+CELL_C = (np.arange(W_CELLS) + 0.5) * GRID_RES
+R_CELLS = int(SENSOR_RANGE / GRID_RES)
 
-    # Compute information gain (number of unexplored cells within sensor range)
-    wpts_x = xs * grid_res + grid_res / 2
-    wpts_y = ys * grid_res + grid_res / 2
-    dist_to_drone = np.sqrt((wpts_x - x)**2 + (wpts_y - y)**2)
 
-    # Only consider reachable frontier cells within 2*SENSOR_RANGE
-    close_mask = dist_to_drone < 2.0 * SENSOR_RANGE
-    if not close_mask.any():
-        close_mask = dist_to_drone < 4.0 * SENSOR_RANGE
-    if not close_mask.any():
-        return rng.uniform(-0.3, 0.3)
+def mark_explored(grid, pos, radius=SENSOR_RANGE):
+    d = np.hypot(CELL_C[None, :] - pos[0], CELL_C[:, None] - pos[1])
+    grid |= d <= radius
 
-    wpts_x = wpts_x[close_mask]
-    wpts_y = wpts_y[close_mask]
-    dist_to_drone = dist_to_drone[close_mask]
 
-    # IG = unexplored cells within sensor range of candidate
-    ig_scores = np.zeros(len(wpts_x))
-    for k, (wx, wy) in enumerate(zip(wpts_x, wpts_y)):
-        ci_x = int(np.clip(wx / grid_res, 0, W - 1))
-        ci_y = int(np.clip(wy / grid_res, 0, W - 1))
-        # Count unexplored in a square neighbourhood
-        r = max(1, int(SENSOR_RANGE / grid_res))
-        x0, x1 = max(0, ci_x - r), min(W, ci_x + r + 1)
-        y0, y1 = max(0, ci_y - r), min(W, ci_y + r + 1)
-        ig_scores[k] = unexplored_mask[y0:y1, x0:x1].sum()
-
-    # Penalise proximity to other drone targets
+def frontier_target(grid, pos, other_targets):
+    """argmax IG / distance over unexplored cells; IG = unexplored cells in the
+    (2r+1)^2 square around the candidate (integral image)."""
+    unexp = ~grid
+    if not unexp.any():
+        return None
+    I = np.pad(unexp.astype(np.int32).cumsum(0).cumsum(1), ((1, 0), (1, 0)))
+    r = R_CELLS
+    lo = np.clip(np.arange(W_CELLS) - r, 0, W_CELLS)
+    hi = np.clip(np.arange(W_CELLS) + r + 1, 0, W_CELLS)
+    IG = (I[hi[:, None], hi[None, :]] - I[lo[:, None], hi[None, :]]
+          - I[hi[:, None], lo[None, :]] + I[lo[:, None], lo[None, :]]).astype(float)
+    cx, cy = np.meshgrid(CELL_C, CELL_C)
     for ot in other_targets:
         if ot is not None:
-            d_other = np.sqrt((wpts_x - ot[0])**2 + (wpts_y - ot[1])**2)
-            ig_scores[d_other < SENSOR_RANGE] *= 0.1
+            IG[np.hypot(cx - ot[0], cy - ot[1]) < SENSOR_RANGE] *= 0.1
+    dist = np.hypot(cx - pos[0], cy - pos[1])
+    score = np.where(unexp, IG / (dist + GRID_RES), -1.0)
+    iy, ix = np.unravel_index(int(np.argmax(score)), score.shape)
+    return np.array([CELL_C[ix], CELL_C[iy]])
 
-    ratio = ig_scores / (dist_to_drone + 1e-6)
-    best = int(np.argmax(ratio))
-    target = np.array([wpts_x[best], wpts_y[best]])
 
-    # Turn toward target
-    desired_angle = np.arctan2(target[1] - y, target[0] - x)
-    angle_diff = np.arctan2(np.sin(desired_angle - th), np.cos(desired_angle - th))
-    omega = np.clip(angle_diff / DT, -1.0, 1.0)  # max 1 rad/s turn
-    return omega, target
+# ── Metrics ────────────────────────────────────────────────────────────────────
+def map_quality(L, true_lm):
+    """Per true landmark: found if an estimate lies within SUCCESS_R."""
+    if len(L) == 0:
+        return dict(cov=0.0, cov_loose=0.0, rms=np.nan, n_found=0, n_est=0, n_dup=0)
+    D = np.linalg.norm(true_lm[:, None, :] - L[None, :, :], axis=2)
+    dmin = D.min(axis=1)
+    found = dmin < SUCCESS_R
+    nearest_true = D.argmin(axis=0)
+    n_dup = len(L) - len(np.unique(nearest_true))
+    return dict(cov=found.mean(), cov_loose=float(np.mean(dmin < LOOSE_R)), rms=float(np.sqrt(np.mean(dmin[found] ** 2))) if found.any()
+                else np.nan, n_found=int(found.sum()), n_est=len(L), n_dup=int(n_dup))
+
+
+def team_union(Ls, true_lm):
+    found = np.zeros(M_LANDMARKS, dtype=bool)
+    for L in Ls:
+        if len(L):
+            found |= np.linalg.norm(true_lm[:, None] - L[None], axis=2).min(1) < SUCCESS_R
+    return found.mean()
+
+
+def min_eig(P):
+    return float(np.linalg.eigvalsh(0.5 * (P + P.T)).min())
 
 
 # ── Simulation ─────────────────────────────────────────────────────────────────
-def compute_map_quality(ekf, true_landmarks):
-    """Return (rms, coverage, n_found) for the current map vs ground truth."""
-    if ekf.n_landmarks == 0:
-        return np.nan, 0.0, 0
+def run_simulation(seed=SHOW_SEED, record=True):
+    """Generate one flight log and run the three estimators on it."""
+    true_lm = np.random.default_rng(LANDMARK_SEED).uniform(10.0, 190.0, size=(M_LANDMARKS, 2))
+    rng = np.random.default_rng(seed)
 
-    est = ekf.landmarks
-    best_dist_per_est = np.array([
-        np.min(np.linalg.norm(true_landmarks - lm, axis=1))
-        for lm in est
-    ])
-    found_mask = best_dist_per_est < SUCCESS_R
-    n_found = int(found_mask.sum())
+    truth = STARTS.copy()
+    dead_reck = STARTS.copy()
+    iso = [SlamFilter([STARTS[k]]) for k in range(N_DRONES)]
+    dist = [SlamFilter([STARTS[k]]) for k in range(N_DRONES)]
+    cen = SlamFilter([STARTS[k] for k in range(N_DRONES)])
+    grids = [np.zeros((W_CELLS, W_CELLS), dtype=bool) for _ in range(N_DRONES)]
+    sensed = [np.zeros((W_CELLS, W_CELLS), dtype=bool) for _ in range(N_DRONES)]
+    targets = [None] * N_DRONES
+    in_contact = np.zeros((N_DRONES, N_DRONES), dtype=bool)
+    last_merge = np.full((N_DRONES, N_DRONES), -np.inf)
+    comm_events = []
+    min_eig_seen = np.inf
 
-    # RMS: over matched estimates only
-    if n_found > 0:
-        rms = float(np.sqrt(np.mean(best_dist_per_est[found_mask] ** 2)))
-    else:
-        rms = np.nan
-    coverage = n_found / M_LANDMARKS
-    return rms, coverage, n_found
+    snaps = {'t': [], **{s: {'cov': [], 'rms': [], 'pose': [], 'n_est': []} for s in STRATS}}
+    true_hist = [[] for _ in range(N_DRONES)]
+    est_hist = {s: [[] for _ in range(N_DRONES)] for s in STRATS}
+    frames = []
+    pose_err = {s: [] for s in STRATS + ['dead_reckoning']}
+    frame_every = max(1, N_STEPS // ANIM_FRAMES)
 
+    def est_pose(s, k):
+        return {'isolated': iso[k].pose(0), 'distributed': dist[k].pose(0),
+                'centralised': cen.pose(k)}[s]
 
-def run_simulation():
-    """Run distributed EKF-SLAM and isolated baseline. Return all data."""
-    rng_lm = np.random.default_rng(42)
-    true_landmarks = rng_lm.uniform(10.0, 190.0, size=(M_LANDMARKS, 2))
+    for step in range(N_STEPS):
+        t = (step + 1) * DT
+        for k in range(N_DRONES):
+            # navigation on the drone's own on-board (isolated) estimate
+            nav = iso[k].pose(0)
+            mark_explored(grids[k], nav)
+            mark_explored(sensed[k], dist[k].pose(0), SENSOR_RANGE - SENSED_MARGIN)
+            if (targets[k] is None or step % int(RETARGET_DT / DT) == 0
+                    or np.hypot(*(targets[k] - nav[:2])) < GRID_RES):
+                targets[k] = frontier_target(grids[k], nav,
+                                             [targets[j] for j in range(N_DRONES) if j != k])
+                if targets[k] is None:            # own map fully explored: start again
+                    grids[k][:] = False
+                    targets[k] = frontier_target(grids[k], nav, [])
+            ang = np.arctan2(targets[k][1] - nav[1], targets[k][0] - nav[0])
+            omega = float(np.clip(wrap(ang - nav[2]) / DT, -OMEGA_MAX, OMEGA_MAX))
 
-    results = {}
-    for strategy in ('distributed', 'isolated'):
-        rng = np.random.default_rng(0)
+            # true motion = commanded odometry + process noise
+            th = truth[k, 2]
+            truth[k] += [DRONE_SPEED * DT * np.cos(th) + rng.normal(0, SIGMA_AX * DT),
+                         DRONE_SPEED * DT * np.sin(th) + rng.normal(0, SIGMA_AY * DT),
+                         omega * DT + rng.normal(0, SIGMA_OMEGA * DT)]
+            truth[k, 2] = wrap(truth[k, 2])
+            thd = dead_reck[k, 2]
+            dead_reck[k] += [DRONE_SPEED * DT * np.cos(thd), DRONE_SPEED * DT * np.sin(thd),
+                             omega * DT]
+            iso[k].predict(0, DRONE_SPEED, omega)
+            dist[k].predict(0, DRONE_SPEED, omega)
+            cen.predict(k, DRONE_SPEED, omega)
 
-        # Grid for frontier exploration
-        grid_res = 5.0
-        W = int(AREA_SIZE / grid_res)
-        explored = np.zeros((N_DRONES, W, W), dtype=bool)
+            # measurements from the TRUE pose
+            d_true = np.linalg.norm(true_lm - truth[k, :2], axis=1)
+            for j in np.flatnonzero(d_true <= SENSOR_RANGE):
+                z = np.array([d_true[j] + rng.normal(0, SIGMA_RHO),
+                              wrap(np.arctan2(true_lm[j, 1] - truth[k, 1],
+                                              true_lm[j, 0] - truth[k, 0]) - truth[k, 2]
+                                   + rng.normal(0, SIGMA_PHI))])
+                iso[k].process(0, z)
+                dist[k].process(0, z)
+                cen.process(k, z)
 
-        # Start positions
-        starts = [
-            np.array([20.0, 20.0, 0.0]),
-            np.array([100.0, 20.0, np.pi / 2]),
-            np.array([180.0, 20.0, np.pi]),
-        ]
-        ekfs = [
-            EKFSLAMState(drone_id=k, pose=starts[k].copy())
-            for k in range(N_DRONES)
-        ]
+        # pairwise map merging (distributed), true inter-drone distance
+        for i in range(N_DRONES):
+            for j in range(i + 1, N_DRONES):
+                close = np.hypot(*(truth[i, :2] - truth[j, :2])) <= COMM_RANGE
+                if close and (not in_contact[i, j] or t - last_merge[i, j] >= MERGE_PERIOD - 1e-9):
+                    snap_i = (dist[i].landmarks.copy(),
+                              np.array([dist[i].lm_cov(a) for a in range(dist[i].n_lm)]).reshape(-1, 2, 2))
+                    snap_j = (dist[j].landmarks.copy(),
+                              np.array([dist[j].lm_cov(a) for a in range(dist[j].n_lm)]).reshape(-1, 2, 2))
+                    r_ij = merge_maps(dist[i], *snap_j, sensed[i])
+                    r_ji = merge_maps(dist[j], *snap_i, sensed[j])
+                    last_merge[i, j] = t
+                    comm_events.append((t, i, j, max(r_ij[0], r_ji[0]),
+                                        r_ij[2] + r_ji[2],
+                                        r_ij[1] > 0 or r_ji[1] > 0,
+                                        r_ij[1] < 0 or r_ji[1] < 0))
+                in_contact[i, j] = close
 
-        # Per-drone waypoints for frontier policy
-        targets = [None] * N_DRONES
+        if step % 50 == 0:
+            for f in dist + iso + [cen]:
+                min_eig_seen = min(min_eig_seen, min_eig(f.P))
 
-        # History
-        pose_history = [[] for _ in range(N_DRONES)]  # list of [x, y, th]
-        quality_history = []   # (t, rms_dist, coverage_dist, rms_iso, cov_iso)
-        comm_events = []       # (t, i, j, n_common)
+        if record:
+            for k in range(N_DRONES):
+                for s in STRATS:
+                    est_hist[s][k].append(est_pose(s, k)[:2].copy())
+                true_hist[k].append(truth[k, :2].copy())
 
-        snap_times = []
-        rms_hist   = {'distributed': [], 'isolated_avg': []}
-        cov_hist   = {'distributed': [], 'isolated_avg': []}
+        if abs(t / SNAPSHOT_DT - round(t / SNAPSHOT_DT)) < 1e-9:
+            snaps['t'].append(t)
+            maps = {'isolated': [f.landmarks for f in iso],
+                    'distributed': [f.landmarks for f in dist],
+                    'centralised': [cen.landmarks] * N_DRONES}
+            for s in STRATS:
+                q = [map_quality(L, true_lm) for L in maps[s]]
+                snaps[s]['cov'].append(np.mean([x['cov'] for x in q]))
+                snaps[s]['rms'].append(np.nanmean([x['rms'] for x in q]) if any(
+                    not np.isnan(x['rms']) for x in q) else np.nan)
+                snaps[s]['n_est'].append(np.mean([x['n_est'] for x in q]))
+                snaps[s]['pose'].append(np.sqrt(np.mean(
+                    [np.sum((est_pose(s, k)[:2] - truth[k, :2]) ** 2) for k in range(N_DRONES)])))
+            for s in STRATS:
+                pose_err[s].append(snaps[s]['pose'][-1])
+            pose_err['dead_reckoning'].append(np.sqrt(np.mean(
+                np.sum((dead_reck[:, :2] - truth[:, :2]) ** 2, axis=1))))
 
-        # Separate isolated ekfs
-        ekfs_iso = [
-            EKFSLAMState(drone_id=k, pose=starts[k].copy())
-            for k in range(N_DRONES)
-        ]
+        if record and step % frame_every == 0:
+            frames.append((t, truth[:, :2].copy(), [f.landmarks.copy() for f in dist],
+                           [[f.lm_cov(a).copy() for a in range(f.n_lm)] for f in dist],
+                           [(e[1], e[2]) for e in comm_events if t - 2.0 < e[0] <= t]))
 
-        for step in range(N_STEPS):
-            sim_time = (step + 1) * DT
+    for f in dist + iso + [cen]:
+        min_eig_seen = min(min_eig_seen, min_eig(f.P))
 
-            for i in range(N_DRONES):
-                ekf = ekfs[i]
-                ekf_iso = ekfs_iso[i]
-
-                # Navigation: frontier policy
-                other_t = [targets[j] for j in range(N_DRONES) if j != i]
-                result = frontier_policy(ekf, explored[i], grid_res, rng, other_t)
-                if isinstance(result, tuple):
-                    omega_cmd, targets[i] = result
-                else:
-                    omega_cmd = result
-
-                # Predict step — both distributed and isolated move identically
-                ekf = predict_step(ekf, DRONE_SPEED, omega_cmd, DT)
-                ekf_iso = predict_step(ekf_iso, DRONE_SPEED, omega_cmd, DT)
-
-                # Boundary reflection
-                for e in [ekf, ekf_iso]:
-                    e.pose[0] = np.clip(e.pose[0], 1.0, AREA_SIZE - 1.0)
-                    e.pose[1] = np.clip(e.pose[1], 1.0, AREA_SIZE - 1.0)
-
-                # Mark explored grid cells
-                gx = int(np.clip(ekf.pose[0] / grid_res, 0, W - 1))
-                gy = int(np.clip(ekf.pose[1] / grid_res, 0, W - 1))
-                r_cells = max(1, int(SENSOR_RANGE / grid_res))
-                gx0, gx1 = max(0, gx - r_cells), min(W, gx + r_cells + 1)
-                gy0, gy1 = max(0, gy - r_cells), min(W, gy + r_cells + 1)
-                explored[i, gy0:gy1, gx0:gx1] = True
-
-                # Sensor: observe landmarks within range
-                dists_lm = np.linalg.norm(true_landmarks - ekf.pose[:2], axis=1)
-                visible = np.where(dists_lm <= SENSOR_RANGE)[0]
-
-                for lm_idx in visible:
-                    true_rho = dists_lm[lm_idx]
-                    true_phi = np.arctan2(
-                        true_landmarks[lm_idx, 1] - ekf.pose[1],
-                        true_landmarks[lm_idx, 0] - ekf.pose[0],
-                    ) - ekf.pose[2]
-
-                    z_rho = true_rho + rng.normal(0, SIGMA_RHO)
-                    z_phi = true_phi + rng.normal(0, SIGMA_PHI)
-                    z_phi = np.arctan2(np.sin(z_phi), np.cos(z_phi))
-
-                    assoc = data_association(ekf, z_rho, z_phi)
-                    if assoc >= 0:
-                        ekf = ekf_update(ekf, assoc, z_rho, z_phi)
-                    else:
-                        ekf = initialise_landmark(ekf, z_rho, z_phi)
-
-                    # Same for isolated
-                    assoc_iso = data_association(ekf_iso, z_rho, z_phi)
-                    if assoc_iso >= 0:
-                        ekf_iso = ekf_update(ekf_iso, assoc_iso, z_rho, z_phi)
-                    else:
-                        ekf_iso = initialise_landmark(ekf_iso, z_rho, z_phi)
-
-                ekfs[i] = ekf
-                ekfs_iso[i] = ekf_iso
-                pose_history[i].append(ekf.pose.copy())
-
-            # Communication / map merging (distributed only)
-            if strategy == 'distributed':
-                for i in range(N_DRONES):
-                    for j in range(i + 1, N_DRONES):
-                        d_ij = np.linalg.norm(ekfs[i].pose[:2] - ekfs[j].pose[:2])
-                        if d_ij <= COMM_RANGE:
-                            n_c1 = merge_maps(ekfs[i], ekfs[j])
-                            n_c2 = merge_maps(ekfs[j], ekfs[i])
-                            if n_c1 >= MIN_COMMON or n_c2 >= MIN_COMMON:
-                                comm_events.append((sim_time, i, j, max(n_c1, n_c2)))
-
-            # Quality snapshots every SNAPSHOT_DT seconds
-            if step > 0 and abs(sim_time % SNAPSHOT_DT) < DT * 0.5:
-                snap_times.append(sim_time)
-
-                # Distributed: best drone (most landmarks)
-                best_ekf = max(ekfs, key=lambda e: e.n_landmarks)
-                rms_d, cov_d, _ = compute_map_quality(best_ekf, true_landmarks)
-
-                # Isolated: average across drones
-                rms_list, cov_list = [], []
-                for e in ekfs_iso:
-                    r, c, _ = compute_map_quality(e, true_landmarks)
-                    if not np.isnan(r):
-                        rms_list.append(r)
-                    cov_list.append(c)
-                rms_iso = float(np.mean(rms_list)) if rms_list else np.nan
-                cov_iso = float(np.mean(cov_list))
-
-                rms_hist['distributed'].append(rms_d)
-                rms_hist['isolated_avg'].append(rms_iso)
-                cov_hist['distributed'].append(cov_d)
-                cov_hist['isolated_avg'].append(cov_iso)
-
-        # Final metrics
-        best_ekf = max(ekfs, key=lambda e: e.n_landmarks)
-        rms_final, cov_final, n_found_final = compute_map_quality(best_ekf, true_landmarks)
-
-        iso_rms_list, iso_cov_list = [], []
-        for e in ekfs_iso:
-            r, c, _ = compute_map_quality(e, true_landmarks)
-            if not np.isnan(r): iso_rms_list.append(r)
-            iso_cov_list.append(c)
-
-        results[strategy] = {
-            'ekfs': ekfs,
-            'ekfs_iso': ekfs_iso,
-            'pose_history': pose_history,
-            'snap_times': snap_times,
-            'rms_hist': rms_hist,
-            'cov_hist': cov_hist,
-            'comm_events': comm_events,
-            'rms_final': rms_final,
-            'cov_final': cov_final,
-            'n_found_final': n_found_final,
-            'iso_rms_final': float(np.mean(iso_rms_list)) if iso_rms_list else np.nan,
-            'iso_cov_final': float(np.mean(iso_cov_list)),
-        }
-        break  # Only run one strategy (distributed); isolated is embedded within
-
-    return results, true_landmarks
+    final = {}
+    maps = {'isolated': [f.landmarks for f in iso], 'distributed': [f.landmarks for f in dist],
+            'centralised': [cen.landmarks]}
+    for s in STRATS:
+        q = [map_quality(L, true_lm) for L in maps[s]]
+        final[s] = dict(
+            cov=float(np.mean([x['cov'] for x in q])),
+            cov_loose=float(np.mean([x['cov_loose'] for x in q])),
+            rms=float(np.nanmean([x['rms'] for x in q])),
+            n_est=[x['n_est'] for x in q], n_found=[x['n_found'] for x in q],
+            n_dup=[x['n_dup'] for x in q], union=team_union(maps[s], true_lm),
+            pose_final=pose_err[s][-1], pose_mean=float(np.mean(pose_err[s])))
+    final['dead_reckoning'] = dict(pose_final=pose_err['dead_reckoning'][-1],
+                                   pose_mean=float(np.mean(pose_err['dead_reckoning'])))
+    return dict(true_lm=true_lm, iso=iso, dist=dist, cen=cen, snaps=snaps, final=final,
+                comm_events=comm_events, true_hist=true_hist, est_hist=est_hist,
+                frames=frames, min_eig=min_eig_seen, seed=seed)
 
 
 # ── Plots ───────────────────────────────────────────────────────────────────────
-def plot_covariance_ellipse(ax, mean, cov, n_std=1.0, **kwargs):
-    """Draw a covariance ellipse on ax."""
-    try:
-        vals, vecs = np.linalg.eigh(cov)
-        vals = np.abs(vals)
-        angle = np.degrees(np.arctan2(vecs[1, 1], vecs[0, 1]))
-        w, h = 2 * n_std * np.sqrt(vals)
-        ell = Ellipse(xy=mean, width=w, height=h, angle=angle, **kwargs)
-        ax.add_patch(ell)
-    except Exception:
-        pass
+def _ellipse(ax, mean, cov, n_std, **kw):
+    vals, vecs = np.linalg.eigh(0.5 * (cov + cov.T))
+    vals = np.clip(vals, 0, None)
+    ang = np.degrees(np.arctan2(vecs[1, 1], vecs[0, 1]))
+    ax.add_patch(Ellipse(mean, 2 * n_std * np.sqrt(vals[1]), 2 * n_std * np.sqrt(vals[0]),
+                         angle=ang, **kw))
 
 
-def plot_environment_and_trajectories(results, true_landmarks, out_dir):
-    """Trajectory + final map for distributed vs isolated."""
-    res = results['distributed']
-    pose_hist = res['pose_history']
-    ekfs = res['ekfs']
-    ekfs_iso = res['ekfs_iso']
-
-    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
-
-    titles = ['Distributed Swarm EKF-SLAM', 'Isolated EKF-SLAM (Drone 0)']
-    ekf_sets = [ekfs, [ekfs_iso[0]]]
-
-    for ax_idx, (ax, title, ekf_set) in enumerate(zip(axes, titles, ekf_sets)):
-        ax.set_aspect('equal')
-        ax.set_xlim(0, AREA_SIZE)
-        ax.set_ylim(0, AREA_SIZE)
-        ax.set_facecolor('#f8f8f8')
-        ax.set_title(title, fontsize=12, fontweight='bold')
-        ax.set_xlabel('X (m)')
-        ax.set_ylabel('Y (m)')
-
-        # True landmarks
-        ax.scatter(true_landmarks[:, 0], true_landmarks[:, 1],
-                   c='k', marker='*', s=80, zorder=5, label='True landmark', alpha=0.6)
-
-        # Drone trajectories
-        for i in range(N_DRONES if ax_idx == 0 else 1):
-            traj = np.array(pose_hist[i])
-            ax.plot(traj[:, 0], traj[:, 1], '-',
-                    color=DRONE_COLORS[i], lw=0.8, alpha=0.5, label=f'Drone {i+1} path')
-            ax.plot(traj[-1, 0], traj[-1, 1], 'o',
-                    color=DRONE_COLORS[i], ms=8, zorder=6)
-
-        # Estimated landmarks with covariance ellipses
-        for ekf in ekf_set:
-            for k in range(ekf.n_landmarks):
-                lm = ekf.landmarks[k]
-                P_ll = ekf.P[3 + 2*k: 3 + 2*k + 2, 3 + 2*k: 3 + 2*k + 2]
-                ax.scatter(lm[0], lm[1], marker='+', c='purple', s=60, zorder=4)
-                plot_covariance_ellipse(ax, lm, P_ll, n_std=1.0,
-                                        edgecolor='purple', facecolor='none',
-                                        alpha=0.4, lw=0.7)
-
-        ax.legend(loc='upper right', fontsize=8)
-
-    plt.tight_layout()
-    path = os.path.join(out_dir, 'trajectories_map.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
+def _save(fig, out_dir, name):
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, name)
+    fig.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
     print(f'Saved: {path}')
 
 
-def plot_coverage_and_rms(results, out_dir):
-    """Coverage and RMS error over time: distributed vs isolated."""
-    res = results['distributed']
-    times = np.array(res['snap_times'])
-    cov_d = np.array(res['cov_hist']['distributed']) * 100.0
-    cov_i = np.array(res['cov_hist']['isolated_avg']) * 100.0
-    rms_d = np.array(res['rms_hist']['distributed'])
-    rms_i = np.array(res['rms_hist']['isolated_avg'])
-
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 8), sharex=True)
-
-    ax1.plot(times, cov_d, '-', color='#e74c3c', lw=2, label='Distributed swarm')
-    ax1.plot(times, cov_i, '--', color='#2980b9', lw=2, label='Isolated (avg drone)')
-    ax1.set_ylabel('Coverage (%)', fontsize=11)
-    ax1.set_title('Landmark Coverage vs Time', fontsize=12, fontweight='bold')
-    ax1.set_ylim(0, 105)
-    ax1.legend(fontsize=10)
-    ax1.grid(True, alpha=0.3)
-
-    # Add communication events as tick marks
-    for (t, i, j, nc) in res['comm_events'][:50]:  # cap for readability
-        ax1.axvline(t, color='gray', alpha=0.2, lw=0.8)
-
-    # RMS
-    valid_d = ~np.isnan(rms_d)
-    valid_i = ~np.isnan(rms_i)
-    if valid_d.any():
-        ax2.plot(times[valid_d], rms_d[valid_d], '-', color='#e74c3c', lw=2,
-                 label='Distributed swarm')
-    if valid_i.any():
-        ax2.plot(times[valid_i], rms_i[valid_i], '--', color='#2980b9', lw=2,
-                 label='Isolated (avg drone)')
-    ax2.set_ylabel('RMS Error (m)', fontsize=11)
-    ax2.set_xlabel('Time (s)', fontsize=11)
-    ax2.set_title('Landmark RMS Position Error vs Time', fontsize=12, fontweight='bold')
-    ax2.legend(fontsize=10)
-    ax2.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    path = os.path.join(out_dir, 'coverage_rms.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
+def plot_trajectories_map(res, out_dir):
+    """True (solid) vs estimated (dotted) paths and drone-1 / central map per strategy."""
+    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
+    true_lm = res['true_lm']
+    maps = {'isolated': res['iso'][0], 'distributed': res['dist'][0], 'centralised': res['cen']}
+    titles = {'isolated': 'Isolated EKF-SLAM (map of drone 1)',
+              'distributed': 'Distributed EKF-SLAM (map of drone 1)',
+              'centralised': 'Centralised EKF-SLAM (shared map)'}
+    for ax, s in zip(axes, STRATS):
+        ax.set_aspect('equal'); ax.set_xlim(-5, AREA_SIZE + 5); ax.set_ylim(-5, AREA_SIZE + 5)
+        ax.scatter(true_lm[:, 0], true_lm[:, 1], c='k', marker='o', s=25, label='True landmark')
+        for k in range(N_DRONES):
+            tr = np.array(res['true_hist'][k]); es = np.array(res['est_hist'][s][k])
+            ax.plot(tr[:, 0], tr[:, 1], '-', color=DRONE_COLORS[k], lw=0.8, alpha=0.6,
+                    label=f'D{k+1} true path')
+            ax.plot(es[:, 0], es[:, 1], ':', color=DRONE_COLORS[k], lw=0.8, alpha=0.9)
+        f = maps[s]
+        L = f.landmarks
+        ax.scatter(L[:, 0], L[:, 1], marker='+', c='purple', s=60, label='Estimate')
+        for a in range(f.n_lm):
+            _ellipse(ax, L[a], f.lm_cov(a), 3.0, edgecolor='purple', facecolor='none', lw=0.6)
+        q = map_quality(L, true_lm)
+        ax.set_title(f'{titles[s]}\n{q["n_found"]}/{M_LANDMARKS} found, {q["n_est"]} estimates, '
+                     f'RMS {q["rms"]:.3f} m', fontsize=10)
+        ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)')
+    axes[0].legend(fontsize=7, loc='upper right')
+    fig.suptitle(f'S050: true (solid) vs estimated (dotted) paths; 3σ landmark ellipses '
+                 f'(seed {res["seed"]})', fontsize=12)
+    _save(fig, out_dir, 'trajectories_map.png')
 
 
-def plot_final_map_heatmap(results, true_landmarks, out_dir):
-    """Final merged map: landmark uncertainty heatmap."""
-    res = results['distributed']
-    ekfs = res['ekfs']
-    best_ekf = max(ekfs, key=lambda e: e.n_landmarks)
+def plot_coverage_rms(res, mc, out_dir):
+    """Coverage, landmark RMS and pose RMSE vs time; Monte Carlo min/max bands."""
+    fig, axes = plt.subplots(3, 1, figsize=(10, 11), sharex=True)
+    t = np.array(res['snaps']['t'])
+    for s in STRATS:
+        c, ls = STRAT_STYLE[s]
+        for ax, key, scale in ((axes[0], 'cov', 100.0), (axes[1], 'rms', 1.0), (axes[2], 'pose', 1.0)):
+            arr = np.array([m['snaps'][s][key] for m in mc], dtype=float) * scale
+            ax.fill_between(t, np.nanmin(arr, 0), np.nanmax(arr, 0), color=c, alpha=0.15)
+            ax.plot(t, np.nanmean(arr, 0), ls, color=c, lw=2, label=f'{s} (MC mean)')
+    axes[0].set_ylabel('Coverage (%)\nmean per-drone map'); axes[0].set_ylim(0, 105)
+    axes[1].set_ylabel('Landmark RMS (m)\nfound landmarks')
+    axes[2].set_ylabel('Pose RMSE (m)')
+    axes[2].set_xlabel('Time (s)')
+    for ev in res['comm_events']:
+        if ev[5]:
+            axes[0].axvline(ev[0], color='gray', alpha=0.25, lw=0.8)  # executed merges
+    axes[0].set_title(f'S050: Map quality vs time ({N_MC} Monte Carlo seeds, bands = min/max; '
+                      f'grey lines = merges in seed {res["seed"]})', fontsize=11)
+    for ax in axes:
+        ax.grid(True, alpha=0.3); ax.legend(fontsize=8)
+    _save(fig, out_dir, 'coverage_rms.png')
 
+
+def plot_final_map_heatmap(res, out_dir):
+    """Final distributed map of drone 1: landmark uncertainty sqrt(trace P_ll)."""
+    f = res['dist'][0]
+    true_lm = res['true_lm']
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_aspect('equal')
-    ax.set_xlim(0, AREA_SIZE)
-    ax.set_ylim(0, AREA_SIZE)
-    ax.set_facecolor('#1a1a2e')
-    ax.set_title('Final Merged Map — Landmark Uncertainty', fontsize=13, fontweight='bold')
-    ax.set_xlabel('X (m)')
-    ax.set_ylabel('Y (m)')
-
-    # True landmarks
-    ax.scatter(true_landmarks[:, 0], true_landmarks[:, 1],
-               c='white', marker='*', s=100, zorder=5, alpha=0.9, label='True')
-
-    # Estimated landmarks coloured by uncertainty
-    if best_ekf.n_landmarks > 0:
-        uncertainties = []
-        for k in range(best_ekf.n_landmarks):
-            P_ll = best_ekf.P[3 + 2*k: 3 + 2*k + 2, 3 + 2*k: 3 + 2*k + 2]
-            uncertainties.append(np.sqrt(np.trace(P_ll)))
-        uncertainties = np.array(uncertainties)
-
-        sc = ax.scatter(best_ekf.landmarks[:, 0], best_ekf.landmarks[:, 1],
-                        c=uncertainties, cmap='RdYlBu_r',
-                        s=120, marker='+', linewidths=2,
-                        vmin=0, vmax=uncertainties.max() + 0.1, zorder=6)
-        cb = plt.colorbar(sc, ax=ax, shrink=0.7)
-        cb.set_label('Position Uncertainty (m)', fontsize=10)
-
-    # Draw matching lines
-    if best_ekf.n_landmarks > 0:
-        for lm in best_ekf.landmarks:
-            dists = np.linalg.norm(true_landmarks - lm, axis=1)
-            nearest_idx = np.argmin(dists)
-            if dists[nearest_idx] < SUCCESS_R * 2:
-                ax.plot([lm[0], true_landmarks[nearest_idx, 0]],
-                        [lm[1], true_landmarks[nearest_idx, 1]],
-                        '-', color='cyan', lw=0.5, alpha=0.4)
-
-    ax.legend(loc='upper right', fontsize=9)
-    plt.tight_layout()
-    path = os.path.join(out_dir, 'final_map_heatmap.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
+    ax.set_aspect('equal'); ax.set_xlim(0, AREA_SIZE); ax.set_ylim(0, AREA_SIZE)
+    L = f.landmarks
+    u = np.array([np.sqrt(np.trace(f.lm_cov(a))) for a in range(f.n_lm)])
+    sc = ax.scatter(L[:, 0], L[:, 1], c=u, cmap='RdYlBu_r', s=160, marker='P',
+                    edgecolors='k', linewidths=0.5, zorder=6)
+    plt.colorbar(sc, ax=ax, shrink=0.7, label='sqrt(trace P_ll) (m)')
+    D = np.linalg.norm(true_lm[:, None] - L[None], axis=2) if len(L) else np.full((M_LANDMARKS, 1), np.inf)
+    missing = D.min(1) >= SUCCESS_R
+    ax.scatter(true_lm[~missing, 0], true_lm[~missing, 1], facecolors='none', edgecolors='k',
+               s=60, zorder=5, label='True landmark (found)')
+    ax.scatter(true_lm[missing, 0], true_lm[missing, 1], c='gray', marker='x', s=60, zorder=5,
+               label=f'True landmark not found ({int(missing.sum())})')
+    ax.set_title('S050: Final distributed map of drone 1 — landmark uncertainty', fontsize=12)
+    ax.set_xlabel('X (m)'); ax.set_ylabel('Y (m)'); ax.legend(loc='upper right', fontsize=8)
+    _save(fig, out_dir, 'final_map_heatmap.png')
 
 
-def plot_communication_events(results, out_dir):
-    """Communication event timeline."""
-    res = results['distributed']
-    events = res['comm_events']
-
-    fig, ax = plt.subplots(figsize=(12, 3))
-    colors_pair = {(0, 1): '#e74c3c', (0, 2): '#27ae60', (1, 2): '#2980b9'}
-    labels_done = set()
-
-    for (t, i, j, nc) in events:
-        col = colors_pair.get((i, j), 'gray')
-        lbl = f'D{i+1}↔D{j+1}' if (i, j) not in labels_done else '_'
-        if (i, j) not in labels_done:
-            labels_done.add((i, j))
-        ax.axvline(t, color=col, alpha=0.6, lw=1.5, label=lbl)
-
-    ax.set_xlim(0, T_MAX)
-    ax.set_ylim(0, 1)
-    ax.set_yticks([])
-    ax.set_xlabel('Time (s)', fontsize=11)
-    ax.set_title('Map Merge Events (Pairwise Communication)', fontsize=12, fontweight='bold')
-    ax.legend(fontsize=10, loc='upper right')
-    ax.grid(axis='x', alpha=0.3)
-
-    plt.tight_layout()
-    path = os.path.join(out_dir, 'comm_events.png')
-    plt.savefig(path, dpi=150)
-    plt.close()
-    print(f'Saved: {path}')
+def plot_communication_events(res, out_dir):
+    """Merge events annotated with the number of common landmarks."""
+    fig, ax = plt.subplots(figsize=(12, 3.5))
+    cols = {(0, 1): '#e74c3c', (0, 2): '#27ae60', (1, 2): '#2980b9'}
+    for (t, i, j, nc, nadd, ok, rej) in res['comm_events']:
+        ax.vlines(t, 0, nc, color=cols[(i, j)], lw=2, alpha=0.9 if ok else 0.3,
+                  linestyles='-' if not rej else ':')
+        ax.text(t, nc + 0.5, f'{nc}/+{nadd}' if ok else ('rej' if rej else str(nc)),
+                fontsize=7, ha='center')
+    ax.axhline(MIN_COMMON, color='k', ls=':', lw=1)
+    handles = [plt.Line2D([], [], color=c, lw=2, label=f'D{a+1}-D{b+1}') for (a, b), c in cols.items()]
+    handles.append(plt.Line2D([], [], color='k', ls=':', lw=1, label=f'min common = {MIN_COMMON}'))
+    ax.set_xlim(0, T_MAX); ax.set_xlabel('Time (s)'); ax.set_ylabel('Common landmarks')
+    ax.set_title('S050: Map-merge attempts — label common/+added; faded = no merge '
+                 '(< 3 common or rejected as inconsistent)', fontsize=10)
+    ax.legend(handles=handles, fontsize=8, loc='upper left'); ax.grid(alpha=0.3)
+    _save(fig, out_dir, 'comm_events.png')
 
 
-def save_animation(results, true_landmarks, out_dir):
-    """Animate drone positions, estimated landmarks, and communication links."""
-    res = results['distributed']
-    pose_hist = res['pose_history']
-    ekfs_final = res['ekfs']
-
-    # Decimate frames for animation
-    total_steps = len(pose_hist[0])
-    step_size = max(1, total_steps // 150)
-    frame_indices = list(range(0, total_steps, step_size))
-
+def save_animation(res, out_dir):
+    """Drones (true positions), distributed landmark estimates with 3-sigma ellipses
+    as they evolve, communication links when a merge happens."""
+    frames = res['frames']
+    true_lm = res['true_lm']
     fig, ax = plt.subplots(figsize=(7, 7))
-    ax.set_aspect('equal')
-    ax.set_xlim(0, AREA_SIZE)
-    ax.set_ylim(0, AREA_SIZE)
-    ax.set_facecolor('#f0f0f0')
 
-    # True landmark markers (static)
-    ax.scatter(true_landmarks[:, 0], true_landmarks[:, 1],
-               c='k', marker='*', s=60, zorder=5, alpha=0.5)
+    def update(i):
+        ax.clear()
+        t, pos, Ls, Cs, links = frames[i]
+        ax.set_aspect('equal'); ax.set_xlim(0, AREA_SIZE); ax.set_ylim(0, AREA_SIZE)
+        ax.scatter(true_lm[:, 0], true_lm[:, 1], c='k', s=15, alpha=0.5)
+        for k in range(N_DRONES):
+            if len(Ls[k]):
+                ax.scatter(Ls[k][:, 0], Ls[k][:, 1], marker='+', color=DRONE_COLORS[k], s=40)
+                for a in range(len(Ls[k])):
+                    _ellipse(ax, Ls[k][a], Cs[k][a], 3.0, edgecolor=DRONE_COLORS[k],
+                             facecolor='none', lw=0.5)
+            ax.plot(*pos[k], '^', color=DRONE_COLORS[k], ms=10, markeredgecolor='k')
+            ax.add_patch(plt.Circle(pos[k], SENSOR_RANGE, fill=False, color=DRONE_COLORS[k],
+                                    lw=0.5, ls=':'))
+        for (a, b) in links:
+            ax.plot([pos[a, 0], pos[b, 0]], [pos[a, 1], pos[b, 1]], '-', color='gold', lw=2.5)
+        n = [len(L) for L in Ls]
+        ax.set_title(f'S050 distributed EKF-SLAM  t = {t:.0f} s  landmarks per drone {n}',
+                     fontsize=10)
+        return []
 
-    time_text = ax.text(5, 192, '', fontsize=10)
-    lm_scatter = ax.scatter([], [], c='purple', marker='+', s=50, zorder=4, alpha=0.8)
-
-    drone_dots = []
-    drone_trails = []
-    for i in range(N_DRONES):
-        dot, = ax.plot([], [], 'o', color=DRONE_COLORS[i], ms=10, zorder=7)
-        trail, = ax.plot([], [], '-', color=DRONE_COLORS[i], lw=0.8, alpha=0.5)
-        drone_dots.append(dot)
-        drone_trails.append(trail)
-
-    comm_lines = []
-    for _ in range(3):
-        line, = ax.plot([], [], '-', color='gold', lw=2, alpha=0.0)
-        comm_lines.append(line)
-
-    comm_events = res['comm_events']
-    comm_event_times = [e[0] for e in comm_events]
-
-    def init():
-        for dot in drone_dots:
-            dot.set_data([], [])
-        for trail in drone_trails:
-            trail.set_data([], [])
-        for cl in comm_lines:
-            cl.set_alpha(0.0)
-        lm_scatter.set_offsets(np.empty((0, 2)))
-        time_text.set_text('')
-        return drone_dots + drone_trails + comm_lines + [lm_scatter, time_text]
-
-    def update(frame_idx):
-        step = frame_indices[frame_idx]
-        sim_time = (step + 1) * DT
-
-        for i in range(N_DRONES):
-            pos = pose_hist[i][step]
-            drone_dots[i].set_data([pos[0]], [pos[1]])
-            trail_start = max(0, step - 100)
-            traj = np.array(pose_hist[i][trail_start:step + 1])
-            drone_trails[i].set_data(traj[:, 0], traj[:, 1])
-
-        # Estimated landmarks at this time (use final as proxy — simplification)
-        all_lms = []
-        for ekf in ekfs_final:
-            if ekf.n_landmarks > 0:
-                all_lms.append(ekf.landmarks)
-        if all_lms:
-            all_lms = np.vstack(all_lms)
-            lm_scatter.set_offsets(all_lms)
-
-        # Communication links: flash for 1 second after event
-        pair_idx = 0
-        for ci, (t_ev, i_ev, j_ev, _) in enumerate(comm_events):
-            if pair_idx >= len(comm_lines):
-                break
-            if abs(sim_time - t_ev) < 2.0:
-                p_i = pose_hist[i_ev][step]
-                p_j = pose_hist[j_ev][step]
-                comm_lines[pair_idx].set_data([p_i[0], p_j[0]], [p_i[1], p_j[1]])
-                comm_lines[pair_idx].set_alpha(0.8)
-                pair_idx += 1
-        for k in range(pair_idx, len(comm_lines)):
-            comm_lines[k].set_alpha(0.0)
-
-        time_text.set_text(f't = {sim_time:.0f} s')
-        return drone_dots + drone_trails + comm_lines + [lm_scatter, time_text]
-
-    ani = animation.FuncAnimation(
-        fig, update, frames=len(frame_indices),
-        init_func=init, blit=True, interval=80,
-    )
-
+    ani = animation.FuncAnimation(fig, update, frames=len(frames), blit=False)
+    os.makedirs(out_dir, exist_ok=True)
     path = os.path.join(out_dir, 'animation.gif')
-    ani.save(path, writer='pillow', fps=12, dpi=100)
-    plt.close()
-    print(f'Saved: {path}')
+    ani.save(path, writer='pillow', fps=5, dpi=80)
+    plt.close(fig)
+    print(f'Saved: {path} ({len(frames)} frames)')
 
 
 # ── Main ───────────────────────────────────────────────────────────────────────
+def _print_final(res, label):
+    f = res['final']
+    print(f'\n=== {label} ===')
+    for s in STRATS:
+        x = f[s]
+        print(f'  {s:12s}: coverage (mean per-drone map) {x["cov"]*100:.1f}% '
+              f'(within {LOOSE_R:.0f} m: {x["cov_loose"]*100:.1f}%) | '
+              f'team union {x["union"]*100:.1f}% | RMS {x["rms"]:.3f} m | estimates/map '
+              f'{x["n_est"]} | found {x["n_found"]} | duplicates {x["n_dup"]} | pose RMSE '
+              f'final {x["pose_final"]:.3f} m, mean {x["pose_mean"]:.3f} m')
+    print(f'  dead reckoning: pose RMSE final {f["dead_reckoning"]["pose_final"]:.3f} m, '
+          f'mean {f["dead_reckoning"]["pose_mean"]:.3f} m')
+    ev = res['comm_events']
+    ok = [e for e in ev if e[5]]
+    print(f'  merge attempts {len(ev)}, executed merges {len(ok)}, rejected as inconsistent '
+          f'{sum(1 for e in ev if e[6])}, landmarks transferred {sum(e[4] for e in ok)}')
+    print(f'  smallest covariance eigenvalue seen (all filters): {res["min_eig"]:.3e}')
+
+
 if __name__ == '__main__':
     out_dir = os.path.normpath(OUTPUT_DIR)
-    os.makedirs(out_dir, exist_ok=True)
+    print(f'Running S050 swarm EKF-SLAM (showcase seed {SHOW_SEED})...')
+    res = run_simulation(SHOW_SEED, record=True)
+    tl = res['true_lm']
+    dmin = np.min(np.linalg.norm(tl[:, None] - tl[None], axis=2) + 1e9 * np.eye(M_LANDMARKS))
+    print(f'  closest pair of true landmarks: {dmin:.2f} m (MIN_LM_SEP = {MIN_LM_SEP} m)')
+    _print_final(res, f'Showcase run, seed {SHOW_SEED}')
+    print('  merge events (t, pair, common, added):')
+    for (t, i, j, nc, nadd, ok, rej) in res['comm_events']:
+        st = 'merged' if ok else ('rejected (inconsistent)' if rej else 'skipped (<3 common)')
+        print(f'    t={t:6.1f} s  D{i+1}-D{j+1}  common {nc:2d}  added {nadd:2d}  {st}')
 
-    print('Running Swarm EKF-SLAM simulation...')
-    results, true_landmarks = run_simulation()
-
-    res = results['distributed']
-    print(f'\n=== Final Results ===')
-    print(f'  Distributed swarm — Coverage: {res["cov_final"]*100:.1f}%  '
-          f'RMS: {res["rms_final"]:.3f} m  '
-          f'Landmarks found: {res["n_found_final"]}/{M_LANDMARKS}')
-    print(f'  Isolated (avg)    — Coverage: {res["iso_cov_final"]*100:.1f}%  '
-          f'RMS: {res["iso_rms_final"]:.3f} m')
-    print(f'  Map merge events: {len(res["comm_events"])}')
+    print(f'\nRunning Monte Carlo over {N_MC} noise seeds...')
+    mc = [res] + [run_simulation(s, record=False) for s in range(1, N_MC)]
+    print(f'\n=== Monte Carlo ({N_MC} seeds), final values: mean [min, max] ===')
+    for s in STRATS:
+        for key, lab, sc in (('cov', 'coverage %', 100), ('cov_loose', 'cov<5 m %', 100),
+                             ('rms', 'RMS m', 1),
+                             ('union', 'team union %', 100), ('pose_final', 'pose RMSE m', 1)):
+            v = np.array([m['final'][s][key] for m in mc]) * sc
+            print(f'  {s:12s} {lab:13s}: {np.mean(v):7.3f} [{np.min(v):.3f}, {np.max(v):.3f}]')
+        nd = sum(sum(m['final'][s]['n_dup']) for m in mc)
+        ne = max(max(m['final'][s]['n_est']) for m in mc)
+        print(f'  {s:12s} duplicates over all runs/maps: {nd}, largest map: {ne} estimates')
+    v = np.array([m['final']['dead_reckoning']['pose_final'] for m in mc])
+    print(f'  dead reckoning pose RMSE m: {np.mean(v):7.3f} [{np.min(v):.3f}, {np.max(v):.3f}]')
+    print(f'  smallest covariance eigenvalue over all runs: {min(m["min_eig"] for m in mc):.3e}')
+    print(f'  merges per run: mean {np.mean([sum(e[5] for e in m["comm_events"]) for m in mc]):.1f}')
 
     print('\nGenerating plots...')
-    plot_environment_and_trajectories(results, true_landmarks, out_dir)
-    plot_coverage_and_rms(results, out_dir)
-    plot_final_map_heatmap(results, true_landmarks, out_dir)
-    plot_communication_events(results, out_dir)
-    save_animation(results, true_landmarks, out_dir)
+    plot_trajectories_map(res, out_dir)
+    plot_coverage_rms(res, mc, out_dir)
+    plot_final_map_heatmap(res, out_dir)
+    plot_communication_events(res, out_dir)
+    save_animation(res, out_dir)
     print('\nDone.')
