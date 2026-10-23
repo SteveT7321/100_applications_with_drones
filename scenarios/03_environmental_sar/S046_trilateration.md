@@ -54,9 +54,10 @@ $$J(\mathbf{x}) = \sum_{i=1}^{N} \bigl(r_i - \|\mathbf{p}_i - \mathbf{x}\|\bigr)
 
 ### Linear Least Squares (Range-Differencing)
 
+Squaring the range equation gives $r_i^2 = \|\mathbf{x}\|^2 - 2\mathbf{p}_i^T\mathbf{x} + \|\mathbf{p}_i\|^2$.
 Subtract the equation for drone $N$ from each drone $i \in \{1, \ldots, N-1\}$:
 
-$$r_i^2 - r_N^2 = \|\mathbf{p}_N\|^2 - \|\mathbf{p}_i\|^2 + 2(\mathbf{p}_i - \mathbf{p}_N)^T \mathbf{x}$$
+$$r_i^2 - r_N^2 = \|\mathbf{p}_i\|^2 - \|\mathbf{p}_N\|^2 - 2(\mathbf{p}_i - \mathbf{p}_N)^T \mathbf{x}$$
 
 This eliminates the quadratic $\|\mathbf{x}\|^2$ term. Collecting all $N-1$ differences into a
 matrix system:
@@ -67,28 +68,33 @@ where each row $i$ of $\mathbf{A} \in \mathbb{R}^{(N-1) \times 3}$ and $\mathbf{
 
 $$\mathbf{A}_i = 2(\mathbf{p}_i - \mathbf{p}_N)^T$$
 
-$$b_i = r_i^2 - r_N^2 - \|\mathbf{p}_i\|^2 + \|\mathbf{p}_N\|^2$$
+$$b_i = \|\mathbf{p}_i\|^2 - \|\mathbf{p}_N\|^2 - r_i^2 + r_N^2$$
 
 The closed-form least-squares solution (normal equations):
 
 $$\hat{\mathbf{x}}_{LLS} = (\mathbf{A}^T \mathbf{A})^{-1} \mathbf{A}^T \mathbf{b}$$
 
 Note: this linearisation is exact only when range measurements are noise-free; noise in $r_i$ and
-$r_N$ couples into both $\mathbf{A}$ and $\mathbf{b}$, introducing bias at high noise levels.
+$r_N$ enters every row of $\mathbf{b}$ (correlated, unweighted errors), so LLS is less efficient
+than the nonlinear solution. If all anchors are coplanar, every row of $\mathbf{A}$ has a zero
+out-of-plane component (rank 2): the plane-normal coordinate must then be recovered from the
+sphere equations themselves, e.g. $z = z_{plane} - \sqrt{\overline{r_i^2 - d_{h,i}^2}}$ with the
+prior that the beacon lies below the drones.
 
 ### Gauss-Newton Nonlinear Least Squares
 
-Define the residual vector $\mathbf{f}(\mathbf{x}) \in \mathbb{R}^N$ with components:
+Define the range model $h_i(\mathbf{x}) = \|\mathbf{x} - \mathbf{p}_i\|$ and the residual vector
+$\mathbf{f}(\mathbf{x}) \in \mathbb{R}^N$ with components:
 
-$$f_i(\mathbf{x}) = r_i - \|\mathbf{p}_i - \mathbf{x}\|$$
+$$f_i(\mathbf{x}) = r_i - h_i(\mathbf{x})$$
 
-The Jacobian $\mathbf{H} \in \mathbb{R}^{N \times 3}$ is the matrix of partial derivatives
-$H_{ij} = \partial f_i / \partial x_j$:
+The Jacobian $\mathbf{H} \in \mathbb{R}^{N \times 3}$ is the matrix of partial derivatives of the
+range model, $H_{ij} = \partial h_i / \partial x_j$:
 
-$$\mathbf{H}_i = \frac{\partial f_i}{\partial \mathbf{x}} = \frac{\mathbf{p}_i - \mathbf{x}}{\|\mathbf{p}_i - \mathbf{x}\|}$$
+$$\mathbf{H}_i = \frac{\partial h_i}{\partial \mathbf{x}} = \frac{\mathbf{x} - \mathbf{p}_i}{\|\mathbf{x} - \mathbf{p}_i\|}$$
 
-(unit vector pointing from beacon estimate to drone $i$). At each iteration $k$, the Gauss-Newton
-update is:
+(unit vector pointing from drone $i$ to the beacon estimate; note $\partial f_i/\partial\mathbf{x} = -\mathbf{H}_i$).
+At each iteration $k$, the Gauss-Newton update is:
 
 $$\Delta \mathbf{x}_k = (\mathbf{H}_k^T \mathbf{H}_k)^{-1} \mathbf{H}_k^T \mathbf{f}(\mathbf{x}_k)$$
 
@@ -112,8 +118,10 @@ The 3D RMS position error bound is therefore:
 
 $$\sigma_{pos} = \sigma_r \cdot \text{GDOP}$$
 
-A low GDOP (approaching 1.0) is achieved when the drones subtend a large solid angle as seen
-from the beacon. A coplanar arrangement (all drones at the same altitude) degrades vertical
+Because each row of $\mathbf{H}$ is a unit vector, $\text{tr}(\mathbf{H}^T\mathbf{H}) = N$, and
+$\text{tr}[(\mathbf{H}^T\mathbf{H})^{-1}] \geq 9/N$; with $N = 4$ the smallest achievable 3-D GDOP
+is therefore $\sqrt{9/4} = 1.5$ (isotropic geometry). A low GDOP is achieved when the drones
+subtend a large solid angle as seen from the beacon. A coplanar arrangement (all drones at the same altitude) degrades vertical
 GDOP severely while leaving horizontal GDOP acceptable.
 
 ### Optimal Drone Placement to Minimise GDOP
@@ -190,16 +198,15 @@ def solve_lls(anchors, ranges):
     ref = anchors[-1]
     r_ref = ranges[-1]
     A = 2 * (anchors[:-1] - ref)
-    b = (ranges[:-1]**2 - r_ref**2
-         - np.sum(anchors[:-1]**2, axis=1)
-         + np.dot(ref, ref))
+    b = (np.sum(anchors[:-1]**2, axis=1) - np.dot(ref, ref)
+         - ranges[:-1]**2 + r_ref**2)
     # Normal equations: (A^T A) x = A^T b
     x_hat, _, _, _ = np.linalg.lstsq(A, b, rcond=None)
     return x_hat
 
 def compute_jacobian(anchors, x):
-    """Jacobian H[i,:] = unit vector from x towards anchor i."""
-    diffs = anchors - x               # (N, 3)
+    """Jacobian of h_i(x) = |x - p_i|: H[i,:] = unit vector from anchor i towards x."""
+    diffs = x - anchors               # (N, 3)
     norms = np.linalg.norm(diffs, axis=1, keepdims=True)
     return diffs / (norms + 1e-12)    # (N, 3)
 
@@ -207,7 +214,7 @@ def solve_gauss_newton(anchors, ranges, x_init):
     """Gauss-Newton iteration for nonlinear range least squares."""
     x = x_init.copy()
     for _ in range(K_MAX):
-        pred_ranges = np.linalg.norm(anchors - x, axis=1)
+        pred_ranges = np.linalg.norm(x - anchors, axis=1)
         residuals   = ranges - pred_ranges               # f(x)
         H           = compute_jacobian(anchors, x)       # (N, 3)
         HtH         = H.T @ H
@@ -231,12 +238,10 @@ def run_monte_carlo(anchors, sigma_r, n_trials, x_true):
     """Run Monte Carlo comparison of LLS vs Gauss-Newton over many noise realisations."""
     rng = np.random.default_rng(42)
     errors_lls, errors_gn = [], []
-    x_init = x_true + rng.normal(0, 5.0, size=3)   # perturbed initial guess
-
     for _ in range(n_trials):
         ranges       = measure_ranges(anchors, x_true, sigma_r, rng)
         x_lls        = solve_lls(anchors, ranges)
-        x_gn         = solve_gauss_newton(anchors, ranges, x_init)
+        x_gn         = solve_gauss_newton(anchors, ranges, x_lls)  # LLS solution as initial guess
         errors_lls.append(np.linalg.norm(x_lls - x_true))
         errors_gn.append(np.linalg.norm(x_gn  - x_true))
 
@@ -289,9 +294,9 @@ def run_simulation():
 | Max GN iterations $K_{max}$ | 100 |
 | Monte Carlo trials per config | 500 |
 | Noise sweep range | 0.1 – 3.0 m |
-| GDOP (well-spread config) | $\approx 1.4$ |
-| GDOP (coplanar config) | $\approx 4.2$ |
-| CRLB 3D RMS (well-spread, $\sigma_r=0.5$ m) | $\approx 0.7$ m |
+| GDOP (well-spread config) | $\approx 2.67$ (HDOP 1.25, VDOP 2.36) |
+| GDOP (coplanar config) | $\approx 12.4$ (HDOP 1.02, VDOP 12.4) |
+| CRLB 3D RMS (well-spread, $\sigma_r=0.5$ m) | $\approx 1.33$ m ($= 0.5 \times 2.67$) |
 
 ---
 
