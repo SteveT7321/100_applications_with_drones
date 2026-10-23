@@ -57,7 +57,7 @@ OFFSETS         = [150.0, 350.0, 650.0, 850.0]   # corridor centre-line offsets 
 # Altitude layers: (z_lo, z_hi, direction)
 LAYERS = [(20.0, 40.0, 'E'), (40.0, 60.0, 'N'), (60.0, 80.0, 'W'), (80.0, 100.0, 'S')]
 DEPOTS = np.array([[200.0, 150.0], [800.0, 350.0], [300.0, 650.0], [700.0, 850.0]])
-# Priority score u_k = ALPHA_U / slack + BETA_U * emergency + GAMMA_U * payload
+# Priority score u_k = ALPHA_U / (t_deadline - t_now) + BETA_U * emergency + GAMMA_U * payload
 ALPHA_U, BETA_U, GAMMA_U = 100.0, 1.0, 0.3
 
 STRATEGIES = ['FCFS', 'Priority', 'LP']
@@ -144,7 +144,9 @@ def build_intents(seed=SEED):
         payload = rng.uniform(0.5, 2.5)
         emergency = (k == emergency_idx)
         deadline = t_req[k] + dur + slack
-        u = ALPHA_U / slack + BETA_U * emergency + GAMMA_U * payload
+        # card: u_k = alpha / (t_deadline - t_now) + beta * IsEmergency + gamma * q_k, with
+        # t_now = the moment the UTM processes the batch (all requests are in by T_REQ_WINDOW)
+        u = ALPHA_U / (deadline - T_REQ_WINDOW) + BETA_U * emergency + GAMMA_U * payload
         intents.append(Intent(k, float(t_req[k]), wps, seg_corr, samples, scorr,
                               u, deadline, emergency, payload))
     return intents
@@ -199,9 +201,15 @@ def register_sequential(F, order, intents):
             if np.any(occ[sc[on], a[j] + h + on] + 1 > RHO_MAX):
                 continue
             break
+        else:
+            # no feasible hold within MAX_HOLD: the UTM would deny this intent
+            DENIED.append(j)
         occ[sc[on], a[j] + d[j] + on] += 1
         reg.append(j)
     return d
+
+
+DENIED = []   # intents denied by sequential registration (none expected)
 
 
 def resolve_fcfs(intents, F):
@@ -214,14 +222,18 @@ def resolve_priority(intents, F):
     return register_sequential(F, order, intents), order
 
 
-def resolve_lp(intents, F, max_iter=60):
+def resolve_lp(intents, F, max_iter=60, d_ref=None):
     """min sum d_k s.t. pairwise precedence constraints (constraint generation).
-    For a conflicting pair the cheaper side is chosen: j after k (s >= max F + 1)
-    or j before k (s <= min F - 1), measured from the current relative shift."""
+    For a conflicting pair, j passes after k (s >= max F + 1) or before it (s <= min F - 1).
+    The side is taken from the reference solution d_ref (the FCFS plan) when its offset lies
+    outside [min F, max F], so d_ref stays feasible and the LP total can never exceed it;
+    otherwise (no d_ref, or d_ref sits in a gap of F) the side closer to the current offset
+    is used."""
     n = len(intents)
     cons = {}                     # (k, j) -> ('after', bound) or ('before', bound)
     d = {i: 0 for i in range(n)}
     lp_iters = 0
+    n_ref_sides = 0
     for _ in range(max_iter):
         bad = conflict_pairs(F, d)
         if not bad:
@@ -229,7 +241,13 @@ def resolve_lp(intents, F, max_iter=60):
         for (k, j) in bad:
             s = d[j] - d[k]
             lo, hi = min(F[(k, j)]), max(F[(k, j)])
-            cons[(k, j)] = ('after', hi + 1) if (hi + 1 - s) <= (s - (lo - 1)) else ('before', lo - 1)
+            s_ref = None if d_ref is None else d_ref[j] - d_ref[k]
+            if s_ref is not None and s_ref > hi:
+                cons[(k, j)] = ('after', hi + 1); n_ref_sides += 1
+            elif s_ref is not None and s_ref < lo:
+                cons[(k, j)] = ('before', lo - 1); n_ref_sides += 1
+            else:
+                cons[(k, j)] = ('after', hi + 1) if (hi + 1 - s) <= (s - (lo - 1)) else ('before', lo - 1)
         A, b = [], []
         for (k, j), (side, bound) in cons.items():
             row = np.zeros(n)
@@ -243,7 +261,7 @@ def resolve_lp(intents, F, max_iter=60):
         lp_iters += 1
         d = {i: int(round(res.x[i])) for i in range(n)}
     order = [it.id for it in sorted(intents, key=lambda it: (it.t_req + d[it.id] * DT, it.id))]
-    return d, order, lp_iters, len(cons)
+    return d, order, lp_iters, len(cons), n_ref_sides
 
 
 # ── Execution with separation assurance ────────────────────────────────────────
@@ -403,13 +421,13 @@ def run_simulation(seed=SEED):
 
     d_f, o_f = resolve_fcfs(intents, Fp)
     d_p, o_p = resolve_priority(intents, Fp)
-    d_l, o_l, lp_iters, n_cons = resolve_lp(intents, Fp)
+    d_l, o_l, lp_iters, n_cons, n_ref = resolve_lp(intents, Fp, d_ref=d_f)
     for name, d, o in [('FCFS', d_f, o_f), ('Priority', d_p, o_p), ('LP', d_l, o_l)]:
         plans[name] = (d, o)
         runs[name] = execute(intents, d, o, use_ra=True)
         summ[name] = summarise(name, intents, runs[name], len(conflict_pairs(F, d)))
         summ[name]["planned_warnings"] = len(conflict_pairs(Fp, d))
-    return intents, F, raw, runs, summ, plans, (lp_iters, n_cons)
+    return intents, F, raw, runs, summ, plans, (lp_iters, n_cons, n_ref)
 
 
 # ── Plots ──────────────────────────────────────────────────────────────────────
@@ -476,25 +494,41 @@ def plot_conflict_timeline(intents, runs, out_dir):
 
 
 def plot_separation_histogram(runs, out_dir):
-    """Per-pair minimum horizontal separation (airborne, |dz| < 10 m) for each run."""
+    """Per-pair minimum separations for each run (both drones airborne):
+    top = min horizontal separation while |dz| < 10 m,
+    bottom = min vertical separation while horizontal separation < 30 m."""
     names = ['None', 'RA only'] + STRATEGIES
-    fig, axes = plt.subplots(1, len(names), figsize=(20, 4), sharey=True)
-    for ax, name in zip(axes, names):
+    fig, axes = plt.subplots(2, len(names), figsize=(20, 7.5), sharey='row')
+    for c, name in enumerate(names):
         res = runs[name]
         H, A = res['hist'], res['air']
-        mins = []
+        mins_h, mins_v = [], []
         for k in range(N_DRONES):
             for j in range(k + 1, N_DRONES):
-                m = A[:, k] & A[:, j] & (np.abs(H[:, k, 2] - H[:, j, 2]) < D_SEP_V)
+                both = A[:, k] & A[:, j]
+                dz = np.abs(H[:, k, 2] - H[:, j, 2])
+                dh = np.linalg.norm(H[:, k, :2] - H[:, j, :2], axis=1)
+                m = both & (dz < D_SEP_V)
                 if m.any():
-                    mins.append(float(np.min(np.linalg.norm(H[m, k, :2] - H[m, j, :2], axis=1))))
-        ax.hist(mins, bins=np.arange(0, 400, 10), color=S_COLORS[name], edgecolor='white')
+                    mins_h.append(float(np.min(dh[m])))
+                m = both & (dh < D_SEP_H)
+                if m.any():
+                    mins_v.append(float(np.min(dz[m])))
+        ax = axes[0, c]
+        ax.hist(mins_h, bins=np.arange(0, 400, 10), color=S_COLORS[name], edgecolor='white')
         ax.axvline(D_SEP_H, color='red', ls='--', label='d_sep_H 30 m')
         ax.axvline(D_WARN_H, color='orange', ls='--', label='d_warn_H 45 m')
-        ax.set_title(f'{name} ({len(mins)} pairs share a layer)', fontsize=10)
+        ax.set_title(f'{name}: {len(mins_h)} pairs share a 10 m band', fontsize=10)
         ax.set_xlabel('Min horizontal separation (m)')
-    axes[0].set_ylabel('Drone pairs'); axes[0].legend(fontsize=7)
-    fig.suptitle('Per-pair minimum horizontal separation while both airborne and |dz| < 10 m',
+        ax = axes[1, c]
+        ax.hist(mins_v, bins=np.arange(0, 82, 2), color=S_COLORS[name], edgecolor='white')
+        ax.axvline(D_SEP_V, color='red', ls='--', label='d_sep_V 10 m')
+        ax.set_title(f'{name}: {len(mins_v)} pairs come within 30 m horizontally', fontsize=10)
+        ax.set_xlabel('Min vertical separation (m)')
+    axes[0, 0].set_ylabel('Drone pairs'); axes[1, 0].set_ylabel('Drone pairs')
+    axes[0, 0].legend(fontsize=7); axes[1, 0].legend(fontsize=7)
+    fig.suptitle('Per-pair minimum separation while both airborne '
+                 '(top: horizontal when |dz| < 10 m; bottom: vertical when horizontal < 30 m)',
                  fontsize=12)
     fig.tight_layout()
     path = os.path.join(out_dir, 'separation_histogram.png')
@@ -604,7 +638,7 @@ def save_animation(intents, runs, out_dir):
 if __name__ == '__main__':
     out_dir = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out_dir, exist_ok=True)
-    intents, F, raw, runs, summ, plans, (lp_iters, n_cons) = run_simulation()
+    intents, F, raw, runs, summ, plans, (lp_iters, n_cons, n_ref) = run_simulation()
 
     print('Intents (seed 7):')
     for it in intents:
@@ -612,7 +646,8 @@ if __name__ == '__main__':
               f' -> ({it.waypoints[-1][0]:.0f},{it.waypoints[-1][1]:.0f})  corridors {it.seg_corridor[1]},{it.seg_corridor[3]}'
               f'  flight {it.duration:5.1f} s  u={it.urgency:.2f}{"  EMERGENCY" if it.emergency else ""}')
     print(f'\nUnresolved plan: {len(raw)} conflicting pairs: ' + ', '.join(f'D{k}-D{j}' for k, j in raw))
-    print(f'LP: {lp_iters} LP solves, {n_cons} pairwise precedence constraints')
+    print(f'LP: {lp_iters} LP solves, {n_cons} pairwise precedence constraints '
+          f'({n_ref} sides taken from the FCFS plan)')
     for name in STRATEGIES:
         d, o = plans[name]
         print(f'  {name:8s} ground holds (s): ' + ' '.join(f'{d[k] * DT:.1f}' for k in range(N_DRONES)))
@@ -641,6 +676,9 @@ if __name__ == '__main__':
               f"(+/- {np.std([r['total_delay'] for r in rows]):5.1f})  "
               f"max_corridor_occ={max(r['max_occ'] for r in rows)}  "
               f"sets_over_capacity={sum(r['max_occ'] > RHO_MAX for r in rows)}/{N_SEEDS}")
+    print(f'  intents denied by registration (all runs): {len(DENIED)}')
+    lp_worse = sum(l['total_delay'] > f_['total_delay'] + 1e-9 for l, f_ in zip(mc['LP'], mc['FCFS']))
+    print(f'  LP total delay > FCFS in {lp_worse}/{N_SEEDS} sets')
     lp_better = sum(l['total_delay'] < f_['total_delay'] - 1e-9 for l, f_ in zip(mc['LP'], mc['FCFS']))
     lp_equal = sum(abs(l['total_delay'] - f_['total_delay']) < 1e-9 for l, f_ in zip(mc['LP'], mc['FCFS']))
     print(f'  LP total delay < FCFS in {lp_better}/{N_SEEDS} sets, equal in {lp_equal}/{N_SEEDS}')

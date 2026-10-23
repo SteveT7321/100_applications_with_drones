@@ -27,8 +27,8 @@ Trajectories are sampled every 0.5 s. For each pair the UTM pre-computes the set
 ### Strategies (ground holds $\delta_k \ge 0$)
 
 - **FCFS**: register intents in request order; each drone gets the smallest hold that is conflict-free with all registered intents and keeps every corridor at ≤ ρ_max drones.
-- **Priority**: same registration in order of urgency $u_k = \alpha_u / \text{slack}_k + \beta_u \cdot \text{IsEmergency}_k + \gamma_u q_k$ (highest first).
-- **LP (centralised)**: $\min \sum_k \delta_k$ s.t. one precedence constraint per conflicting pair — $\delta_j - \delta_k \ge \max F_{kj} + 0.5$ s (j passes after k) or $\delta_j - \delta_k \le \min F_{kj} - 0.5$ s (j passes before), whichever is closer to the current offset — solved with `scipy.optimize.linprog` (HiGHS); pairs that become conflicting are added and the LP re-solved (constraint generation). The LP does **not** model corridor capacity.
+- **Priority**: same registration in order of urgency $u_k = \alpha_u / (t_{k,deadline} - t_{now}) + \beta_u \cdot \text{IsEmergency}_k + \gamma_u q_k$ (highest first), as in the card, with $t_{now}$ = 10 s, the moment the UTM processes the batch (all requests are in by then). If no hold up to 400 s is feasible, the intent is denied (registration accept/deny); no intent was denied in any run.
+- **LP (centralised)**: $\min \sum_k \delta_k$ s.t. one precedence constraint per conflicting pair — $\delta_j - \delta_k \ge \max F_{kj} + 0.5$ s (j passes after k) or $\delta_j - \delta_k \le \min F_{kj} - 0.5$ s (j passes before), with the side taken from the FCFS plan whenever the FCFS offset lies outside $[\min F_{kj}, \max F_{kj}]$ (so the FCFS plan is always LP-feasible and the LP total can never exceed FCFS), otherwise the side closer to the current offset — solved with `scipy.optimize.linprog` (HiGHS); pairs that become conflicting are added and the LP re-solved (constraint generation). The LP does **not** model corridor capacity.
 
 ### Separation assurance (execution)
 
@@ -62,7 +62,7 @@ Total delay $= \sum_k (t_k^{landing} - t_k^{nominal\ landing})$ (ground holds + 
 | Closing speed for $t_{RA}$, $v_{close}$ | 10 m/s |
 | Temporal buffer $t_{buffer}$ | 2 s |
 | Corridor capacity $\rho_{max}$ | 3 drones/km |
-| Priority weights $\alpha_u, \beta_u, \gamma_u$ | 100, 1.0, 0.3 (slack U(60, 300) s, payload U(0.5, 2.5) kg, 1 emergency drone) |
+| Priority weights $\alpha_u, \beta_u, \gamma_u$ | 100, 1.0, 0.3 ($t_{now}$ = 10 s; deadline = request + flight time + U(60, 300) s; payload U(0.5, 2.5) kg; 1 emergency drone) |
 | Max ground hold considered | 400 s |
 | Timestep = conflict-scan resolution | 0.5 s |
 | LP solver | `scipy.optimize.linprog` (HiGHS) |
@@ -96,10 +96,10 @@ The unresolved plan has **10 conflicting pairs**: D0-D4, D0-D8, D1-D5, D1-D9, D3
 | None (no RA) | 10 | 10 | 0.0 | 0 | 0.0 | 0.0 | 0.0 | 0.0 / 0.0 | 3.789 | 3 |
 | RA only | 10 | 0 | 60.0 | 10 | 0.0 | 80.5 | 80.5 | 6.7 / 15.5 | 3.609 | 3 |
 | FCFS | 0 | 0 | 45.0 | 0 | 55.0 | 0.0 | 55.0 | 4.6 / 11.5 | 3.664 | 3 |
-| Priority | 0 | 0 | 45.0 | 0 | 106.0 | 0.0 | 106.0 | 8.8 / 22.5 | 3.404 | 3 |
+| Priority | 0 | 0 | 45.0 | 0 | 107.5 | 0.0 | 107.5 | 9.0 / 22.5 | 3.404 | 3 |
 | LP | 0 | 0 | 45.0 | 0 | 55.0 | 0.0 | 55.0 | 4.6 / 11.5 | 3.664 | 3 |
 
-Conflict rate: 0.0478 /pair/min (None), 0.0456 (RA only, unresolved plan), 0 for the three strategies. LP needed 2 solves with 11 precedence constraints and returned the same holds as FCFS on this set. No drone missed its deadline.
+Conflict rate: 0.0478 /pair/min (None), 0.0456 (RA only, unresolved plan), 0 for the three strategies. LP needed 2 solves with 11 precedence constraints (all 11 sides taken from the FCFS plan) and returned the same holds as FCFS on this set. No drone missed its deadline.
 
 ### Monte Carlo, 10 request sets (seeds 0–9), means
 
@@ -108,16 +108,16 @@ Conflict rate: 0.0478 /pair/min (None), 0.0456 (RA only, unresolved plan), 0 for
 | None | 9.8 | 9.8 | 0.0 | 0.0 ± 0.0 | 4 | 2/10 |
 | RA only | 9.8 | 0.3 | 10.5 | 91.1 ± 12.9 | 4 | 2/10 |
 | FCFS | 0.0 | 0.0 | 0.0 | 68.2 ± 12.5 | 3 | 0/10 |
-| Priority | 0.0 | 0.0 | 0.0 | 90.8 ± 19.9 | 3 | 0/10 |
-| LP | 0.0 | 0.0 | 0.0 | 65.6 ± 15.1 | 4 | 2/10 |
+| Priority | 0.0 | 0.0 | 0.0 | 86.3 ± 19.1 | 3 | 0/10 |
+| LP | 0.0 | 0.0 | 0.0 | 65.6 ± 12.9 | 4 | 2/10 |
 
-LP total delay was lower than FCFS in 7/10 sets and equal in 1/10 (higher in 2/10).
+LP total delay was lower than FCFS in 2/10 sets, equal in 8/10 and higher in 0/10. No intent was denied by registration.
 
 **Key Findings**:
 - **Resolution now changes the outcome.** The unresolved plan has 10 conflicting pairs that all become real losses of separation; every strategic plan has 0 conflicts and 0 losses of separation, and because plans are built to the 45 m warning distance no RA fires during their execution.
 - **Tactical RAs alone work but cost more.** Holding drones only when the 15 s look-ahead predicts an encounter avoided every loss of separation on seed 7 (80.5 s of RA holds), but on average left 0.3 losses of separation per set (3 over the 10 sets) and cost 91.1 s of delay — more than FCFS (68.2 s) or LP (65.6 s). Holding a drone in the air late is less efficient than shifting its departure early.
-- **LP vs FCFS**: on seed 7 they coincide (55.0 s). Over 10 sets LP is lower on average (65.6 vs 68.2 s) and better in 7 sets, but LP ignores corridor capacity and exceeded 3 drones/km in 2 sets, while FCFS enforces it. Part of LP's advantage therefore comes from relaxing a constraint FCFS respects. LP is also not globally optimal (precedence per pair is chosen heuristically), which is why FCFS beats it in 2 sets.
-- **Priority ordering is the most expensive** (106.0 s on seed 7, 90.8 s mean): it gives urgent drones a free slot first, which pushes several lower-priority drones back by 20 s or more (max delay 22.5 s) and lowers throughput to 3.404 /min.
+- **LP vs FCFS**: with the pairwise precedence seeded from the FCFS plan, the LP is never worse than FCFS (0/10 sets) and is lower in 2/10 (mean 65.6 vs 68.2 s); on seed 7 they coincide (55.0 s). But the LP ignores corridor capacity and exceeded 3 drones/km in 2 sets, while FCFS enforces it, so part of its advantage comes from relaxing a constraint FCFS respects. With fixed precedence it optimises only the hold *amounts*, not the order, so it is not a global optimum.
+- **Priority ordering is the most expensive strategic option** (107.5 s on seed 7, 86.3 s mean): it gives urgent drones a free slot first, which pushes several lower-priority drones back by 20 s or more (max delay 22.5 s) and lowers throughput to 3.404 /min.
 - Throughput differs little (3.40–3.79 /min) because it is set by the longest routes (D3, D7 ≈ 180 s of flight); the fleet delays are tens of seconds on top of 80–190 s flights.
 
 **3D airspace** (corridor centre-lines by layer, paths flown under the LP plan, red = conflict points of the unresolved plan):
@@ -128,7 +128,7 @@ LP total delay was lower than FCFS in 7/10 sets and equal in 1/10 (higher in 2/1
 
 ![Conflict Timeline](conflict_timeline.png)
 
-**Separation histogram** (per-pair minimum horizontal separation while both airborne in the same 10 m band):
+**Separation histograms** (both drones airborne; top: per-pair minimum horizontal separation while in the same 10 m band; bottom: per-pair minimum vertical separation while closer than 30 m horizontally):
 
 ![Separation Histogram](separation_histogram.png)
 
@@ -149,7 +149,10 @@ LP total delay was lower than FCFS in 7/10 sets and equal in 1/10 (higher in 2/1
 | Card | Code | Reason |
 |------|------|--------|
 | FCFS/priority holds via $\Delta t_{sep} = d_{sep}^H/v_{close} + t_{buffer}$ on departure-time gaps; card code computed the gap as `delays[k] - delays[j]` (sign error, fixed in the card) | Exact pairwise forbidden-offset sets $F_{kj}$ from the sampled trajectories; registration searches the smallest feasible hold | A fixed departure gap does not guarantee separation for crossing or merging routes; the old sign error made FCFS "beat" the LP optimum (69.1 s < 75.4 s), which is impossible for a feasible plan. |
-| LP precedence from FCFS order | Precedence per conflicting pair = the cheaper side; constraint generation | Fixing FCFS precedence often forces long holds; the LP is still a heuristic, not a MILP. |
+| LP precedence from FCFS order | Precedence per conflicting pair taken from the FCFS *plan* (which side each drone actually passes on), nearest side only where the FCFS offset sits between conflicting offsets; constraint generation | Taking the side from the FCFS solution keeps it feasible, so the LP can never be worse than FCFS; the LP is still not a MILP. |
+| RA when the predicted position at $t + T_{la}$ is closer than $d_{warn}^H$ (single point) | RA when the predicted separation anywhere in $[t, t + T_{la}]$ (1 s samples) is below $d_{warn}^H$ | A single look-ahead point misses encounters that happen within the next 15 s and are over by $t + 15$ s. |
+| Conflicts may be resolved by rerouting to an alternate corridor | Not implemented: resolution uses ground holds (strategic) and holds/hover (RA) only | Every route is fixed to its two corridor segments; rerouting would need a corridor-graph planner and is left as an extension. |
+| Urgency $u_k$ with $t_{now}$ undefined | $t_{now}$ = 10 s (batch processed when all requests are in) | Gives every drone the same reference time. |
 | RAs only logged | RAs hold (hover / ground-hold) the drone during execution; events counted once per episode | The old code logged ~1700 per-timestep "RAs" and no drone reacted. |
 | Drones waiting at the depot reported at waypoint 0 | Only airborne drones count as traffic | Same-depot pairs were "in conflict" at t = 0 whatever the delay, so resolution changed nothing (12 conflicts before and after). |
 | Corridor assignment placeholder; capacity not enforced | Routes are built from corridor segments; capacity ≤ 3 drones/km enforced in FCFS/Priority registration, measured for all runs | LP does not include it (reported: 2/10 sets exceed it). |
