@@ -55,7 +55,7 @@ IGN_CENTRE     = np.array([100.0, 100.0])  # m — ignition point
 R_INIT         = 20.0      # m — initial fire radius
 DT             = 0.5       # s — simulation timestep
 T_SIM          = 300.0     # s — total simulation duration
-START_OFFSET   = 1.0       # m — drones start this far outside the reported perimeter
+START_OFFSET   = SENSOR_RADIUS  # m — drones start r_s outside the reported perimeter (card)
 RESERVE_RADIUS = 10.0      # m — replan targets closer than this to another drone's target are skipped
 SWEEP_R0       = [0.02, 0.04, 0.08, 0.16]  # m/s — head-fire rates for the sweep
 SEED           = 0
@@ -304,6 +304,10 @@ def simulate(r0, seed, record=False):
                     follow_since[k] = t
                 else:
                     pos[k] += V_CRUISE * DT * diff / dist
+            elif len(bxy) == 0:
+                # no boundary mapped yet: approach the reported ignition point
+                u = IGN_CENTRE - pos[k]
+                pos[k] += V_CRUISE * DT * u / (np.linalg.norm(u) + 1e-9)
             else:
                 vel, d_fire = gradient_step(pos[k], bxy, (bi, bj), E)
                 pos[k] += vel * DT
@@ -373,8 +377,11 @@ def summarise(res):
     cnt = {k: sum(1 for e in res['events'] if e[2] == k) for k in ('lost', 'gap', 'search')}
     return dict(mean_dH=np.nanmean(res['dH']), final_dH=res['dH'][-1],
                 mean_dAvg=np.nanmean(res['dAvg']), final_dAvg=res['dAvg'][-1],
-                mean_fresh=100 * np.nanmean(res['fresh']),
+                mean_fresh_all=100 * np.nanmean(res['fresh']),
+                mean_fresh=100 * np.nanmean(res['fresh'][res['t_axis'] >= DT_GAP]),
                 min_fresh=100 * np.nanmin(res['fresh'][res['t_axis'] >= DT_GAP]),
+                t_below90=next((tt for tt, f in zip(res['t_axis'], res['fresh']) if f < 0.9), np.nan),
+                frac90=100 * np.mean(res['fresh'][res['t_axis'] >= DT_GAP] >= 0.9),
                 n_lost=cnt['lost'], n_gap=cnt['gap'], n_search=cnt['search'])
 
 
@@ -398,7 +405,12 @@ def run_simulation():
     print(f"Front advance head/flank/back: {head:.1f} / {flank:.1f} / {back:.1f} m")
     print(f"Hausdorff d_H (card, max-based): mean {s['mean_dH']:.2f} m, final {s['final_dH']:.2f} m")
     print(f"Average Hausdorff (mean-based) : mean {s['mean_dAvg']:.2f} m, final {s['final_dAvg']:.2f} m")
-    print(f"Coverage freshness        : mean {s['mean_fresh']:.1f} %, min (t>=30 s) {s['min_fresh']:.1f} %")
+    print(f"Coverage freshness        : mean (whole run) {s['mean_fresh_all']:.1f} %, mean (t>=30 s) "
+          f"{s['mean_fresh']:.1f} %, min (t>=30 s) {s['min_fresh']:.1f} %")
+    print(f"Freshness first below 90 % at t = {s['t_below90']:.1f} s; share of t>=30 s steps with "
+          f"freshness >= 90 %: {s['frac90']:.1f} %")
+    first = np.flatnonzero(np.isfinite(main['dH']))
+    print(f"Boundary first mapped at t = {main['t_axis'][first[0]]:.1f} s")
     print(f"Replans: lost-contact {s['n_lost']}, coverage-gap {s['n_gap']}, total {s['n_lost'] + s['n_gap']}; "
           f"front re-acquisition searches {s['n_search']}")
     first_gap = [e[0] for e in main['events'] if e[2] == 'gap']
@@ -414,7 +426,7 @@ def run_simulation():
         ss['area'] = res['area']
         sweep.append(ss)
         print(f"R0 = {r0:.2f} m/s: mean d_H {ss['mean_dH']:.2f} m, final d_H {ss['final_dH']:.2f} m, "
-              f"mean avg-H {ss['mean_dAvg']:.2f} m, freshness {ss['mean_fresh']:.1f} %, "
+              f"mean avg-H {ss['mean_dAvg']:.2f} m, freshness (t>=30 s) {ss['mean_fresh']:.1f} %, "
               f"replans lost/gap {ss['n_lost']}/{ss['n_gap']}, searches {ss['n_search']}, final area {ss['area']:.0f} m^2")
     main['summary'] = s
     main['sweep'] = sweep
@@ -483,7 +495,7 @@ def plot_hausdorff(res, out_dir):
             if ev:
                 ax.scatter(ev, np.interp(ev, t, res['dH']), marker=mk, s=40,
                            color=DRONE_COLORS[k], edgecolors='k', lw=0.4, zorder=5,
-                           label=f'Drone {k + 1} {typ} replan ({len(ev)})')
+                           label=f"Drone {k + 1} {'front search' if typ == 'search' else typ + ' replan'} ({len(ev)})")
     ax.set_xlabel('Time (s)')
     ax.set_ylabel('Distance (m)')
     ax.set_title('Boundary tracking error (v lost-contact replan, ^ coverage-gap replan, D front search)')
@@ -572,7 +584,7 @@ def plot_spread_sweep(sweep, out_dir):
     a2.set_xscale('log', base=2)
     a2.set_xticks(r0, [f'{v:.2f}' for v in r0])
     a2.set_xlabel('Head-fire rate $R_0$ (m/s)')
-    a2.set_ylabel('Mean coverage freshness (%)')
+    a2.set_ylabel('Mean coverage freshness, t ≥ 30 s (%)')
     a2.set_ylim(0, 105)
     a2.grid(True, alpha=0.3)
     fig.suptitle('Tracking performance vs fire spread rate (3 drones, seed 0)')

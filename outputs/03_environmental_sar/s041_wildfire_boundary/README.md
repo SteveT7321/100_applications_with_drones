@@ -30,7 +30,7 @@ Sub-cell progress is therefore carried between steps, so slow fronts (0.005–0.
 
 $$z_{ij} = T_{true}(\mathbf{x}_{ij}) + w_{ij}, \qquad w_{ij} \sim \mathcal{N}(0,\, R_{sensor}), \qquad \hat{F}_{ij} = \mathbf{1}\!\left[z_{ij} \geq T_{thresh}\right]$$
 
-The shared map has three states (unknown / unburned / burning) and starts **all unknown** — the drones only know the dispatch location (they start 1 m outside the reported 20 m perimeter). The estimated boundary is the set of cells observed burning that are 4-adjacent to a cell observed unburned. A cell keeps its last observed state until it is re-scanned, so the estimate goes stale as the fire advances.
+The shared map has three states (unknown / unburned / burning) and starts **all unknown** — the drones only know the dispatch location (they start r_s = 2 m outside the reported 20 m perimeter, as in the card; a drone that has no mapped boundary yet flies toward the reported ignition point until it sees the fire). The estimated boundary is the set of cells observed burning that are 4-adjacent to a cell observed unburned. A cell keeps its last observed state until it is re-scanned, so the estimate goes stale as the fire advances.
 
 ### Boundary Gradient-Following Guidance
 
@@ -77,7 +77,7 @@ $$\eta(t) = \frac{\bigl|\{(i,j) \in \hat{\partial \mathcal{F}} : t - T_{last\_sc
 | Spotting noise sigma_spot | 0.01 m/step (card: 0.05, see deviations) |
 | Spread stencil | 16 directions (\|di\|, \|dj\| ≤ 2) |
 | Initial fire radius r₀ | 20 m at (100, 100) m |
-| Drone start | 1 m outside the initial perimeter, 120° apart |
+| Drone start | r_s = 2 m outside the initial perimeter, 120° apart (card) |
 | Lost-contact replan distance d_replan | 3.0 m |
 | Max coverage gap Δt_gap | 30 s |
 | Gap-replan hold time | 10 s |
@@ -122,28 +122,31 @@ Runtime ≈ 1.5 min (spread check + main run + 3 sweep runs + GIF).
 |--------|-------|
 | Fire area | 1256 → 2264 m² (+80.3 %) |
 | Front advance head / flank / back | 12.2 / 5.5 / 3.0 m |
-| Hausdorff $d_H$ (card, max-based) — mean / final | 3.35 m / 5.23 m |
-| Average Hausdorff (mean-based) — mean / final | 0.83 m / 1.08 m |
-| Coverage freshness — mean / minimum (t ≥ 30 s) | 60.4 % / 37.9 % |
-| Replans: lost-contact / coverage-gap | 0 / 38 (13 + 13 + 12 per drone) |
-| Front re-acquisition searches | 0 |
-| First coverage-gap replan | t = 30.5 s |
+| Hausdorff $d_H$ (card, max-based) — mean / final | 3.80 m / 4.75 m |
+| Average Hausdorff (mean-based) — mean / final | 0.93 m / 1.20 m |
+| Coverage freshness — mean over whole run / mean over t ≥ 30 s / minimum (t ≥ 30 s) | 56.0 % / 51.2 % / 28.3 % |
+| Freshness first below 90 % | t = 35.5 s |
+| Share of t ≥ 30 s steps with freshness ≥ 90 % | 2.0 % |
+| Boundary first mapped | t = 0.5 s |
+| Replans: lost-contact / coverage-gap | 0 / 37 (13 + 12 + 12 per drone) |
+| Front re-acquisition searches | 1 |
+| First coverage-gap replan | t = 31.0 s |
 
 ### Spread-rate sweep (seed 0)
 
-| R₀ (m/s) | Mean $d_H$ | Final $d_H$ | Mean avg-Hausdorff | Mean freshness | Replans lost / gap | Searches | Final area |
-|----------|-----------|-------------|--------------------|----------------|--------------------|----------|------------|
-| 0.02 | 1.83 m | 1.74 m | 0.47 m | 55.8 % | 0 / 42 | 0 | 1724 m² |
-| 0.04 | 3.35 m | 5.23 m | 0.83 m | 60.4 % | 0 / 38 | 0 | 2264 m² |
-| 0.08 | 8.78 m | 14.45 m | 2.29 m | 52.2 % | 5 / 31 | 2 | 3518 m² |
-| 0.16 | 19.05 m | 42.80 m | 6.54 m | 52.2 % | 10 / 28 | 2 | 6734 m² |
+| R₀ (m/s) | Mean $d_H$ | Final $d_H$ | Mean avg-Hausdorff | Mean freshness (t ≥ 30 s) | Replans lost / gap | Searches | Final area |
+|----------|-----------|-------------|--------------------|---------------------------|--------------------|----------|------------|
+| 0.02 | 1.87 m | 2.25 m | 0.44 m | 55.9 % | 0 / 41 | 0 | 1724 m² |
+| 0.04 | 3.80 m | 4.75 m | 0.93 m | 51.2 % | 0 / 37 | 1 | 2264 m² |
+| 0.08 | 10.61 m | 20.71 m | 2.73 m | 54.1 % | 3 / 34 | 0 | 3518 m² |
+| 0.16 | 16.04 m | 26.75 m | 5.32 m | 44.7 % | 8 / 25 | 20 | 6734 m² |
 
 **Key Findings**:
 - The fire now really expands: +80.3 % area in 300 s, with the head fire (NE, downwind) advancing 12.2 m against 3.0 m for the back fire, matching the 4:1 head/back ratio of the corrected $R(\theta)$.
-- Because the map starts empty, $d_H$ is large at t = 0 (each drone has only mapped its own footprint) and falls below 1 m by about t = 17 s, once the three drones have swept the whole initial perimeter. After that the error grows slowly as unscanned parts of the boundary go stale: the average boundary error stays around 1 m (mean 0.83 m), while the max-based $d_H$ climbs to about 5 m, set by stale fragments in the fast-moving NE head sector.
-- Every replan in the main run came from the coverage-gap trigger (38 gap vs 0 lost-contact). The first one fires at t = 30.5 s, the first step at which cells scanned at t = 0 exceed the 30 s gap. Lost-contact replans and front searches only appear at R₀ ≥ 0.08 m/s, where stale parts of the map fall more than 5 m behind the real front.
-- Coverage freshness never reaches the 90 % target after t = 30 s (mean 60.4 %, minimum 37.9 %). Three drones at 2.5 m/s could in principle sweep the ~170 m perimeter every ~23 s, but each gap replan sends a drone across the burned interior to the oldest cell, and the crossing time is time not spent on the perimeter.
-- Tracking error grows faster than linearly with spread rate: going from R₀ = 0.04 to 0.08 m/s raises the mean average-Hausdorff error from 0.83 to 2.29 m, and at 0.16 m/s it reaches 6.54 m (max-based mean $d_H$ 19.05 m). At that rate the 3-drone fleet no longer keeps contact with the whole front.
+- Because the map starts empty, $d_H$ is large at the start (the boundary is first mapped at t = 0.5 s, and each drone has only mapped its own footprint). It falls below 1 m within about 17 s, once the three drones have swept the whole initial perimeter. After that the error grows slowly as unscanned parts of the boundary go stale: the average boundary error stays around 1 m (mean 0.93 m), while the max-based $d_H$ climbs to about 6 m, set by stale fragments in the fast-moving NE head sector. It drops back to 4.75 m after the one front search at t ≈ 283 s.
+- In the main run the coverage-gap trigger did almost all the replanning (37 gap replans, 0 lost-contact, 1 front search). The first gap replan fires at t = 31.0 s, just after cells scanned at the start exceed the 30 s gap. Lost-contact replans appear only at R₀ ≥ 0.08 m/s, where stale parts of the map fall more than 5 m behind the real front.
+- Coverage freshness is 100 % until the 30 s gap first expires. It drops below the 90 % target at t = 35.5 s and is at or above 90 % for only 2.0 % of the steps after t = 30 s (mean 51.2 % over t ≥ 30 s, minimum 28.3 %; the whole-run mean of 56.0 % includes the first 30 s at 100 %). Three drones at 2.5 m/s could in principle sweep the ~170 m perimeter every ~23 s. But each gap replan sends a drone across the burned interior to the oldest cell, and that crossing time is not spent on the perimeter.
+- Tracking error grows at least in proportion to the spread rate. Each doubling of R₀ multiplies the mean average-Hausdorff error by 2.1 (0.44 → 0.93 m), 2.9 (0.93 → 2.73 m) and 1.9 (2.73 → 5.32 m). At R₀ = 0.16 m/s the max-based mean $d_H$ is 16.04 m and the drones need 20 front searches. At that rate the 3-drone fleet no longer keeps contact with the whole front.
 
 **Fire evolution map** — true burn region (orange), true boundary (brown line), estimated boundary cells (red dots), drones and IR footprints at t = 0, 100, 200, 299.5 s. Stale estimated fragments are visible inside the NE head of the fire:
 
@@ -153,7 +156,7 @@ Runtime ≈ 1.5 min (spread check + main run + 3 sweep runs + GIF).
 
 ![Hausdorff Distance](hausdorff_distance.png)
 
-**Coverage freshness over time** — fraction of estimated boundary cells scanned within the last 30 s; 100 % until t = 30 s, then fluctuating between about 38 % and 74 %:
+**Coverage freshness over time** — fraction of estimated boundary cells scanned within the last 30 s; 100 % until t = 30 s, below 90 % from t = 35.5 s and fluctuating between about 28 % and 75 % afterwards:
 
 ![Coverage Freshness](coverage_freshness.png)
 
@@ -161,7 +164,7 @@ Runtime ≈ 1.5 min (spread check + main run + 3 sweep runs + GIF).
 
 ![Trajectory Overlay](trajectory_overlay.png)
 
-**Spread-rate sweep** — tracking error and mean freshness vs head-fire rate R₀:
+**Spread-rate sweep** — tracking error and mean freshness (t ≥ 30 s) vs head-fire rate R₀:
 
 ![Spread Rate Sweep](spread_rate_sweep.png)
 
@@ -179,6 +182,7 @@ Runtime ≈ 1.5 min (spread check + main run + 3 sweep runs + GIF).
 | Estimate initialised as a copy of the true fire | Estimate starts all "unknown" | Initialising with ground truth made tracking trivially perfect. |
 | $\hat{\mathbf{n}}$ = direction from nearest boundary cell to drone, unsigned $\phi$ | Local outward normal from the map, signed $\phi$ | The unsigned law can hold the drone on the burned side of the front, from where it never sees the front advance. |
 | Gap trigger checked every step | Checked only after 10 s of following; targets within 10 m of another drone's target skipped | Without these, once any cell was stale all drones were sent back-to-back to the same oldest cell, never patrolled, and lost the head-fire sector entirely. |
+| — | A drone with no mapped boundary yet flies toward the reported ignition point | Starting r_s = 2 m outside the perimeter (card), a footprint can just miss the fire at t = 0; the card does not say what to do then. |
 | — | Front search when contact is lost over burned ground | Re-acquires a front that has run away from a stale part of the map. |
 | Key question asks about wind speed | Sweep over head-fire rate R₀ (0.02–0.16 m/s) | R₀ is the model's wind-driven spread parameter; the sweep stops at 0.16 m/s so the fire stays inside the arena. |
 | Hausdorff metric (max-based) | Reported, plus the mean-based average Hausdorff | The max-based value is dominated by single stale fragments. |
