@@ -56,7 +56,8 @@ A pair that is already inside the cylinder and is moving apart is therefore not 
 **Metrics**:
 
 - conflict and LoS events are counted as distinct pairs, airborne drones only;
-- normalised separation $\sigma = \max(d_h/r_{sep}, d_v/h_{sep})$, where LoS means $\sigma < 1$;
+- LoS is tested exactly over each 0.1 s step, not only at the sample instants: the relative position is taken as the straight chord between two samples, and the same interval test as above (on $s \in [0, 1]$ of the step) finds any entry into the cylinder. An earlier version of this script checked only at the samples. It found 492 of these 496 flat-traffic baseline LoS pairs and 168 of the 169 flat-traffic S2 pairs; all other counts were the same. A waypoint turn inside a step is approximated by the chord;
+- normalised separation $\sigma = \max(d_h/r_{sep}, d_v/h_{sep})$, where LoS means $\sigma < 1$. $\sigma_{min}$ and the separation plots are sampled every 0.1 s, so $\sigma_{min}$ can be slightly above the true minimum;
 - added distance = flown 3D path length − $\|\mathbf{g}_i - \mathbf{o}_i\|_3$;
 - delay = arrival time − ($t_{launch}$ + $\|\mathbf{g}_i - \mathbf{o}_i\|_3 / v$).
 
@@ -100,7 +101,7 @@ conda activate drones
 python src/02_logistics_delivery/3d/s031_3d_path_deconfliction.py
 ```
 
-Runtime was 372–380 s (about 6 min) while four other simulations ran on the same machine. Most of it is the 1000-run Monte Carlo. Two runs gave byte-identical console output and output files.
+Runtime was 384–422 s (about 6–7 min) while other simulations ran on the same machine. Most of it is the 1000-run Monte Carlo. Two runs gave byte-identical console output and output files.
 
 ---
 
@@ -140,9 +141,9 @@ The flat rows for the baseline, S1 and S2 reproduce the fixed 2D S031 exactly: 6
 
 | Strategy | Flat: LoS pairs (seeds with LoS) | 3D: LoS pairs (seeds with LoS) | 3D added distance, mean / median / max (m) | 3D max delay, mean / median / max (s) |
 |---|---|---|---|---|
-| No de-confliction | 492 (100/100) | 165 (86/100) | 0 | 0 |
+| No de-confliction | 496 (100/100) | 165 (86/100) | 0 | 0 |
 | S1 Speed adjustment | 104 (61/100) | 15 (13/100) | 0 / 0 / 0 | 4.38 / 1.13 / 21.20 |
-| S2 Horizontal waypoint | 168 (84/100) | 36 (29/100) | 1.46 / 0.18 / 13.74 | 0.10 / 0.01 / 0.69 |
+| S2 Horizontal waypoint | 169 (84/100) | 36 (29/100) | 1.46 / 0.18 / 13.74 | 0.10 / 0.01 / 0.69 |
 | S3 Altitude layers | 0 (0/100) | 0 (0/100) | 241.80 / 239.06 / 309.96 | 11.92 / 12.03 / 14.98 |
 | S4 Vertical climb-to-avoid | 39 (33/100) | 9 (8/100) | 0.21 / 0.08 / 3.47 | 0.03 / 0.00 / 0.82 |
 
@@ -164,7 +165,7 @@ On flat traffic, S2 adds 4.44 / 1.84 / 18.91 m (mean / median / max), S4 0.74 / 
 
 ### Key findings
 
-- **Altitude variety alone removes most conflicts.** The goal altitudes spread the drones vertically by the time they reach the centre. Baseline LoS pairs drop from 492 (flat) to 165 (3D), with fewer pairs on 99 of 100 seeds and equal on 1. On seed 7, four of the six 2D LoS pairs pass with $d_v$ = 3.6–9.0 m, even though D3–D8 come within 0.08 m horizontally.
+- **Altitude variety alone removes most conflicts.** The goal altitudes spread the drones vertically by the time they reach the centre. Baseline LoS pairs drop from 496 (flat) to 165 (3D), with fewer pairs on 99 of 100 seeds and equal on 1. On seed 7, four of the six 2D LoS pairs pass with $d_v$ = 3.6–9.0 m, even though D3–D8 come within 0.08 m horizontally.
 - **S3 gives zero conflicts, as the card expects**: 0 LoS on all 100 seeds, in 3D and flat. On seed 7 it has 0 flagged conflicts and $\sigma_{min}$ = 1.67, which is the layer spacing divided by $h_{sep}$ (5/3). It is by far the most expensive strategy: 241.8 m mean added distance and 11.9 s mean max delay.
   - The 5 m/s climb limit dominates its delay: 35 m of vertical travel for the top layer takes 7 s instead of 2.9 s.
   - The cylinder standard (3 m vertical) allows 5 m spacing instead of the 2D sphere's 7 m. On flat traffic this cuts the layer cost from 392 m (2D) to 280 m.
@@ -247,6 +248,7 @@ The four strategies in 3D, seed 7, every 4th step (133 frames, 10 fps):
 | — | At most one active avoidance waypoint per drone (S2, S4); no cascading re-check | Same rule as 2D S031. Cascading is card extension 3. |
 | $d_{v,\min}(t)$ plot | min $d_v$ over pairs with $d_h < 10$ m, plus a normalised σ panel | The minimum $d_v$ over all pairs is about 0 almost always (unrelated pairs at similar altitude). |
 | Conflict count | Distinct drone pairs flagged / in LoS (airborne only) | As in 2D S031. Per-step counts inflate the number. |
+| LoS checked at each time step | LoS tested exactly on the chord between consecutive 0.1 s samples (added) | Two drones crossing at up to 24 m/s relative speed can enter and leave the cylinder inside one step. A sample-only check missed 4 of 496 flat-traffic baseline pairs. |
 | — | No-de-confliction baseline, flat-traffic variant, 100-seed Monte Carlo | They show how much conflict exists, what 3D altitudes change against 2D, and the spread. |
 | Altitude colour gradient | Paths drawn as points coloured by z | Matches "altitude encoded in colour"; per-drone colours are used in the other plots. |
 

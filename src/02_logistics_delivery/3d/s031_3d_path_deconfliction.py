@@ -156,6 +156,39 @@ def cylinder_conflict(dp, dv, r, h, t_hor):
     return flag, t_c
 
 
+def swept_los(dp0, dp1, r, h):
+    """Exact LoS test over one time step, between the samples.
+
+    The relative position is taken as the chord dp0 -> dp1 over the step
+    (s in [0, 1]); returns (hit, s_in): hit where d_h < r and |dz| < h overlap
+    on some s in [0, 1], s_in is the first such s.  Unlike a check at the
+    sample instants only, this cannot miss a pair that enters and leaves the
+    cylinder inside one 0.1 s step.
+    """
+    dp = np.atleast_2d(dp0); dv = np.atleast_2d(dp1) - dp
+    a = dv[:, 0] ** 2 + dv[:, 1] ** 2
+    b = 2 * (dp[:, 0] * dv[:, 0] + dp[:, 1] * dv[:, 1])
+    c = dp[:, 0] ** 2 + dp[:, 1] ** 2 - r * r
+    still = a < EPS
+    disc = b * b - 4 * a * np.where(still, 1.0, c)
+    sq = np.sqrt(np.maximum(disc, 0.0))
+    a_s = np.where(still, 1.0, a)
+    t1 = np.where(still, np.where(c < 0, -np.inf, np.inf), (-b - sq) / (2 * a_s))
+    t2 = np.where(still, np.where(c < 0, np.inf, -np.inf), (-b + sq) / (2 * a_s))
+    t1 = np.where(~still & (disc < 0), np.inf, t1)
+    t2 = np.where(~still & (disc < 0), -np.inf, t2)
+    vz, pz = dv[:, 2], dp[:, 2]
+    flatv = np.abs(vz) < EPS
+    vz_s = np.where(flatv, 1.0, vz)
+    ta = (-h - pz) / vz_s
+    tb = (h - pz) / vz_s
+    za = np.where(flatv, np.where(np.abs(pz) < h, -np.inf, np.inf), np.minimum(ta, tb))
+    zb = np.where(flatv, np.where(np.abs(pz) < h, np.inf, -np.inf), np.maximum(ta, tb))
+    lo = np.maximum(np.maximum(t1, za), 0.0)
+    hi = np.minimum(np.minimum(t2, zb), 1.0)
+    return hi > lo, lo
+
+
 def seg_speed(unit, v_cmd):
     """Speed along a segment: commanded speed, capped by the climb-rate limit."""
     uz = abs(unit[2])
@@ -306,11 +339,6 @@ def run_simulation(strategy, seed=SEED, flat=False, record=True):
         sigma = np.maximum(dh / R_SEP, dvv / H_SEP)
         if both.any():
             min_sigma = min(min_sigma, float(sigma[both].min()))
-        los = both & (dh < R_SEP) & (dvv < H_SEP)
-        lnow = {(int(PI[p]), int(PJ[p])) for p in np.flatnonzero(los)}
-        for (a, b) in sorted(lnow - los_seen):
-            los_events.append((t, a, b, *(0.5 * (pos[a] + pos[b]))))
-        los_seen |= lnow
         if record:
             H['t'].append(t); H['pos'].append(pos.copy()); H['active'].append(active.copy())
             H['speed'].append(np.linalg.norm(vel, axis=1))
@@ -320,6 +348,7 @@ def run_simulation(strategy, seed=SEED, flat=False, record=True):
             H['dv'].append(dvv[close].min() if close.any() else np.nan)
 
         # Advance with an exact time budget (carry-over through waypoints)
+        pos_prev = pos.copy()
         for k in np.flatnonzero(active):
             tau = DT
             while tau > 1e-12:
@@ -343,6 +372,21 @@ def run_simulation(strategy, seed=SEED, flat=False, record=True):
                 if has_wp[k] and len(queues[k]) == 1:
                     has_wp[k] = False                 # avoidance waypoint reached
             assert Z_MIN - 1e-9 <= pos[k, 2] <= Z_MAX + 1e-9, 'left the airspace column'
+
+        # LoS bookkeeping: exact swept test over this step (airborne pairs)
+        d0 = pos_prev[PI] - pos_prev[PJ]
+        hit, s_in = swept_los(d0, pos[PI] - pos[PJ], R_SEP, H_SEP)
+        hit &= both
+        lnow = {(int(PI[p]), int(PJ[p])) for p in np.flatnonzero(hit)}
+        for p in np.flatnonzero(hit):
+            a, b = int(PI[p]), int(PJ[p])
+            if (a, b) in los_seen:
+                continue
+            s = float(s_in[p])
+            mid = 0.5 * ((pos_prev[a] + s * (pos[a] - pos_prev[a]))
+                         + (pos_prev[b] + s * (pos[b] - pos_prev[b])))
+            los_events.append((round(t + s * DT, 6), a, b, *mid))
+        los_seen |= lnow
         t = round(t + DT, 10)
 
     assert arrived.all(), 'not all drones arrived'
