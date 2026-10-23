@@ -31,7 +31,8 @@
 | **Hungarian Algorithm** | S018, S019, S029 | `scipy.optimize.linear_sum_assignment` |
 | **Reynolds Flocking** | S011, S017, S097 | Custom implementation |
 | **Distributed MPC** | S016, S031 | Independent MPC per drone + communication |
-| **Consensus Algorithm** | S015, S051 | Distributed state estimation |
+| **Consensus Algorithm** | S015 | Distributed state estimation |
+| **Max-Coverage Placement (Greedy / Repair / Simulated Annealing)** | S051 | Greedy submodular placement, connectivity repair, SA with connectivity penalty |
 | **Auction Algorithm** | S019, S040 | Dynamic task reassignment |
 
 ## Estimation and Sensing
@@ -77,6 +78,7 @@
 | S045 | EKF + gradient ascent (chemical gradient) |
 | S048 | Lawnmower + coverage calculation |
 | S050 | EKF-SLAM (simplified) |
+| S051 | Greedy max-coverage + connectivity repair + simulated annealing |
 | S082 | Dubins + LQR |
 | S088 | Geometric shape interpolation + collision avoidance |
 | S089 | Olfati-Saber collision avoidance protocol |

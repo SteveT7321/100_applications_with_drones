@@ -37,21 +37,26 @@ T_MAX       = 1800.0     # s   — battery budget
 T_HOVER     = 1500.0     # s   — intended hover duration
 D_MAX       = V_DRONE * (T_MAX - T_HOVER) / 2.0   # m — max reachable distance (2250 m)
 
-# SA works on the normalised cost E = -C/C_total + penalty, so ALPHA = 1.0 means one
-# disconnected (or unreachable) drone costs as much as covering the whole city.
-ALPHA       = 1.0        # penalty per disconnected / unreachable drone
-T0_SA       = 0.02       # initial SA temperature (in coverage-fraction units)
-T_END_SA    = 1e-5       # final SA temperature
+# SA cost is in persons, E = -C + ALPHA * n_bad (card). With ~18.7 k people in the city,
+# ALPHA = 1e6 makes one disconnected (or unreachable) drone cost ~50x the whole city.
+ALPHA       = 1e6        # persons per disconnected / unreachable drone (card)
+T0_SA       = 500.0      # initial SA temperature (persons, card)
+T_END_SA    = 0.25       # final SA temperature (persons)
 N_SA_STEPS  = 80_000     # total SA iterations
 DELTA_MAX   = 200.0      # m   — max perturbation at T0
 DELTA_MIN   = 10.0       # m   — perturbation floor at low temperature
 SA_SEED     = 0
 SENS_STEPS  = 20_000     # SA iterations per sensitivity run
 EPS_REPAIR  = 1.0        # m   — margin inside R_COMM when repairing a link
+DC_TOL      = 0.02       # max coverage loss per repair move (fraction of total population)
+DC_TOL_SWEEP = [0.0, 0.005, 0.01, 0.015, 0.02, 0.05]
 
 BASE_POS    = np.array([1000.0, 100.0])   # charge station
 
-# Population clusters: (centre_x, centre_y, peak persons/cell, sigma)
+# Population clusters: (centre_x, centre_y, peak density persons/km^2, sigma m).
+# Cell population = density x cell area (50 m x 50 m = 0.0025 km^2).
+CELL_AREA_KM2 = (AREA_SIZE / GRID_N / 1000.0) ** 2
+BACKGROUND_KM2 = 200.0   # background density ~ U(0, 200) persons/km^2
 CLUSTERS = [
     (400.0, 1600.0, 8000.0, 350.0),
     (1200.0, 1200.0, 12000.0, 400.0),
@@ -83,12 +88,13 @@ def build_population_map(grid_n=GRID_N, area_size=AREA_SIZE, seed=42):
     cx, cy = np.meshgrid(xs, xs)
     centroids = np.stack([cx.ravel(), cy.ravel()], axis=1)     # (N, 2), row-major in y
 
-    pop = np.zeros(grid_n * grid_n)
+    density = np.zeros(grid_n * grid_n)                         # persons / km^2
     for mx, my, peak, sigma in CLUSTERS:
         d2 = (centroids[:, 0] - mx) ** 2 + (centroids[:, 1] - my) ** 2
-        pop += peak * np.exp(-d2 / (2 * sigma ** 2))
-    pop += rng.uniform(0, 200, size=pop.shape)
-    return centroids, pop
+        density += peak * np.exp(-d2 / (2 * sigma ** 2))
+    density += rng.uniform(0, BACKGROUND_KM2, size=density.shape)
+    cell_area = (area_size / grid_n / 1000.0) ** 2
+    return centroids, density * cell_area                      # persons per cell
 
 
 def covered_mask(positions, centroids, r_cov=R_COV):
@@ -123,6 +129,26 @@ def comm_edges(positions, base_pos=BASE_POS, r_comm=R_COMM):
     return [(i, j) for i in range(n) for j in range(i + 1, n) if d[i, j] <= r_comm]
 
 
+def graph_components(positions, base_pos=BASE_POS, r_comm=R_COMM):
+    """Connected-component label for every node (node 0 = base, label 0 = base's component)."""
+    nodes = np.vstack([base_pos, positions])
+    adj = distance_matrix(nodes, nodes) <= r_comm
+    labels = -np.ones(len(nodes), dtype=int)
+    n_comp = 0
+    for start in range(len(nodes)):
+        if labels[start] >= 0:
+            continue
+        labels[start] = n_comp
+        frontier = [start]
+        while frontier:
+            i = frontier.pop()
+            nbr = np.where(adj[i] & (labels < 0))[0]
+            labels[nbr] = n_comp
+            frontier.extend(nbr.tolist())
+        n_comp += 1
+    return labels
+
+
 def unreachable_mask(positions, base_pos=BASE_POS):
     return np.linalg.norm(positions - base_pos, axis=1) > D_MAX
 
@@ -142,15 +168,23 @@ def greedy_placement(centroids, pop, k_drones=K_DRONES, r_cov=R_COV):
     return np.array(positions)
 
 
-def connectivity_repair(positions, base_pos=BASE_POS, r_comm=R_COMM, eps=EPS_REPAIR):
-    """Pull disconnected drones toward the connected component until the graph is connected.
+def connectivity_repair(positions, centroids, pop, dc_tol=DC_TOL,
+                        base_pos=BASE_POS, r_comm=R_COMM, eps=EPS_REPAIR):
+    """Pull disconnected drones toward the connected component, subject to a coverage tolerance.
 
-    Each pass picks the disconnected drone closest to the connected set (base included)
-    and moves it along the line to its nearest connected anchor, stopping r_comm - eps
-    from the anchor (minimum displacement that restores the link).
+    Each pass ranks all (disconnected drone, connected anchor) pairs by distance (base
+    included as an anchor). The candidate move puts the drone r_comm - eps from the anchor
+    along the line between them (minimum displacement that restores the link). A move is
+    accepted only if the coverage it loses is at most dc_tol (fraction of total population),
+    as in the card's step 4; otherwise the next-nearest pair is tried. If no pair passes the
+    test, repair stops and the remaining drones stay disconnected.
+
+    Returns the repaired positions, the accepted moves (k, old, new, loss) and the number
+    of candidate moves rejected by the tolerance test.
     """
     pos = positions.copy()
-    moves = []
+    total = pop.sum()
+    moves, n_rejected = [], 0
     for _ in range(2 * len(pos)):
         conn = connected_mask(pos, base_pos, r_comm)
         if conn.all():
@@ -158,27 +192,40 @@ def connectivity_repair(positions, base_pos=BASE_POS, r_comm=R_COMM, eps=EPS_REP
         anchors = np.vstack([base_pos, pos[conn]])
         disc = np.where(~conn)[0]
         d = distance_matrix(pos[disc], anchors)
-        i, j = np.unravel_index(np.argmin(d), d.shape)
-        k, anchor = disc[i], anchors[j]
-        direction = (pos[k] - anchor) / d[i, j]
-        new_p = anchor + (r_comm - eps) * direction
-        moves.append((k, pos[k].copy(), new_p.copy()))
-        pos[k] = new_p
-    return pos, moves
+        cov_now = coverage(pos, centroids, pop)
+        accepted = False
+        for flat in np.argsort(d, axis=None, kind='stable'):
+            i, j = np.unravel_index(flat, d.shape)
+            k, anchor = disc[i], anchors[j]
+            direction = (pos[k] - anchor) / d[i, j]
+            trial = pos.copy()
+            trial[k] = anchor + (r_comm - eps) * direction
+            loss = (cov_now - coverage(trial, centroids, pop)) / total
+            if loss <= dc_tol:
+                moves.append((int(k), pos[k].copy(), trial[k].copy(), float(loss)))
+                pos = trial
+                accepted = True
+                break
+            n_rejected += 1
+        if not accepted:
+            break
+    return pos, moves, n_rejected
 
 
 def simulated_annealing(centroids, pop, k_drones=K_DRONES, r_cov=R_COV,
                         n_steps=N_SA_STEPS, seed=SA_SEED, n_frames=0):
-    """SA over continuous hover positions with a hard connectivity/range penalty."""
+    """SA over continuous hover positions with a hard connectivity/range penalty.
+
+    E = -C + ALPHA * n_bad in persons; history stores E, coverage fraction and n_bad.
+    """
     rng = np.random.default_rng(seed)
     total = pop.sum()
     beta = (T_END_SA / T0_SA) ** (1.0 / n_steps)
 
     def energy(cover_cols, pos):
-        cov = pop[cover_cols.any(axis=1)].sum() / total
-        n_bad = np.sum(~connected_mask(pos) | unreachable_mask(pos))
-        pen = ALPHA * n_bad
-        return -cov + pen, cov, pen
+        cov = pop[cover_cols.any(axis=1)].sum()                  # persons
+        n_bad = int(np.sum(~connected_mask(pos) | unreachable_mask(pos)))
+        return -cov + ALPHA * n_bad, cov / total, n_bad
 
     pos = rng.uniform(0, AREA_SIZE, size=(k_drones, 2))
     cols = np.stack([np.linalg.norm(centroids - p, axis=1) <= r_cov for p in pos], axis=1)
@@ -212,8 +259,9 @@ def simulated_annealing(centroids, pop, k_drones=K_DRONES, r_cov=R_COV,
         T *= beta
 
     if n_frames:
-        frames.append((n_steps, best_pos.copy(), -best_E if best_E < 0 else 0.0, 0.0))
-    history = {'E': hist_E, 'cov': hist_cov, 'pen': hist_pen}
+        best_cov = coverage(best_pos, centroids, pop, r_cov) / total
+        frames.append((n_steps, best_pos.copy(), best_cov, 0))
+    history = {'E': hist_E, 'cov': hist_cov, 'n_bad': hist_pen}
     return best_pos, history, frames
 
 
@@ -236,7 +284,7 @@ def run_simulation():
     centroids, pop = build_population_map()
 
     greedy_pos = greedy_placement(centroids, pop)
-    repair_pos, repair_moves = connectivity_repair(greedy_pos)
+    repair_pos, repair_moves, n_rej = connectivity_repair(greedy_pos, centroids, pop)
     sa_pos, sa_hist, sa_frames = simulated_annealing(centroids, pop, n_frames=100)
 
     results = {
@@ -245,6 +293,15 @@ def run_simulation():
         'sa':     summarise(sa_pos, centroids, pop),
     }
     results['repair']['moves'] = repair_moves
+    results['repair']['n_rejected'] = n_rej
+
+    # Effect of the repair coverage tolerance DC_TOL
+    tol_sweep = []
+    for tol in DC_TOL_SWEEP:
+        p_tol, m_tol, rej_tol = connectivity_repair(greedy_pos, centroids, pop, dc_tol=tol)
+        s_tol = summarise(p_tol, centroids, pop)
+        tol_sweep.append((tol, s_tol['cov_frac'], s_tol['n_connected'], len(m_tol), rej_tol))
+    results['repair']['tol_sweep'] = tol_sweep
 
     # Sensitivity of the SA solution to coverage radius and fleet size
     r_values = np.array([250.0, 300.0, 350.0, 400.0, 450.0])
@@ -285,11 +342,11 @@ def _draw_network(ax, positions, color, show_cov=True):
 
 def plot_population_map(centroids, pop, out_dir):
     fig, ax = plt.subplots(figsize=(7, 6))
-    im = ax.imshow(_pop_image(pop), origin='lower', extent=[0, AREA_SIZE, 0, AREA_SIZE],
-                   cmap='YlOrRd')
-    fig.colorbar(im, ax=ax, label='Population per 50 m cell (persons)')
+    im = ax.imshow(_pop_image(pop) / CELL_AREA_KM2, origin='lower',
+                   extent=[0, AREA_SIZE, 0, AREA_SIZE], cmap='YlOrRd')
+    fig.colorbar(im, ax=ax, label='Population density (persons/km²)')
     for (mx, my, peak, _), name in zip(CLUSTERS, CLUSTER_NAMES):
-        ax.annotate(f'{name}\npeak {peak:.0f}', (mx, my), ha='center', fontsize=9,
+        ax.annotate(f'{name}\npeak {peak:,.0f}/km²', (mx, my), ha='center', fontsize=9,
                     bbox=dict(boxstyle='round', fc='white', alpha=0.8))
     ax.plot(*BASE_POS, '*', color='k', ms=16, label='Charge station')
     ax.add_patch(Circle(BASE_POS, R_COMM, fill=False, ls=':', ec='k',
@@ -298,7 +355,8 @@ def plot_population_map(centroids, pop, out_dir):
     ax.set_ylim(0, AREA_SIZE)
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
-    ax.set_title(f'S051 Population Density — total {pop.sum() / 1e6:.2f} M persons')
+    ax.set_title(f'S051 Population Density — {pop.sum():,.0f} persons in '
+                 f'{AREA_SIZE ** 2 / 1e6:.0f} km²')
     ax.legend(loc='lower left', fontsize=8)
     path = os.path.join(out_dir, 'population_map.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -325,13 +383,67 @@ def plot_coverage_comparison(centroids, pop, results, out_dir):
         ax.set_xlabel('x (m)')
         ax.set_aspect('equal')
     axes[0].set_ylabel('y (m)')
-    for k, old, new in results['repair'].get('moves', []):
+    for k, old, new, _ in results['repair'].get('moves', []):
         axes[1].annotate('', xy=new, xytext=old,
                          arrowprops=dict(arrowstyle='->', color='purple', lw=1.5))
     fig.suptitle('S051 Coverage Comparison (coloured cells = served population; '
-                 'dashed = radio links; red X = disconnected)', fontsize=12, y=1.03)
+                 'dashed = radio links; red X = disconnected; '
+                 'purple arrows = repair moves)', fontsize=12, y=1.03)
     plt.tight_layout()
     path = os.path.join(out_dir, 'coverage_comparison.png')
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {path}')
+
+
+def plot_relay_graph(centroids, pop, results, out_dir):
+    """Relay graph per strategy: connected components coloured, drones cut off from base in red."""
+    comp_colors = ['#2CA02C', '#9467BD', '#17BECF', '#BCBD22', '#8C564B', '#E377C2']
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    n_max = 1
+    for ax, s in zip(axes, STRATEGIES):
+        pos = results[s]['pos']
+        labels = graph_components(pos)
+        n_max = max(n_max, labels.max() + 1)
+        nodes = np.vstack([BASE_POS, pos])
+        ax.imshow(_pop_image(pop), origin='lower', extent=[0, AREA_SIZE, 0, AREA_SIZE],
+                  cmap='Greys', alpha=0.35)
+        for i, j in comm_edges(pos):
+            ax.plot(*zip(nodes[i], nodes[j]), '-', color=comp_colors[labels[i]], lw=2.5,
+                    zorder=3)
+        for n, p in enumerate(nodes):
+            col = comp_colors[labels[n]]
+            if n == 0:
+                ax.plot(*p, '*', color=col, ms=22, mec='k', zorder=5)
+                ax.annotate('Base', p, xytext=(8, -12), textcoords='offset points', fontsize=9)
+                continue
+            cut = labels[n] != labels[0]
+            ax.plot(*p, 'o', color=col, ms=13, mec='red' if cut else 'k',
+                    mew=3.0 if cut else 1.0, zorder=5)
+            ax.annotate(f'D{n}', p, xytext=(8, 6), textcoords='offset points', fontsize=9,
+                        color='red' if cut else 'k', zorder=6)
+        n_comp = labels.max() + 1
+        n_cut = int(np.sum(labels[1:] != labels[0]))
+        ax.set_title(f"{STRATEGY_LABELS[s]}\n{n_comp} component(s), "
+                     f"{n_cut} drone(s) cut off from base", fontsize=11)
+        ax.set_xlim(0, AREA_SIZE)
+        ax.set_ylim(0, AREA_SIZE)
+        ax.set_xlabel('x (m)')
+        ax.set_aspect('equal')
+    axes[0].set_ylabel('y (m)')
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color=comp_colors[0], marker='o', lw=2.5, mec='k',
+                      label='component containing the base')]
+    handles += [Line2D([], [], color=comp_colors[c], marker='o', lw=2.5, mec='k',
+                       label=f'other component {c}') for c in range(1, n_max)]
+    handles.append(Line2D([], [], ls='', marker='o', color='w', mec='red', mew=3.0, ms=11,
+                          label='drone cut off from base'))
+    fig.legend(handles=handles, loc='lower center', ncol=len(handles), fontsize=9,
+               bbox_to_anchor=(0.5, -0.06))
+    fig.suptitle(f'S051 Relay Graph (edges = links within r_comm = {R_COMM:.0f} m)',
+                 fontsize=12, y=1.02)
+    plt.tight_layout()
+    path = os.path.join(out_dir, 'relay_graph.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {path}')
@@ -387,18 +499,22 @@ def plot_coverage_bar(results, out_dir):
     for b, s, v in zip(bars, STRATEGIES, vals):
         ok = results[s]['n_connected'] == K_DRONES
         b.set_hatch('' if ok else '//')
-        ax.text(b.get_x() + b.get_width() / 2, v + 1,
-                f"{v:.1f}%\n{'connected' if ok else 'disconnected'}", ha='center', fontsize=9)
+        ax.text(b.get_x() + b.get_width() / 2, v / 2,
+                f"{v:.1f}%\n{'connected' if ok else 'disconnected'}",
+                ha='center', va='center', fontsize=10,
+                bbox=dict(boxstyle='round', fc='white', alpha=0.85))
     best_feasible = max(v for s, v in zip(STRATEGIES, vals)
                         if results[s]['n_connected'] == K_DRONES)
-    ax.axhline((1 - 1 / np.e) * vals[0], color='k', ls='--', lw=1,
-               label=r'$(1-1/e)\times$ greedy (unconstrained) coverage')
+    opt_ub = vals[0] / (1 - 1 / np.e)
+    ax.axhline(opt_ub, color='k', ls='--', lw=1,
+               label=rf'Upper bound on OPT (discrete sites, no connectivity): '
+                     rf'greedy$/(1-1/e)$ = {opt_ub:.1f}%')
     ax.axhline(best_feasible, color=STRATEGY_COLORS['sa'], ls=':', lw=1,
-               label='best connected solution')
+               label=f'Best connected solution = {best_feasible:.1f}%')
     ax.set_ylabel('Covered population (%)')
-    ax.set_ylim(0, max(vals) * 1.25)
+    ax.set_ylim(0, 125)
     ax.set_title('S051 Coverage Fraction by Strategy (hatched = violates connectivity)')
-    ax.legend(fontsize=8, loc='lower right')
+    ax.legend(fontsize=8, loc='upper center')
     path = os.path.join(out_dir, 'coverage_bar.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -409,17 +525,17 @@ def plot_sa_convergence(history, out_dir):
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(9, 7), sharex=True)
     it = np.arange(1, len(history['E']) + 1)
     ax1.plot(it, history['E'], color=STRATEGY_COLORS['sa'], lw=0.8, label='Cost E')
-    ax1.set_yscale('symlog', linthresh=1e-2)
-    ax1.set_ylabel('E = −C/C_total + penalty')
+    ax1.set_yscale('symlog', linthresh=1e2)
+    ax1.set_ylabel('E = −C + α·n_bad (persons)')
     ax1.legend()
     ax1.grid(alpha=0.3)
     ax2.plot(it, 100 * history['cov'], color='tab:green', lw=0.8, label='Coverage (%)')
     ax2b = ax2.twinx()
-    ax2b.plot(it, history['pen'], color='red', lw=0.8, label='Penalty (# bad drones)')
-    ax2b.set_ylabel('Penalty', color='red')
-    feasible = np.where(history['pen'] == 0)[0]
+    ax2b.plot(it, history['n_bad'], color='red', lw=0.8, label='n_bad (disconnected or out-of-range drones)')
+    ax2b.set_ylabel('n_bad (drones)', color='red')
+    feasible = np.where(history['n_bad'] == 0)[0]
     if len(feasible):
-        bad = np.where(history['pen'] > 0)[0]
+        bad = np.where(history['n_bad'] > 0)[0]
         first_stable = int(bad[-1] + 1) if len(bad) else 0
         ax2.axvline(first_stable, color='k', ls='--', lw=1)
         ax2.text(first_stable, 0.05, f'  connected from iter {first_stable}', fontsize=9,
@@ -496,32 +612,65 @@ def save_animation(frames, centroids, pop, out_dir):
 
 if __name__ == '__main__':
     centroids, pop, results, sa_hist, sa_frames, sens = run_simulation()
+    total = pop.sum()
 
     print('\n=== S051 Post-Disaster Comm Network — Results ===')
-    print(f'  Total population: {pop.sum():,.0f} persons')
+    print(f'  Total population: {total:,.0f} persons in {AREA_SIZE ** 2 / 1e6:.0f} km² '
+          f'(mean {total / (AREA_SIZE ** 2 / 1e6):,.0f}/km², '
+          f'max cell {pop.max() / CELL_AREA_KM2:,.0f}/km² = {pop.max():.1f} persons/cell)')
+    print(f'  Penalty ALPHA = {ALPHA:,.0f} persons = {ALPHA / total:.1f} x total population')
     print(f'  D_max (range constraint): {D_MAX:.0f} m')
+    beta = (T_END_SA / T0_SA) ** (1.0 / N_SA_STEPS)
+    n_cold_card = int(np.ceil(np.log(1.0 / T0_SA) / np.log(0.995)))
+    print(f'  SA cooling: beta = {beta:.6f}; card beta = 0.995 takes T below 1 person '
+          f'after {n_cold_card} steps')
+    print(f'  SA step size at T_end without floor: {DELTA_MAX * T_END_SA / T0_SA:.2f} m '
+          f'(floor DELTA_MIN = {DELTA_MIN:.0f} m)')
     for s in STRATEGIES:
         r = results[s]
         print(f'  [{STRATEGY_LABELS[s]}]')
         print(f"    Coverage:          {100 * r['cov_frac']:.2f}%")
         print(f"    Connected drones:  {r['n_connected']}/{K_DRONES}")
+        print(f"    Graph components:  {graph_components(r['pos']).max() + 1}")
         print(f"    Max dist to base:  {r['max_base_dist']:.0f} m "
               f"(round trip {r['round_trip_s']:.0f} s)")
         print('    Positions:', ', '.join(f'({p[0]:.0f},{p[1]:.0f})' for p in r['pos']))
-    print(f"  Repair moves: {len(results['repair']['moves'])}")
+    g_dist = np.linalg.norm(results['greedy']['pos'] - BASE_POS, axis=1)
+    print(f'  Greedy drone nearest to base: D{int(np.argmin(g_dist)) + 1} '
+          f'at {g_dist.min():.0f} m')
+    rep = results['repair']
+    print(f'  Repair (DC_tol = {100 * DC_TOL:.1f}% = {DC_TOL * total:.0f} persons): '
+          f"{len(rep['moves'])} moves accepted, {rep['n_rejected']} candidates rejected")
+    for k, old, new, loss in rep['moves']:
+        print(f'    D{k + 1}: ({old[0]:.0f},{old[1]:.0f}) -> ({new[0]:.0f},{new[1]:.0f}), '
+              f'moved {np.linalg.norm(new - old):.0f} m, '
+              f'{np.linalg.norm(new - BASE_POS):.0f} m from base, '
+              f'coverage loss {100 * loss:+.2f} pp ({loss * total:+.0f} persons)')
+    print(f"  Repair coverage loss vs greedy: "
+          f"{100 * (results['greedy']['cov_frac'] - rep['cov_frac']):.2f} pp")
+    print('  DC_tol sweep (tol -> coverage, connected, moves, rejected):')
+    for tol, cf, nc, nm, nr in rep['tol_sweep']:
+        print(f'    {100 * tol:4.1f}% -> {100 * cf:.2f}%, {nc}/{K_DRONES}, {nm}, {nr}')
     ratio = results['sa']['cov_frac'] / results['greedy']['cov_frac']
     print(f'  SA / unconstrained greedy coverage ratio: {ratio:.3f}')
-    bad = np.where(sa_hist['pen'] > 0)[0]
-    print(f"  SA connected from iteration: {int(bad[-1] + 1) if len(bad) else 0}")
+    opt_ub = results['greedy']['cov_frac'] / (1 - 1 / np.e)
+    print(f'  Upper bound on discrete unconstrained OPT, greedy/(1-1/e): {100 * opt_ub:.1f}%')
+    bad = np.where(sa_hist['n_bad'] > 0)[0]
+    first_ok = int(bad[-1] + 1) if len(bad) else 0
+    print(f'  SA connected from iteration: {first_ok} '
+          f"(coverage then {100 * sa_hist['cov'][first_ok]:.1f}%)")
     print('  Sensitivity r_cov:', ', '.join(f'{r:.0f}m→{100 * c:.1f}%'
                                            for r, c in zip(sens['r'], sens['cov_r'])))
     print('  Sensitivity K:    ', ', '.join(f'{k}→{100 * c:.1f}%'
                                            for k, c in zip(sens['k'], sens['cov_k'])))
+    print('  Gain per added drone (pp):', ', '.join(
+        f'{k - 1}→{k}: {100 * d:+.1f}' for k, d in zip(sens['k'][1:], np.diff(sens['cov_k']))))
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
     plot_population_map(centroids, pop, out)
     plot_coverage_comparison(centroids, pop, results, out)
+    plot_relay_graph(centroids, pop, results, out)
     plot_network_3d(centroids, pop, results, out)
     plot_coverage_bar(results, out)
     plot_sa_convergence(sa_hist, out)

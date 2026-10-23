@@ -298,7 +298,7 @@ def run_simulation():
 | SA initial temperature $T_0$ | 500 |
 | SA cooling rate $\beta$ | 0.995 |
 | SA iterations | 80 000 |
-| Population clusters | 3 (peaks at 8 000, 12 000, 6 000 persons) |
+| Population clusters | 3 (peak densities 8 000, 12 000, 6 000 persons/km²; cell population = density × 0.0025 km²) |
 | Charge station $\mathbf{p}_{base}$ | (1000, 100) m |
 | Greedy approximation ratio | $\geq 1 - 1/e \approx 0.632$ |
 
