@@ -1,6 +1,6 @@
 # S033 3D Upgrade — Online Order Insertion
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S033 original](../S033_online_order_insertion.md)
 
 ---
@@ -53,7 +53,7 @@ The vertical detour component is explicitly:
 
 $$\Delta_{k,i}^{z} = |z^k_i - z_{new}| + |z_{new} - z^k_{i+1}| - |z^k_i - z^k_{i+1}|$$
 
-where $z^k_i$ denotes the altitude of $\mathbf{w}^k_i$. Note $\Delta_{k,i}^{z} \ge 0$ and the full $\Delta_{k,i}^{3D}$ subsumes it.
+where $z^k_i$ denotes the altitude of $\mathbf{w}^k_i$. Note $\Delta_{k,i}^{z} \ge 0$. It is a diagnostic only: it is **not** an additive component of $\Delta_{k,i}^{3D}$ and not a lower bound on it. Over a long horizontal leg, altitude offsets add in quadrature, so $\Delta_{k,i}^{3D}$ can be far smaller than $\Delta_{k,i}^{z}$. Example: $\mathbf{w}_i = (0,0,0)$, $\mathbf{w}_{i+1} = (100,0,0)$, $\mathbf{q} = (50,0,10)$ gives $\Delta^{3D} = 2\sqrt{50^2+10^2} - 100 = 1.98$ m but $\Delta^{z} = 20$ m. *(Corrected 2026-10-24: the earlier text said $\Delta^{3D}$ "subsumes" $\Delta^{z}$.)*
 
 The best 3D insertion position for drone $k$:
 
@@ -99,7 +99,7 @@ At any time $t$, two drones $k$ and $k'$ must not share the same altitude band w
 
 $$\text{conflict}(k, k', t) = \mathbf{1}\!\left[\,|z_k(t) - z_{k'}(t)| < h_{sep} \;\wedge\; \|(x_k(t), y_k(t)) - (x_{k'}(t), y_{k'}(t))\|_2 < r_{sep}\,\right] = 0$$
 
-where $h_{sep} = 1.5$ m and $r_{sep} = 20$ m. Before finalising an insertion the dispatcher checks the projected altitude profile of $D_{k^*}$ against all other drones over the time interval $[t_{now},\; t_{arrive,k^*} + 30]$ s.
+where $h_{sep} = 1.5$ m and $r_{sep} = 20$ m. *(Implementation note, 2026-10-24: corridors are 2 m apart, but $\Delta z_{tol} + h_{sep} = 3$ m. A drone that delivers within tolerance gets no corridor-return waypoint and may cruise up to 1.5 m off its corridor, i.e. only 0.5 m from the neighbouring corridor, which is a loss of separation. The 3D implementation keeps the card values and reports these "drift" conflicts.)* Before finalising an insertion the dispatcher checks the projected altitude profile of $D_{k^*}$ against all other drones over the time interval $[t_{now},\; t_{arrive,k^*} + 30]$ s.
 
 ### Dispatcher Decision Rule
 
