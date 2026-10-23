@@ -1,6 +1,6 @@
 # S049 3D Upgrade — Dynamic Zone Assignment
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S049 original](../S049_dynamic_zone.md)
 
 ---
@@ -57,7 +57,10 @@ hand-off**.
 
 **Objective**: Minimise total time to detect all survivors in the 3D volume while maintaining
 balanced volumetric load distribution. The **volumetric coverage fraction** $C_{vol}(t)$ must
-reach at least 90% within the mission time budget.
+reach at least 90% within the mission time budget. (Not achievable with these parameters: one
+5 m layer of 400 × 400 m needs ≈ 10 000 m of sweep at a 16 m swath, all 12 layers ≈ 120 km, while
+4 drones × 6 m/s × 3600 s = 86.4 km of flight at most — an upper bound of 72 % before battery swaps
+and climbs. The implementation reaches ≈ 25 %.)
 
 **Comparison strategies**:
 1. **Static 3D Voronoi** — initial 3D partition fixed; no reallocation.
