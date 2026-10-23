@@ -216,6 +216,8 @@ def run_simulation(case):
         hdg_dev_cruise=float(hdg_dev[steady & (np.array(SPD)
                                                >= CRUISE_MIN_V)].max()),
         t_arrive=t_arrive, switch_t=switch_t,
+        spikes=[ERR[(T >= ts) & (T < ts + TURN_WINDOW)].max(axis=0)
+                for ts in switch_t],
         final_err=float(np.linalg.norm(PC[-1] - wps[-1])),
         wps=wps, wind=cfg['wind'])
 
@@ -417,7 +419,12 @@ if __name__ == '__main__':
         print(f'\n--- Case {r["name"]} ---')
         print(f'  Carrier arrival: t = {r["t_arrive"]:.2f} s, final error '
               f'{r["final_err"]:.4f} m; waypoint switches at '
-              + ', '.join(f'{s:.2f}' for s in r['switch_t']) + ' s')
+              + (', '.join(f'{s:.2f} s' for s in r['switch_t'])
+                 if r['switch_t'] else 'none'))
+        for ts, sp in zip(r['switch_t'], r['spikes']):
+            print(f'  Peak slot error within {TURN_WINDOW:.0f} s of the '
+                  f'{ts:.2f} s switch (Lead / Left / Right): '
+                  + ' / '.join(f'{v:.3f}' for v in sp) + ' m')
         print(f'  RMS formation error: {r["rms_total"]:.4f} m  (per escort '
               + ', '.join(f'{v:.4f}' for v in r['rms_per']) + ' m)')
         print(f'  Max slot error:      {r["max_err"]:.4f} m')

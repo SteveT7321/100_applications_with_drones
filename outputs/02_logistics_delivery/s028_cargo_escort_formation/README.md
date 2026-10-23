@@ -79,6 +79,7 @@ Every drone's ground velocity is its command plus the local wind. A uniform wind
 - **Separation includes the Carrier**, and escorts are also repelled by the Carrier. The card's repulsion formula counts escort–escort pairs only. The previous version's "4.0 m minimum separation" was the escort–escort minimum; the real minimum on the straight route is Carrier–Lead = 2.0 m.
 - **Heading held at rest.** The previous code reset the formation heading to +x whenever the Carrier stopped. That was harmless on a +x route but would rotate the formation on any other route.
 - **Card expectations not met**: "error converges near zero within ~2 s", RMS < 0.15 m and minimum separation > $d_{safe}$ all hold only on the straight route. On the S-route all three fail; see the results.
+- **Middle-leg speed 1.5 m/s is not from the card.** The card's Carrier flies at a constant 3.0 m/s. The S-route halves the speed on its middle leg so that the escorts' Carrier-velocity feed-forward is tested through speed changes as well as turns.
 - N = 3 escorts only; the optional rear escort is not simulated.
 
 ---
@@ -126,7 +127,7 @@ Cases B, C and D side by side. Note the escorts swinging wide at the two turns, 
 ![Top-Down XY](topdown_xy.png)
 
 ### Formation Metrics
-Per-escort slot error vs time for cases B, C and D (dotted lines: waypoint switches; dashed line: the 0.15 m card target). Each switch produces a 3.5–4.6 m spike that decays in about 1.5 s. With the gust, case C keeps a 0.1–0.4 m standing error on the legs, while case D does not. Both show the bump at t ≈ 17.6 s while the Carrier slows near the goal:
+Per-escort slot error vs time for cases B, C and D (dotted lines: waypoint switches; dashed line: the 0.15 m card target). Each switch produces a spike that decays in about 1.5 s. Peaks per escort (Lead / Left / Right): 3.49 / 4.36 / 4.34 m and 3.46 / 4.23 / 4.28 m in case B; at the first switch 3.52 / 4.34 / 4.59 m (C) and 3.58 / 4.47 / 4.46 m (D); at the second switch only 2.80 / 3.37 / 3.55 m (C) and 2.76 / 3.36 / 3.43 m (D). With the gust, case C keeps a 0.1–0.4 m standing error on the legs, while case D does not. Both show the bump at t ≈ 17.6 s while the Carrier slows near the goal:
 
 ![Formation Metrics](formation_metrics.png)
 
