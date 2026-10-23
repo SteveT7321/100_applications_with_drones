@@ -1,7 +1,30 @@
 """
 S029 Urban Logistics Scheduling
-Multi-depot multi-drone VRP with time windows.
-Compares: Greedy Nearest-Neighbour vs Clarke-Wright Savings.
+===============================
+Multi-depot, multi-drone delivery with time windows (VRPTW).  3 depots,
+12 customers, 6 drones (2 per depot).  Each drone may fly several sorties;
+every sortie starts and ends at the drone's depot, and capacity Q and range
+R_max are enforced per sortie.
+
+Strategies
+  1. Greedy NN      : nearest-depot assignment, nearest-neighbour sorties,
+                      sorties given to the depot drone that is free first.
+  2. Clarke-Wright  : savings merges within each nearest-depot group,
+                      sorties given to the depot drone that is free first.
+  3. TW insertion   : time-window-aware VRPTW heuristic (OR-Tools is not
+                      installed): customers in order of latest time l_c are
+                      inserted at the cheapest feasible position (any drone,
+                      any depot, any sortie, or a new sortie) measured by the
+                      card objective alpha*TWT + (1-alpha)*distance, then a
+                      relocate local search improves the result.
+
+Two instances, same depots / customers / demands / weights:
+  card  : time windows from the card (earliest 0-120 s, width 60-180 s)
+  tight : narrow windows spread over the day (earliest 0-240 s, width 20-60 s)
+
+Usage:
+    conda activate drones
+    python src/02_logistics_delivery/s029_urban_logistics_scheduling.py
 """
 
 import os
@@ -14,13 +37,9 @@ from matplotlib.animation import FuncAnimation
 from scipy.spatial.distance import cdist
 from itertools import combinations
 
-# ─── Output directory ────────────────────────────────────────────────────────
-OUT_DIR = os.path.join(
-    os.path.dirname(__file__),
-    "..", "..",
-    "outputs", "02_logistics_delivery", "s029_urban_logistics_scheduling"
-)
-OUT_DIR = os.path.normpath(OUT_DIR)
+OUT_DIR = os.path.normpath(os.path.join(
+    os.path.dirname(__file__), "..", "..",
+    "outputs", "02_logistics_delivery", "s029_urban_logistics_scheduling"))
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ─── Constants ────────────────────────────────────────────────────────────────
@@ -28,696 +47,462 @@ N_DEPOTS    = 3
 N_CUSTOMERS = 12
 N_DRONES    = 6          # 2 per depot
 V_DRONE     = 15.0       # m/s
-Q_MAX       = 3.0        # kg capacity per drone per sortie
-R_MAX       = 4000.0     # m max range per sortie
-SVC_TIME    = 10.0       # s service time per customer
-ALPHA       = 0.7        # tardiness vs distance weight in objective
+Q_MAX       = 3.0        # kg per sortie
+R_MAX       = 4000.0     # m per sortie
+SVC_TIME    = 10.0       # s per customer
+ALPHA       = 0.7        # tardiness vs distance weight
+SEED        = 42         # card instance
+SEED_TIGHT  = 2029       # tight-window time windows
 
-DEPOT_POS = np.array([
-    [100., 100.],
-    [500., 900.],
-    [900., 200.],
-])
+DEPOT_POS = np.array([[100., 100.], [500., 900.], [900., 200.]])
+DEPOT_OF_DRONE = [k // 2 for k in range(N_DRONES)]
 
-rng = np.random.default_rng(42)
-CUST_POS = rng.uniform(50, 950, (N_CUSTOMERS, 2))
-EARLY    = rng.uniform(0, 120, N_CUSTOMERS)
-LATE     = EARLY + rng.uniform(60, 180, N_CUSTOMERS)
-DEMAND   = rng.uniform(0.3, 1.5, N_CUSTOMERS)
-WEIGHT   = rng.uniform(0.5, 2.0, N_CUSTOMERS)   # importance weight for TWT
+_rng = np.random.default_rng(SEED)
+CUST_POS = _rng.uniform(50, 950, (N_CUSTOMERS, 2))
+EARLY    = _rng.uniform(0, 120, N_CUSTOMERS)
+LATE     = EARLY + _rng.uniform(60, 180, N_CUSTOMERS)
+DEMAND   = _rng.uniform(0.3, 1.5, N_CUSTOMERS)
+WEIGHT   = _rng.uniform(0.5, 2.0, N_CUSTOMERS)
 
-# ─── Utility helpers ──────────────────────────────────────────────────────────
+_rng_t = np.random.default_rng(SEED_TIGHT)
+EARLY_T = _rng_t.uniform(0, 240, N_CUSTOMERS)
+LATE_T  = EARLY_T + _rng_t.uniform(20, 60, N_CUSTOMERS)
+
+INSTANCES = {"card": (EARLY, LATE), "tight": (EARLY_T, LATE_T)}
+STRATS = ["Greedy NN", "Clarke-Wright", "TW insertion"]
+COLORS = plt.cm.tab10(np.arange(N_DRONES))
+
 
 def dist(a, b):
-    return np.linalg.norm(np.asarray(a) - np.asarray(b))
+    return float(np.linalg.norm(np.asarray(a) - np.asarray(b)))
 
 
-def route_length(route, depot_pos, cust_pos):
-    """Total flight distance: depot → c0 → c1 → … → depot."""
-    if not route:
-        return 0.0
-    pts = [depot_pos] + [cust_pos[c] for c in route] + [depot_pos]
+def sortie_length(sortie, dep):
+    pts = [dep] + [CUST_POS[c] for c in sortie] + [dep]
     return sum(dist(pts[i], pts[i + 1]) for i in range(len(pts) - 1))
 
 
-def simulate_route(route, depot_pos, cust_pos, early, late, weight, v, svc_time):
-    """
-    Execute one drone route and return:
-      delivery_times : dict {customer_idx: service_start_time}
-      total_dist     : float
-      tardiness      : float (weighted)
-      timeline       : list of (t_depart_leg, t_arrive_leg, customer_idx_or_None)
-    """
-    pos = depot_pos.copy()
-    t = 0.0
-    delivery_times = {}
-    tardiness = 0.0
-    total_dist = 0.0
-    timeline = []
-
-    for c in route:
-        d = dist(pos, cust_pos[c])
-        total_dist += d
-        travel_time = d / v
-        arrive = t + travel_time
-        start_svc = max(arrive, early[c])
-        tardi = max(0.0, start_svc - late[c]) * weight[c]
-        tardiness += tardi
-        delivery_times[c] = start_svc
-        timeline.append((t, arrive, start_svc, c))
-        pos = cust_pos[c].copy()
-        t = start_svc + svc_time
-
-    # return to depot
-    d_back = dist(pos, depot_pos)
-    total_dist += d_back
-    return delivery_times, total_dist, tardiness, timeline
+def feasible_sortie(sortie, dep):
+    return (sum(DEMAND[c] for c in sortie) <= Q_MAX + 1e-9
+            and sortie_length(sortie, dep) <= R_MAX + 1e-9)
 
 
-def evaluate_solution(drone_routes, depot_of_drone, cust_pos, early, late, weight, v, svc_time):
-    """
-    Evaluate a full set of drone routes.
-    Returns aggregated metrics dict and per-drone detail list.
-    """
-    total_dist = 0.0
-    total_twt  = 0.0
-    all_delivery = {}
-    details = []
+# ─── Schedule evaluation ─────────────────────────────────────────────────────
 
-    for k, route in enumerate(drone_routes):
-        dep_pos = DEPOT_POS[depot_of_drone[k]]
-        dt_map, rd, twt, timeline = simulate_route(
-            route, dep_pos, cust_pos, early, late, weight, v, svc_time
-        )
-        all_delivery.update(dt_map)
-        total_dist += rd
-        total_twt  += twt
-        details.append(dict(route=route, depot=depot_of_drone[k],
-                            dist=rd, twt=twt, timeline=timeline))
+def drone_schedule(plan, k, early, late):
+    """Fly drone k's sorties back to back (depot return between sorties).
 
-    obj = ALPHA * total_twt + (1 - ALPHA) * total_dist
-    return dict(total_dist=total_dist, total_twt=total_twt, objective=obj,
-                n_routes=sum(1 for r in drone_routes if r),
-                deliveries=all_delivery), details
+    Returns dict with distance, weighted tardiness, events and deliveries.
+    Events: (kind, t0, t1, p0, p1, customer)."""
+    dep = DEPOT_POS[DEPOT_OF_DRONE[k]]
+    t, total_d, twt = 0.0, 0.0, 0.0
+    events, deliv = [], {}
+    for sortie in plan:
+        pos = dep
+        for c in sortie:
+            d = dist(pos, CUST_POS[c])
+            arrive = t + d / V_DRONE
+            events.append(("fly", t, arrive, pos, CUST_POS[c], c))
+            start = max(arrive, early[c])
+            if start > arrive:
+                events.append(("wait", arrive, start, CUST_POS[c],
+                               CUST_POS[c], c))
+            events.append(("svc", start, start + SVC_TIME, CUST_POS[c],
+                           CUST_POS[c], c))
+            twt += WEIGHT[c] * max(0.0, start - late[c])
+            deliv[c] = start
+            total_d += d
+            t, pos = start + SVC_TIME, CUST_POS[c]
+        d = dist(pos, dep)
+        events.append(("fly", t, t + d / V_DRONE, pos, dep, None))
+        total_d += d
+        t += d / V_DRONE
+    return dict(dist=total_d, twt=twt, events=events, deliv=deliv, end=t,
+                obj=ALPHA * twt + (1 - ALPHA) * total_d)
 
 
-# ─── Strategy 1: Greedy Nearest-Neighbour ────────────────────────────────────
+def evaluate(plans, inst):
+    early, late = INSTANCES[inst]
+    sch = [drone_schedule(p, k, early, late) for k, p in enumerate(plans)]
+    deliv = {}
+    for s in sch:
+        deliv.update(s["deliv"])
+    sorties = [(k, s) for k, p in enumerate(plans) for s in p]
+    tard = {c: max(0.0, deliv[c] - late[c]) for c in deliv}
+    return dict(
+        sched=sch, deliv=deliv, plans=plans,
+        total_dist=sum(s["dist"] for s in sch),
+        total_twt=sum(s["twt"] for s in sch),
+        objective=sum(s["obj"] for s in sch),
+        makespan=max(s["end"] for s in sch),
+        n_sorties=len(sorties),
+        n_drones_used=sum(1 for p in plans if p),
+        n_late=sum(1 for c in tard if tard[c] > 1e-9),
+        max_load=max(sum(DEMAND[c] for c in s) for _, s in sorties),
+        max_len=max(sortie_length(s, DEPOT_POS[DEPOT_OF_DRONE[k]])
+                    for k, s in sorties),
+        served=len(deliv))
 
-def greedy_nn(depot_pos, cust_pos, demands, q_max, r_max, n_drones):
-    """
-    Assign each customer to nearest depot, then build nearest-neighbour tours
-    per drone (round-robin within depot).
-    Returns drone_routes list (length n_drones) and depot_of_drone list.
-    """
-    depot_dist = cdist(cust_pos, depot_pos)
-    nearest_depot = np.argmin(depot_dist, axis=1)
 
-    # Bucket customers per depot
-    depot_customers = {d: [] for d in range(len(depot_pos))}
-    for c in range(len(cust_pos)):
-        depot_customers[nearest_depot[c]].append(c)
+# ─── Sortie-to-drone assignment (strategies 1 and 2) ─────────────────────────
 
-    drone_routes = [[] for _ in range(n_drones)]
-    depot_of_drone = [k // 2 for k in range(n_drones)]
+def assign_sorties(sorties_by_depot, inst):
+    """Give each depot's sorties, in order, to the depot drone free first."""
+    early, late = INSTANCES[inst]
+    plans = [[] for _ in range(N_DRONES)]
+    for d, sorties in sorties_by_depot.items():
+        drones = [k for k in range(N_DRONES) if DEPOT_OF_DRONE[k] == d]
+        for s in sorties:
+            k = min(drones, key=lambda kk: (
+                drone_schedule(plans[kk], kk, early, late)["end"], kk))
+            plans[k].append(s)
+    return plans
 
-    for d in range(len(depot_pos)):
-        custs = depot_customers[d]
-        drones_here = [k for k in range(n_drones) if depot_of_drone[k] == d]
-        if not custs or not drones_here:
-            continue
 
-        # Build one NN tour per drone (capacity-constrained round-robin load)
-        unvisited = set(custs)
-        drone_idx = 0
-        while unvisited:
-            k = drones_here[drone_idx % len(drones_here)]
-            # Start from depot, greedily pick nearest unvisited within capacity/range
-            pos = depot_pos[d].copy()
-            load = 0.0
-            rdist = 0.0
-            route = drone_routes[k]
-            advanced = False
-            while unvisited:
-                # Filter feasible (capacity and range: must still be able to return)
-                candidates = []
-                for c in unvisited:
-                    new_load = load + demands[c]
-                    if new_load > q_max:
-                        continue
-                    leg = dist(pos, cust_pos[c])
-                    back = dist(cust_pos[c], depot_pos[d])
-                    if rdist + leg + back > r_max:
-                        continue
-                    candidates.append((leg, c))
-                if not candidates:
+def nearest_depot_groups():
+    nd = np.argmin(cdist(CUST_POS, DEPOT_POS), axis=1)
+    return {d: [c for c in range(N_CUSTOMERS) if nd[c] == d]
+            for d in range(N_DEPOTS)}
+
+
+def greedy_nn(inst):
+    sorties_by_depot = {}
+    for d, custs in nearest_depot_groups().items():
+        dep, todo, sorties = DEPOT_POS[d], set(custs), []
+        while todo:
+            sortie, pos = [], dep
+            while True:
+                cands = [(dist(pos, CUST_POS[c]), c) for c in sorted(todo)
+                         if feasible_sortie(sortie + [c], dep)]
+                if not cands:
                     break
-                candidates.sort()
-                _, best = candidates[0]
-                leg = dist(pos, cust_pos[best])
-                rdist += leg
-                load += demands[best]
-                route.append(best)
-                pos = cust_pos[best].copy()
-                unvisited.discard(best)
-                advanced = True
-            drone_idx += 1
-            if not advanced:
-                # Unfeasible customer — force assign to avoid infinite loop
-                if unvisited:
-                    forced = next(iter(unvisited))
-                    drone_routes[drones_here[drone_idx % len(drones_here)]].append(forced)
-                    unvisited.discard(forced)
-                    drone_idx += 1
-
-    return drone_routes, depot_of_drone
+                _, c = min(cands)
+                sortie.append(c); todo.discard(c); pos = CUST_POS[c]
+            sorties.append(sortie)
+        sorties_by_depot[d] = sorties
+    return assign_sorties(sorties_by_depot, inst)
 
 
-# ─── Strategy 2: Clarke-Wright Savings ───────────────────────────────────────
-
-def clarke_wright(depot_pos, cust_pos, demands, q_max, r_max, n_drones):
-    """
-    Clarke-Wright savings algorithm (multi-depot variant).
-    Returns drone_routes and depot_of_drone.
-    """
-    depot_dist_mat = cdist(cust_pos, depot_pos)
-    nearest_depot  = np.argmin(depot_dist_mat, axis=1)
-
-    # Initial solution: one route per customer
-    # route_id -> (list_of_customers, depot_index)
-    routes = {c: [c] for c in range(len(cust_pos))}
-    route_depot = {c: int(nearest_depot[c]) for c in range(len(cust_pos))}
-
-    # Interior end tracking: can only merge at route ends
-    def route_ends(r):
-        return r[0], r[-1]
-
-    # Build savings list (only within same depot)
-    savings = []
-    cust_list = list(range(len(cust_pos)))
-    for i, j in combinations(cust_list, 2):
-        if nearest_depot[i] != nearest_depot[j]:
-            continue
-        d = int(nearest_depot[i])
-        s = depot_dist_mat[i, d] + depot_dist_mat[j, d] - dist(cust_pos[i], cust_pos[j])
-        savings.append((s, i, j))
-    savings.sort(reverse=True, key=lambda x: x[0])
-
-    # Merge
-    for s, i, j in savings:
-        # Find routes containing i and j
-        ri_key = next((k for k, v in routes.items() if i in v), None)
-        rj_key = next((k for k, v in routes.items() if j in v), None)
-        if ri_key is None or rj_key is None or ri_key == rj_key:
-            continue
-        if route_depot[ri_key] != route_depot[rj_key]:
-            continue
-
-        ri = routes[ri_key]
-        rj = routes[rj_key]
-        d = route_depot[ri_key]
-
-        # i must be at an end of ri, j must be at an end of rj
-        ri_ends = route_ends(ri)
-        rj_ends = route_ends(rj)
-        if i not in ri_ends or j not in rj_ends:
-            continue
-
-        # Form merged route (orient so i is last in ri, j is first in rj)
-        if ri[-1] != i:
-            ri = ri[::-1]
-        if rj[0] != j:
-            rj = rj[::-1]
-        merged = ri + rj
-
-        # Feasibility
-        total_demand = sum(demands[c] for c in merged)
-        depot_pos_d  = depot_pos[d]
-        total_dist_m = route_length(merged, depot_pos_d, cust_pos)
-        if total_demand > q_max or total_dist_m > r_max:
-            continue
-
-        # Merge
-        routes[ri_key] = merged
-        del routes[rj_key]
-        route_depot[ri_key] = d
-        if rj_key in route_depot:
-            del route_depot[rj_key]
-
-    # Assign merged routes to drones (round-robin per depot)
-    depot_of_drone = [k // 2 for k in range(n_drones)]
-    drone_routes   = [[] for _ in range(n_drones)]
-
-    depot_drone_idx = {d: [k for k in range(n_drones) if depot_of_drone[k] == d]
-                       for d in range(len(depot_pos))}
-    depot_assigned  = {d: 0 for d in range(len(depot_pos))}
-
-    for rk, route in routes.items():
-        d = route_depot[rk]
-        drones_here = depot_drone_idx[d]
-        if not drones_here:
-            continue
-        drone_k = drones_here[depot_assigned[d] % len(drones_here)]
-        drone_routes[drone_k].extend(route)
-        depot_assigned[d] += 1
-
-    return drone_routes, depot_of_drone
+def clarke_wright(inst):
+    sorties_by_depot = {}
+    for d, custs in nearest_depot_groups().items():
+        dep = DEPOT_POS[d]
+        routes = [[c] for c in custs]
+        sav = sorted(((dist(dep, CUST_POS[i]) + dist(dep, CUST_POS[j])
+                       - dist(CUST_POS[i], CUST_POS[j]), i, j)
+                      for i, j in combinations(custs, 2)), reverse=True)
+        for _, i, j in sav:
+            ri = next(r for r in routes if i in r)
+            rj = next(r for r in routes if j in r)
+            if ri is rj or i not in (ri[0], ri[-1]) or j not in (rj[0], rj[-1]):
+                continue
+            a = ri if ri[-1] == i else ri[::-1]
+            b = rj if rj[0] == j else rj[::-1]
+            if feasible_sortie(a + b, dep):
+                routes.remove(ri); routes.remove(rj); routes.append(a + b)
+        sorties_by_depot[d] = routes
+    return assign_sorties(sorties_by_depot, inst)
 
 
-# ─── Plotting helpers ─────────────────────────────────────────────────────────
+# ─── Strategy 3: time-window-aware insertion + relocate local search ────────
 
-COLORS = plt.cm.tab10(np.linspace(0, 1, N_DRONES))
+def _best_insertion(plans, c, early, late, base):
+    """Cheapest feasible insertion of customer c; returns (delta, k, plan)."""
+    best = None
+    for k in range(N_DRONES):
+        dep = DEPOT_POS[DEPOT_OF_DRONE[k]]
+        cands = []
+        for si, s in enumerate(plans[k]):
+            for pos in range(len(s) + 1):
+                ns = s[:pos] + [c] + s[pos:]
+                if feasible_sortie(ns, dep):
+                    cands.append(plans[k][:si] + [ns] + plans[k][si + 1:])
+        for si in range(len(plans[k]) + 1):          # new sortie
+            cands.append(plans[k][:si] + [[c]] + plans[k][si:])
+        for p in cands:
+            delta = drone_schedule(p, k, early, late)["obj"] - base[k]
+            if best is None or delta < best[0] - 1e-9:
+                best = (delta, k, p)
+    return best
 
-def plot_route_map(drone_routes, depot_of_drone, cust_pos, depot_pos,
-                   title, filename):
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.set_xlim(0, 1000)
-    ax.set_ylim(0, 1000)
-    ax.set_aspect("equal")
-    ax.set_title(title, fontsize=13)
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
 
-    # Customer circles
-    ax.scatter(cust_pos[:, 0], cust_pos[:, 1],
-               s=80, c="steelblue", zorder=4, label="Customer")
-    for c in range(len(cust_pos)):
-        ax.text(cust_pos[c, 0] + 12, cust_pos[c, 1] + 12,
-                f"C{c}", fontsize=7, color="navy")
+def tw_insertion(inst):
+    early, late = INSTANCES[inst]
+    plans = [[] for _ in range(N_DRONES)]
+    base = [0.0] * N_DRONES
+    for c in sorted(range(N_CUSTOMERS), key=lambda c: (late[c], c)):
+        _, k, p = _best_insertion(plans, c, early, late, base)
+        plans[k] = p
+        base[k] = drone_schedule(p, k, early, late)["obj"]
+    history = [sum(base)]
+    improved = True
+    while improved:                                   # relocate local search
+        improved = False
+        for c in range(N_CUSTOMERS):
+            k0 = next(k for k in range(N_DRONES)
+                      if any(c in s for s in plans[k]))
+            reduced = [[x for x in s if x != c] for s in plans[k0]]
+            reduced = [s for s in reduced if s]
+            trial = [list(map(list, p)) for p in plans]
+            trial[k0] = reduced
+            tbase = list(base)
+            tbase[k0] = drone_schedule(reduced, k0, early, late)["obj"]
+            _, k, p = _best_insertion(trial, c, early, late, tbase)
+            new_k = drone_schedule(p, k, early, late)["obj"]
+            new_total = sum(tbase) - tbase[k] + new_k
+            if new_total < sum(base) - 1e-6:
+                trial[k] = p
+                tbase[k] = new_k
+                plans, base = trial, tbase
+                history.append(sum(base))
+                improved = True
+    return plans, history
 
-    # Depot triangles
-    for d, dp in enumerate(depot_pos):
-        ax.plot(dp[0], dp[1], marker="^", markersize=14,
-                color="crimson", zorder=5)
-        ax.text(dp[0] + 15, dp[1] + 15, f"D{d}", fontsize=9,
-                color="crimson", fontweight="bold")
 
-    # Routes
-    patch_handles = []
-    for k, route in enumerate(drone_routes):
-        if not route:
-            continue
-        col = COLORS[k]
-        dep = depot_pos[depot_of_drone[k]]
-        pts = [dep] + [cust_pos[c] for c in route] + [dep]
-        xs  = [p[0] for p in pts]
-        ys  = [p[1] for p in pts]
-        ax.plot(xs, ys, "-o", color=col, lw=1.5, markersize=5, zorder=3)
-        patch_handles.append(mpatches.Patch(color=col, label=f"Drone {k} (depot {depot_of_drone[k]})"))
+# ─── Simulation driver ───────────────────────────────────────────────────────
 
-    ax.legend(handles=patch_handles, loc="lower right", fontsize=8)
+def run_simulation():
+    """Run all strategies on both instances; returns results and LS history."""
+    res, hist = {}, {}
+    for inst in INSTANCES:
+        res[inst] = {}
+        res[inst]["Greedy NN"] = evaluate(greedy_nn(inst), inst)
+        res[inst]["Clarke-Wright"] = evaluate(clarke_wright(inst), inst)
+        plans, h = tw_insertion(inst)
+        res[inst]["TW insertion"] = evaluate(plans, inst)
+        hist[inst] = h
+    return res, hist
+
+
+# ─── Plots ────────────────────────────────────────────────────────────────────
+
+def _map(ax, r, title):
+    ax.set_xlim(0, 1000); ax.set_ylim(0, 1000); ax.set_aspect("equal")
+    ax.scatter(CUST_POS[:, 0], CUST_POS[:, 1], s=60, c="steelblue", zorder=4)
+    for c in range(N_CUSTOMERS):
+        ax.text(CUST_POS[c, 0] + 12, CUST_POS[c, 1] + 12, f"C{c}", fontsize=7)
+    for d, dp in enumerate(DEPOT_POS):
+        ax.plot(*dp, "^", ms=13, color="crimson", zorder=5)
+        ax.text(dp[0] + 15, dp[1] - 35, f"D{d}", color="crimson",
+                fontweight="bold")
+    handles = []
+    for k, plan in enumerate(r["plans"]):
+        dep = DEPOT_POS[DEPOT_OF_DRONE[k]]
+        for si, s in enumerate(plan):
+            pts = np.array([dep] + [CUST_POS[c] for c in s] + [dep])
+            ax.plot(pts[:, 0], pts[:, 1], color=COLORS[k], lw=1.6,
+                    ls="-" if si == 0 else "--", zorder=3)
+        if plan:
+            handles.append(mpatches.Patch(
+                color=COLORS[k], label=f"Drone {k} (D{DEPOT_OF_DRONE[k]}), "
+                f"{len(plan)} sortie{'s' if len(plan) > 1 else ''}"))
+    ax.legend(handles=handles, fontsize=6, loc="lower right")
+    ax.set_title(f"{title}\n{r['total_dist']:.0f} m, TWT {r['total_twt']:.1f}",
+                 fontsize=9)
     ax.grid(True, alpha=0.3)
-    fig.tight_layout()
-    path = os.path.join(OUT_DIR, filename)
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
 
 
-def plot_gantt(details, title, filename):
-    """Gantt chart: each drone's timeline."""
-    fig, ax = plt.subplots(figsize=(12, 5))
-    ax.set_title(title, fontsize=13)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Drone")
+def plot_route_maps(res):
+    fig, axes = plt.subplots(2, 3, figsize=(16, 11))
+    for row, inst in enumerate(INSTANCES):
+        for col, s in enumerate(STRATS):
+            _map(axes[row, col], res[inst][s], f"{inst} windows — {s}")
+    plt.suptitle("S029 — Routes (dashed: second or later sortie of a drone)")
+    plt.tight_layout()
+    _save(fig, "route_maps.png")
 
-    max_t = 0
-    for k, d in enumerate(details):
-        y = k
-        t_cur = 0.0
-        dep_pos = DEPOT_POS[d["depot"]]
-        pos = dep_pos.copy()
-        for (t_dep, t_arr, t_svc, c) in d["timeline"]:
-            # Travel bar
-            ax.barh(y, t_arr - t_dep, left=t_dep, height=0.4,
-                    color="steelblue", edgecolor="white", linewidth=0.5)
-            # Wait bar (if waiting for time window)
-            if t_svc > t_arr:
-                ax.barh(y, t_svc - t_arr, left=t_arr, height=0.4,
-                        color="gold", edgecolor="white", linewidth=0.5)
-            # Service bar
-            ax.barh(y, SVC_TIME, left=t_svc, height=0.4,
-                    color="forestgreen", edgecolor="white", linewidth=0.5)
-            # Time-window marker
-            ax.plot([EARLY[c], EARLY[c]], [y - 0.3, y + 0.3], "k--", lw=0.8)
-            ax.plot([LATE[c],  LATE[c]],  [y - 0.3, y + 0.3], "r--", lw=0.8)
-            max_t = max(max_t, t_svc + SVC_TIME)
 
-    ax.set_yticks(range(len(details)))
-    ax.set_yticklabels([f"Drone {k}" for k in range(len(details))])
-    ax.set_xlim(0, max_t * 1.05 + 20)
-    ax.grid(True, axis="x", alpha=0.3)
-
-    legend_patches = [
-        mpatches.Patch(color="steelblue",   label="Travel"),
-        mpatches.Patch(color="gold",        label="Wait (time window)"),
+def plot_gantt(res, inst):
+    early, late = INSTANCES[inst]
+    fig, axes = plt.subplots(3, 1, figsize=(13, 10), sharex=True)
+    cols = {"fly": "steelblue", "wait": "gold", "svc": "forestgreen"}
+    for ax, s in zip(axes, STRATS):
+        r = res[inst][s]
+        for k, sch in enumerate(r["sched"]):
+            for kind, t0, t1, _, _, c in sch["events"]:
+                ax.barh(k, t1 - t0, left=t0, height=0.45, color=cols[kind],
+                        edgecolor="white", lw=0.4)
+                if kind == "svc":
+                    late_c = t0 > late[c] + 1e-9
+                    ax.plot([early[c], late[c]], [k + 0.32, k + 0.32], "-",
+                            color="red" if late_c else "k", lw=2)
+                    ax.text(t0, k - 0.38, f"C{c}", fontsize=6,
+                            color="red" if late_c else "k")
+        ax.set_yticks(range(N_DRONES))
+        ax.set_yticklabels([f"Drone {k} (D{DEPOT_OF_DRONE[k]})"
+                            for k in range(N_DRONES)], fontsize=8)
+        ax.set_title(f"{s}: TWT {r['total_twt']:.1f}, late customers "
+                     f"{r['n_late']}, makespan {r['makespan']:.0f} s",
+                     fontsize=10)
+        ax.grid(True, axis="x", alpha=0.3)
+    axes[-1].set_xlabel("Time (s)")
+    axes[0].legend(handles=[
+        mpatches.Patch(color="steelblue", label="Travel"),
+        mpatches.Patch(color="gold", label="Wait for window"),
         mpatches.Patch(color="forestgreen", label="Service"),
-    ]
-    ax.legend(handles=legend_patches, loc="upper right", fontsize=8)
-    fig.tight_layout()
-    path = os.path.join(OUT_DIR, filename)
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
+        plt.Line2D([], [], color="k", lw=2, label="Time window [e, l]"),
+        plt.Line2D([], [], color="red", lw=2, label="Window missed")],
+        fontsize=7, loc="upper right")
+    plt.suptitle(f"S029 — Drone timelines, {inst} time windows")
+    plt.tight_layout()
+    _save(fig, f"gantt_{inst}.png")
 
 
-def plot_comparison(results_dict, filename):
-    """Bar chart comparing metrics across strategies."""
-    strategies = list(results_dict.keys())
-    twt_vals   = [results_dict[s]["total_twt"]  for s in strategies]
-    dist_vals  = [results_dict[s]["total_dist"] for s in strategies]
-    obj_vals   = [results_dict[s]["objective"]  for s in strategies]
-
-    x = np.arange(len(strategies))
-    width = 0.25
-
-    fig, axes = plt.subplots(1, 3, figsize=(13, 5))
-    fig.suptitle("Strategy Comparison — S029 Urban Logistics Scheduling", fontsize=13)
-
-    for ax, vals, ylabel, title, color in zip(
-        axes,
-        [twt_vals, dist_vals, obj_vals],
-        ["Total Weighted Tardiness (s)", "Total Flight Distance (m)", "Composite Objective"],
-        ["Weighted Tardiness", "Total Distance", "Objective (α=0.7)"],
-        ["salmon", "steelblue", "mediumpurple"]
-    ):
-        bars = ax.bar(x, vals, color=color, edgecolor="black", linewidth=0.8)
-        ax.set_xticks(x)
-        ax.set_xticklabels(strategies, fontsize=10)
-        ax.set_ylabel(ylabel, fontsize=9)
-        ax.set_title(title, fontsize=11)
-        ax.grid(True, axis="y", alpha=0.3)
-        for bar, v in zip(bars, vals):
-            ax.text(bar.get_x() + bar.get_width() / 2,
-                    bar.get_height() * 1.01, f"{v:.1f}",
-                    ha="center", va="bottom", fontsize=9)
-
-    fig.tight_layout()
-    path = os.path.join(OUT_DIR, filename)
-    fig.savefig(path, dpi=120)
-    plt.close(fig)
-    print(f"  Saved: {path}")
+def plot_comparison(res):
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    x = np.arange(len(STRATS))
+    for i, inst in enumerate(INSTANCES):
+        for ax, key, ttl in zip(axes, ["total_twt", "total_dist", "objective"],
+                                ["Weighted tardiness (s)", "Total distance (m)",
+                                 f"Objective (alpha = {ALPHA})"]):
+            vals = [res[inst][s][key] for s in STRATS]
+            b = ax.bar(x + (i - 0.5) * 0.38, vals, 0.38,
+                       label=f"{inst} windows",
+                       color=["steelblue", "darkorange"][i])
+            for bb, v in zip(b, vals):
+                ax.text(bb.get_x() + bb.get_width() / 2, v, f"{v:.0f}",
+                        ha="center", va="bottom", fontsize=8)
+            ax.set_title(ttl); ax.set_xticks(x); ax.set_xticklabels(STRATS)
+            ax.grid(axis="y", alpha=0.3)
+    axes[0].legend()
+    plt.suptitle("S029 — Strategy comparison")
+    plt.tight_layout()
+    _save(fig, "comparison_metrics.png")
 
 
-def plot_delivery_table(metrics, strategy_name, filename):
-    """Table of per-customer delivery time, window, tardiness."""
-    deliveries = metrics["deliveries"]
+def plot_delivery_table(r, inst, name):
+    early, late = INSTANCES[inst]
     rows = []
     for c in range(N_CUSTOMERS):
-        svc_t = deliveries.get(c, float("nan"))
-        tardi = max(0.0, svc_t - LATE[c]) * WEIGHT[c] if not np.isnan(svc_t) else float("nan")
-        rows.append([f"C{c}", f"{EARLY[c]:.1f}", f"{LATE[c]:.1f}",
-                     f"{svc_t:.1f}", f"{tardi:.2f}"])
-
-    fig, ax = plt.subplots(figsize=(9, 4.5))
+        s = r["deliv"][c]
+        rows.append([f"C{c}", f"{early[c]:.1f}", f"{late[c]:.1f}",
+                     f"{s:.1f}", f"{max(0, s - late[c]):.1f}",
+                     f"{WEIGHT[c] * max(0, s - late[c]):.1f}"])
+    fig, ax = plt.subplots(figsize=(10, 4.8))
     ax.axis("off")
-    ax.set_title(f"Per-Customer Delivery Details — {strategy_name}", fontsize=12)
-    cols = ["Customer", "Earliest (s)", "Latest (s)", "Delivery (s)", "Weighted Tardiness"]
-    table = ax.table(cellText=rows, colLabels=cols, loc="center", cellLoc="center")
-    table.auto_set_font_size(False)
-    table.set_fontsize(9)
-    table.scale(1.1, 1.4)
-    fig.tight_layout()
-    path = os.path.join(OUT_DIR, filename)
-    fig.savefig(path, dpi=120)
+    ax.set_title(f"S029 — Per-customer deliveries, {name}, {inst} windows")
+    tb = ax.table(cellText=rows, cellLoc="center", loc="center",
+                  colLabels=["Customer", "Earliest (s)", "Latest (s)",
+                             "Service start (s)", "Late by (s)",
+                             "Weighted tardiness"])
+    tb.auto_set_font_size(False); tb.set_fontsize(9); tb.scale(1.1, 1.35)
+    plt.tight_layout()
+    _save(fig, "delivery_table.png")
+
+
+def plot_convergence(hist):
+    fig, ax = plt.subplots(figsize=(8, 4))
+    for inst, h in hist.items():
+        ax.plot(range(len(h)), h, "o-", label=f"{inst} windows")
+    ax.set_xlabel("Accepted relocate moves (0 = after insertion)")
+    ax.set_ylabel("Objective")
+    ax.set_title("S029 — TW insertion: relocate local search")
+    ax.grid(True, alpha=0.3); ax.legend()
+    plt.tight_layout()
+    _save(fig, "ls_convergence.png")
+
+
+def _save(fig, name):
+    fig.savefig(os.path.join(OUT_DIR, name), dpi=120)
     plt.close(fig)
-    print(f"  Saved: {path}")
+    print(f"  Saved: {name}")
 
 
-# ─── Animation ───────────────────────────────────────────────────────────────
+def save_animation(r, inst, name, n_frames=120, fps=10):
+    """Top-down GIF of one solution (<= 150 frames)."""
+    sched = r["sched"]
+    t_end = max(s["end"] for s in sched)
+    times = np.linspace(0, t_end, n_frames)
 
-def save_animation(drone_routes, depot_of_drone, cust_pos, depot_pos,
-                   details, fps=20, trail_len=20):
-    """
-    Create a 2-D top-down animated GIF showing all drones flying their routes
-    simultaneously over time (Clarke-Wright solution).
+    def pos_at(k, t):
+        for kind, t0, t1, p0, p1, _ in sched[k]["events"]:
+            if t0 <= t <= t1:
+                f = (t - t0) / (t1 - t0) if t1 > t0 else 1.0
+                return np.asarray(p0) + f * (np.asarray(p1) - np.asarray(p0))
+        return DEPOT_POS[DEPOT_OF_DRONE[k]]
 
-    Each drone's route is pre-computed as a sequence of (x, y) waypoints at
-    every simulated time step (dt = 1/fps seconds of simulation per frame).
-    The animation runs until the last drone returns to its depot.
-    """
-    dt = 1.0 / fps   # simulated seconds per frame
-
-    # ── Build per-drone waypoint streams ─────────────────────────────────────
-    # For each drone we generate a continuous (x, y) position trace sampled at
-    # every dt seconds of simulation time.
-
-    def build_trace(route, dep_pos, cust_pos_arr, v, svc_time):
-        """
-        Returns a list of (t, x, y) samples plus a dict {customer: t_delivered}.
-        Samples are spaced at most dt apart; we'll interpolate to a uniform
-        time grid afterwards.
-        """
-        events = []          # (t_start, t_end, x_start, y_start, x_end, y_end)
-        delivered = {}       # customer_idx -> time delivered
-
-        pos = dep_pos.copy()
-        t = 0.0
-
-        for c in route:
-            dest = cust_pos_arr[c]
-            leg = dist(pos, dest)
-            travel_time = leg / v
-            t_arrive = t + travel_time
-            t_svc    = max(t_arrive, EARLY[c])
-            delivered[c] = t_svc
-
-            # Flight segment
-            events.append((t, t_arrive, pos[0], pos[1], dest[0], dest[1], "fly"))
-            # Wait (if any)
-            if t_svc > t_arrive:
-                events.append((t_arrive, t_svc,
-                                dest[0], dest[1], dest[0], dest[1], "wait"))
-            # Service
-            events.append((t_svc, t_svc + svc_time,
-                            dest[0], dest[1], dest[0], dest[1], "service"))
-            pos = dest.copy()
-            t = t_svc + svc_time
-
-        # Return-to-depot leg
-        leg = dist(pos, dep_pos)
-        travel_time = leg / V_DRONE
-        events.append((t, t + travel_time,
-                        pos[0], pos[1], dep_pos[0], dep_pos[1], "fly"))
-        t_end = t + travel_time
-        return events, delivered, t_end
-
-    drone_events   = []
-    drone_deliver  = []
-    drone_t_end    = []
-
-    for k, route in enumerate(drone_routes):
-        dep_pos = depot_pos[depot_of_drone[k]]
-        evts, deliv, t_end = build_trace(route, dep_pos, cust_pos, V_DRONE, SVC_TIME)
-        drone_events.append(evts)
-        drone_deliver.append(deliv)
-        drone_t_end.append(t_end)
-
-    t_total   = max(drone_t_end) if drone_t_end else 1.0
-    n_frames  = max(2, int(np.ceil(t_total / dt)) + 1)
-
-    def drone_pos_at(k, t_query):
-        """Return (x, y) position of drone k at simulation time t_query."""
-        for (t0, t1, x0, y0, x1, y1, kind) in drone_events[k]:
-            if t0 <= t_query <= t1:
-                span = t1 - t0
-                frac = (t_query - t0) / span if span > 1e-9 else 1.0
-                return x0 + frac * (x1 - x0), y0 + frac * (y1 - y0)
-        # After all events: sit at depot
-        dep_pos = depot_pos[depot_of_drone[k]]
-        return dep_pos[0], dep_pos[1]
-
-    # Pre-compute position arrays  [n_frames, n_drones, 2]
-    times = np.linspace(0, t_total, n_frames)
-    pos_arr = np.zeros((n_frames, N_DRONES, 2))
-    for f, t_q in enumerate(times):
-        for k in range(N_DRONES):
-            pos_arr[f, k] = drone_pos_at(k, t_q)
-
-    # Set of (drone_k, customer_idx) pairs and when they are delivered
-    deliver_events = {}   # (k, c) -> frame index when delivered
-    for k in range(N_DRONES):
-        for c, t_del in drone_deliver[k].items():
-            frame_idx = int(np.searchsorted(times, t_del))
-            deliver_events[(k, c)] = frame_idx
-
-    # ── Set up figure ─────────────────────────────────────────────────────────
+    P = np.array([[pos_at(k, t) for k in range(N_DRONES)] for t in times])
     fig, ax = plt.subplots(figsize=(7, 7))
-    ax.set_xlim(0, 1000)
-    ax.set_ylim(0, 1000)
-    ax.set_aspect("equal")
-    ax.set_xlabel("x (m)", fontsize=9)
-    ax.set_ylabel("y (m)", fontsize=9)
+    ax.set_xlim(0, 1000); ax.set_ylim(0, 1000); ax.set_aspect("equal")
     ax.grid(True, alpha=0.25)
-    title_text = ax.set_title("Clarke-Wright Solution — t = 0 s", fontsize=11)
+    for d, dp in enumerate(DEPOT_POS):
+        ax.plot(*dp, "^", ms=13, color="crimson")
+    circ = [ax.plot(*CUST_POS[c], "o", ms=9, color="steelblue")[0]
+            for c in range(N_CUSTOMERS)]
+    for c in range(N_CUSTOMERS):
+        ax.text(CUST_POS[c, 0] + 11, CUST_POS[c, 1] + 11, f"C{c}", fontsize=7)
+    dots = [ax.plot([], [], "o", color=COLORS[k], ms=8,
+                    label=f"Drone {k}")[0] for k in range(N_DRONES)]
+    trails = [ax.plot([], [], "-", color=COLORS[k], lw=1.4, alpha=0.5)[0]
+              for k in range(N_DRONES)]
+    ax.legend(fontsize=7, loc="lower right")
+    ttl = ax.set_title("")
+    early, late = INSTANCES[inst]
 
-    # Static: depot triangles
-    for d_idx, dp in enumerate(depot_pos):
-        ax.plot(dp[0], dp[1], marker="^", markersize=14,
-                color="crimson", zorder=6)
-        ax.text(dp[0] + 14, dp[1] + 14, f"D{d_idx}", fontsize=8,
-                color="crimson", fontweight="bold")
-
-    # Static: customer circles (initially blue, turn green when delivered)
-    cust_circles = []
-    for c in range(len(cust_pos)):
-        circ, = ax.plot(cust_pos[c, 0], cust_pos[c, 1], "o",
-                        markersize=9, color="steelblue", zorder=5)
-        cust_circles.append(circ)
-        ax.text(cust_pos[c, 0] + 11, cust_pos[c, 1] + 11,
-                f"C{c}", fontsize=7, color="navy")
-
-    # Drone dots
-    drone_dots = []
-    for k in range(N_DRONES):
-        dot, = ax.plot([], [], "o", color=COLORS[k],
-                       markersize=8, zorder=8)
-        drone_dots.append(dot)
-
-    # Trail lines (one per drone)
-    trail_lines = []
-    for k in range(N_DRONES):
-        line, = ax.plot([], [], "-", color=COLORS[k],
-                        lw=1.5, alpha=0.55, zorder=7)
-        trail_lines.append(line)
-
-    # Legend patches
-    legend_handles = [mpatches.Patch(color=COLORS[k],
-                                     label=f"Drone {k} (depot {depot_of_drone[k]})")
-                      for k in range(N_DRONES)]
-    ax.legend(handles=legend_handles, loc="lower right", fontsize=7)
-
-    # Track which customers have been delivered
-    delivered_flags = [False] * len(cust_pos)
-
-    def init():
-        for dot in drone_dots:
-            dot.set_data([], [])
-        for line in trail_lines:
-            line.set_data([], [])
-        for circ in cust_circles:
-            circ.set_color("steelblue")
-        return drone_dots + trail_lines + cust_circles + [title_text]
-
-    def update(frame):
-        t_now = times[frame]
-        title_text.set_text(f"Clarke-Wright Solution — t = {t_now:.1f} s")
-
-        # Check deliveries up to this frame
-        for (k, c), del_frame in deliver_events.items():
-            if frame >= del_frame and not delivered_flags[c]:
-                delivered_flags[c] = True
-                cust_circles[c].set_color("limegreen")
-
+    def update(f):
+        t = times[f]
+        for c in range(N_CUSTOMERS):
+            s = r["deliv"][c]
+            if t >= s:
+                circ[c].set_color("red" if s > late[c] + 1e-9 else "limegreen")
         for k in range(N_DRONES):
-            x, y = pos_arr[frame, k]
-            drone_dots[k].set_data([x], [y])
+            dots[k].set_data([P[f, k, 0]], [P[f, k, 1]])
+            lo = max(0, f - 8)
+            trails[k].set_data(P[lo:f + 1, k, 0], P[lo:f + 1, k, 1])
+        ttl.set_text(f"{name}, {inst} windows — t = {t:.0f} s\n"
+                     "(green: delivered in window, red: late)")
+        return dots + trails + circ + [ttl]
 
-            # Trail: last trail_len frames
-            start = max(0, frame - trail_len)
-            trail_x = pos_arr[start:frame + 1, k, 0]
-            trail_y = pos_arr[start:frame + 1, k, 1]
-            trail_lines[k].set_data(trail_x, trail_y)
-
-        return drone_dots + trail_lines + cust_circles + [title_text]
-
-    anim = FuncAnimation(fig, update, frames=n_frames,
-                         init_func=init, blit=True, interval=1000 // fps)
-
-    gif_path = os.path.join(OUT_DIR, "animation.gif")
-    anim.save(gif_path, writer="pillow", fps=fps)
+    anim = FuncAnimation(fig, update, frames=n_frames, blit=False)
+    anim.save(os.path.join(OUT_DIR, "animation.gif"), writer="pillow", fps=fps)
     plt.close(fig)
-    print(f"  Saved: {gif_path}")
+    print(f"  Saved: animation.gif ({n_frames} frames, {fps} fps, "
+          f"{t_end:.0f} s of flight)")
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
-def main():
-    print("=" * 60)
-    print("S029  Urban Logistics Scheduling")
-    print("=" * 60)
-
-    # ── Strategy 1: Greedy NN ──────────────────────────────────────
-    print("\n[1/2] Greedy Nearest-Neighbour ...")
-    nn_routes, nn_depot_of_drone = greedy_nn(
-        DEPOT_POS, CUST_POS, DEMAND, Q_MAX, R_MAX, N_DRONES
-    )
-    nn_metrics, nn_details = evaluate_solution(
-        nn_routes, nn_depot_of_drone,
-        CUST_POS, EARLY, LATE, WEIGHT, V_DRONE, SVC_TIME
-    )
-
-    # ── Strategy 2: Clarke-Wright Savings ─────────────────────────
-    print("[2/2] Clarke-Wright Savings ...")
-    cw_routes, cw_depot_of_drone = clarke_wright(
-        DEPOT_POS, CUST_POS, DEMAND, Q_MAX, R_MAX, N_DRONES
-    )
-    cw_metrics, cw_details = evaluate_solution(
-        cw_routes, cw_depot_of_drone,
-        CUST_POS, EARLY, LATE, WEIGHT, V_DRONE, SVC_TIME
-    )
-
-    # ── Plots ──────────────────────────────────────────────────────
-    print("\nGenerating plots ...")
-
-    plot_route_map(nn_routes, nn_depot_of_drone, CUST_POS, DEPOT_POS,
-                   "Route Map — Greedy Nearest-Neighbour",
-                   "route_map_greedy_nn.png")
-
-    plot_route_map(cw_routes, cw_depot_of_drone, CUST_POS, DEPOT_POS,
-                   "Route Map — Clarke-Wright Savings",
-                   "route_map_clarke_wright.png")
-
-    plot_gantt(nn_details,
-               "Drone Timeline — Greedy Nearest-Neighbour",
-               "gantt_greedy_nn.png")
-
-    plot_gantt(cw_details,
-               "Drone Timeline — Clarke-Wright Savings",
-               "gantt_clarke_wright.png")
-
-    all_results = {
-        "Greedy NN":     nn_metrics,
-        "Clarke-Wright": cw_metrics,
-    }
-    plot_comparison(all_results, "comparison_metrics.png")
-
-    plot_delivery_table(cw_metrics, "Clarke-Wright Savings",
-                        "delivery_table_clarke_wright.png")
-
-    print("\nGenerating animation (Clarke-Wright solution) ...")
-    save_animation(cw_routes, cw_depot_of_drone, CUST_POS, DEPOT_POS,
-                   cw_details)
-
-    # ── Console summary ────────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("SIMULATION RESULTS SUMMARY")
-    print("=" * 60)
-    for name, m in all_results.items():
-        print(f"\n  Strategy : {name}")
-        print(f"    Active routes        : {m['n_routes']}")
-        print(f"    Total flight distance: {m['total_dist']:.1f} m")
-        print(f"    Total weighted TWT   : {m['total_twt']:.2f} s")
-        print(f"    Composite objective  : {m['objective']:.2f}")
-        customers_served = len(m["deliveries"])
-        print(f"    Customers served     : {customers_served} / {N_CUSTOMERS}")
-
-    best = min(all_results, key=lambda k: all_results[k]["objective"])
-    print(f"\n  Best strategy: {best}")
-    dist_improvement = (
-        (nn_metrics["total_dist"] - cw_metrics["total_dist"])
-        / nn_metrics["total_dist"] * 100
-        if nn_metrics["total_dist"] > 0 else 0
-    )
-    print(f"  Clarke-Wright distance improvement over Greedy NN: "
-          f"{dist_improvement:.1f}%")
-    print("\n  Per-drone route summary (Clarke-Wright):")
-    for k, (route, det) in enumerate(zip(cw_routes, cw_details)):
-        print(f"    Drone {k} (depot {cw_depot_of_drone[k]}): "
-              f"route {route}  dist={det['dist']:.1f} m  TWT={det['twt']:.2f} s")
-    print("\n  Output files saved to:")
-    print(f"  {OUT_DIR}")
-    print("=" * 60)
-
-
 if __name__ == "__main__":
-    main()
+    print("=" * 66)
+    print("S029  Urban Logistics Scheduling")
+    print("=" * 66)
+    res, hist = run_simulation()
+    for inst in INSTANCES:
+        early, late = INSTANCES[inst]
+        print(f"\n### {inst} time windows: earliest {early.min():.1f}-"
+              f"{early.max():.1f} s, width {(late - early).min():.1f}-"
+              f"{(late - early).max():.1f} s")
+        for s in STRATS:
+            m = res[inst][s]
+            print(f"  {s:14s}: dist {m['total_dist']:7.1f} m | TWT "
+                  f"{m['total_twt']:7.2f} | late {m['n_late']:2d}/12 | obj "
+                  f"{m['objective']:8.2f} | makespan {m['makespan']:6.1f} s | "
+                  f"sorties {m['n_sorties']:2d} on {m['n_drones_used']} drones"
+                  f" | max load {m['max_load']:.2f} kg, max sortie "
+                  f"{m['max_len']:.0f} m | served {m['served']}/12")
+            for k, p in enumerate(m["plans"]):
+                if p:
+                    print(f"      drone {k} (D{DEPOT_OF_DRONE[k]}): {p}")
+        h = hist[inst]
+        print(f"  TW insertion local search: {h[0]:.2f} -> {h[-1]:.2f} "
+              f"({len(h) - 1} relocate moves)")
+        m = res[inst]["TW insertion"]
+        for c in sorted(m["deliv"]):
+            late_by = m["deliv"][c] - late[c]
+            if late_by > 1e-9:
+                d = min(dist(dp, CUST_POS[c]) for dp in DEPOT_POS)
+                print(f"    late C{c}: {late_by:.1f} s late, weighted "
+                      f"{WEIGHT[c] * late_by:.1f} -> objective cost "
+                      f"{ALPHA * WEIGHT[c] * late_by:.1f}; a dedicated sortie"
+                      f" from the nearest depot ({d:.1f} m away) would cost "
+                      f"{(1 - ALPHA) * 2 * d:.1f} in distance")
+    print("\nGenerating plots ...")
+    plot_route_maps(res)
+    plot_gantt(res, "card")
+    plot_gantt(res, "tight")
+    plot_comparison(res)
+    best = min(STRATS, key=lambda s: res["tight"][s]["objective"])
+    print(f"  Best on tight windows: {best}")
+    plot_delivery_table(res["tight"][best], "tight", best)
+    plot_convergence(hist)
+    save_animation(res["tight"]["TW insertion"], "tight", "TW insertion")
