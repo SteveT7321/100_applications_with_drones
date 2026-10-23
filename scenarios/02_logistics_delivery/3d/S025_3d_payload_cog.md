@@ -1,7 +1,8 @@
 # S025 3D Upgrade — Payload CoG Offset
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S025 original](../S025_payload_cog_offset.md)
+**Implementation**: `src/02_logistics_delivery/3d/s025_3d_payload_cog.py`. Results are in [outputs/02_logistics_delivery/3d/s025_3d_payload_cog/](../../../outputs/02_logistics_delivery/3d/s025_3d_payload_cog/README.md). The implementation found that the expected $\Delta r_z$ → yaw amplification does **not** occur (see the corrections below and the README).
 
 ---
 
@@ -96,19 +97,29 @@ $$\boldsymbol{\tau}_{dist} \approx \Delta\mathbf{r} \times \begin{bmatrix}m_{pay
 
 At hover ($\phi = \theta = 0$) this reduces to the three axis-wise components:
 
-$$\tau_{dist,x} = +m_{pay}\,g\,\Delta r_y \quad\text{(roll)}$$
-$$\tau_{dist,y} = -m_{pay}\,g\,\Delta r_x \quad\text{(pitch)}$$
-$$\tau_{dist,z} = +m_{pay}\,g\,(\Delta r_x\,\phi - \Delta r_y\,\theta) \quad\text{(yaw — zero at exact hover)}$$
+$$\tau_{dist,x} = -m_{pay}\,g\,\Delta r_y + m_{pay}\,g\,\Delta r_z\,\phi \quad\text{(roll)}$$
+$$\tau_{dist,y} = +m_{pay}\,g\,\Delta r_x + m_{pay}\,g\,\Delta r_z\,\theta \quad\text{(pitch)}$$
+$$\tau_{dist,z} = -m_{pay}\,g\,(\Delta r_x\,\phi + \Delta r_y\,\theta) \quad\text{(yaw — zero at exact hover)}$$
 
-For the chosen parameters:
+For the chosen parameters (right-handed body frame, x forward, y left, z up):
 
-$$\tau_{dist,x} = 0.80 \times 9.81 \times 0.08 = +0.628 \text{ N·m}$$
-$$\tau_{dist,y} = 0.80 \times 9.81 \times 0.12 = -0.942 \text{ N·m}$$
+$$\tau_{dist,x} = -0.80 \times 9.81 \times 0.08 = -0.628 \text{ N·m}$$
+$$\tau_{dist,y} = +0.80 \times 9.81 \times 0.12 = +0.942 \text{ N·m}$$
 
-The $\Delta r_z$ component ($-0.06$ m) does not add a hover torque but modifies
-the state-dependent yaw term: as roll or pitch deviates, a yaw disturbance
-proportional to $m_{pay}\,g\,\Delta r_z \cdot \sin(\phi)\,\text{or}\,\sin(\theta)$
-appears, pulling yaw away from the reference.
+> **Correction (2026-10-24, from the 3D implementation).** An earlier version of this
+> card printed $\tau_{x} = +m_{pay}g\Delta r_y$, $\tau_{y} = -m_{pay}g\Delta r_x$ (the 2D
+> model's sign convention) and $\tau_{z} = +m_{pay}g(\Delta r_x\phi - \Delta r_y\theta)$, and
+> claimed that $\Delta r_z$ produces a state-dependent **yaw** torque with gain
+> $m_{pay}g\Delta r_z = 0.471$ N·m/rad. Evaluating the cross product above shows that
+> $\Delta r_z$ does **not** appear in $\tau_z$. It appears in $\tau_x$ and $\tau_y$ as a
+> pendulum stiffness of 0.471 N·m/rad, which is restoring for $\Delta r_z < 0$. The physical
+> direction of the hover torques is unchanged: the payload side dips. Note also that
+> this formula is the payload-weight moment about the geometric centre. In free flight,
+> gravity has no moment about the system CoM, and the offset torque is instead the thrust
+> moment $-\mathbf{r}_c \times T\hat{\mathbf{e}}_z$ with $\mathbf{r}_c = (m_{pay}/m)\Delta\mathbf{r}$.
+> That moment is independent of $\Delta r_z$ and has no yaw component. $\Delta r_z$ then reaches
+> yaw only through the products of inertia $I_{xz}, I_{yz}$. The implementation runs both
+> models; see the outputs README.
 
 ### 6-DOF Rigid Body Dynamics
 
@@ -148,11 +159,17 @@ where $K_p$, $K_d$, $K_i$ are scalar gains applied identically on all axes
 From the linearised hover equilibrium with PD only
 ($K_p\,(\boldsymbol{\eta}_{ref} - \boldsymbol{\eta}_{ss}) + \boldsymbol{\tau}_{dist}^{hover} = \mathbf{0}$):
 
-$$\begin{bmatrix}\phi_{trim}\\\theta_{trim}\\\psi_{trim}\end{bmatrix} = \frac{1}{K_p}\begin{bmatrix}-\tau_{dist,x}/I_{xx} \\ -\tau_{dist,y}/I_{yy} \\ 0\end{bmatrix}$$
+$$\begin{bmatrix}\phi_{trim}\\\theta_{trim}\\\psi_{trim}\end{bmatrix} = \frac{1}{K_p}\begin{bmatrix}-\tau_{dist,x} \\ -\tau_{dist,y} \\ 0\end{bmatrix}$$
 
-The yaw trim is zero at hover (no hover yaw moment), but the feedforward mode
-cannot compensate the state-dependent yaw coupling that grows with tilt angle,
-which is the key weakness exposed in this scenario.
+(Corrected 2026-10-24: an earlier version also divided by $I_{xx}$ and $I_{yy}$. $K_p$ maps an
+angle to a **torque**, so the trim is $-\tau/K_p$ in rad. This is the same unit fix as in the
+2D S025.)
+
+The yaw trim is zero at hover (no hover yaw moment). The card originally expected
+that the feedforward mode could not compensate a tilt-dependent yaw coupling. The 3D
+implementation found no such effect: the static trim ends with zero yaw error. Its real
+weakness is that, in free flight, the offset torque scales with thrust, so the hover trim
+is wrong on climb and descent legs.
 
 ### 3D Attitude Error Magnitude
 
@@ -173,7 +190,9 @@ $$T = \frac{m(g + a_z^{cmd})}{\cos\phi\cos\theta}$$
 
 For the maximum tilt limit $\phi_{max} = \theta_{max} = 25°$:
 
-$$T_{max} = \frac{m\,g}{\cos^2(25°)} \approx 1.21\,m g$$
+$$T_{max} = \frac{m\,g}{\cos^2(25°)} \approx 1.22\,m g$$
+
+($1/\cos^2 25° = 1.217$; corrected from 1.21.)
 
 Exceeding this increases rotor loading; the simulation clips thrust at $1.3\,mg$
 and records saturation events.
@@ -208,7 +227,9 @@ state-dependent yaw moment from accumulating into a heading drift.
   descent segments so tilt disturbance projects differently onto the world
   horizontal plane at each leg
 - **Thrust saturation tracking**: records timesteps where $T > T_{sat}$ to
-  quantify rotor over-demand caused by the $\Delta r_z$ coupling
+  quantify rotor over-demand (correction: the simulation shows the saturation
+  comes from the climb command, not from the $\Delta r_z$ coupling; see the
+  results README)
 
 ---
 
@@ -219,16 +240,16 @@ state-dependent yaw moment from accumulating into a heading drift.
 | Total mass $m$ | 2.30 kg |
 | Payload mass $m_{pay}$ | 0.80 kg |
 | CoG offset $\Delta\mathbf{r}$ | (+0.12, +0.08, −0.06) m |
-| Hover disturbance torque (roll) | +0.628 N·m |
-| Hover disturbance torque (pitch) | −0.942 N·m |
-| State-dep. yaw disturbance gain | $m_{pay}\,g\,\Delta r_z = 0.471$ N·m/rad |
+| Hover disturbance torque (roll) | −0.628 N·m (x-fwd/y-left/z-up; earlier printed +0.628 in the 2D sign convention) |
+| Hover disturbance torque (pitch) | +0.942 N·m (earlier printed −0.942 in the 2D sign convention) |
+| $\Delta r_z$ pendulum stiffness (acts on roll/pitch, not yaw; corrected) | $m_{pay}\,g\,\lvert\Delta r_z\rvert = 0.471$ N·m/rad |
 | Inertia $(I_{xx}, I_{yy}, I_{zz})$ | (0.015, 0.015, 0.025) kg·m² |
 | PD position gains $(K_{p,pos}, K_{d,pos})$ | 1.5, 1.8 |
 | PID attitude gains $(K_p, K_d, K_i)$ | 8.0, 3.0, 2.0 |
 | Anti-windup limit $s_{max}$ (roll/pitch) | 0.5 rad·s |
 | Anti-windup limit $s_{max}$ (yaw) | 0.3 rad·s |
 | Max tilt $\phi_{max},\,\theta_{max}$ | 25° |
-| Thrust saturation $T_{sat}$ | $1.3\,mg$ = 29.4 N |
+| Thrust saturation $T_{sat}$ | $1.3\,mg$ = 29.33 N (corrected from 29.4) |
 | Control frequency | 200 Hz |
 | Mission waypoints | 5 (mixed altitudes, z ∈ [0.3, 4.0] m) |
 | Waypoint reach radius | 0.15 m |
