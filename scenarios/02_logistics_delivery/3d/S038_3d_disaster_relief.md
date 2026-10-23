@@ -1,6 +1,6 @@
 # S038 3D Upgrade — Disaster Relief Drop
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S038 original](../S038_disaster_relief_drop.md)
 
 ---
@@ -88,14 +88,29 @@ Using a simplified drag model with drag constant $C_d$:
 
 $$\ddot{z} = -g + \frac{C_d}{m_p}(\dot{z}^2)\,\text{sgn}(-\dot{z})$$
 
-The vertical time-of-flight $T_{fall}$ satisfies (terminal velocity $v_t = \sqrt{m_p g / C_d}$):
+The vertical time-of-flight $T_{fall}$ for a release with zero vertical velocity
+(terminal velocity $v_t = \sqrt{m_p g / C_d}$) follows from
+$z_r = \frac{v_t^2}{g}\ln\cosh\!\left(\frac{g\,T_{fall}}{v_t}\right)$:
 
-$$T_{fall} = \frac{v_t}{g} \ln\!\left(\cosh\!\left(\frac{g \cdot z_r}{v_t^2}\right)\right)^{1/2}
-\cdot 2 \approx \sqrt{\frac{2 z_r}{g}} \quad \text{(low-drag approximation)}$$
+$$T_{fall} = \frac{v_t}{g}\,\operatorname{arccosh}\!\left(\exp\!\left(\frac{g\, z_r}{v_t^2}\right)\right)
+\;\approx\; \sqrt{\frac{2 z_r}{g}} \quad \text{only when } g z_r / v_t^2 \ll 1$$
 
-Horizontal displacement during fall (drone forward velocity + wind drift):
+> **Card correction (2026-10-24).** The earlier expression
+> $\frac{v_t}{g}\ln(\cosh(g z_r/v_t^2))^{1/2}\cdot 2$ does not solve the drag ODE.
+> With $C_d = 0.3$ kg/m and $m_p$ = 0.5–4 kg, $v_t$ = 4.0–11.4 m/s and
+> $g z_r / v_t^2$ = 1.35–10.8 at $z_r$ = 18 m, so the low-drag approximation does not hold:
+> the true fall time is, for example, 2.36 s for 4 kg and 3.55 s for 1 kg, not 1.92 s.
+
+Horizontal displacement during fall (card's closed-form estimate: drone forward velocity + wind drift):
 
 $$\Delta \mathbf{p}_{bal} = \left(\mathbf{v}_{k,xy} + \mathbf{w}_{xy}\right) \cdot T_{fall}$$
+
+> **Card correction (2026-10-24).** This estimate does not follow from the drag model. Without
+> drag the wind does not move the package at all. With drag the forward velocity decays
+> within about $m_p / (C_d \|\mathbf{v}_{rel}\|)$ seconds, and the package only gradually picks up
+> the wind speed. The 3D implementation integrates the full 3-D quadratic-drag ODE
+> $\ddot{\mathbf{p}} = -g\hat{\mathbf{z}} - \frac{C_d}{m_p}\|\dot{\mathbf{p}} - \mathbf{w}\|(\dot{\mathbf{p}} - \mathbf{w})$
+> numerically, and keeps this closed-form estimate only as a comparison method.
 
 where $\mathbf{v}_{k,xy}$ is the drone's horizontal velocity at release. Wind-corrected release
 point for site $i$ at ground position $\mathbf{s}_i$:
@@ -110,8 +125,10 @@ continues to the next waypoint without descending. Drop dwell time reduces to $\
 ### Landing Accuracy Constraint
 
 The payload lands at $\hat{\mathbf{s}}_i = \mathbf{s}_i + \boldsymbol{\epsilon}_{wind}$ where
-$\boldsymbol{\epsilon}_{wind}$ is the residual wind-estimation error (assumed Gaussian,
-$\sigma_w = 0.5$ m). Delivery is accepted if:
+$\boldsymbol{\epsilon}_{wind}$ is the landing error caused by the residual wind-estimation error
+(the wind error is Gaussian per horizontal axis with $\sigma_w = 0.5$ m/s; card correction: the
+unit is m/s, not m, otherwise $3\sigma_w T_{fall}$ below would not be a length). Delivery is
+accepted if:
 
 $$\|\hat{\mathbf{s}}_i - \mathbf{s}_i\| \leq r_{LZ} = 3 \text{ m}$$
 
@@ -119,7 +136,10 @@ The 3-sigma landing radius under estimated wind error:
 
 $$r_{3\sigma} = 3 \sigma_w \cdot T_{fall} \leq r_{LZ}$$
 
-This constrains minimum approach speed and maximum release altitude.
+This constrains minimum approach speed and maximum release altitude. With the corrected
+$T_{fall}$ the criterion gives $z_r \le$ 9.1 m (1 kg), 12.4 m (2.5 kg) and 14.1 m (4 kg), so the
+nominal $z_r = 18$ m does **not** satisfy it: at 18 m, $3\sigma_w T_{fall}$ = 3.5 m (4 kg) to
+5.3 m (1 kg).
 
 ### 3D Debris-Field Avoidance (AABB Clearance)
 
@@ -133,7 +153,10 @@ $t_{max}^{(j)} \geq 0$, $t_{min}^{(j)} \leq 1$.
 If a segment intersects an obstacle, a **vertical detour waypoint** is inserted at the
 midpoint of the segment, raised to $z_{detour} = z_j^{max} + \Delta z_{clear}$:
 
-$$\mathbf{w}_{detour} = \frac{\mathbf{A} + \mathbf{B}}{2} + \begin{pmatrix} 0 \\ 0 \\ z_j^{max} + \Delta z_{clear} \end{pmatrix}$$
+$$\mathbf{w}_{detour} = \begin{pmatrix} (A_x + B_x)/2 \\ (A_y + B_y)/2 \\ \max\!\left(\frac{A_z + B_z}{2},\; z_j^{max} + \Delta z_{clear}\right) \end{pmatrix}$$
+
+(Card correction, 2026-10-24: the earlier formula *added* $z_j^{max} + \Delta z_{clear}$ to the
+midpoint altitude. That contradicts "raised to $z_{detour}$" and can exceed the 40 m bound.)
 
 with clearance margin $\Delta z_{clear} = 5$ m. The modified two-segment route
 $\mathbf{A} \to \mathbf{w}_{detour} \to \mathbf{B}$ is re-checked recursively until all
@@ -199,7 +222,7 @@ $$V_i(t) = \frac{\pi_{max} + 1 - \pi_i}{\pi_{max}} \cdot \exp\!\left(-\lambda \c
 | Altitude bounds | 5 – 40 m |
 | Release altitude $z_r$ | 18 m (2 m below cruise) |
 | Landing zone radius $r_{LZ}$ | 3 m |
-| Wind estimation error $\sigma_w$ | 0.5 m |
+| Wind estimation error $\sigma_w$ | 0.5 m/s (per horizontal axis) |
 | Drag constant $C_d$ | 0.3 kg/m |
 | Debris obstacles $N_{obs}$ | 6 AABBs, $z^{max} \leq 15$ m |
 | Obstacle clearance margin $\Delta z_{clear}$ | 5 m |
