@@ -1,6 +1,6 @@
 # S045 3D Upgrade — Chemical Plume Tracing
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S045 original](../S045_plume_tracing.md)
 
 ---
@@ -38,7 +38,7 @@ to vary altitude between 0.5 m and 8.0 m. Key additions:
 volume (ground to 10 m altitude). The source emits continuously at rate $Q = 1.0$ g/s and is
 elevated at some unknown height $z_s \in [0.5, 6.0]$ m (e.g. a stack vent or a pipe fitting on a
 platform). Mean wind blows along $+x$ at $u = 3.0$ m/s; vertical wind is negligible. A single
-drone starts downwind at position $(20, 80, 2)$ m and carries a chemical sensor sampling at 10 Hz.
+drone starts downwind at position $(170, 100, 2)$ m (an earlier version said $(20, 80, 2)$ m, where the concentration is zero for every source with $x_s > 20$ m because the plume extends only downwind (+x)) and carries a chemical sensor sampling at 10 Hz.
 The drone must trace the plume back to the source in all three dimensions, determining both the
 horizontal location and the elevation of the release point.
 
@@ -210,7 +210,7 @@ where the norm is the full Euclidean distance in $(x, y, z)$.
 | Wind speed $u$ | 3.0 m/s (along $+x$) |
 | Drone altitude range | 0.5 – 8.0 m |
 | Sensor noise $\sigma_{noise}$ | 0.05 (normalised) |
-| Detection threshold $C_{thresh}$ | 0.02 (normalised) |
+| Detection threshold $C_{thresh}$ | 0.15 (normalised, = 3σ_noise; an earlier version said 0.02, below the noise, as fixed in S045) |
 | Surge speed $v_{surge}$ | 1.5 m/s (horizontal) |
 | Cast speed $v_{cast}$ | 0.8 m/s (horizontal) |
 | Vertical cast speed $v_{z,cast}$ | 0.4 m/s |
