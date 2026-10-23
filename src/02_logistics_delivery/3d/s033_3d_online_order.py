@@ -85,7 +85,7 @@ B_INIT_LO      = 0.75         # initial battery ~ B_FULL * U(0.75, 1.0)   (2D S0
 T_CAP          = 3000.0       # s safety cap
 R_TERM         = 20.0         # m depot pad radius (= r_sep); LoS there reported apart
 SEED0          = 0
-N_SEEDS        = 100          # Monte-Carlo instances 0..99
+N_SEEDS        = 100          # Monte-Carlo: first 100 battery-feasible seeds from SEED0 (0-115, 16 skipped)
 
 DRONE_COLORS = ['tab:red', 'tab:blue', 'tab:green', 'tab:orange']
 STRATEGIES = ['cheapest_3d', 'nearest_3d', 'corridor_pref', 'least_loaded',
