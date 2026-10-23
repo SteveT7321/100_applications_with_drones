@@ -116,7 +116,15 @@ Paired differences (flat − stacked, same seeds):
 - **Triangulation now runs on every step**, with no true range anywhere. All three sensors are inside their 8 m zone in 471 of 500 steps, and two are in the other 29 (t = 12.40–13.80 s), so a pair is always available. The SNR 0.4 threshold is not a usable gate here: only 21 of 500 steps have two sensors above it.
 - **Large errors come from geometry and noise, not from handoffs.** The worst error (6.307 m) occurs at the step with the largest geometry bound (2.827 m). There the two lines of sight cross at 171.3° (nearly collinear), 1.95 s after a handoff. Errors are not higher near handoffs (0.464 m within ±0.5 s vs 0.499 m elsewhere). As in the fixed 2D S015, the card's "error spikes at handoff" does not hold. Errors stay within a few multiples of the bearing-only bound (p95 = 1.90 bounds, max 4.42).
 - **Stacked sensors do not improve z accuracy; flat sensors do.** Against the card's flat z = 3 m layout, stacking lowers the median 3D error by 0.022 m (better in 48/50 seeds) but raises the median z error by 0.044 m (worse in all 50 seeds). The noise-free geometry bound shows the same thing (σ_z 0.302 m stacked vs 0.195 m flat).
-- **Why z gets worse.** The noise-free bound shows it is geometry, not noise. The target flies at 0.5–3.5 m, and stacking puts sensor 2 at 5.0 m, which is in the triangulation pair in 221 of 500 steps. A likely mechanism: a sensor far above the target looks steeply down, so its 0.07 rad elevation noise maps into z more strongly than for sensors near the target's altitude.
+- **Where the z error comes from.** The noise-free bound shows the z penalty is geometry, not noise. But it is not simply the high 5.0 m sensor (sensor 2). Per pair in the main run:
+
+  | Pair | Steps | Median z error | Median σ_z bound |
+  |------|------:|---------------:|-----------------:|
+  | (1, 2) | 100 | 0.142 m | 0.240 m |
+  | (0, 1) | 279 | 0.198 m | 0.297 m |
+  | (0, 2) | 121 | 0.256 m | 0.327 m |
+
+  The pair that contains sensor 2 together with the 3.5 m sensor has the *lowest* z error. The worst pair is the low sensor (1.5 m) with the high one (5.0 m). These per-pair numbers do not isolate a single cause; what the run supports is that the tiered layout as a whole gives a larger σ_z bound than the flat layouts.
 - **Against flat sensors at z = 2 m there is no 3D gain at all**: the difference is −0.000 m, with stacked better in 25/50 seeds.
 - **Flat layouts have much larger worst cases.** Their mean errors and maxima (439.97 m at z = 3 m) come from near-parallel rays. Medians are the robust comparison.
 

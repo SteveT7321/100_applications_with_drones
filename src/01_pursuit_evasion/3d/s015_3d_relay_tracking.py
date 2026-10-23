@@ -376,6 +376,12 @@ if __name__ == '__main__':
     k = int(np.argmax(main['err']))
     used2 = sum(p is not None and 2 in p for p in main['pair'])
     print(f"  sensor 2 (highest tier) is in the triangulation pair in {used2}/{s['n']} steps")
+    keys = [tuple(sorted(p)) if p is not None else None for p in main['pair']]
+    for pk in sorted(set(k_ for k_ in keys if k_ is not None)):
+        m_ = np.array([k_ == pk for k_ in keys])
+        print(f"    pair {pk}: {m_.sum()} steps, median z error {np.median(main['err_z'][m_]):.3f} m, "
+              f"median 3D error {np.median(main['err'][m_]):.3f} m, median σ_z bound "
+              f"{np.nanmedian(main['crlb_z'][m_]):.3f} m")
     h = np.array(main['handoffs'])
     print(f"  max-error step: mode '{main['mode'][k]}', pair {main['pair'][k]}, crossing angle "
           f"{main['cross'][k]:.1f} deg, σ_pos bound {main['crlb'][k]:.3f} m, offset to nearest handoff "
