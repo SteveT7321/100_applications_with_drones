@@ -1,6 +1,6 @@
 # S035 3D Upgrade — UTM Simulation
 
-**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Logistics & Delivery | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S035 original](../S035_utm_simulation.md)
 
 ---
@@ -12,7 +12,7 @@ The original S035 organises the airspace into four fixed altitude bands (L1–L4
 This 3D variant replaces those simplifications with:
 
 1. **Continuous altitude-layer corridor allocation**: each drone is assigned a full 3D corridor tube — a cylinder with a true 3D centreline that climbs or descends through transition segments between layers — rather than snapping to a fixed $z$ band.
-2. **Unified 3D conflict zones**: separation is enforced as a single 3D safety sphere of radius $r_{sep}$ around each drone rather than two independent thresholds, enabling more compact packing without sacrificing safety.
+2. **Unified 3D conflict zones**: separation is enforced as a single 3D safety sphere of radius $r_{sep}$ around each drone rather than two independent thresholds. *(Correction: the original text claimed this enables "more compact packing". It does not with these numbers: the 2D zone, horizontal < 30 m and vertical < 10 m, lies entirely inside the 35 m sphere because $\sqrt{30^2 + 10^2} = 31.6 < 35$ m, so the sphere is strictly more conservative. It also exceeds the 20 m spacing between adjacent layer mid-altitudes, so traffic crossing in adjacent layers is no longer separated by the layering alone.)*
 3. **Vertical separation standards**: intra-layer vertical buffers are augmented by explicit climb/descent angle limits $\gamma_{max}$ and inter-layer transition corridors, preventing simultaneous use of the same vertical slice by crossing drones.
 4. **4D trajectory negotiation with vertical manoeuvre options**: conflict resolution may now command an altitude offset manoeuvre — a vertical detour of $\Delta z_{res}$ m — as a first choice before resorting to time-based holding, reducing total fleet delay on dense crossing routes.
 
@@ -97,9 +97,11 @@ The minimum 3D separation during the leg is $\sqrt{\delta(\tau^*)}$.
 
 ### Altitude Layer Allocation
 
-Given $L$ layers, the feasible altitude assignments for drone $k$ form the set:
+Given $L$ layers, the feasible altitude assignments for a leg of drone $k$ with heading $h$ form the set:
 
-$$\mathcal{L}_k = \bigl\{\ell \in \{1,\ldots,L\} : z_{lo,\ell} \leq z_k^{nominal} \leq z_{hi,\ell}\bigr\}$$
+$$\mathcal{L}_k = \bigl\{\ell \in \{1,\ldots,L\} : \text{heading}_\ell \in \{h, \text{any}\}\bigr\} \;\cup\; \bigl\{6 \text{ if drone } k \text{ is an emergency flight}\bigr\}$$
+
+*(Correction: the original set $\{\ell : z_{lo,\ell} \leq z_k^{nominal} \leq z_{hi,\ell}\}$ contains only the layer that already holds $z_k^{nominal}$, because the bands do not overlap, so $\mathcal{L}_k \setminus \{\ell_k\}$ was always empty and reallocation was impossible. The heading rule of the layer table is used instead: the heading layer, L5 for any drone, L6 for the emergency drone.)*
 
 After conflict detection, the UTM attempts to reassign the lower-priority conflicting drone to an alternate layer $\ell' \in \mathcal{L}_k \setminus \{\ell_k\}$. The reassigned trajectory shifts $z$ by the layer offset:
 
@@ -196,7 +198,7 @@ $$\lambda_{3D} = \frac{|\mathcal{C}_{3D}|}{\binom{N}{2} \cdot T_{mission} / 60}$
 | Number of drones | 12 |
 | Number of altitude layers | 6 |
 | Altitude layer bands | 20–40, 40–60, 60–80, 80–100, 100–120, 120–150 m |
-| Corridor tube radius $r_c$ | 25 m |
+| Corridor tube radius $r_c$ | 25 m (note: larger than the 10 m half-thickness of a layer, so parallel tubes of adjacent layers overlap; a drone is counted only in the tubes of its own route) |
 | 3D separation sphere $r_{sep}$ | 35 m |
 | 3D warning sphere $r_{warn}$ | 52.5 m ($1.5 \times r_{sep}$) |
 | Separation assurance lookahead $T_{la}$ | 15 s |
