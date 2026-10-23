@@ -64,7 +64,7 @@ conda activate drones
 python src/01_pursuit_evasion/s018_multi_target_intercept.py
 ```
 
-Runtime ≈ 55 s (almost all of it rendering the 110-frame, four-panel 3D GIF).
+Runtime ≈ 40 s (measured 36–39 s; almost all of it rendering the 110-frame, four-panel 3D GIF).
 
 ---
 
