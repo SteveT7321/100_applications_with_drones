@@ -1,6 +1,6 @@
 # S078 Harvester Cooperative Guidance
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Moving-Horizon Scout + A* Replanning with Latency | **Dimension**: 2D
 
 ---
@@ -51,7 +51,18 @@ $$T_{loop} = \frac{2 \cdot (L_{field} - L_{lead})}{v_{drone}} = \frac{2 \times 1
 Within the 10 m wide corridor centred on $y_{track}$ (the harvester's lateral position), the drone
 executes 3 parallel passes at strip centres:
 
-$$y_{strip,i} = y_{track} + \left(i - 1\right) \cdot w_{scan} - \frac{w_{scan}}{2}, \quad i \in \{0, 1, 2\}$$
+$$y_{strip,i} = y_{track} + \left(i - 1\right) \cdot w_{scan}, \quad i \in \{0, 1, 2\}$$
+
+> **Correction (implementation)**: the original formula had an extra $-w_{scan}/2$, which puts the
+> strips at $-4.95, -1.65, +1.65$ m (not symmetric about the track). The strips are centred at
+> $-3.3, 0, +3.3$ m.
+>
+> **Feasibility (implementation)**: three 10 m passes per 10 m of corridor plus two 3.3 m lateral
+> moves is a 732 m route for 200 m of corridor, so a 3 m/s drone can advance at most
+> 0.82 m/s, slower than the 1.5 m/s harvester. Equivalently, the sensor sweeps
+> $2(r_{sensor} - \sigma_{GPS})\,v_{drone} = 11.4$ m²/s, less than the 15 m²/s the 10 m corridor
+> needs. The scout cannot hold a 45 m lead with this pattern; the harvester overtakes it
+> and leads it by 56.2 m on average at the worst moment (see the outputs README).
 
 where $w_{scan} = 3.3$ m ensures the three strips tile the 10 m corridor with 0.1 m overlap on
 each side. Each strip is traversed left-to-right or right-to-left alternately (boustrophedon). The
@@ -76,6 +87,10 @@ When the relayed obstacle message arrives, the harvester is at position $\mathbf
 The time remaining before the harvester would reach the obstacle (absent replanning) is:
 
 $$\Delta t_{ttc,j} = \frac{\left\| \mathbf{p}_{obs,j} - \mathbf{p}_{harvester}(t_{relay,j}) \right\|}{v_{harvester}}$$
+
+> **Correction (implementation)**: a Euclidean distance is never negative, so with this
+> definition no detection can be "late". The implementation uses the signed along-track gap to
+> the obstacle's inflated disc, $\Delta t_{ttc,j} = (x_{obs,j} - r_{inflate} - x_{harvester})/v_{harvester}$.
 
 A detection is classified as **timely** if $\Delta t_{ttc,j} > T_{replan}$ (sufficient replanning
 margin), **marginal** if $0 < \Delta t_{ttc,j} \leq T_{replan}$, and **late** if
