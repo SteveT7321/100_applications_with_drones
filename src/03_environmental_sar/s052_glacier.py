@@ -96,6 +96,13 @@ def terrain(x, y):
     return flank + und
 
 
+def agl_range():
+    """Min / max AGL of the fixed flight altitude over the glacier (coverage-grid cells)."""
+    gxx, gyy = grid_centres(COV_RES)
+    z = terrain(gxx[None, :], gyy[:, None])
+    return Z_FLY - z.max(), Z_FLY - z.min()
+
+
 # ── Flight plans ──────────────────────────────────────────────────────────────
 
 def coarse_profile(rng):
@@ -529,9 +536,9 @@ def plot_gsd_altitude(res, out_dir):
     ax.axhline(GSD_LIMIT_CM, color='red', ls='--', label=f'{GSD_LIMIT_CM:.0f} cm limit (reached at h = {h_lim:.0f} m)')
     g80 = ALTITUDE * PIXEL_PITCH / FOCAL_LENGTH * 100
     ax.plot(ALTITUDE, g80, 'o', color='tab:green', ms=9, label=f'operating point h = 80 m: {g80:.2f} cm')
-    gxx, gyy = grid_centres(COV_RES)
-    agl_min = Z_FLY - terrain(gxx[None, :], gyy[:, None]).max()
-    ax.axvspan(agl_min, ALTITUDE, color='grey', alpha=0.2, label='AGL range over the glacier')
+    agl_min, agl_max = agl_range()
+    ax.axvspan(agl_min, agl_max, color='grey', alpha=0.2,
+               label=f'AGL range over the glacier ({agl_min:.1f}-{agl_max:.1f} m)')
     ax.set_xlabel('altitude above ground h (m)')
     ax.set_ylabel('GSD (cm/px)')
     ax.set_ylim(0, 6)
@@ -648,7 +655,8 @@ if __name__ == '__main__':
           f'card first expression 1/(Of*Os) = {1 / (FORWARD_OVERLAP * SIDE_OVERLAP):.2f}')
     zt = terrain(np.array([0.0, 300.0]), np.array([0.0, 0.0]))
     print(f'  Terrain: centreline z = {zt[1]:.1f} m, flank edge z = {zt[0]:.1f} m '
-          f'-> AGL {Z_FLY - zt[0]:.0f}..{Z_FLY - zt[1]:.0f} m; min AGL along adaptive flight '
+          f'(without undulation); AGL over the glacier incl. the +-{UND_AMP:.0f} m undulation '
+          f'{agl_range()[0]:.2f}..{agl_range()[1]:.2f} m; min AGL along adaptive flight '
           f'{res["agl_traj_min"]:.1f} m')
     xs_c, z_plan = res['dem']
     gxx, gyy = grid_centres(COV_RES)

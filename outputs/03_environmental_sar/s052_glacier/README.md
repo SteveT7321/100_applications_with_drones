@@ -161,7 +161,7 @@ Distance and time (ratio to unidirectional), area meeting 80/60 overlap (red = a
 
 ### GSD vs Altitude
 
-GSD grows linearly with AGL. At the 80 m operating point it is 1.20 cm/px; the 5 cm limit is reached only at 333 m. The grey band is the AGL range over the glacier (80 m minus the 36.77 m terrain maximum, up to 80 m); the lowest AGL along the adaptive flight is 43.0 m:
+GSD grows linearly with AGL. At the 80 m operating point it is 1.20 cm/px; the 5 cm limit is reached only at 333 m. The grey band is the AGL range over the glacier, 43.23–82.00 m (80 m minus the 36.77 m terrain maximum, up to 82.00 m where the ±2 m undulation dips below the centreline datum); the lowest AGL along the adaptive flight is 43.0 m:
 
 ![GSD vs Altitude](./gsd_altitude.png)
 
