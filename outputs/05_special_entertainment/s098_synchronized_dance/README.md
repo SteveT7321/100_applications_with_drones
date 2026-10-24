@@ -89,7 +89,13 @@ conda activate drones
 python src/05_special_entertainment/s098_synchronized_dance.py
 ```
 
-Runtime: 2.9–3.2 min, measured while other simulations shared the machine (the independent review measured 1.7 min). Most of the time goes into writing the GIF.
+Runtime: 1.6–3.4 min, measured while other simulations shared the machine. Most of the time goes into writing the GIF.
+
+**Invariants (asserted in every run, except the card's literal update, which diverges by design)**:
+- clock offsets are finite;
+- every local clock stays within 1 s of global time;
+- global time increases;
+- in each 0.05 s step, the commanded position moves at most $v_{max}(\Delta t + |\text{clock step}|)$, where $v_{max}$ = 4.071 m/s is the script's top speed on a 1 ms grid. A PTP correction can therefore only move a drone along its own script, by $v_{max}$ times the clock step; it cannot make it teleport.
 
 ---
 
@@ -105,6 +111,17 @@ Runtime: 2.9–3.2 min, measured while other simulations shared the machine (the
 | **Master PTP β=0.5** | **21.2 ms** | 18.2 ms | **72.4%** | **99.48%** | **98.6%** | **4.1 cm** | −1.3 ms |
 
 The card's literal update diverges: its KPI reaches 2.95e+03 ms at 5 s and 7.03e+30 ms by the end.
+
+**Invariant check, seed 42** (largest clock step / largest commanded-position step per 0.05 s / asserted bound):
+
+| Strategy | Clock step | Position step | Bound |
+|---|---:|---:|---:|
+| No sync | 6.94 ms | 20.34 cm | 23.18 cm |
+| Peer PTP β=0.5 | 12.32 ms | 20.35 cm | 25.37 cm |
+| Peer PTP β=0.9 | 17.58 ms | 20.03 cm | 27.52 cm |
+| Master PTP β=0.5 | 12.44 ms | 21.21 cm | 25.42 cm |
+
+The largest position steps (about 20 cm per step, i.e. 4 m/s) come from the script's own top speed. The clock corrections add at most $v_{max}$ × 17.58 ms ≈ 7 cm on top.
 
 ### Monte Carlo (200 shows)
 

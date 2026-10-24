@@ -163,12 +163,37 @@ def metrics(t, delta, act, ide, spd):
     return dict(err_abs=err_abs, err_rel=err_rel, pos_err=pos_err, V=V, V_pd=vk_pd.mean(axis=1))
 
 
+_VMAX = {}
+
+
+def vmax_dense(splines):
+    """Largest script speed on a 1 ms grid (bound for the invariant checks)."""
+    key = id(splines)
+    if key not in _VMAX:
+        td = np.arange(0.0, T_SHOW + 1e-9, 0.001)
+        _VMAX[key] = max(np.linalg.norm(sp(td, 1), axis=1).max() for sp in splines)
+    return _VMAX[key]
+
+
 def run_simulation(splines, strategy, seed=RNG_SEED, dt_ptp=DT_PTP):
     noise = draw_noise(seed, dt_ptp)
     t, delta, events = simulate_clocks(strategy, noise, dt_ptp)
     act, ide, spd = playback(splines, t, delta)
     out = dict(t=t, delta=delta, events=events, act=act, ide=ide, spd=spd)
     out.update(metrics(t, delta, act, ide, spd))
+    # invariants (X4): finite clocks; local time within 1 s of global time; the commanded
+    # position moves at most v_max * (dt + |clock step|) per simulation step, i.e. a PTP clock
+    # step can only make the drone jump along its own script by v_max * |clock step|
+    jump = np.linalg.norm(np.diff(act, axis=0), axis=2)
+    dstep = np.abs(np.diff(delta, axis=0))
+    out['max_jump'] = float(jump.max())
+    out['max_clock_step'] = float(dstep.max())
+    if strategy != 'card_literal':                       # the card's update diverges by design
+        assert np.all(np.isfinite(delta)), 'non-finite clock offset'
+        assert np.abs(delta).max() < 1.0, 'local clock more than 1 s off global time'
+        bound = vmax_dense(splines) * (DT_SIM + dstep) * (1 + 1e-6) + 1e-9
+        assert np.all(jump <= bound), 'commanded position jump exceeds v_max * time step'
+        assert np.all(np.diff(t) > 0), 'global time not increasing'
     return out
 
 
@@ -411,6 +436,14 @@ if __name__ == '__main__':
               f'mean V {100 * sm["meanV"]:.2f}%, min V {100 * sm["minV"]:.1f}%, '
               f'max pos err {100 * sm["max_pos"]:.1f} cm, final mean offset '
               f'{1e3 * res[s]["delta"][-1].mean():+.1f} ms')
+    vd = vmax_dense(splines)
+    print(f'  Invariant check: script speed bound (1 ms grid) {vd:.3f} m/s; per 0.05 s step the '
+          f'commanded position may move at most v_max * (0.05 s + |clock step|)')
+    for s in STRATS:
+        r = res[s]
+        print(f'    {LABELS[s]:18s} largest clock step {1e3 * r["max_clock_step"]:.2f} ms, largest '
+              f'commanded-position step {100 * r["max_jump"]:.2f} cm (bound '
+              f'{100 * vd * (DT_SIM + r["max_clock_step"]):.2f} cm)')
     print(f'  Card literal update: max KPI {lit["err_abs"].max():.3g} ms '
           f'(at 5 s {lit["err_abs"][int(5 / DT_SIM)]:.3g} ms)')
 
