@@ -1,6 +1,6 @@
 # S074 3D Upgrade — Mine 3D Mapping
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S074 original](../S074_mine_mapping.md)
 
 ---
@@ -12,6 +12,11 @@ The original S074 constrains the drone to a fixed horizontal flight altitude (`z
 1. **Vertical tunnel geometry is invisible.** Shafts, ramps, and inclined drifts that change elevation cannot be represented — any tunnel segment with a non-zero z-gradient is treated as unreachable.
 2. **The LiDAR sensor model is planar.** A single-layer 2D scan at `z = 1.5 m` misses wall anomalies above and below the scan plane, and cannot detect the floor-to-ceiling extent of cross-passages.
 3. **Dust attenuation is ignored.** Underground mines accumulate coal or rock dust that degrades LiDAR beam intensity non-uniformly with distance, reducing effective range in high-dust zones.
+
+> **Card corrections (2026-10-24, verified in `src/04_industrial_agriculture/3d/s074_3d_mine_mapping.py`)**:
+> (1) The approximation $r_{eff} \approx r_{lidar}\exp(-\mu_{ext}\bar c_{dust} r_{lidar})$ does not follow from the stated threshold law. A beam is lost where the optical depth $\int_0^r \mu_{ext} c_{dust}\,ds$ reaches $\ln(1/I_{threshold}) = 3.0$; with $c_0 = 0.8$ and $\mu_{ext} = 0.15$ the largest possible depth over 10 m is 1.2, so with the card's values no beam is ever lost (the approximation would give 4.4 m at z = 1.5 m). The dust-zone deficit therefore cannot come from dust at these values; stronger extinction is swept instead.
+> (2) $\sigma_{ICP}^{3D} = 0.015$ m is not an input: the drift follows from the estimator. The implementation keeps the 2D base's odometry noise (0.02 m per 0.1 s step) and reports the resulting drift.
+> (3) A ±15° LiDAR sees a shaft wall 1 m away only up to 0.27 m above the drone and never sees floor or ceiling closer than 5.6 m horizontally from the gallery centre, so the scan constrains altitude weakly everywhere, not only in shafts; up/down rangefinders are added (see the README).
 
 This 3D upgrade introduces:
 
@@ -117,7 +122,9 @@ $$\frac{dI}{ds} = -\mu_{ext} \cdot c_{dust}\bigl(\mathbf{p}_{est} + s\,\hat{\mat
 where $\mu_{ext} = 0.15$ m$^{-1}$ ppm$^{-1}$ is the mass extinction coefficient. The beam is
 treated as lost (no return) when $I / I_0 < I_{threshold} = 0.05$, giving an effective range:
 
-$$r_{eff} \approx r_{lidar} \cdot \exp\!\left(-\mu_{ext} \cdot \bar{c}_{dust} \cdot r_{lidar}\right)$$
+$$\int_0^{r_{eff}} \mu_{ext}\, c_{dust}\bigl(z_0 + s\sin\theta_k\bigr)\, ds = \ln\frac{1}{I_{threshold}}$$
+
+(corrected: the card's approximation $r_{lidar}\exp(-\mu_{ext}\bar c_{dust} r_{lidar})$ is not the solution of its own threshold law; the integral has a closed form for the exponential profile)
 
 where $\bar{c}_{dust}$ is the path-averaged dust concentration. In practice $r_{eff}$ is
 evaluated numerically during ray-marching by accumulating the optical depth integral.
@@ -138,7 +145,7 @@ $$\mathbf{W} = \sum_{i=1}^{N_P} \bigl(\mathbf{p}_i - \bar{\mathbf{p}}\bigr)
 
 The SVD solution $\mathbf{R}^* = \mathbf{U}\mathbf{V}^\top$ now captures full roll-pitch-yaw
 rotation rather than yaw only. This reduces per-step drift standard deviation from
-$\sigma_{ICP} = 0.02$ m (planar) to $\sigma_{ICP}^{3D} = 0.015$ m because the richer 3D
+$\sigma_{ICP} = 0.02$ m (planar) to $\sigma_{ICP}^{3D} = 0.015$ m (claim, not an input: see the corrections note) because the richer 3D
 scan geometry provides stronger geometric constraints, particularly in shaft transitions where
 vertical structure dominates.
 
@@ -254,7 +261,7 @@ illuminate dust-shadow voxels from multiple angles.
 | Detection threshold | $I_{threshold}$ | 0.05 |
 | ICP max iterations | $K_{ICP}$ | 20 |
 | ICP convergence tol | $\epsilon_{ICP}$ | $10^{-4}$ m |
-| 3D ICP per-step drift std | $\sigma_{ICP}^{3D}$ | 0.015 m/step |
+| 3D ICP per-step drift std | $\sigma_{ICP}^{3D}$ | 0.015 m/step (claim; the simulation keeps the base odometry noise 0.02 m/step and measures the drift) |
 | LiDAR scan epoch | $\Delta t_{scan}$ | 0.5 s |
 | IMU update rate | — | 100 Hz |
 | IMU accel bias noise | $\sigma_{ba}$ | 0.005 m/s$^2$/$\sqrt{\text{Hz}}$ |
@@ -275,12 +282,12 @@ illuminate dust-shadow voxels from multiple angles.
 
 ## Expected Output
 
-- **3D occupancy map + full trajectory** (`s074_3d_occupancy.png`): 3D scatter of occupied voxels in grey; ground-truth trajectory coloured by altitude (blue = Level 1, green = Level 2, orange = Level 3); ICP-estimated path in dashed red; shaft transitions visible as vertical segments; dust-shadow gaps visible as unclassified voxel regions near the shaft bottoms.
+- **3D occupancy map + full trajectory** (`outputs/04_industrial_agriculture/3d/s074_3d_mine_mapping/occupancy_3d.png`): 3D scatter of occupied voxels in grey; ground-truth trajectory coloured by altitude (blue = Level 1, green = Level 2, orange = Level 3); ICP-estimated path in dashed red; shaft transitions visible as vertical segments; dust-shadow gaps visible as unclassified voxel regions near the shaft bottoms.
 - **XZ elevation cross-section** (lateral panel): occupancy probability projected onto the $(x, z)$ plane; three gallery levels and two shaft channels clearly resolved; dust attenuation visible as reduced classification confidence at low $z$.
 - **Altitude time series**: $z_{gt}(t)$ and $z_{est}(t)$ vs time; three plateau levels with sharp transitions during shaft traversals; altitude drift quantified per shaft crossing.
 - **Coverage vs time (per level)**: three separate curves for Level 1, Level 2, Level 3, and combined; Level 3 coverage begins only after the drone completes its first shaft-traverse sequence.
 - **Dust-zone coverage deficit bar chart**: side-by-side bars for dust-free scenario vs dust-impaired scenario; $\Delta\xi_{dust}$ in % remaining unknown at mission end; illustrates the impact of dust attenuation on map completeness.
-- **Exploration animation** (`s074_3d_animation.gif`): rotating 3D view of the trajectory growing over time; drone marker coloured by current mode (blue = cruise, yellow = shaft-traverse); occupied voxels revealed progressively as the drone completes each level.
+- **Exploration animation** (`outputs/04_industrial_agriculture/3d/s074_3d_mine_mapping/animation.gif`): rotating 3D view of the trajectory growing over time; drone marker coloured by current mode (blue = cruise, yellow = shaft-traverse); occupied voxels revealed progressively as the drone completes each level.
 
 **Typical metric values** (seed = 42):
 
