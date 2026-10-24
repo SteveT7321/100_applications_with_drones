@@ -70,7 +70,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s052_3d_glacier.py
 ```
 
-Runtime ≈ 200–350 s (single process, measured while other simulations shared the CPU). Two runs (default threading and `OMP_NUM_THREADS=1`) printed byte-identical output and wrote byte-identical figures.
+Runtime ≈ 200–480 s (single process; the upper end with three other multi-process simulations sharing the CPU). Runs with default threading and with `OMP_NUM_THREADS=1` printed byte-identical output and wrote byte-identical figures.
 
 ---
 
@@ -93,7 +93,6 @@ Runtime ≈ 200–350 s (single process, measured while other simulations shared
 | Area > 5 pp short of 80/60 | 0.00 % | 5.75 % | same | same | 0.57 % | 0.11 % |
 | Min side / forward overlap | 60.01 / 80.00 % | 32.71 / 67.77 % | same | same | 50.62 / 77.03 % | 53.73 / 78.49 % |
 | Cliff faces covered | 0.00 % | 0.00 % | 52.78 % | 99.73 % | — | — |
-| ΔV error ($K_{SfM}$ 1.5) | −0.0180 % | −0.0041 % | same | same | — | — |
 
 Per face, the card's single leg covers 51.4 % (terminus), 66.2 % (west) and 45.9 % (east); the stacked design (4, 3 and 4 legs) covers 100.0, 99.5 and 99.7 %. True volumes: $V_{ref}$ = 4.4371 × 10⁷ m³, $V_{cur}$ = 4.3531 × 10⁷ m³, ΔV = −840,000 m³, ΔM = −770,280 t.
 
@@ -115,11 +114,11 @@ Probes (10-seed means): area > 5 pp short 0.72 % (no 3 m/s limit) and 0.20 % (id
 **Key findings**
 
 - **Terrain following buys a constant GSD, not overlap.** The flat plane has to fly at max(DEM) + 80 m (3060.0–3070.7 m), so its AGL ranges from 80 to about 270 m: its GSD varies 3.28× within a survey on average (CV 30.73 %), but it never exceeds 5 cm (≤ 4.06 cm). Because the AGL is never below the 80 m design height, it meets 80/60 overlap on 100 % of the glacier (TF lower GSD CV in 10/10 seeds, flat plane never short of overlap). The card's claim that the flat plane "breaks the photogrammetric overlap guarantee" does not hold for a *safe* fixed altitude; it held in the 2D base only because that plane was 80 m above the centreline and the flanks rose under it.
-- **With the card's 3 m/s vertical limit, TF itself breaks the overlap** on the steepest mounds. At 10 m/s the drone can climb a grade of at most 0.3. Where a mound is steeper, it falls behind and the AGL drops to 40.6–64.0 m (seed minima), so the footprint shrinks: 9.50 % of the area is more than 5 pp short of 80/60 (more than the flat plane in 10/10 seeds), and the side overlap falls to 18–47 %. **Probe**: removing the 3 m/s limit (lag only) cuts the > 5 pp area to 0.72 %, and ideal tracking to 0.20 %. So the speed limit causes most of the shortfall, and the 1 s lag a small part. Even ideal TF meets the exact 80/60 on only 9.71 % (seed 0) of the area, although only 0.11 % is more than 5 pp short: with the 2D nominal spacing every cell flown at exactly 80 m AGL sits on the 60 % / 80 % edge, and the cross-slope of the mounds pushes many cells just below it. The exact-compliance figure is therefore not a useful comparison; the > 5 pp shortfall is.
+- **With the card's 3 m/s vertical limit, TF itself breaks the overlap** on the steepest mounds. At 10 m/s the drone can climb a grade of at most 0.3. Where a mound is steeper, it falls behind and the AGL drops to 40.6–64.0 m (seed minima), so the footprint shrinks: 9.50 % of the area is more than 5 pp short of 80/60 (more than the flat plane in 10/10 seeds), and the side overlap falls to 18–47 %. **Probe**: removing the 3 m/s limit (lag only) cuts the > 5 pp area to 0.72 %, and ideal tracking to 0.20 %. So the speed limit causes most of the shortfall, and the 1 s lag a small part. **Vertical-speed sweep** (5 seeds, mound scale 1): the > 5 pp area is 6.32 % at the card's 3 m/s, 1.15 % at 4.5 m/s, 0.66 % at 6 m/s and 0.48 % at 10 m/s, with the lowest flight AGL rising from 44.0 m to 53.4, 60.9 and 70.5 m. Even ideal TF meets the exact 80/60 on only 9.71 % (seed 0) of the area, although only 0.11 % is more than 5 pp short: with the 2D nominal spacing every cell flown at exactly 80 m AGL sits on the 60 % / 80 % edge, and the cross-slope of the mounds pushes many cells just below it. The exact-compliance figure is therefore not a useful comparison; the > 5 pp shortfall is.
 - **Mound-amplitude sweep** (5 seeds): the TF shortfall grows with the mounds: > 5 pp short 0.00 % (ramp only, scale 0), 0.67 % (×0.5), 6.32 % (×1), 13.12 % (×1.5), 18.20 % (×2), with the lowest flight AGL down to 14.1 m at ×2. On the ramp alone the steady lag gives AGL 77.7–82.3 m. The flat plane stays at 0.00 % at every scale, with GSD up to 4.37 cm at ×2.
 - **Cost of 3D flight**: TF flies 2.60 % further (+2.52 to +2.70 %) and climbs about 2.5 km in total, at the same mission time. Cliff legs add 30.6 % (card legs) or 40.2 % (stacked) to the mission time. Most of the card-leg overhead is transit: in seed 0, 624 s of transit against 101 s on the legs; stacked: 593 s and 390 s.
 - **Cliffs are invisible to nadir surveys, and one leg per face is not enough.** No nadir photo covers a face point in any seed. The only front-facing nadir photos (1,324,050 photo × face-point pairs, seed 0) come from the outermost 2D strip at $x$ = 608.96 m, just outside the east margin, and they fail the frame and 5 cm face-GSD test. The card's single mid-height leg sees only 17.83 m of face height, so it covers 52.78–75.05 % of the faces (mean 59.99 %). Stacked legs (2–5 per face, depending on height) cover 99.60–99.73 %; what remains uncovered is a thin strip along the top edge (figure). Face GSD on the axis is 0.510 cm.
-- **The volume / mass-balance estimate does not depend on the strategy** (honest negative). With unbiased per-cell SfM noise, the errors average out over the thousands of 5 m cells: the mean |ΔV error| is 0.0155 % (flat) and 0.0067 % (TF), and the maximum over $K_{SfM}$ = 0.5–3.0 is 0.0813 %. The TF DEM is less noisy per cell (RMSE 1.84 vs 3.99 cm), but this follows directly from the assumed σ ∝ GSD. No holes occur in either strategy. Systematic SfM errors (doming, poor tie points at low overlap), which would separate the strategies, are not modelled.
+- **The volume / mass-balance estimate does not depend on the strategy** (honest negative). With unbiased per-cell SfM noise, the errors average out over the thousands of 5 m cells: the mean |ΔV error| is 0.0155 % (flat) and 0.0067 % (TF), and the maximum over $K_{SfM}$ = 0.5–3.0 is 0.0813 %. Both are negligible. The flat-vs-TF ratio is **fixed by construction** and is not a comparison: both strategies use the same noise draws scaled by σ ∝ GSD ∝ AGL, so the flat plane's error is larger by the GSD ratio (likewise the per-cell DEM RMSE, 3.99 vs 1.84 cm). No holes occur in either strategy. Systematic SfM errors (doming, poor tie points at low overlap), which would separate the strategies, are not modelled.
 - **NDWI melt area is identical** for flat and TF in 10/10 seeds (−0.607 %, the NDWI classification error, as in 2D).
 - **Card bounds**: every strategy leaves the card's [2780, 3060] m altitude band (flat plane 3070.7 m in seed 0, TF up to 3069.9 m), because the mounds sit on top of the 180 m ramp. The bound is reported, not enforced.
 
@@ -145,7 +144,7 @@ Probes (10-seed means): area > 5 pp short 0.72 % (no 3 m/s limit) and 0.20 % (id
 
 ![Cliff coverage](./cliff_coverage.png)
 
-**Volume and mass balance**: true volumes for seed 0, and the mean |ΔV error| over 10 seeds for three values of $K_{SfM}$:
+**Volume and mass balance**: true volumes for seed 0, and the mean |ΔV error| over 10 seeds for three values of $K_{SfM}$ (the flat/TF ratio is set by the σ ∝ GSD noise model, not measured):
 
 ![Volume](./volume_bars.png)
 
@@ -165,7 +164,7 @@ Probes (10-seed means): area > 5 pp short 0.72 % (no 3 m/s limit) and 0.20 % (id
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| Nominal GSD at 80 m "≈ 4.8 cm/px" | 1.201 cm/px | $80 \times 3.754\,\mu\text{m}/25$ mm (printed). 4.8 cm would need 320 m; already fixed in the 2D card. Card corrected. |
+| Nominal GSD at 80 m "≈ 4.8 cm/px" | 1.201 cm/px | $80 \times 3.754\,\mu\text{m}/25$ mm; 4.8 cm would need 320 m (both printed); already fixed in the 2D card. Card corrected. |
 | Cliff slant range $R = d_s/\cos\psi$; GSD on the cliff "≈ 8.4 cm/px"; drone at mid-height | $R = d_s/\sin\psi$ = 31.93 m; camera 10.92 m above the aim point; face GSD 0.51 cm on axis | With $\psi$ measured from nadir, the horizontal component of the axis is $\sin\psi$. The card's own formula gives 87.71 m and 1.32 cm (printed), not 8.4 cm. A camera at mid-height pitched 20° down would aim 10.9 m below mid-height. Card corrected. |
 | One oblique leg per face | Card design kept (strategy 3) and stacked legs added (strategy 4) | One leg sees 17.83 m of face, less than the 20–40 m cliffs. |
 | "Terrain relief … breaks the photogrammetric overlap guarantee" for the flat plane; GSD varies "± 40 %" | A safe flat plane (min AGL 80 m) keeps the overlap everywhere; its GSD varies 3.25–3.38× | Verified numerically; the overlap shortfall appears in TF with the 3 m/s limit instead. Card corrected. |

@@ -79,6 +79,7 @@ THIN_TERM, THIN_HEAD = 3.0, 0.5   # m thinning between epochs at terminus / head
 K_SFM      = 1.5                  # SfM vertical error = K_SFM x GSD (per 5 m cell, iid)
 K_SFM_SWEEP = (0.5, 1.5, 3.0)
 N_MC       = 10
+VZ_SWEEP   = (4.5, 6.0, 10.0)     # m/s  vertical-speed limit sweep for TF (card 3 m/s)
 N_SWEEP    = 5                    # seeds per mound-amplitude sweep point
 MAIN_SEED  = 0
 GIF_FRAMES = 110                   # target frame count (GIF <= 3 MB)
@@ -158,7 +159,7 @@ def sample_path(wps):
     return s, x, y
 
 
-def fly_nadir(gl, wps, mode, z_flat=None):
+def fly_nadir(gl, wps, mode, z_flat=None, vz_max=VZ_MAX):
     """3D nadir trajectory. mode: 'flat' (fixed z), 'tf' (lag law, |z_dot| <= VZ_MAX),
     'nolimit' (lag law without the vertical-speed limit, probe), 'ideal' (z = z_cmd, probe)."""
     s, x, y = sample_path(wps)
@@ -175,11 +176,11 @@ def fly_nadir(gl, wps, mode, z_flat=None):
             dt = (s[i] - s[i - 1]) / V
             rate = (zc[i - 1] - z[i - 1]) / TAU_Z
             if mode == 'tf':
-                rate = min(max(rate, -VZ_MAX), VZ_MAX)
+                rate = min(max(rate, -vz_max), vz_max)
             z[i] = z[i - 1] + rate * dt
         if mode == 'tf':
             vz = np.diff(z) / np.maximum(np.diff(s) / V, 1e-12)
-            assert np.all(np.abs(vz) <= VZ_MAX + 1e-9), 'vertical speed limit exceeded'
+            assert np.all(np.abs(vz) <= vz_max + 1e-9), 'vertical speed limit exceeded'
     agl = z - zg
     assert agl.min() > 10.0, f'terrain clearance lost ({agl.min():.1f} m)'
     return {'s': s, 'x': x, 'y': y, 'z': z, 'zg': zg, 'zc': zc, 'agl': agl}
@@ -385,7 +386,7 @@ def volume_estimates(gl, cnt, mean_agl, rng, k_sfm=K_SFM):
 
 # -- Simulation ------------------------------------------------------------------------
 
-def survey(seed, mound_scale=1.0, full=True):
+def survey(seed, mound_scale=1.0, full=True, vz_max=VZ_MAX, modes=None):
     gl = Glacier(seed, mound_scale)
     strips, bxs, wps, photos, sop = nadir_layout()
     gx, gy, Zc = gl.grid(COV_RES)
@@ -393,8 +394,8 @@ def survey(seed, mound_scale=1.0, full=True):
     z_flat = z_max_dem + H_AGL
     out = {'gl': gl, 'strips': strips, 'bxs': bxs, 'wps': wps, 'z_flat': z_flat,
            'z_dem_min': float(Zc.min()), 'z_dem_max': z_max_dem}
-    for mode in NADIR_MODES:
-        tr = fly_nadir(gl, wps, mode, z_flat)
+    for mode in (NADIR_MODES if modes is None else modes):
+        tr = fly_nadir(gl, wps, mode, z_flat, vz_max)
         xyz = photo_positions(tr, wps, photos, sop)
         gz = gl.z(xyz[:, 0], xyz[:, 1])
         gsd = (xyz[:, 2] - gz) * P_OVER_F
@@ -535,7 +536,16 @@ def run_simulation():
             rows[-1]['z_flat'] = sv['z_flat']
             del sv
         sweep[sc] = rows
-    return {'main': main, 'mc': mc, 'sweep': sweep}
+    vz_sweep = {}
+    for vz in VZ_SWEEP:
+        rows = []
+        for seed in range(N_SWEEP):
+            sv = survey(seed, 1.0, full=False, vz_max=vz, modes=('tf',))
+            rows.append({'severe': float(np.mean((sv['tf']['o_s'] < O_S - 0.05) | (sv['tf']['o_f'] < O_F - 0.05))),
+                         'traj_agl_min': float(sv['tf']['traj']['agl'].min())})
+            del sv
+        vz_sweep[vz] = rows
+    return {'main': main, 'mc': mc, 'sweep': sweep, 'vz_sweep': vz_sweep}
 
 
 # -- Report ----------------------------------------------------------------------------
@@ -550,6 +560,7 @@ def report(res):
     print('=== S052 3D Glacier Area Monitoring ===')
     print(f'Camera at {H_AGL:.0f} m AGL: GSD {100 * gsd80:.3f} cm/px (card table: ~4.8), footprint '
           f'{fp_w:.2f} x {fp_l:.2f} m; GSD reaches {100 * GSD_LIMIT:.0f} cm at {GSD_LIMIT / P_OVER_F:.0f} m range')
+    print(f'  pixel pitch {1000 * PIX:.3f} um; the card\'s 4.8 cm/px would need {0.048 / P_OVER_F:.0f} m AGL')
     print(f'Nadir layout (2D S052 nominal): {len(sv["strips"])} strips, Bx = {sv["bxs"][0]:.2f} m, '
           f'By = {sv["strips"][1] - sv["strips"][0]:.3f} m, {len(sv["tf"]["xyz"])} photos; last strip at '
           f'x = {sv["strips"][-1]:.2f} m; 2D path length {s2d.path_length(sv["wps"]):.0f} m')
@@ -672,6 +683,14 @@ def report(res):
             parts.append(f'{md}: AGL {a.min():.1f}-{amax.max():.1f} m, >5pp short {100 * sev.mean():.2f}%, '
                          f'GSD max {100 * gm.max():.2f} cm')
         print(f'  scale {sc:.1f}: ' + ' | '.join(parts))
+
+    print(f'Vertical-speed-limit sweep (terrain following, mound scale 1.0, {N_SWEEP} seeds):')
+    rows3 = res['sweep'][1.0]
+    vals = [(VZ_MAX, [r['tf']['severe'] for r in rows3], [r['tf']['traj_agl_min'] for r in rows3])]
+    vals += [(vz, [r['severe'] for r in res['vz_sweep'][vz]], [r['traj_agl_min'] for r in res['vz_sweep'][vz]])
+             for vz in VZ_SWEEP]
+    for vz, sev, amin in vals:
+        print(f'  v_z,max {vz:4.1f} m/s: area > 5 pp short {100 * np.mean(sev):.2f}%, lowest flight AGL {min(amin):.1f} m')
 
 
 # -- Plotting --------------------------------------------------------------------------
