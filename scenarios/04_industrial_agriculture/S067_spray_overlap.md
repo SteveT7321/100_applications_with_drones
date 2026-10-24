@@ -498,7 +498,7 @@ if __name__ == "__main__":
   bands both appear when the spacing is **too wide**. A small spacing gives a flat relative dose; its
   cost is flight time and, at fixed nozzle flow, total chemical (the mean dose scales as $1/d$).
   The redundant-area metric (> 1.5 × mean) is relative to the mean, so it grows with $d$
-  (0 % up to about 1.9 m noise-free).
+  (noise-free it is 0 % for every spacing below 1.89 m; the first non-zero value is 6.25 % at 1.89 m).
 - **CV vs strip spacing curve**: noise-free CV curve (black solid) with Monte Carlo mean ± 1σ band
   (blue shading); vertical markers for noise-free $d^*$ (red), Monte Carlo $d^*_{MC}$ (orange),
   and nominal design spacing (green dashed). CV rises monotonically with $d$ (no trough); the

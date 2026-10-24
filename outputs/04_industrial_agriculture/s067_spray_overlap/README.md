@@ -72,7 +72,7 @@ conda activate drones
 python src/04_industrial_agriculture/s067_spray_overlap.py
 ```
 
-Runtime: 163 s and 169 s in the two reproducibility runs, with about ten other simulations running on the same machine.
+Runtime: 36 s and 40 s in the two reproducibility runs (single-threaded BLAS); the first runs, with about ten other simulations on the same machine, took 163–169 s.
 
 ---
 
@@ -114,7 +114,8 @@ Below 0.68 m the noise-free CV is under 0.07 %, which is numerical residue from 
 | Path length / mission time | 1500.4 m / 500.1 s (8.34 min) | 1950.5 m / 650.2 s (10.84 min) | 3900.3 m / 1300.1 s (21.67 min) |
 | Noise-free CV | 30.72 % | 10.00 % | 0.01 % |
 | CV with GPS (mean ± std, P95) | 32.16 ± 0.54 % (33.15 %) | 15.23 ± 1.34 % (17.53 %) | 8.55 ± 0.84 % (9.98 %) |
-| Trials with CV ≤ 10 % | 0.0 % | 0.0 % | 95.0 % |
+| Trials with CV ≤ 10 % (in-sample, the 200 design draws) | 0.0 % | 0.0 % | 95.0 % (by construction) |
+| Out-of-sample check (1000 independent trials, seed 4242): pass rate / CV / P95 | — | — | 95.9 % / 8.47 ± 0.87 % / 9.93 % |
 | Area > 1.5 × mean, noise-free / GPS mean | 0.00 % / 0.00 % | 0.00 % / 0.00 % | 0.00 % / 0.00 % |
 | Area < 0.5 × mean, noise-free / GPS mean | 0.00 % / 5.84 % | 0.00 % / 0.15 % | 0.00 % / 0.00 % |
 
@@ -159,8 +160,8 @@ The animation shows the dose building up strip by strip at the GPS-robust spacin
 
 - **There is no CV-optimal spacing.** CV falls monotonically as the strips get closer, so the card's $\arg\min$ only finds the floor of the discretisation (0.676 m with CV 0.008 %). The card's 10 %-overlap spacing of 1.8 m is far from uniform: CV = 30.72 % noise-free.
 - **The useful question is the widest spacing that is uniform enough.** For CV ≤ 10 % this is 1.365 m without GPS error, or 31.7 % overlap of the nominal 2 m swath, not 10 %.
-- **GPS error narrows the spacing; it does not widen it.** With 0.1 m strip offsets (20 % of $\sigma_s$), each displaced strip leaves a dose ripple that closer spacing cannot fully average out. Mean CV still falls with spacing (5.28 % at 0.25 m, 8.48 % at 0.65 m), but it never drops below about 5 % in the searched range. To keep 95 % of missions at CV ≤ 10 %, the spacing must drop to 0.662 m (77 strips, 21.67 min instead of 8.34 min). At 0.2 m GPS error no spacing down to 0.25 m meets the target. Up to 0.05 m (RTK class) the effect is small (1.365 → 1.280 m).
-- **Redundant area points the other way from the card's narrative.** The > 1.5 × mean area is 0 % at all three design spacings and appears only for wide spacings (30.5 % in the 2.5 m dose map; this value appears only in that panel's title, not in stdout). With the threshold measured relative to the mean, closer strips cannot create relative hot spots. The cost of close spacing is flight time, plus total chemical if the nozzle flow is not reduced, because the mean dose $\mu_D = \sqrt{2\pi}\,\sigma_s/d$ grows as $1/d$.
+- **GPS error narrows the spacing; it does not widen it.** With 0.1 m strip offsets (20 % of $\sigma_s$), each displaced strip leaves a dose ripple that closer spacing cannot fully average out. Mean CV still falls as the spacing shrinks (8.48 % at 0.65 m, 5.28 % at 0.25 m), but it never drops below about 5 % in the searched range. To keep 95 % of missions at CV ≤ 10 %, the spacing must drop to 0.662 m (77 strips, 21.67 min instead of 8.34 min). That 95 % holds by construction on the design draws. On 1000 independent trials the pass rate is 95.9 % (P95 CV 9.93 %), so the design generalises. At 0.2 m GPS error no spacing down to 0.25 m meets the target. Up to 0.05 m (RTK class) the effect is small (1.365 → 1.280 m).
+- **Redundant area points the other way from the card's narrative.** Noise-free, the > 1.5 × mean area is 0 % for every spacing below 1.89 m (the first non-zero value is 6.25 % at 1.89 m). It is 0 % at all three design spacings and appears only for wide spacings (30.5 % in the 2.5 m dose map; this value appears only in that panel's title, not in stdout). With the threshold measured relative to the mean, closer strips cannot create relative hot spots. The cost of close spacing is flight time, plus total chemical if the nozzle flow is not reduced, because the mean dose $\mu_D = \sqrt{2\pi}\,\sigma_s/d$ grows as $1/d$.
 - **The card nominal has under-dosed strips once GPS error is included.** 5.84 % of the interior gets less than half the mean dose, against 0.00 % noise-free.
 
 ### Deviations from the scenario card

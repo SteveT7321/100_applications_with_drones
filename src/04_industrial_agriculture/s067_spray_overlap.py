@@ -41,6 +41,8 @@ V_CRUISE      = 3.0       # m/s
 N_MC          = 200
 REDUND_K      = 1.5       # redundant if D > 1.5 mean
 SEED          = 42
+SEED_OOS      = 4242      # independent draws for the out-of-sample check of d* (added)
+N_OOS         = 1000
 MARGIN        = SPRAY_WIDTH / 2.0          # m interior margin at each field edge
 
 # ── Parameters (added) ───────────────────────────────────────────────────────
@@ -192,6 +194,13 @@ def run_simulation():
                             cv_p95=float(np.percentile(c, 95)), red_mean=float(r.mean()),
                             under_mean=float(u.mean()),
                             pass_rate=float(np.mean(c <= CV_TARGET)))
+    # Out-of-sample check of d*: d* was chosen on the draws z, so its in-sample pass rate is
+    # 95 % by construction; re-test it on independent draws
+    z_oos = np.random.default_rng(SEED_OOS).standard_normal((N_OOS, N_STRIPS_MAX))
+    c_oos = stats(dose_profiles(d_design, GPS_ERROR * z_oos))[0]
+    points['p95_10']['oos'] = dict(pass_rate=float(np.mean(c_oos <= CV_TARGET)),
+                                   cv_mean=float(c_oos.mean()), cv_std=float(c_oos.std()),
+                                   cv_p95=float(np.percentile(c_oos, 95)))
     return z, nf, mc, sweep, points
 
 
@@ -413,6 +422,14 @@ if __name__ == '__main__':
               f'<0.5x {100 * p["under_mean"]:.2f} %, trials with CV <= 10 %: '
               f'{100 * p["pass_rate"]:.1f} %')
     pn, pd = points['nominal'], points['p95_10']
+    o = points['p95_10']['oos']
+    print(f'd* = {points["p95_10"]["d"]:.3f} m: in-sample pass rate (CV <= 10 %) '
+          f'{100 * points["p95_10"]["pass_rate"]:.1f} % is 95 % by construction; out-of-sample '
+          f'({N_OOS} independent trials, seed {SEED_OOS}): pass rate {100 * o["pass_rate"]:.1f} %, '
+          f'CV {100 * o["cv_mean"]:.2f} ± {100 * o["cv_std"]:.2f} % (P95 {100 * o["cv_p95"]:.2f} %)')
+    i_red = int(np.argmax(nf['red'] > 0))
+    print(f'Noise-free redundant area (> 1.5x mean) is 0 for d < {nf["d"][i_red]:.2f} m '
+          f'(first non-zero value {100 * nf["red"][i_red]:.2f} % at d = {nf["d"][i_red]:.2f} m)')
     print(f'Design d* vs nominal: path +{100 * (pd["path"] / pn["path"] - 1):.1f} %, '
           f'time +{pd["time"] - pn["time"]:.1f} s')
     print('GPS sweep (sigma -> widest d mean / P95, CV at 1.8 m mean / P95):')
