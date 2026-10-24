@@ -611,6 +611,14 @@ def report(out):
           f"{int(np.sum(rs['cv'] < out['main'][('fixed35', D_DESIGN)]['cv']))}/{N_MC}; at 2 m AGL: "
           f"same direction {100 * out['nf'][('tfsame', D_DESIGN)]['cv'][0]:.2f} % vs alternating "
           f"{100 * out['nf'][('tf', D_DESIGN)]['cv'][0]:.2f} % (noise-free)")
+    xs_s = rs['xs']
+    dxs = np.diff(xs_s)
+    extra = float(np.sum(np.hypot(FIELD_L, dxs) - dxs))      # spray-off return ferry instead of the turn
+    t_alt = rs['Lh'] / V
+    print(f'  Cost of same-direction strips at d = {D_DESIGN}: {len(xs_s) - 1} return ferries of '
+          f'{np.hypot(FIELD_L, dxs).mean():.2f} m instead of {dxs.mean():.3f} m turns -> +{extra:.1f} m '
+          f'(+{extra / V:.1f} s at {V} m/s); mission {t_alt:.1f} s -> {t_alt + extra / V:.1f} s '
+          f'(x{(t_alt + extra / V) / t_alt:.2f})')
     flat_path = out['main'][('flat', D_DESIGN)]['L']
     tf_path = out['main'][('tf', D_DESIGN)]['L']
     terr = np.mean([np.sum(np.hypot(np.diff(h_fun(xk, Y)), Y_RES)) + Y_RES
