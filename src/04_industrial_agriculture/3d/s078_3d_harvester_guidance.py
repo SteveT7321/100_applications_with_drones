@@ -624,6 +624,16 @@ def report(main, mc, csweep, asweep):
               f'more {int((ca > cb).sum())}; mean difference {np.mean(ca - cb):+.2f}')
     dz = np.concatenate([np.array(r['dz_det']) for r in mc['acl_low']])
     print(f'    acl_low detections: drone height above obstacle top {dz.min():.2f} .. {dz.max():.2f} m')
+    print(f'    collided obstacles over {N_MC} seeds by position (on-track: |y - y_track| < {R_INFLATE} m) and detection class:')
+    for k in PLANS + ['oracle']:
+        cnt = {}
+        for r in mc[k]:
+            for j in np.flatnonzero(r['collided']):
+                key = ('on-track' if r['threat'][j] else 'off-track') + '/' + str(r['cls'][j])
+                cnt[key] = cnt.get(key, 0) + 1
+        n_on = sum(v for kk, v in cnt.items() if kk.startswith('on-track'))
+        print(f"      {LABELS[k]:<34} {sum(cnt.values())} collided: on-track {n_on}, off-track {sum(cnt.values()) - n_on} ("
+              + ', '.join(f'{kk} {v}' for kk, v in sorted(cnt.items())) + ')')
     flat = summarize(asweep[0.0]['oracle'])
     print(f'  Oracle mission time: flat (A_dem = 0) {flat["t_mission"].mean():.1f} s, card DEM '
           f'{summ["oracle"]["t_mission"].mean():.1f} s ({summ["oracle"]["t_mission"].mean() - flat["t_mission"].mean():+.1f} s)')
