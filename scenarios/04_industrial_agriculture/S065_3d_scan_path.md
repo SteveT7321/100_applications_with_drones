@@ -1,6 +1,6 @@
 # S065 Building 3D Modeling — Multi-Angle Scan Path
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Facade Strip Scanning + GSD-Constrained Path Planning | **Dimension**: 3D
 
 ---
@@ -39,6 +39,20 @@ forward overlap and $\geq 30\%$ side overlap everywhere, and minimises total 3D 
 via TSP ordering. Report total waypoint count, total path length, estimated mission time, and
 achieved GSD.
 
+**Comparison questions** (answered by the simulation):
+
+1. **Ordering**: for the same capture set, is the card's pooled nearest-neighbour TSP tour
+   shorter and safer than a **structured ring pattern** (one lap around the building per strip
+   altitude, then a roof boustrophedon), and how much does a **2-opt** pass on the NN tour add?
+   Metrics: flown path length (legs that would cut through the building, inflated by a 1 m
+   margin, are replaced by an up-over-down detour at 14 m and counted), mission time with the
+   card formula and with a 1 m/s$^2$ acceleration limit per leg, and total climb.
+2. **GPS robustness**: the card plans overlaps exactly at or just above the 60 % / 30 % limits.
+   With capture positions perturbed by $\mathcal{N}(0, \sigma_{GPS}^2)$ per axis
+   ($\sigma_{GPS} \in \{0.05, 0.1, 0.2, 0.5\}$ m, Monte Carlo), what fraction of neighbouring
+   facade captures falls below the required forward and side overlap, and how far does the GSD
+   move?
+
 ---
 
 ## Mathematical Model
@@ -52,7 +66,10 @@ $$\mathrm{GSD} = \frac{s_w \cdot d}{f \cdot W_{px}}$$
 With $s_w = 17.6 \times 10^{-3}$ m, $f = 16 \times 10^{-3}$ m, $W_{px} = 4000$ px, and
 $d_{scan} = 3$ m:
 
-$$\mathrm{GSD} = \frac{0.0176 \times 3}{0.016 \times 4000} = 0.0083 \;\text{m} \approx 0.83 \;\text{cm}$$
+$$\mathrm{GSD} = \frac{0.0176 \times 3}{0.016 \times 4000} = 0.000825 \;\text{m} \approx 0.083 \;\text{cm}$$
+
+(The original card gave 0.0083 m = 0.83 cm, a factor of 10 too large; corrected after numerical
+check. The 2 cm limit would allow a standoff of up to 72.7 m.)
 
 This satisfies the $\leq 2$ cm requirement with margin, confirming $d_{scan} = 3$ m.
 
@@ -528,7 +545,7 @@ def plot_path_length_breakdown(facade_wps, roof_wps, all_wps, tour_idx):
 | Image width | $W_{px}$ | 4000 px |
 | Horizontal FOV | $\theta_h$ | 60° |
 | Vertical FOV | $\theta_v$ | 45° |
-| Achieved GSD at $d_{scan}$ | $\mathrm{GSD}$ | ≈ 0.83 cm (≤ 2 cm ✓) |
+| Achieved GSD at $d_{scan}$ | $\mathrm{GSD}$ | ≈ 0.083 cm = 0.825 mm (≤ 2 cm ✓) |
 | Horizontal footprint | $w_{foot}$ | ≈ 3.46 m |
 | Vertical footprint | $h_{foot}$ | ≈ 2.49 m |
 | Forward overlap | $p_x$ | 60% |
@@ -562,14 +579,15 @@ def plot_path_length_breakdown(facade_wps, roof_wps, all_wps, tour_idx):
 
 ```
 ============================================
-  GSD achieved        : 0.83 cm
+  GSD achieved        : 0.083 cm
   Horizontal footprint: 3.46 m
   Vertical footprint  : 2.49 m
-  Capture baseline Bx : 1.38 m
+  Capture baseline Bx : 1.39 m
   Strip spacing Δz    : 1.74 m
-  Total waypoints     : 312
-  Total path length   : 487.3 m
-  Mission time        : 955.3 s  (15.9 min)
+  Total waypoints     : 464      (corrected: 4 x 6 strips = 336 facade + 8 x 16 = 128 roof)
+  Total path length   : 670.0 m  (NN tour as specified; implementation result)
+  Mission time        : 1366 s   (670.0 m / 1 m/s + 464 x 1.5 s; 1375.4 s once the two
+                                  NN legs through the building are replaced by detours)
 ============================================
 ```
 
@@ -600,6 +618,6 @@ def plot_path_length_breakdown(facade_wps, roof_wps, all_wps, tour_idx):
 
 ## Related Scenarios
 
-- Prerequisites: [S053 Coral Reef 3D Reconstruction](../03_environmental_sar/S053_coral_reef.md) (GSD-constrained viewpoint coverage and TSP tour), [S061 Power Line Inspection](S061_power_line.md) (facade-parallel flight path fundamentals)
+- Prerequisites: [S044 Wall Crack Inspection](../03_environmental_sar/S044_wall_crack.md) (close-range facade standoff), [S053 Coral Reef 3D Reconstruction](../03_environmental_sar/S053_coral_reef.md) (GSD-constrained viewpoint coverage and TSP tour), [S061 Power Line Inspection](S061_power_line.md) (facade-parallel flight path fundamentals)
 - Follow-ups: [S074 Mine 3D Mapping](S074_mine_mapping.md) (enclosed-space 3D scanning with no GPS)
-- Algorithmic cross-reference: [S053 Coral Reef 3D Reconstruction](../03_environmental_sar/S053_coral_reef.md) (nearest-neighbour TSP, GSD formula), [S061 Power Line Inspection](S061_power_line.md) (strip-parallel flight pattern)
+- Algorithmic cross-reference: [S052 Glacier Melt Area Measurement](../03_environmental_sar/S052_glacier.md) (photogrammetric survey planning), [S053 Coral Reef 3D Reconstruction](../03_environmental_sar/S053_coral_reef.md) (nearest-neighbour TSP, GSD formula), [S061 Power Line Inspection](S061_power_line.md) (strip-parallel flight pattern)
