@@ -69,7 +69,7 @@ conda activate drones
 python src/04_industrial_agriculture/s069_warehouse_inventory.py
 ```
 
-Runtime: 140 s and 161 s in the two reproducibility runs, with about ten other simulations running on the same machine. The code asserts that no waypoint or path node is occupied, that A* matches Dijkstra on every leg, and that none of the 30 000 noisy hover positions touches a rack (minimum clearance 0.093 m against the nominal 0.5 m).
+Runtime: 51 s and 44 s in the two reproducibility runs (single-threaded BLAS); the first runs, with about ten other simulations on the same machine, took 140–161 s. The code asserts that no waypoint or path node is occupied, that A* matches Dijkstra on every leg, and that none of the 30 000 noisy hover positions touches a rack (minimum clearance 0.093 m against the nominal 0.5 m).
 
 ---
 
