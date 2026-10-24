@@ -143,12 +143,15 @@ def adaptive_layout(xs_c, z_plan):
     by_flat = compute_footprint(ALTITUDE)[0] * (1 - SIDE_OVERLAP)
 
     def spacing(x_lo):
-        z = band_max(xs_c, z_plan, x_lo, x_lo + by_flat)
+        # look half a spacing back as well as one spacing ahead: the band between this strip
+        # and the previous one must also keep the overlap (looking only east let the west
+        # flank, where the ground rises behind the strip, fall short)
+        z = band_max(xs_c, z_plan, x_lo - by_flat / 2, x_lo + by_flat)
         return compute_footprint(Z_FLY - z)[0] * (1 - SIDE_OVERLAP)
 
     strips = [spacing(0.0) / 2]
     while strips[-1] + spacing(strips[-1]) / 2 < GLACIER_W:
-        strips.append(strips[-1] + spacing(strips[-1]))
+        strips.append(min(strips[-1] + spacing(strips[-1]), GLACIER_W))   # stay inside the area
     strips = np.array(strips)
     bxs = np.array([compute_footprint(Z_FLY - band_max(xs_c, z_plan, x - by_flat, x + by_flat))[1]
                     * (1 - FORWARD_OVERLAP) for x in strips])
@@ -341,7 +344,7 @@ def run_simulation():
     a_all = float((ndwi > NDWI_THRESHOLD).sum() * NDWI_RES ** 2)
 
     # Monte Carlo over pool layout, NDWI noise and altimeter noise (same draws for all plans)
-    mc = {s: {'err': [], 'dist': [], 'frac3': [], 'lost': []} for s in STRATS}
+    mc = {s: {'err': [], 'dist': [], 'frac3': [], 'lost': [], 'lost_frac': []} for s in STRATS}
     for seed in range(N_MC):
         pl, _ = plan_all(np.random.default_rng([seed, 1]))
         pp = make_pools(np.random.default_rng([seed, 2]))
@@ -352,6 +355,7 @@ def run_simulation():
             a, _, rc = melt_area(nd, cv)
             mc[s]['err'].append((a - at) / at)
             mc[s]['lost'].append(float((tr & ~rc).sum() * NDWI_RES ** 2))
+            mc[s]['lost_frac'].append(mc[s]['lost'][-1] / at)
             mc[s]['dist'].append(pl[s]['dist'])
             mc[s]['frac3'].append(float(np.mean(cv >= MIN_VIEWS)))
     for s in STRATS:
@@ -392,7 +396,7 @@ def plot_coverage_path(res, out_dir):
             w, l = agl[k] * KW, agl[k] * KL
             ax.add_patch(Rectangle((px - w / 2, py - l / 2), w, l, fill=False,
                                    ec='tab:orange', lw=0.7))
-        for i in range(0, len(p['strips']), 4):
+        for i in range(0, len(p['strips']), 3):
             ax.annotate(f'{i + 1}', (p['strips'][i], GLACIER_L + 8), ha='center', fontsize=7)
             ax.annotate('', xy=(p['strips'][i], 420 if i % 2 == 0 else 380),
                         xytext=(p['strips'][i], 380 if i % 2 == 0 else 420),
@@ -525,7 +529,8 @@ def plot_gsd_altitude(res, out_dir):
     ax.axhline(GSD_LIMIT_CM, color='red', ls='--', label=f'{GSD_LIMIT_CM:.0f} cm limit (reached at h = {h_lim:.0f} m)')
     g80 = ALTITUDE * PIXEL_PITCH / FOCAL_LENGTH * 100
     ax.plot(ALTITUDE, g80, 'o', color='tab:green', ms=9, label=f'operating point h = 80 m: {g80:.2f} cm')
-    agl_min = Z_FLY - terrain(np.array([0.0]), np.array([0.0]))[0]
+    gxx, gyy = grid_centres(COV_RES)
+    agl_min = Z_FLY - terrain(gxx[None, :], gyy[:, None]).max()
     ax.axvspan(agl_min, ALTITUDE, color='grey', alpha=0.2, label='AGL range over the flanks')
     ax.set_xlabel('altitude above ground h (m)')
     ax.set_ylabel('GSD (cm/px)')
@@ -671,9 +676,13 @@ if __name__ == '__main__':
     bad = (o_s < SIDE_OVERLAP - 1e-9) | (o_f < FORWARD_OVERLAP - 1e-9)
     jb, ib = np.where(bad)
     jm, im_ = np.unravel_index(np.argmin(o_s), o_s.shape)
-    print(f"  Adaptive non-compliant cells: x {gxx[ib].min():.1f}..{gxx[ib].max():.1f} m, "
-          f"y {gyy[jb].min():.1f}..{gyy[jb].max():.1f} m; min side overlap at "
-          f"({gxx[im_]:.1f}, {gyy[jm]:.1f}) m")
+    if len(ib):
+        print(f"  Adaptive non-compliant cells: x {gxx[ib].min():.1f}..{gxx[ib].max():.1f} m, "
+              f"y {gyy[jb].min():.1f}..{gyy[jb].max():.1f} m; min side overlap at "
+              f"({gxx[im_]:.1f}, {gyy[jm]:.1f}) m")
+    else:
+        print(f"  Adaptive plan: no non-compliant cells; min side overlap {100 * o_s.min():.1f}% at "
+              f"({gxx[im_]:.1f}, {gyy[jm]:.1f}) m")
     print(f"  Worst-case spacing {np.diff(res['plans']['worst']['strips'])[0]:.2f} m, "
           f"trigger {res['plans']['worst']['bxs'][0]:.2f} m")
     print(f"  Melt truth (analytic ellipses) {res['a_true']:.0f} m^2 = "
@@ -698,6 +707,13 @@ if __name__ == '__main__':
           f"of {N_MC} seeds")
     eu = np.abs(res['mc']['uni']['err'])
     ew = np.abs(res['mc']['worst']['err'])
+    mb, ma, mw, mu = m['bous'], m['adapt'], m['worst'], m['uni']
+    print(f"  Distance vs boustrophedon: adaptive {100 * (ma['dist'] / mb['dist'] - 1):+.0f}%, "
+          f"worst-case {100 * (mw['dist'] / mb['dist'] - 1):+.0f}%; worst-case / adaptive photos "
+          f"{mw['n_photos'] / ma['n_photos']:.2f}x; card D_uni - simulated unidirectional "
+          f"{d_u - mu['dist']:.0f} m (diagonal repositioning legs)")
+    print(f"  Melt lost in <3-photo zones (boustrophedon), mean share of the true melt area over "
+          f"{N_MC} seeds: {100 * res['mc']['bous']['lost_frac'].mean():.3f} pp")
     print(f"    identical results: uni = bous in {int(np.sum(np.abs(eu - eb) <= 1e-12))}/{N_MC}, "
           f"adaptive = worst-case in {int(np.sum(np.abs(ea - ew) <= 1e-12))}/{N_MC} seeds")
 
