@@ -194,7 +194,7 @@ Bar chart of $\|\mathbf{p}(t_k) - \mathbf{g}_k\|$ for each of the 5 gates, with 
 
 1. **Dynamic gate positions**: gates drift slowly with sinusoidal motion, requiring online re-planning every 0.5 s.
 2. **Three-drone chain relay**: add a third drone for a two-handoff sequence through a 9-gate course.
-3. **Adversarial blocker drone**: a third drone attempts to obstruct the relay path, coupling this scenario with pursuit-evasion (S082, S094).
+3. **Adversarial blocker drone**: a third drone attempts to obstruct the relay path, coupling this scenario with pursuit-evasion (S082, S020).
 4. **Hardware-in-the-loop**: replace the virtual baton with a physical payload modelled as a pendulum; add swing-damping constraints to the handoff BVP.
 5. **Multi-lap relay**: both drones complete a second lap in reverse order, testing robustness of repeated gate-threaded trajectories.
 

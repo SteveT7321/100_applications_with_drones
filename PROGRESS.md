@@ -145,7 +145,7 @@
 - [ ] **S091** Acrobatic Maneuvers
 - [ ] **S092** Movie Chase Scene
 - [ ] **S093** Rubble Search and Rescue
-- [ ] **S094** Counter-Drone Intercept
+- [ ] **S094** Aerial Ball Catching
 - [ ] **S095** Water Surface Takeoff/Landing
 - [ ] **S096** Drone Relay Race
 - [ ] **S097** Aerial Puzzle Assembly

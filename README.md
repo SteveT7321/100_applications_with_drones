@@ -171,7 +171,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S091 | Aerial Acrobatic Maneuvers *(planned)* | [card](scenarios/05_special_entertainment/S091_acrobatics.md) |  |
 | S092 | Movie Car Chase Scene *(planned)* | [card](scenarios/05_special_entertainment/S092_movie_chase.md) |  |
 | S093 | Earthquake Rubble Search and Rescue *(planned)* | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
-| S094 | Counter-Drone Intercept *(planned)* | [card](scenarios/05_special_entertainment/S094_counter_drone.md) |  |
+| S094 | Aerial Ball Catching *(planned)* | [card](scenarios/05_special_entertainment/S094_ball_catching.md) |  |
 | S095 | Water Surface Landing Simulation *(planned)* | [card](scenarios/05_special_entertainment/S095_water_landing.md) |  |
 | S096 | Drone Relay Race *(planned)* | [card](scenarios/05_special_entertainment/S096_relay_race.md) |  |
 | S097 | Aerial Puzzle Assembly *(planned)* | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) |  |

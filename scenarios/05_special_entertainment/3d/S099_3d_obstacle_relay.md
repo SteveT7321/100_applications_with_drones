@@ -181,7 +181,7 @@ encodes both radial miss distance within the hoop disc and axial approach tolera
 2. **Three-drone chain relay with altitude segments**: add Drone C for a two-handoff sequence; assign each drone a different altitude band (low/mid/high) so all three drones are simultaneously active without vertical conflict.
 3. **Wind disturbance inside tunnel**: model a crosswind jet inside the tunnel with $v_\text{wind} \sim \mathcal{N}(0, 0.3)$ m/s perpendicular to the centre-line; add a feedback correction term to keep $d_\perp$ within bounds.
 4. **Physical baton swing model**: replace the virtual baton with a pendulum payload (mass $m_b = 0.05$ kg, cable length $l = 0.2$ m); add swing-damping constraints to the minimum-snap BVP so that angular momentum at handoff is near zero.
-5. **Adversarial blocker drone**: a third drone attempts to hover in the tunnel entrance, coupling this scenario with pursuit-evasion (S094); add a reactive re-routing layer triggered when the blocker is detected within 1 m of the planned path.
+5. **Adversarial blocker drone**: a third drone attempts to hover in the tunnel entrance, coupling this scenario with pursuit-evasion (S020); add a reactive re-routing layer triggered when the blocker is detected within 1 m of the planned path.
 
 ---
 
@@ -190,5 +190,5 @@ encodes both radial miss distance within the hoop disc and axial approach tolera
 - Original 2D/3D version: [S099 Cross-Obstacle Relay Pass](../S099_obstacle_relay.md)
 - Racing gate threading reference: [S082 FPV Racing Circuit](../S082_fpv_racing.md), [S090 Racing Drone Optimal Path](../S090_racing_optimal.md)
 - Relay handoff reference: [S096 Drone Relay Race](../S096_relay_race.md)
-- Pursuit-evasion coupling: [S094 Counter-Drone Intercept](../S094_counter_drone.md)
+- Pursuit-evasion coupling: [S020 Pursuit-Evasion Game (RL Capstone)](../../01_pursuit_evasion/S020_pursuit_evasion_game.md)
 - Grand challenge integration: [S100 Ultimate Grand Challenge — Multi-Domain Integration](../S100_grand_challenge.md)

@@ -846,6 +846,6 @@ if __name__ == '__main__':
 
 ## Related Scenarios
 
-- Prerequisites: [S083 Light Show Single-Drone Test](S083_light_show_single.md), [S094 Counter-Drone Intercept](S094_counter_drone.md)
+- Prerequisites: [S083 Light Show Single-Drone Test](S083_light_show_single.md), [S094 Aerial Ball Catching](S094_ball_catching.md)
 - Follow-ups: [S098 Swarm Synchronized Dance](S098_synchronized_dance.md), [S096 Drone Relay Race](S096_relay_race.md)
 - Algorithmic cross-reference: [S009 Differential Game 1v1 (Differential Game — Lion & Man)](../01_pursuit_evasion/S009_differential_game.md) (time-optimal pursuit), [S004 Obstacle-Course Chase](../01_pursuit_evasion/S004_obstacle_chase.md) (3D gate passage), [S066 Cooperative Crane Simulation](../04_industrial_agriculture/S066_cooperative_crane.md) (MPC tracking with physical constraints)
