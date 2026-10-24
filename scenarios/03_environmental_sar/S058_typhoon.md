@@ -93,6 +93,7 @@ velocity.
 > at the entry radius), so no controller could hold the
 > spiral. With the drag form, the thrust needed to stay on the spiral in the mean wind peaks at
 > 13.09 N (89 % of $mg$) at the eyewall.
+
 Attitude limits translate to a thrust cone constraint:
 
 $$\|\mathbf{u}\| \leq F_{max}, \qquad
