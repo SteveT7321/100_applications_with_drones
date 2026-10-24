@@ -1,6 +1,6 @@
 # S067 3D Upgrade — Spray Overlap Optimization
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S067 original](../S067_spray_overlap.md)
 
 ---
@@ -113,6 +113,8 @@ $$q_k(x, y) = \frac{Q_0}{\cos\phi(x,y)} \exp\!\left(-\frac{\Delta x_k(x)^2}{2\,\
 The $\cos^{-1}\phi$ factor accounts for the larger surface area of a sloped cell relative to its
 horizontal projection. The total accumulated dose on cell $(x,y)$ is:
 
+> **Correction (3D implementation, 2026-10-24).** Two errors in $q_k$. (1) Spray falling vertically onto a sloped cell spreads the same mass over a *larger* surface, so the dose per unit surface area is the horizontal deposit times $\cos\phi$, not divided by it. (2) With a fixed peak $Q_0$, a footprint that widens with altitude deposits more total mass per metre flown; the nozzle flow is fixed, so the profile must be normalised by $1/(\sqrt{2\pi}\,\sigma_s)$. The implementation models the spray as droplet directions with $\tan(\text{angle}) \sim \mathcal N(0, (\tan\theta_c/2)^2)$, each landing on the actual ground below; the horizontal deposit is $p(\Delta x/H)\,(H + \Delta x\,\partial_x h)/H^2$ with $H = z_{drone} - h(x, y)$, which conserves mass and contains the slope geometry; the surface dose is that times $\cos\phi$. The card formula is still run as an ablation.
+
 $$D(x,y) = \sum_{k=0}^{N-1} q_k(x, y)$$
 
 ### 3D Coverage Uniformity (CV)
@@ -129,7 +131,7 @@ $$\mu_D = \frac{\sum_{i,j} D(x_i, y_j)\,/\cos\phi_{ij}}{\sum_{i,j} 1/\cos\phi_{i
 ### Adaptive Strip Spacing
 
 On a cross-slope of angle $\phi$, the spray footprint appears compressed in the horizontal
-plane by a factor $\cos\phi$. To maintain constant overlap, the strip spacing is locally widened:
+plane by a factor $\cos\phi$ (corrected: a vertical spray's horizontal footprint is not compressed by the slope; it is stretched on the downhill side and shortened on the uphill side, see the correction above). To maintain constant overlap, the strip spacing is locally widened:
 
 $$d_{eff}(x_k) = d \cdot \cos\phi(x_k, y_{mid}) + \alpha_{slope}\,|\nabla h(x_k, y_{mid})|^{-1} \cdot d$$
 
@@ -140,6 +142,8 @@ $$d_{eff}(x_k) = d^* \cdot \frac{w_{spray}(x_k, y_{mid})}{w_{spray}^{nom}}
 
 This scales the strip spacing in proportion to the actual footprint width at the strip's
 representative midpoint altitude.
+
+> **Correction (3D implementation).** The first formula is singular where $\nabla h = 0$ (hill tops, saddles) and is not used; the second (AGL-ratio) formula is implemented. Under a fixed nozzle flow the local application rate is proportional to $1/d_{eff}$, so varying the spacing also varies the mean dose; in the simulation, with terrain following, the adaptive rule is worse than constant spacing in 98–100 of 100 GPS trials at every spacing tested.
 
 ### Optimal Spacing in 3D
 
@@ -153,6 +157,8 @@ $$d^* = \underset{d}{\arg\min}\;\text{CV}_{3D}(d, k_{tf})$$
 A practical sweep over $d \in [0.5\,\text{m},\; 4.0\,\text{m}]$ and
 $k_{tf} \in [0.5\,\text{s}^{-1},\; 5.0\,\text{s}^{-1}]$ (bandwidth grid) yields a 2D CV heat
 map $\text{CV}_{3D}(d, k_{tf})$ from which the joint optimum is read off.
+
+> **Correction (3D implementation).** As in the 2D S067, CV has no interior optimum: it rises monotonically with $d$ and falls monotonically with $\omega_{tf}$ (checked on the whole grid). The design quantity is the widest $d$ with CV $\le 10\,\%$ for a given $\omega_{tf}$. Perfect tracking does not quite recover the flat-field value either (noise-free 1.329 m vs 1.359 m): the slope geometry and the $\cos\phi$ conversion remain.
 
 ### Strip Count and Mission Path Length on Undulating Terrain
 
@@ -177,7 +183,7 @@ overhead is approximately $1$–$3\%$ compared to the flat-field value.
 - **3D overlap map**: dose is accumulated on a 2D terrain mesh $h(x,y)$ instead of a flat grid; the heat map is rendered as a 3D surface coloured by dose.
 - **Adaptive strip spacing**: local strip spacing adjusted in proportion to $z_{AGL}(x_k, y_{mid}) / z_{AGL}^{cmd}$ to compensate for footprint dilation on high terrain.
 - **2D CV heat map** over $(d, \omega_{tf})$: reveals the joint optimum and shows that terrain-following bandwidth is as important as strip spacing for uniformity.
-- **Altitude bound enforcement**: $z_{drone} \in [1.0, 8.0]$ m (safe minimum clearance above highest terrain point + AGL target).
+- **Altitude bound enforcement**: $z_{drone} \in [1.0, 8.0]$ m (safe minimum clearance above highest terrain point + AGL target). (Corrected: the terrain-following command $h + 2$ reaches 0.5 m in the valleys, below the 1.0 m bound; the implementation asserts a 0.5 m AGL floor instead.)
 
 ---
 
@@ -192,12 +198,12 @@ overhead is approximately $1$–$3\%$ compared to the flat-field value.
 | Spray cone half-angle | $\theta_c$ | 26.6° ($\tan\theta_c = 0.5$) |
 | Nominal spray width | $w_{spray}^{nom}$ | 2.0 m |
 | Nominal spray sigma | $\sigma_s^{nom}$ | 0.5 m |
-| Nominal strip spacing | $d^*$ (flat-field) | 1.80 m |
+| Nominal strip spacing | $d^*$ (flat-field) | 1.80 m (corrected: 1.80 m gives CV 30.7 % on the flat field; the 2D S067 design is 1.365 m for CV ≤ 10 %) |
 | Terrain-following bandwidth range | $\omega_{tf}$ | 0.5 – 5.0 s$^{-1}$ |
 | GPS positioning error | $\sigma_{gps}$ | 0.1 m |
 | Dose grid resolution | — | 0.1 × 0.1 m |
 | Monte Carlo trials | $M_{MC}$ | 100 |
-| Altitude bounds | $z_{drone}$ | 1.0 – 8.0 m |
+| Altitude bounds | $z_{drone}$ | 1.0 – 8.0 m (corrected: AGL ≥ 0.5 m asserted) |
 | Drone cruise speed | $v$ | 3.0 m/s |
 | Strip spacing search range | $[d_{min}, d_{max}]$ | [0.5, 4.0] m |
 | Redundancy threshold | — | $1.5 \times \mu_D$ |
