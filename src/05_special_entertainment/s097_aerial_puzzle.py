@@ -434,6 +434,12 @@ def save_animation(run, out_dir, step=15):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
+def fit_range(ft):
+    """'a-b s after switch' for the seeds that reached the 5 mm fit, or 'never'."""
+    ok = np.isfinite(ft)
+    return (f'{np.min(ft[ok]):.1f}-{np.max(ft[ok]):.1f} s after switch' if ok.any()
+            else 'never reached')
+
 def mc_line(tag, m):
     c = m['converged']
     s = f'  {tag:32s} converged {c.sum()}/{len(c)}'
@@ -527,9 +533,7 @@ if __name__ == '__main__':
             f'{1000 * np.max(sweep[b][s]["hold_err_max"]):.2f}, min '
             f'{1000 * np.min(sweep[b][s]["hold_err_max"]):.2f}), first fit to 5 mm in '
             f'{np.isfinite(sweep[b][s]["fit_time"]).sum()}/{N_MC} '
-            f'({np.nanmin(sweep[b][s]["fit_time"]) if np.isfinite(sweep[b][s]["fit_time"]).any() else np.nan:.1f}'
-            f'-{np.nanmax(sweep[b][s]["fit_time"]) if np.isfinite(sweep[b][s]["fit_time"]).any() else np.nan:.1f} s '
-            f'after switch), worst slot <= 5 mm over the scored hold in '
+            f'({fit_range(sweep[b][s]["fit_time"])}), worst slot <= 5 mm over the scored hold in '
             f'{int((sweep[b][s]["hold_err_max"] <= DELTA_FIT).sum())}/{N_MC}, scored time with '
             f'slot <= 5 mm {100 * np.mean(sweep[b][s]["frac_err_ok"]):.1f}%'
             for s in ('indep', 'consensus')))

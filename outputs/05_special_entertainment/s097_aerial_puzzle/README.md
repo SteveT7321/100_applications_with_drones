@@ -100,7 +100,7 @@ conda activate drones
 python src/05_special_entertainment/s097_aerial_puzzle.py
 ```
 
-Runtime: about 1.6 min (92–98 s over three runs; other simulations were running at the same time). The script asserts that every altitude stays above 0 and every speed below 10 m/s.
+Runtime: about 1.5 min (87–88 s over three runs; other simulations were running at the same time). The script asserts that every altitude stays above 0 and every speed below 10 m/s.
 
 ---
 
@@ -138,7 +138,7 @@ Per seed, error consensus had the smaller worst edge gap in **20/20** seeds (mea
 **Wind sweep with no position bias** (mean over seeds of the worst value over the hold; the nominal wind case with no bias is the first row of the bias sweep):
 
 Column key, per strategy:
-- **gap / slot**: mean over seeds of the worst value over the scored 8 s, with the max and min over seeds in brackets;
+- **gap / slot**: mean over seeds of the worst edge gap and worst slot error over the scored 8 s. The brackets after the slot value give the max over seeds, and in the nominal row also the min (printed only for the bias-sweep rows);
 - **fit reached**: seeds in which the worst slot error first reaches 5 mm during the hold;
 - **seeds ≤ 5 mm**: seeds whose worst slot error over the whole scored hold is at most 5 mm;
 - **time ≤ 5 mm**: the scored time with slot error at most 5 mm.
