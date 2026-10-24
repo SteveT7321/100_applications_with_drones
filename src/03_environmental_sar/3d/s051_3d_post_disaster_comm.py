@@ -93,8 +93,17 @@ LAT        = 25.0                # m  added: SA x, y lattice (half a cell)
 D_Z_MIN    = 2.0                 # m  added: floor on the z step (2D uses a 10 m xy floor)
 N_LAT      = int(round(AREA / LAT)) + 1        # 81 lattice points per axis
 N_SEEDS    = 6                   # Monte Carlo debris maps / SA seeds
-SA_SEED_BASE = 0
+SA_SEED_BASE = 500                # SA seed of the main runs = 500 + map index (decoupled from the debris seed)
 SWEEP_STEPS = 20_000             # SA iterations per sweep run (both sides equal)
+N_SA_REPS  = 4                   # independent SA seeds per debris map (optimiser spread)
+SA_REP_BASE = 3000               # replicate SA seed = 3000 + 100 * map + replicate
+REP_SPECS = {                    # replicate strategies (same SA seed for all on a given replicate)
+    'alt': {'free_z': True},
+    'fixed50': {'free_z': False, 'z_fix': 50.0},
+    'fixed120': {'free_z': False, 'z_fix': 120.0},
+    'alt300': {'free_z': True, 'z_max': 300.0},
+    'fixed200': {'free_z': False, 'z_fix': 200.0},
+}
 Z_FIX_SWEEP = (20.0, 35.0, 50.0, 80.0, 120.0)
 Z_LEVELS   = (20.0, 40.0, 60.0, 80.0, 100.0, 120.0)   # greedy / daisy-chain altitude levels
 SHOW_SEED  = 0
@@ -337,7 +346,7 @@ def simulated_annealing(world, seed, n_steps, free_z, z_fix=Z_FLAT, n_frames=0, 
     the fixed-z run ignores the z component. Proposals that put a drone inside a debris
     column (z <= h) are rejected.
     """
-    rng = np.random.default_rng(SA_SEED_BASE + seed)
+    rng = np.random.default_rng(seed)
     total = world.pop.sum()
     pop_ext, h, lat, lat_cell = world.pop_ext, world.h, world.lat, world.lat_cell
     beta = (T_END_SA / T0_SA) ** (1.0 / n_steps)
@@ -504,8 +513,8 @@ def _run_seed(seed):
     out = {'seed': seed, 'h': w.h.copy()}
     out['flat'] = evaluate(w, _G['flat_xyz'])
     nf = GIF_FRAMES_TARGET if seed == SHOW_SEED else 0
-    xf, cf, hf, _ = simulated_annealing(w, seed, N_SA_STEPS, free_z=False)
-    xa, ca, ha, fr = simulated_annealing(w, seed, N_SA_STEPS, free_z=True, n_frames=nf)
+    xf, cf, hf, _ = simulated_annealing(w, SA_SEED_BASE + seed, N_SA_STEPS, free_z=False)
+    xa, ca, ha, fr = simulated_annealing(w, SA_SEED_BASE + seed, N_SA_STEPS, free_z=True, n_frames=nf)
     out['fixed'], out['alt'] = evaluate(w, xf), evaluate(w, xa)
     # incremental SA coverage must equal direct ray marching (catches table / drift bugs)
     assert abs(out['fixed']['cov'] - cf) < 1e-9 and abs(out['alt']['cov'] - ca) < 1e-9
@@ -522,8 +531,8 @@ def _run_seed(seed):
     out['dsweep'] = {}
     for sc in DEBRIS_SCALES:
         ws = worlds[sc]
-        x1, _, _, _ = simulated_annealing(ws, seed, SWEEP_STEPS, free_z=False)
-        x2, _, _, _ = simulated_annealing(ws, seed, SWEEP_STEPS, free_z=True)
+        x1, _, _, _ = simulated_annealing(ws, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=False)
+        x2, _, _, _ = simulated_annealing(ws, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=True)
         out['dsweep'][sc] = {'fixed': _slim(evaluate(ws, x1)), 'alt': _slim(evaluate(ws, x2)),
                              'dense_frac': float((ws.h >= H_DENSE).mean()),
                              'pop_dense': float(pop[ws.h >= H_DENSE].sum() / pop.sum())}
@@ -532,24 +541,35 @@ def _run_seed(seed):
         if zf == Z_FLAT:
             out['zsweep'][zf] = out['dsweep'][1.0]['fixed']
             continue
-        x1, _, _, _ = simulated_annealing(w, seed, SWEEP_STEPS, free_z=False, z_fix=zf)
+        x1, _, _, _ = simulated_annealing(w, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=False, z_fix=zf)
         out['zsweep'][zf] = _slim(evaluate(w, x1))
     out['blocked_z20'] = n_blocked_links(w, out['zsweep'][20.0]['xyz'])
     # probes above the card's 120 m ceiling (fixed uniform altitude and altitude SA)
     out['zhigh'] = {}
     for zf in Z_FIX_HIGH:
-        x1, _, _, _ = simulated_annealing(w, seed, SWEEP_STEPS, free_z=False, z_fix=zf)
+        x1, _, _, _ = simulated_annealing(w, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=False, z_fix=zf)
         out['zhigh'][zf] = _slim(evaluate(w, x1, z_max=zf))
-    x1, _, _, _ = simulated_annealing(w, seed, SWEEP_STEPS, free_z=True, z_max=Z_MAX_PROBE)
+    x1, _, _, _ = simulated_annealing(w, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=True, z_max=Z_MAX_PROBE)
     out['alt_high'] = _slim(evaluate(w, x1, z_max=Z_MAX_PROBE))
     # debris correlation-length sweep
     out['corr'] = {}
     for cr in CORR_SWEEP:
         wc = World(geom, pop, build_debris(density, seed, 1.0, corr=cr))
-        x1, _, _, _ = simulated_annealing(wc, seed, SWEEP_STEPS, free_z=False)
-        x2, _, _, _ = simulated_annealing(wc, seed, SWEEP_STEPS, free_z=True)
+        x1, _, _, _ = simulated_annealing(wc, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=False)
+        x2, _, _, _ = simulated_annealing(wc, SA_SEED_BASE + seed, SWEEP_STEPS, free_z=True)
         out['corr'][cr] = {'fixed': _slim(evaluate(wc, x1)), 'alt': _slim(evaluate(wc, x2)),
                            'dense_frac': float((wc.h >= H_DENSE).mean())}
+    # optimiser spread: independent SA seeds on this map (decoupled from the debris seed)
+    out['reps'] = []
+    for r in range(N_SA_REPS):
+        sd = SA_REP_BASE + 100 * seed + r
+        row = {}
+        for key, kw in REP_SPECS.items():
+            x1, _, _, _ = simulated_annealing(w, sd, SWEEP_STEPS, **kw)
+            zm = kw.get('z_max', max(Z_MAX, kw.get('z_fix', Z_MAX)))
+            ev = evaluate(w, x1, z_max=zm)
+            row[key] = (float(ev['cov']), bool(ev['feasible']))
+        out['reps'].append(row)
     # relay-LOS probe: random drone pairs within d_relay at a common altitude
     rng = np.random.default_rng(5000 + seed)
     out['link_probe'] = {}
@@ -596,6 +616,30 @@ def _pct(v):
     return 100.0 * np.asarray(v, float)
 
 
+def report_reps(P):
+    """Optimiser spread: N_SA_REPS independent SA seeds per map, same seed for every strategy."""
+    print(f'\nOptimiser spread ({N_SA_REPS} independent SA seeds per map, {SWEEP_STEPS} iterations, '
+          'same SA seed for every strategy within a replicate):')
+    keys = list(REP_SPECS)
+    allv = {k: [] for k in keys}
+    for o in P:
+        v = {k: np.array([100 * r[k][0] for r in o['reps']]) for k in keys}
+        nf = {k: sum(r[k][1] for r in o['reps']) for k in keys}
+        for k in keys:
+            allv[k].append(v[k])
+        print(f'  map {o["seed"]}: ' + '; '.join(f'{k} {v[k].mean():.2f} +- {v[k].std(ddof=1):.2f}'
+                                                  + ('' if nf[k] == N_SA_REPS else f' ({nf[k]} feasible)')
+                                                  for k in keys))
+    A = {k: np.concatenate(allv[k]) for k in keys}
+    sd = {k: np.mean([x.std(ddof=1) for x in allv[k]]) for k in keys}
+    print('  mean within-map SD: ' + ', '.join(f'{k} {sd[k]:.2f} pp' for k in keys))
+    for a, b in (('alt', 'fixed50'), ('alt', 'fixed120'), ('fixed120', 'fixed50'), ('alt300', 'fixed200'),
+                 ('alt300', 'alt')):
+        d = A[a] - A[b]
+        print(f'  {a} - {b} over {len(d)} runs: mean {d.mean():+.2f} pp, range {d.min():+.2f} to {d.max():+.2f}; '
+              f'{a} better in {int(np.sum(d > 0))}/{len(d)}, worse in {int(np.sum(d < 0))}')
+
+
 def report(res):
     P = res['per_seed']
     total = res['total']
@@ -617,9 +661,12 @@ def report(res):
     print(f'  hover power at 20 / 120 m: {P_HOVER0 * (1 + KAPPA * Z_MIN):.3f} / '
           f'{P_HOVER0 * (1 + KAPPA * Z_MAX):.3f} W')
     beta = (T_END_SA / T0_SA) ** (1.0 / N_SA_STEPS)
+    n_cold = int(np.ceil(np.log(1.0 / T0_SA) / np.log(0.995)))
+    print(f'  card beta = 0.995: T below 1 person after {n_cold} iterations, leaving {N_SA_STEPS - n_cold} '
+          f'iterations of near hill-climbing')
     print(f'SA: {N_SA_STEPS} iterations, beta = {beta:.6f}, xy lattice {LAT:.0f} m, '
           f'delta_xy {D_XY_MAX:.0f}->{LAT:.0f} m, delta_z {D_Z_MAX:.0f}->{D_Z_MIN:.0f} m; '
-          f'{N_SEEDS} seeds (debris map + SA random numbers per seed)')
+          f'{N_SEEDS} debris maps; main SA seed = {SA_SEED_BASE} + map, {N_SA_REPS} extra SA seeds per map')
     print(f'2D S051 SA solution: coverage in the 2D model (300 m disc) = {100 * res["sa2d_cov2d"]:.2f}%; '
           'positions ' + ', '.join(f'({p[0]:.0f},{p[1]:.0f})' for p in res['sa2d_pos']))
 
@@ -680,12 +727,7 @@ def report(res):
     print('  SA constraint-free (connected, energy-feasible) from iteration, per seed: fixed '
           + ', '.join(str(o['conn_iter']['fixed']) for o in P) + '; alt '
           + ', '.join(str(o['conn_iter']['alt']) for o in P))
-    for s_ in ('fixed', 'alt'):
-        v80 = _pct([o[s_]['cov'] for o in P])
-        v20 = _pct([o['dsweep'][1.0][s_]['cov'] for o in P])
-        dd = v80 - v20
-        print(f'  SA optimiser noise, {s_}: {N_SA_STEPS} it. minus {SWEEP_STEPS} it. (same seed): mean '
-              f'{dd.mean():+.2f} pp, range {dd.min():+.2f} to {dd.max():+.2f} pp')
+    report_reps(P)
 
     print(f'\nUniform-altitude sweep (fixed-z SA, {SWEEP_STEPS} iterations, same seeds):')
     zs_all = list(Z_FIX_SWEEP) + list(Z_FIX_HIGH)
@@ -841,7 +883,7 @@ def plot_coverage_maps(res, out):
 
 def plot_los_shadow(res, out):
     w, o = res['world'], res['per_seed'][SHOW_SEED]
-    fig, axes = plt.subplots(1, 3, figsize=(17, 5.4))
+    fig, axes = plt.subplots(1, 3, figsize=(19, 6.2), constrained_layout=True)
     im = axes[0].imshow(_img(w.h), origin='lower', extent=[0, AREA, 0, AREA], cmap='Greys', vmin=0, vmax=H_DEBRIS_MAX)
     fig.colorbar(im, ax=axes[0], label='debris height h (m)')
     axes[0].contour(np.linspace(CELL / 2, AREA - CELL / 2, GRID_N), np.linspace(CELL / 2, AREA - CELL / 2, GRID_N),
@@ -858,7 +900,6 @@ def plot_los_shadow(res, out):
     for ax in axes:
         ax.set_xlabel('x (m)'); ax.set_aspect('equal')
     axes[0].set_ylabel('y (m)')
-    plt.tight_layout()
     p = os.path.join(out, 'los_shadow_map.png')
     plt.savefig(p, dpi=120, bbox_inches='tight'); plt.close(fig)
     print(f'Saved: {p}')
