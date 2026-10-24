@@ -74,7 +74,8 @@ SIGMA_H_SWEEP = [0.0, 0.15, 0.3, 0.45, 0.6]
 N_SWEEP_SEEDS = 10
 R_CROWN_SWEEP = [0.25, 0.5, 1.0]  # crown-radius sensitivity (added)
 KDZ_PROBE = 2.5                  # vertical-damping probe: k_d,z x 2.5
-BOUND_CONTACT_MAX = 1.0          # s, longest allowed continuous contact with the altitude bound (added)
+BOUND_CONTACT_MAX = T_SPRAY      # s: on the bound longer than one spray window = landed (assert, added)
+HARD_TOUCHDOWN = 1.0             # m/s: floor contact faster than this is counted as a hard touchdown (added)
 T_MAX = 700.0
 PLOT_SEED = 0
 ANIM_STEP = 100
@@ -131,7 +132,7 @@ def run_mission(args):
     st = {'px': float(DEPOT[0]), 'py': float(DEPOT[1]),
           'pz': zc[TOUR[0]] if strategy != 'tf' else DZ_NOM,
           'vx': 0.0, 'vy': 0.0, 'vz': 0.0, 'ix': 0.0, 'iy': 0.0, 'iz': 0.0, 'k': 0,
-          'nsat': 0, 'nclamp': 0, 'crun': 0, 'cmax': 0}
+          'nsat': 0, 'nclamp': 0, 'crun': 0, 'cmax': 0, 'vimp': 0.0, 'nhard': 0}
     X, Y, Z, CUR = [], [], [], []
     w_g = 2 * math.pi / T_WIND
 
@@ -170,13 +171,17 @@ def run_mission(args):
         nz = pz + st['vz'] * DT
         if nz < Z_MIN or nz > Z_MAX:                            # card altitude bounds
             st['nclamp'] += 1
+            if st['crun'] == 0 and nz < Z_MIN:                  # touchdown on the floor: record impact speed
+                st['vimp'] = max(st['vimp'], -st['vz'])
+                st['nhard'] += int(-st['vz'] > HARD_TOUCHDOWN)
             st['crun'] += 1
             nz = min(max(nz, Z_MIN), Z_MAX)
             st['vz'] = 0.0
         else:
             st['crun'] = 0
         st['cmax'] = max(st['cmax'], st['crun'])
-        # a brief touch of the altitude bound is part of the model; resting on it is a landing/crash
+        # touching the bound, even hard, is counted as a result; staying on it for longer than a whole
+        # spray window means the drone has landed or is stuck, which ends the run
         assert st['crun'] * DT <= BOUND_CONTACT_MAX, 'drone resting on the altitude bound (landed or stuck)'
         st['pz'] = nz
         X.append(st['px']); Y.append(st['py']); Z.append(nz); CUR.append(st['cur'])
@@ -239,7 +244,7 @@ def run_mission(args):
         n_contact += int(m.sum())
     sp = np.hypot(np.diff(np.concatenate([[DEPOT[0]], X])), np.diff(np.concatenate([[DEPOT[1]], Y])))
     out = {'h': h, 'hover': [], 'time': st['k'] * DT, 'timeouts': timeouts, 'wait': waits.mean(),
-           'sat': st['nsat'] / st['k'], 'clamp': st['nclamp'], 'clamp_run': st['cmax'] * DT, 'contact_plants': int(contact.sum()),
+           'sat': st['nsat'] / st['k'], 'clamp': st['nclamp'], 'clamp_run': st['cmax'] * DT, 'v_impact': st['vimp'], 'n_hard': st['nhard'], 'contact_plants': int(contact.sum()),
            'contact_own': int(own.sum()), 'contact_other': int((contact & ~own).sum()),
            'contact_own_climb': int((own & climb_leg).sum()), 'contact_own_descent': int((own & ~climb_leg).sum()),
            'contact_steps': n_contact, 'z_safe': z_safe, 'max_step': float(sp.max()),
@@ -536,6 +541,35 @@ def report(res):
             c = [dose_eval(r)['ceff'] for r in rs]
             parts.append(f"{s} {np.mean(c):.3f} +- {np.std(c):.3f} (contact plants {np.mean([r['contact_plants'] for r in rs]):.2f})")
         print(f'    sigma_h {sh:.2f}: ' + ' | '.join(parts))
+    print(f'\n  --- altitude-bound contacts over EVERY job group (assert: no contact longer than '
+          f'{BOUND_CONTACT_MAX:.1f} s = one spray window; hard touchdown = floor contact faster than {HARD_TOUCHDOWN:.1f} m/s) ---')
+    rows = []
+    for key in sorted(res, key=str):
+        rs = res[key]
+        worst = int(np.argmax([r['clamp_run'] for r in rs]))
+        rows.append((max(r['clamp_run'] for r in rs), key, rs, worst))
+    for cmax, key, rs, worst in sorted(rows, key=lambda x: (-round(x[0], 6), str(x[1]))):
+        if cmax <= 0:
+            continue
+        print(f"    {str(key):42s} longest contact {cmax:.2f} s (seed {worst}), floor clamps {np.mean([r['clamp'] for r in rs]):.1f}/mission, "
+              f"max touchdown speed {max(r['v_impact'] for r in rs):.2f} m/s, hard touchdowns "
+              f"{sum(r['n_hard'] for r in rs)} in {len(rs)} missions")
+    allmax = max(x[0] for x in rows)
+    cmax, key, rs, worst = sorted(rows, key=lambda x: (-round(x[0], 6), str(x[1])))[0]
+    tr = run_mission((key[0], key[1], key[2], worst, True) + tuple(key[3:]))['traj']    # replay the worst run
+    on = np.isclose(tr[:, 2], Z_MIN)
+    best_n, best_end, cur = 0, 0, 0
+    for i, o in enumerate(on):
+        cur = cur + 1 if o else 0
+        if cur > best_n:
+            best_n, best_end = cur, i
+    i0 = best_end - best_n + 1
+    pre = tr[max(0, i0 - int(2.0 / DT)):i0, 2]
+    print(f'    replay of the worst run {key} seed {worst}: on the floor from t = {(i0 + 1) * DT:.2f} s for {best_n * DT:.2f} s; '
+          f'highest altitude in the 2 s before {pre.max():.2f} m; distance to the nearest plant centre at touchdown '
+          f'{np.min(np.hypot(tr[i0, 0] - PLANTS[:, 0], tr[i0, 1] - PLANTS[:, 1])):.2f} m')
+    print(f'    worst job group: {allmax:.2f} s; margin to the assert {BOUND_CONTACT_MAX / allmax:.1f}x; '
+          f'groups with no bound contact: {sum(1 for x in rows if x[0] <= 0)} of {len(rows)}')
 
 
 if __name__ == '__main__':
