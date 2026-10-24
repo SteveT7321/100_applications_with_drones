@@ -75,7 +75,7 @@ conda activate drones
 python src/03_environmental_sar/s056_radiation.py
 ```
 
-Runtime ≈ 15–25 s (measured with other simulations running in parallel).
+Runtime ≈ 15–35 s depending on machine load.
 
 ---
 
@@ -138,7 +138,7 @@ Posterior after successive readings for greedy EIG on the demo source; top σ0 =
 
 ### EIG Map
 
-EIG before reading 11 of the σ0 = 0.4 demo. Information is lowest near the cells already measured (where the readings already exclude a source) and highest in the unvisited parts of the zone. The red square is the overall maximum; the star is the next waypoint, the best cell outside the 5-cell cooldown (here the same cell):
+EIG after 10 readings (before reading 11) of the σ0 = 0.4 demo. Information is lowest near the cells already measured (where the readings already exclude a source) and highest in the unvisited parts of the zone. The red square is the overall maximum; the star is the next waypoint, the best cell outside the 5-cell cooldown (here the same cell):
 
 ![EIG Map](./eig_map.png)
 
@@ -180,7 +180,7 @@ Greedy EIG with σ0 = 0.4 on the demo source, one frame per reading (23 frames);
 | Next waypoint = `argmax` of the score | Scores within 10⁻⁹ (relative) are ties, broken by distance from the drone, then by cell index | Exact symmetric ties occur (first EIG choice after the launch reading); plain `argmax` settled them by rounding that depended on the BLAS thread count (X1). |
 | Card code chooses the first waypoint before any reading (from a uniform belief) | First reading at the launch point (250, 250) m for every strategy | With a uniform belief, max belief would pick cell 0 by index order; a common first reading keeps the comparison fair. |
 | Lawnmower: boustrophedon over the grid | 8 × 10 lattice (62.5 × 50 m) flown boustrophedon | A sweep over all 2500 cells would cover only the first 1.6 rows in 80 readings, which would cripple the baseline. |
-| Belief maps at $k$ = 1, 5, 20, 50; EIG map at $k$ = 10 | $k$ = 1, 2, 3 and the final reading; EIG map before reading 7 of the σ0 = 0.4 demo | Missions stop after 3–7 readings on the demo source. |
+| Belief maps at $k$ = 1, 5, 20, 50; EIG map at $k$ = 10 | Belief maps at $k$ = 1, 2, 3 and the final reading; EIG map after 10 readings (before reading 11) of the σ0 = 0.4 demo | On the demo source the missions stop after 3 (max belief), 4 (EIG) and 25 (lawnmower) readings at σ0 = 0.04, and after 23 readings for EIG at σ0 = 0.4, so most of the card's snapshots do not exist. |
 | Contour rings at 0.5, 1, 5, 20 µSv/h | 0.5, 1, 5 µSv/h | The dose at 15 m never exceeds about 9 µSv/h. Card corrected. |
 | "95 % confidence bands" | 95 % bootstrap interval of the RMS | The RMS of 50 errors has no simple closed-form interval. |
 | Single noise level | Also σ0 = 0.4 | At the card's noise level the ranking is driven by premature convergence; the second level shows the regime where the greedy strategies work as intended. |

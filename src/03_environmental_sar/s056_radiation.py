@@ -276,7 +276,7 @@ def plot_eig_map(demo10, out_dir):
     fig, ax = plt.subplots(figsize=(6.5, 5.6))
     im = ax.imshow(_img(e), origin='lower', extent=[0, AREA_SIZE, 0, AREA_SIZE], cmap='viridis')
     fig.colorbar(im, ax=ax, label='EIG (nats)')
-    i = int(np.argmax(e))
+    i = pick_max(e, demo10['path'][k])
     ax.plot(*CELLS[i], 's', mfc='none', mec='red', ms=12, mew=2, label='max EIG over all cells')
     ax.plot(*demo10['path'][k + 1], '*', color='red', ms=16, mec='k',
             label='next waypoint (max EIG outside cooldown)')
@@ -432,6 +432,8 @@ if __name__ == '__main__':
               f"{r['n_meas']} measurements, peak {r['pmax']:.3f}, "
               f"MAP ({r['est'][0]:.0f}, {r['est'][1]:.0f}), error {r['err_map']:.1f} m, "
               f"path {r['path_len']:.0f} m, time {r['time']:.0f} s")
+    print(f"  EIG map figure: after {min(9, len(demo10['hist']['eig']) - 1) + 1} readings "
+          f"(before reading {min(9, len(demo10['hist']['eig']) - 1) + 2}) of the sigma0 x10 demo")
     print(f"  Demo, EIG, sigma0 x10: {demo10['n_meas']} measurements, peak {demo10['pmax']:.3f}, "
           f"error {demo10['err_map']:.1f} m, path {demo10['path_len']:.0f} m")
     for m in SIGMA_MULT:
