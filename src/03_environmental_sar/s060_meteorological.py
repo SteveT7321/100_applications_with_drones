@@ -141,7 +141,7 @@ def exponential_variogram(h, C0, C1, a):
 
 
 def gaussian_variogram(h, C0, C1, a):
-    """Parabolic at the origin; used only to diagnose the nugget estimate."""
+    """Parabolic at the origin; used for the nugget diagnostic and the seed-0 Gaussian Kriging run."""
     return C0 + C1 * (1.0 - np.exp(-(h / a) ** 2))
 
 
