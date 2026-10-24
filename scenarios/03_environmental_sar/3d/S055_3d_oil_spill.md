@@ -1,6 +1,6 @@
 # S055 3D Upgrade — Oil Spill Tracking
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S055 original](../S055_oil_spill.md)
 
 ---
@@ -11,7 +11,7 @@ The original S055 locks both drones at a constant altitude $z = 15$ m and models
 
 1. **Sensor footprint is altitude-independent.** A real hyperspectral or fluorescence sensor has a nadir-facing field of view whose ground footprint scales with altitude; the detection threshold for a given oil thickness also shifts with the standoff distance because of spectral path-length attenuation.
 2. **Sea-state wave tilt is ignored.** Ocean surface waves tilt the air-water interface; a drone flying at fixed altitude experiences variable view angles across a wave field, which modulates the apparent reflectance and can produce false boundary detections.
-3. **Spill thickness is unobservable.** Surface oil forms sheens of varying thickness (rainbow sheen < 0.0001 mm through thick brown oil > 0.1 mm). Different thicknesses exhibit different fluorescence intensities. A single-altitude pass cannot separate areal extent from thickness variation; two altitude layers provide an overdetermined system that allows simultaneous estimation of both.
+3. **Spill thickness is unobservable.** Surface oil forms sheens of varying thickness (rainbow sheen < 0.0001 mm through thick brown oil > 0.1 mm). Different thicknesses exhibit different fluorescence intensities. (Correction 2026-10-24: in the sensor model below a single calibrated measurement already gives the thickness; a second altitude adds no thickness information, because the altitude terms cancel in $\ln L_A - \ln L_B$. What a second drone adds is coverage of the interior.)
 
 This variant raises the drones into a dual-altitude patrol regime: one drone holds a low-altitude strip ($z_L = 10$ m) for fine-boundary delineation; the second holds a high-altitude strip ($z_H = 30$ m) for wide-area thickness mapping. The boundary Kalman filter is extended from 2D position tracking to a 3D state that includes altitude-corrected sensor confidence weights, and the advection-diffusion field acquires a shallow-water wave-correction layer that modulates surface slope statistics.
 
@@ -38,6 +38,8 @@ This variant raises the drones into a dual-altitude patrol regime: one drone hol
 ---
 
 ## Mathematical Model
+
+> **Corrections (2026-10-24, verified numerically in the 3D script).** (1) $A_{foot}/(\pi z^2) = \tan^2\phi_{fov}$ = 0.25 at every altitude, so the only altitude dependence of $L_{sensor}$ is $e^{-\mu_{atm} z}$, a 0.5 % change between 15 m and 40 m. (2) With $\lambda_w$ = 80 m the slope spread $\arctan(\pi H_s/\lambda_w)$ is at most 1.35° for $H_s$ = 0.6 m, so $\langle\cos\theta_w\rangle \ge 0.99972$ and the effective threshold rises by at most 0.028 %, not > 20 %. (3) $\ln(L_A/L_B) = -\mu_{atm}(z_A - z_B)$ for every thickness, so the dual-altitude 'inversion' below has $\Delta\text{const} = 0$ and carries no thickness information. (4) $\arg\max_z z\tan\phi\,\alpha\,e^{-\mu z} = 1/\mu_{atm}$ = 5000 m, so $z_B$ always sits at its 40 m ceiling. (5) Raising $z_A$ increases, not reduces, the path-length penalty; with these parameters the wave-adaptive law moves $z_A$ by less than 0.01 m.
 
 ### 3D Sensor Footprint and Altitude Control
 
@@ -123,7 +125,7 @@ Drone A adapts its commanded altitude to keep $r_{foot}(z_A) = r_{target}$ while
 
 $$z_A^{cmd}(t) = \max\!\left(z_{min},\; \min\!\left(z_{max},\; \frac{r_{target}}{\tan\phi_{fov}} \cdot \frac{1}{\langle\cos\theta_w\rangle^{1/2}}\right)\right)$$
 
-The SNR-driven altitude increase counter-acts wave-slope attenuation by reducing the path length penalty $\exp(-\mu_{atm} z)$ relative to the cosine gain — the optimum balances these competing effects.
+(Correction: a higher $z_A$ increases the path-length penalty $\exp(-\mu_{atm} z)$ and leaves the radiance otherwise unchanged, so this law cannot raise the SNR; at card parameters it changes $z_A$ by less than 0.01 m.)
 
 Drone B minimises its thickness estimation error by maximising coverage area per unit time while keeping $L_{sensor}$ above the fluorescence detection floor:
 
@@ -147,7 +149,7 @@ $$\ln L_A = \ln L_0 + \ln\alpha_{oil}(H_{oil}) - \mu_{atm} z_A + \text{const}(z_
 
 $$\ln L_B = \ln L_0 + \ln\alpha_{oil}(H_{oil}) - \mu_{atm} z_B + \text{const}(z_B)$$
 
-Subtracting eliminates $\alpha_{oil}$ dependence and gives a direct estimate of $\mu_{atm}$; adding constrains $\alpha_{oil}$ and thus $H_{oil}$. The closed-form thickness estimate is:
+Subtracting eliminates $\alpha_{oil}$ dependence and gives a direct estimate of $\mu_{atm}$; adding constrains $\alpha_{oil}$ and thus $H_{oil}$ only if $L_0$ is known, in which case either measurement alone suffices. (Correction: the closed form below divides by $\Delta\text{const}$ = 0 and is not usable; the 3D script inverts each calibrated measurement on its own, $\hat H = -\kappa^{-1}\ln(1 - L/(L_0\tan^2\phi\,e^{-\mu z}\langle\cos\theta_w\rangle))$.) The card's original closed-form thickness estimate was:
 
 $$\hat{H}_{oil} = -\frac{1}{\kappa} \ln\!\left(1 - \exp\!\left(\frac{\ln L_A / L_B + \mu_{atm}(z_B - z_A)}{\Delta\text{const}}\right)\right)$$
 
@@ -212,7 +214,7 @@ $$\epsilon_{th}(t) = \sqrt{\frac{\int_\Omega (\hat{H}_{oil}(\mathbf{x}, t) - H_{
 
 - **3D trajectory plot**: Matplotlib `mpl_toolkits.mplot3d` axes showing both drone paths with altitude variation; Drone A in orange (low, boundary-following), Drone B in cyan (high, interior sweeping); spill boundary contour projected onto the $z = 0$ surface plane in red; drone altitude shown as vertical drop-lines to the surface projection.
 - **Altitude time series**: $z_A(t)$ and $z_B(t)$ over the full mission; $z^{cmd}$ overlaid as dashed; shaded band indicating altitude limits; annotations at wave-correction events where altitude is increased.
-- **Sea-state wave field snapshot**: colour map of $H_s(x, y, t)$ at $t = 900$ s with the spill boundary contour overlaid; marker showing regions where wave correction raises the effective threshold by $> 20$%.
+- **Sea-state wave field snapshot**: colour map of $H_s(x, y, t)$ at $t = 900$ s with the spill boundary contour overlaid; marker showing regions where wave correction raises the effective threshold by $> 20$% (correction: about 0.1 % at most with the card's parameters, even where $H_s$ reaches 1.2 m).
 - **Sensor footprint comparison**: side-by-side plots of $C_{thr}^{eff}(z, \theta_w)$ as a function of $z$ for three representative wave heights ($H_s = 0.1, 0.3, 0.6$ m); shows how the flat-threshold assumption of S055 underestimates detection difficulty in rough sea states.
 - **Boundary coverage time series**: $\eta(t)$ for all three comparison strategies plotted together; target $\eta = 0.85$ as horizontal dashed line; replanning epoch ticks on x-axis; wave-corrected strategy maintains coverage despite wave-induced false detections.
 - **Thickness estimation RMSE**: $\epsilon_{th}(t)$ for single-altitude vs dual-altitude strategies; dual-altitude inversion converges to $\epsilon_{th} < 0.02$ mm after the first replanning epoch; single-altitude remains above threshold.
