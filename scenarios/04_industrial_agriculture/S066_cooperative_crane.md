@@ -1,6 +1,6 @@
 # S066 Cooperative Crane Simulation
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Rigid Load Dynamics + Distributed Tension Allocation | **Dimension**: 3D
 
 ---
@@ -124,36 +124,38 @@ $$\mathbf{W}_{des} = \begin{pmatrix} m_L \ddot{\mathbf{p}}_L^{des} - m_L \mathbf
 
 ### Tension Allocation via Quadratic Programme
 
-Given the desired wrench $\mathbf{W}_{des}$, find tension magnitudes $\mathbf{T} \in \mathbb{R}^3$
-that realise it. The wrench produced by the three cables is:
+> **Corrected (2026-10, implementation review).** The earlier version took only the three
+> tension magnitudes as unknowns ($\mathbf G \in \mathbb{R}^{6\times 3}$) and used
+> $\mathbf G^+ = \mathbf G^\top(\mathbf G\mathbf G^\top)^{-1}$. For a 6 × 3 matrix
+> $\mathbf G\mathbf G^\top$ is 6 × 6 with rank 3, so it is singular, and the null space of $\mathbf G$
+> is empty, so a null-space term cannot raise the tensions. The drones choose the cable
+> directions, so the allocation variables are the three cable **force vectors**.
 
-$$\mathbf{W}(\mathbf{T}) = \underbrace{\begin{pmatrix} \mathbf{N} \\ \mathbf{M} \end{pmatrix}}_{\mathbf{G} \,\in\, \mathbb{R}^{6\times 3}} \mathbf{T}$$
+Given the desired wrench $\mathbf{W}_{des}$, find the cable force vectors
+$\mathbf f_i = T_i \hat n_i \in \mathbb{R}^3$ that realise it:
 
-where the moment matrix $\mathbf{M} \in \mathbb{R}^{3 \times 3}$ has columns
-$\mathbf{m}_i = \mathbf{r}_i \times \hat{n}_i$. The grasp matrix $\mathbf{G}$ maps tensions to
-wrench. The tension allocation QP minimises tension effort subject to wrench equality and
-non-negativity:
+$$\underbrace{\begin{pmatrix} \mathbf I_3 & \mathbf I_3 & \mathbf I_3 \\ [\mathbf r_1]_\times & [\mathbf r_2]_\times & [\mathbf r_3]_\times \end{pmatrix}}_{\mathbf G \,\in\, \mathbb{R}^{6\times 9}}
+\begin{pmatrix} \mathbf f_1 \\ \mathbf f_2 \\ \mathbf f_3 \end{pmatrix} = \mathbf W_{des}$$
 
-$$\min_{\mathbf{T}} \quad \mathbf{T}^\top \mathbf{T}$$
+Because all anchors lie on the beam axis, the torque about that axis is always zero and
+$\operatorname{rank}\mathbf G = 5$. The minimum-norm solution $\mathbf f = \mathbf G^+ \mathbf W_{des}$
+minimises $\sum_i \|\mathbf f_i\|^2 = \sum_i T_i^2$ (in hover: $m_L g/3$ straight up on every cable).
+The 4-dimensional null space contains axial internal forces; adding
+$\lambda(-\hat e_b, \mathbf 0, +\hat e_b)$ with $\lambda = (m_L g / 3)\tan\varphi$ tilts the outer
+cables outward by $\varphi$ without changing the wrench. Any $\|\mathbf f_i\| < T_{min}$ is scaled up to
+$T_{min}$. Each drone then aims its cable along $\hat{\mathbf f}_i$ (desired position
+$\mathbf a_i + l_c \hat{\mathbf f}_i$) and feeds $\mathbf f_i$ forward in its thrust.
 
-$$\text{subject to} \quad \mathbf{G} \mathbf{T} = \mathbf{W}_{des}, \qquad T_i \geq T_{min} \;\; \forall\, i$$
-
-When $N = 3$ cables and the full 6-DOF wrench is under-determined (3 scalar unknowns, 6 equations),
-the system is over-constrained in general. In practice only 5 independent wrench components are
-relevant (the axial torque about the beam axis is uncontrollable). The minimum-norm pseudo-inverse
-solution plus a null-space term to enforce $T_i \geq T_{min}$ is:
-
-$$\mathbf{T}^* = \mathbf{G}^+ \mathbf{W}_{des} + (\mathbf{I} - \mathbf{G}^+ \mathbf{G}) \boldsymbol{\lambda}$$
-
-where $\mathbf{G}^+ = \mathbf{G}^\top (\mathbf{G} \mathbf{G}^\top)^{-1}$ is the right pseudo-inverse
-and $\boldsymbol{\lambda}$ is chosen to bring all tensions above $T_{min}$:
-
-$$\boldsymbol{\lambda} = \frac{T_{min} - \min_i T^*_i}{(\mathbf{I} - \mathbf{G}^+ \mathbf{G})_{row}} \cdot \mathbf{1}$$
+**Formation geometry.** With the drones vertically above anchors 0.75 m apart, the drones are only
+0.75 m apart, below $d_{min} = 0.8$ m. The outer cables must therefore be fanned out: separation
+$= d_{safe} = 1.2$ m needs $\varphi = 26.45°$, which raises the outer static tensions from 6.54 N to
+7.31 N.
 
 ### Drone Position Controller
 
-Each drone $i$ tracks a desired hover position $\mathbf{p}_i^{des}$ located $l_c = 1$ m vertically
-above its anchor point (in the current beam frame). The formation PID generates a desired thrust
+Each drone $i$ tracks a desired hover position $\mathbf{p}_i^{des}$ located $l_c = 1$ m from its
+anchor point along its allocated cable direction (vertical only for the middle cable; see the
+formation-geometry note above). The formation PID generates a desired thrust
 magnitude:
 
 $$\mathbf{u}_i = K_{p,D} (\mathbf{p}_i^{des} - \mathbf{p}_i) + K_{d,D} (\dot{\mathbf{p}}_i^{des} - \dot{\mathbf{p}}_i)$$
@@ -193,6 +195,11 @@ where $\bar{T}(t) = \frac{1}{N}\sum_i T_i(t)$. $\mathcal{B} = 1$ is perfectly ba
 ---
 
 ## Implementation
+
+> The sketch below is the original pseudocode. It does not couple the drones to the cable tensions,
+> and its "centralised" and "distributed" branches are the same code. The implemented and reviewed
+> version is `src/04_industrial_agriculture/s066_cooperative_crane.py`; its README lists every
+> deviation.
 
 ```python
 import numpy as np
