@@ -451,14 +451,19 @@ def plot_altitude_sweep(trials, out_dir):
     ax.set_title('Time')
     ax.legend(fontsize=8)
     ax = axes[2]
-    ax.plot(zg, 60 * oki / tm, 's-', color='tab:blue', label='treated per minute, PI')
-    ax.plot(zg, 60 * okp / tm, '^-', color='tab:red', label='treated per minute, card PID')
+    for key, mk, col, lab in (('pi', 's-', 'tab:blue', 'PI'), ('pid', '^-', 'tab:red', 'card PID')):
+        thr = [60 * _agg(trials, z, lambda r: r[key]['ok'].sum()) / _agg(trials, z, lambda r: r['t1'] + r['mk3'])
+               for z in zg]
+        ax.errorbar(zg, [v.mean() for v in thr], yerr=[v.std(ddof=1) / math.sqrt(v.size) for v in thr],
+                    fmt=mk, color=col, capsize=3, label=f'treated per minute, {lab} (per-trial mean ± s.e.)')
     ax2 = ax.twinx()
     ax2.plot(zg, sti, 'x--', color='tab:blue', label='canopy contacts, PI')
     ax2.plot(zg, stp, 'x--', color='tab:red', label='canopy contacts, PID')
     ax2.set_ylabel('canopy contacts per trial')
+    ax2.set_ylim(0, 5.2)
     ax.set_xlabel('sweep altitude z (m)')
     ax.set_ylabel('treated weeds per minute')
+    ax.set_ylim(0, 5.2)                                # room for the legends above the curves
     zz, rc, rp = card_zstar()
     ax.axvline(zz[np.argmax(rc)], color='k', ls='--', lw=0.8)
     ax.set_title(f'Throughput and canopy contacts (dashed = card z* = {zz[np.argmax(rc)]:.2f} m)')
@@ -546,7 +551,7 @@ def report(trials):
           f'-> {N_WEEDS * p_card:.1f} treated')
     print(f'  Sweep altitude study ({N_TRIALS} trials, common random numbers):')
     print('    z (m) | passes | v (m/s) | Phase 1 (s) | detected | sigma_z (m) | treated PID / PI | '
-          'canopy contacts PID / PI | mission (s) | treated/min PID / PI | 3D vs 2D Hungarian')
+          'canopy contacts PID / PI | mission (s) | treated/min PID / PI (per-trial mean) | 3D vs 2D Hungarian')
     rows = {}
     for z in Z_GRID:
         det = _agg(trials, z, lambda r: len(r['idx']))
@@ -561,21 +566,36 @@ def report(trials):
         rows[z] = dict(det=det, okp=okp, oki=oki, stp=stp, sti=sti, mis=mis)
         print(f"    {z:4.2f} | {n_passes(z)} | {v_sweep(z):.2f} | {trials[0]['per_z'][z]['t1']:7.1f} | "
               f"{_ms(det)} | {sigma_z(z):.4f} | {_ms(okp)} / {_ms(oki)} | {_ms(stp)} / {_ms(sti)} | "
-              f"{_ms(mis, 1)} | {60 * okp.mean() / mis.mean():.3f} / {60 * oki.mean() / mis.mean():.3f} | "
+              f"{_ms(mis, 1)} | {np.mean(60 * okp / mis):.3f} / {np.mean(60 * oki / mis):.3f} | "
               f"same assignment {int(same.sum())}/{N_TRIALS}, distance 3D {d3.mean():.1f} vs 2D "
               f"{d2.mean():.1f} m")
     best_ok = max(Z_GRID, key=lambda z: rows[z]['oki'].mean())
-    best_rate = max(Z_GRID, key=lambda z: rows[z]['oki'].mean() / rows[z]['mis'].mean())
-    print(f'  Best altitude by treated weeds (PI): {best_ok} m; by treated per minute (PI): {best_rate} m')
-    for zc in sorted({z_card, best_ok, best_rate} - {Z_BASE}):
-        if zc not in rows:
-            continue
+    print(f'  Most weeds treated (PI, mean per trial): {best_ok} m')
+    se = lambda v: np.std(v, ddof=1) / math.sqrt(len(v))       # noqa: E731
+    for name, key in (('PI', 'oki'), ('card PID', 'okp')):
+        print(f'  Per-trial throughput (treated per minute of mission, {name}); head-to-head against the '
+              f'2D base altitude {Z_BASE} m on the same trials: z -> mean ± s.e.; higher / lower / tied '
+              f'trials; mean difference ± s.e.')
+        b = 60 * rows[Z_BASE][key] / rows[Z_BASE]['mis']
+        for z in Z_GRID:
+            c = 60 * rows[z][key] / rows[z]['mis']
+            line = f'    {z:4.2f} m: {c.mean():.3f} ± {se(c):.3f}'
+            if z != Z_BASE:
+                dd = c - b
+                line += (f'; {int(np.sum(dd > 0))} / {int(np.sum(dd < 0))} / {int(np.sum(dd == 0))}; '
+                         f'{dd.mean():+.3f} ± {se(dd):.3f}')
+            print(line)
+    for zc in sorted({z_card, best_ok} - {Z_BASE}):
         b, c = rows[Z_BASE], rows[zc]
         print(f"  z = {zc} m vs 2D base altitude {Z_BASE} m (per trial, CRN): treated PI more in "
               f"{int(np.sum(c['oki'] > b['oki']))}, fewer in {int(np.sum(c['oki'] < b['oki']))}/{N_TRIALS} "
               f"(mean diff {np.mean(c['oki'] - b['oki']):+.2f}); detected more in "
               f"{int(np.sum(c['det'] > b['det']))}, fewer in {int(np.sum(c['det'] < b['det']))}; "
               f"mission time diff {np.mean(c['mis'] - b['mis']):+.1f} s")
+    zr = np.concatenate([t['zweed'] / t['hw'] for t in trials])
+    print(f'  Weed height below the canopy (card geometry): z_weed / h = {zr.mean():.3f} ± {zr.std():.3f}; '
+          f'it is used only in the 3D plots - no result above depends on it (treatment targets the canopy '
+          f'top above the weed)')
     rp_ = np.concatenate([t['per_z'][z_card]['pid']['rms'] for t in trials])
     ri_ = np.concatenate([t['per_z'][z_card]['pi']['rms'] for t in trials])
     print(f'  Hover at z = {z_card} m ({rp_.size} hovers): 3D RMS card PID {rp_.mean():.4f} m '
