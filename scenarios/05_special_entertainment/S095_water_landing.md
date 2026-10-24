@@ -1,6 +1,6 @@
 # S095 Water Surface Landing Simulation
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: FFT Wave Prediction + Feedforward Timed Descent | **Dimension**: 3D
 
 ---
@@ -74,7 +74,12 @@ Frequency bins with significant energy identify the dominant components. For eac
 at bin $k_i$ (frequency $f_i = k_i f_s / N_{obs}$):
 
 - **Amplitude**: $\hat{A}_i = 2|\hat{Z}[k_i]| / N_{obs}$
-- **Phase**: $\hat{\varphi}_i = \angle\hat{Z}[k_i]$ (unwrapped to current time)
+- **Phase**: for $z = A\sin(2\pi f t + \varphi)$ the FFT angle at the first sample $t_0$ is
+  $\varphi_0 - \pi/2$, so $\hat{\varphi}_i = \angle\hat{Z}[k_i] + \pi/2 - 2\pi \hat f_i t_0$
+  (corrected 2026-10: the earlier formula $\angle\hat Z[k_i] + 2\pi f t_0$ mixed sine and cosine
+  phase and had the wrong sign; it gives a 0.20 m RMS error on a bin-aligned 0.4 m sinusoid).
+  Note: with $f_s/N_{obs} = 0.156$ Hz neither wave frequency lies on a bin (1.07 and 2.56 bins),
+  so the raw-bin estimate is poor; the implementation refines it with least squares.
 
 ### Predicted Crest Time
 
@@ -104,6 +109,11 @@ $$t_{start} = t_{crest} - \frac{z_{hold} - z_{deck,0}}{v_{desc}}$$
 
 where $z_{hold}$ is the holding altitude just above the deck ($z_{hold} = z_{deck,0} + 1.5$ m),
 $z_{deck,0} = \hat{z}_{deck}(t_{start})$, and $v_{desc} = 0.4$ m/s is the nominal descent speed.
+
+> **Note (implementation)**: a constant 0.4 m/s descent onto a crest, where the deck speed is 0,
+> touches down at a relative speed of 0.4 m/s, which is 4 times $v_{land,max} = 0.1$ m/s. The
+> implementation therefore adds a 2 s flare to a 0.05 m/s creep and, in the best variant, follows
+> the predicted deck motion during the flare. See the outputs README.
 The vertical reference trajectory during descent is:
 
 $$z_{drone}^{ref}(t) = z_{hold} - v_{desc}\,(t - t_{start}), \qquad t \in [t_{start},\; t_{crest}]$$
@@ -278,8 +288,8 @@ def fft_predict_crest(t_now, z_obs, dt_obs=1.0 / F_SAMPLE):
         # Unwrap phase to t_now reference: phase in z_obs corresponds to
         # t_start = t_now - (n-1)*dt_obs (oldest sample)
         t_start = t_now - (n - 1) * dt_obs
-        # Phase at t=0 is phase_k; convert to phase at t_start
-        phase_at_tnow = phase_k + 2 * np.pi * freqs[k] * t_start
+        # angle(Z[k]) is the cosine phase at the first sample; convert to sine phase at t = 0
+        phase_at_tnow = phase_k + np.pi / 2 - 2 * np.pi * freqs[k] * t_start
         amps.append(amp_k)
         phases.append(phase_at_tnow)
         freq_peaks.append(freqs[k])
