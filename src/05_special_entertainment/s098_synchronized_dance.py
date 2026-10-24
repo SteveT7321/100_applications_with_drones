@@ -181,19 +181,23 @@ def run_simulation(splines, strategy, seed=RNG_SEED, dt_ptp=DT_PTP):
     act, ide, spd = playback(splines, t, delta)
     out = dict(t=t, delta=delta, events=events, act=act, ide=ide, spd=spd)
     out.update(metrics(t, delta, act, ide, spd))
-    # invariants (X4): finite clocks; local time within 1 s of global time; the commanded
-    # position moves at most v_max * (dt + |clock step|) per simulation step, i.e. a PTP clock
-    # step can only make the drone jump along its own script by v_max * |clock step|
+    # invariants (X4), checked where they can actually fail:
+    # 1. finite clock offsets;
+    # 2. every local clock moves forward each step (dt + clock step > 0): a PTP correction must
+    #    never make a drone play its script backwards (fails if a step exceeds -dt = -50 ms);
+    # 3. the commanded position moves at most v_max * (dt + |clock step|) per step, i.e. a clock
+    #    step can only move the drone along its own script by v_max * |clock step|
     jump = np.linalg.norm(np.diff(act, axis=0), axis=2)
+    dlocal = np.diff(t[:, None] + delta, axis=0)
     dstep = np.abs(np.diff(delta, axis=0))
     out['max_jump'] = float(jump.max())
     out['max_clock_step'] = float(dstep.max())
+    out['min_local_step'] = float(dlocal.min())
     if strategy != 'card_literal':                       # the card's update diverges by design
         assert np.all(np.isfinite(delta)), 'non-finite clock offset'
-        assert np.abs(delta).max() < 1.0, 'local clock more than 1 s off global time'
+        assert np.all(dlocal > 0), 'a local clock ran backwards (script played in reverse)'
         bound = vmax_dense(splines) * (DT_SIM + dstep) * (1 + 1e-6) + 1e-9
         assert np.all(jump <= bound), 'commanded position jump exceeds v_max * time step'
-        assert np.all(np.diff(t) > 0), 'global time not increasing'
     return out
 
 
@@ -443,7 +447,8 @@ if __name__ == '__main__':
         r = res[s]
         print(f'    {LABELS[s]:18s} largest clock step {1e3 * r["max_clock_step"]:.2f} ms, largest '
               f'commanded-position step {100 * r["max_jump"]:.2f} cm (bound '
-              f'{100 * vd * (DT_SIM + r["max_clock_step"]):.2f} cm)')
+              f'{100 * vd * (DT_SIM + r["max_clock_step"]):.2f} cm), smallest local-clock '
+              f'advance per step {1e3 * r["min_local_step"]:.2f} ms (of {1e3 * DT_SIM:.0f} ms)')
     print(f'  Card literal update: max KPI {lit["err_abs"].max():.3g} ms '
           f'(at 5 s {lit["err_abs"][int(5 / DT_SIM)]:.3g} ms)')
 

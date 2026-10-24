@@ -89,12 +89,11 @@ conda activate drones
 python src/05_special_entertainment/s098_synchronized_dance.py
 ```
 
-Runtime: 1.6–3.4 min, measured while other simulations shared the machine. Most of the time goes into writing the GIF.
+Runtime: about 1.1 min (62–66 s over three runs; other simulations were running at the same time). Most of the time goes into writing the GIF.
 
 **Invariants (asserted in every run, except the card's literal update, which diverges by design)**:
 - clock offsets are finite;
-- every local clock stays within 1 s of global time;
-- global time increases;
+- every local clock moves forward in every step ($\Delta t$ + clock step > 0), i.e. a PTP correction never makes a drone play its script backwards. This would fail for a backward clock step larger than 50 ms;
 - in each 0.05 s step, the commanded position moves at most $v_{max}(\Delta t + |\text{clock step}|)$, where $v_{max}$ = 4.071 m/s is the script's top speed on a 1 ms grid. A PTP correction can therefore only move a drone along its own script, by $v_{max}$ times the clock step; it cannot make it teleport.
 
 ---
@@ -114,12 +113,12 @@ The card's literal update diverges: its KPI reaches 2.95e+03 ms at 5 s and 7.03e
 
 **Invariant check, seed 42** (largest clock step / largest commanded-position step per 0.05 s / asserted bound):
 
-| Strategy | Clock step | Position step | Bound |
-|---|---:|---:|---:|
-| No sync | 6.94 ms | 20.34 cm | 23.18 cm |
-| Peer PTP β=0.5 | 12.32 ms | 20.35 cm | 25.37 cm |
-| Peer PTP β=0.9 | 17.58 ms | 20.03 cm | 27.52 cm |
-| Master PTP β=0.5 | 12.44 ms | 21.21 cm | 25.42 cm |
+| Strategy | Clock step | Position step | Bound | Smallest local-clock advance per 50 ms step |
+|---|---:|---:|---:|---:|
+| No sync | 6.94 ms | 20.34 cm | 23.18 cm | 43.06 ms |
+| Peer PTP β=0.5 | 12.32 ms | 20.35 cm | 25.37 cm | 38.63 ms |
+| Peer PTP β=0.9 | 17.58 ms | 20.03 cm | 27.52 cm | 32.42 ms |
+| Master PTP β=0.5 | 12.44 ms | 21.21 cm | 25.42 cm | 37.70 ms |
 
 The largest position steps (about 20 cm per step, i.e. 4 m/s) come from the script's own top speed. The clock corrections add at most $v_{max}$ × 17.58 ms ≈ 7 cm on top.
 
