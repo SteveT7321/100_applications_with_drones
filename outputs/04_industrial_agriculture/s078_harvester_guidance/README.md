@@ -85,7 +85,7 @@ conda activate drones
 python src/04_industrial_agriculture/s078_harvester_guidance.py
 ```
 
-Runtime ≈ 1–3 min (54–76 s measured by the reviewer; 180–182 s while many other simulations shared the CPU).
+Runtime ≈ 1–3 min (54–76 s measured on a lightly loaded machine; 180–182 s while many other simulations shared the CPU).
 
 ---
 
