@@ -354,8 +354,12 @@ if __name__ == '__main__':
     q, qv = subject(res['locked']['t'])
     hd = np.unwrap(np.arctan2(qv[:, 1], qv[:, 0]))
     hr = np.abs(np.diff(hd)) / DT
-    print(f'  Subject heading rate: max {hr.max():.3f} rad/s -> set-point speed on the orbit up to '
-          f'{ORBIT_RADIUS * hr.max():.2f} m/s from rotation alone (V_MAX {V_MAX:.0f} m/s)')
+    i_hr = int(np.argmax(hr))
+    i_tip = int(np.argmax(np.abs(q[:-1, 0])))
+    print(f'  Subject heading rate: max {hr.max():.3f} rad/s at (±{abs(q[i_hr, 0]):.1f}, '
+          f'±{abs(q[i_hr, 1]):.1f}) m -> set-point speed on the orbit up to '
+          f'{ORBIT_RADIUS * hr.max():.2f} m/s from rotation alone (V_MAX {V_MAX:.0f} m/s); '
+          f'at the lobe tips (x = ±{abs(q[i_tip, 0]):.1f} m) {hr[i_tip]:.3f} rad/s')
     print(f'  Lap time {2 * np.pi / FIG8_OMEGA:.1f} s; ideal separation r*sqrt(3) = '
           f'{ORBIT_RADIUS * np.sqrt(3):.2f} m')
     print(f'  Monte Carlo: {N_MC} seeds, same observation noise for every strategy (mean ± std)')
@@ -389,7 +393,9 @@ if __name__ == '__main__':
           f"{int(np.sum(L['frame'] > Rw['frame']))}/{N_MC}; larger min distance in "
           f"{int(np.sum(L['min_dist'] > Rw['min_dist']))}/{N_MC}")
     pe0 = np.degrees(L['phase_err'][:, 0])
-    print(f"  Seed 0 heading-locked KF: mean phase err {L['phase_mean'][0]:.2f}°, max {pe0.max():.1f}°, "
+    k_max = int(np.argmax(pe0.max(axis=1)))
+    print(f"  Seed 0 heading-locked KF: mean phase err {L['phase_mean'][0]:.2f}°, max {pe0.max():.1f}° "
+          f"at t = {L['t'][k_max]:.2f} s, "
           f"framing {L['frame'][0]:.3f}, min dist {L['min_dist'][0]:.2f} m")
 
     out = os.path.normpath(OUTPUT_DIR)
