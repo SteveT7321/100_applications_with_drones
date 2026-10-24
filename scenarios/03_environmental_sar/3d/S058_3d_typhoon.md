@@ -1,6 +1,6 @@
 # S058 3D Upgrade — Typhoon Eye Penetration
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S058 original](../S058_typhoon.md)
 
 ---
@@ -54,15 +54,15 @@ $$\Phi(z) = \begin{cases}
   \exp\!\left(-\dfrac{(z - z_{bl})^2}{2\sigma_z^2}\right) & z > z_{bl}
 \end{cases}$$
 
-with $\sigma_z = 300$ m so that wind intensity at 500 m is approximately 70% of the boundary-layer peak.
+with $\sigma_z = 300$ m so that wind intensity at 500 m is $e^{-0.5} \approx$ 61% of the boundary-layer peak (corrected from "approximately 70%").
 
 The vertical wind component $w(r, z)$ represents the organised secondary circulation — upward in the eyewall and downward inside the eye:
 
-$$w(r, z) = w_{max} \cdot \exp\!\left(-\frac{(r - r_{max})^2}{2\sigma_{rad}^2}\right) \cdot \sin\!\left(\frac{\pi z}{z_{top}}\right)$$
+$$w(r, z) = w_{max} \cdot \exp\!\left(-\frac{(r - r_{max})^2}{2\sigma_{rad}^2}\right) \cdot \sin\!\left(\frac{\pi z}{H_{dom}}\right)$$
 
-where $w_{max} = 5$ m/s is the peak vertical velocity and $z_{top} = 600$ m is the domain top. Inside the eye ($r < r_{eye}$) the sign is reversed (subsidence):
+where $w_{max} = 5$ m/s is the peak vertical velocity and $H_{dom} = 600$ m is the domain top. (Corrected: this was written $z_{top}$, which elsewhere on this card is the 500 m entry altitude.) Inside the eye ($r < r_{eye}$) the sign is reversed (subsidence):
 
-$$w_{eye}(r, z) = -w_{sub} \cdot \left(1 - \frac{r}{r_{eye}}\right) \cdot \sin\!\left(\frac{\pi z}{z_{top}}\right), \qquad w_{sub} = 2\text{ m/s}$$
+$$w_{eye}(r, z) = -w_{sub} \cdot \left(1 - \frac{r}{r_{eye}}\right) \cdot \sin\!\left(\frac{\pi z}{H_{dom}}\right), \qquad w_{sub} = 2\text{ m/s}$$
 
 The full 3D wind vector at Cartesian position $\mathbf{p} = (x, y, z)^\top$ is:
 
@@ -82,7 +82,9 @@ $$\mathbf{f}_{turb}(t) \sim \mathcal{N}\!\left(\mathbf{0},\; \sigma_w^2(r,z)\,\m
 
 The drone is modelled as a 3D point mass with thrust control $\mathbf{u} = (u_x, u_y, u_z)^\top$ (body-frame force components in N) and gravity acting along $-\hat{\mathbf{e}}_z$:
 
-$$m\ddot{\mathbf{p}} = \mathbf{u} - mg\,\hat{\mathbf{e}}_z + m\,\mathbf{f}_{wind}(\mathbf{p}) + \mathbf{f}_{turb}(t) - b\,\dot{\mathbf{p}}$$
+$$m\ddot{\mathbf{p}} = \mathbf{u} - mg\,\hat{\mathbf{e}}_z + b\,\bigl(\mathbf{f}_{wind}(\mathbf{p}) + \mathbf{v}_{gust}(t) - \dot{\mathbf{p}}\bigr)$$
+
+(Corrected as in S058: $\mathbf{f}_{wind}$ is a wind *velocity*, so it acts through drag on the air-relative velocity. Adding $m\,\mathbf{f}_{wind}$ as a force gives a 50 m/s² eyewall term, about 5× the control authority. The gusts $\mathbf{v}_{gust}$ are band-limited (Ornstein–Uhlenbeck, 2 s correlation time) with the standard deviation $\sigma_w$ above; the disturbance acceleration below is then $\mathbf{w} = (b/m)(\mathbf{f}_{wind} + \mathbf{v}_{gust})$.)
 
 The state vector is $\mathbf{x} = (\mathbf{p}, \dot{\mathbf{p}})^\top \in \mathbb{R}^6$. The linearised continuous-time state-space model about hover is:
 
@@ -146,8 +148,10 @@ $$R = \mathrm{diag}(0.1, 0.1, 0.05)$$
 where the smaller $z$-axis weight reflects the tighter altitude tracking requirement. At each control step $k$, solve the finite-horizon QP over prediction horizon $N_p = 20$:
 
 $$\min_{\{u_k,\ldots,u_{k+N_p-1}\}} \sum_{j=0}^{N_p-1} \Bigl(
-  \|\mathbf{x}_{k+j} - \mathbf{x}_{ref,k+j}\|^2_Q + \|\mathbf{u}_{k+j}\|^2_R
+  \|\mathbf{x}_{k+j} - \mathbf{x}_{ref,k+j}\|^2_Q + \|\mathbf{u}_{k+j} - mg\,\hat{\mathbf{e}}_z\|^2_R
 \Bigr) + \|\mathbf{x}_{k+N_p} - \mathbf{x}_{ref,k+N_p}\|^2_P$$
+
+The control cost is taken relative to the hover thrust $mg\,\hat{\mathbf{e}}_z$. (Changed: with the absolute $\|\mathbf{u}\|_R$, the unconstrained optimum asks for less vertical thrust than the $0.7\,mg$ floor at almost every step. In the implementation the constrained solver was then active in 99.8 % of steps instead of 6.7 %. Tracking was practically the same: mean signed altitude error +0.095 vs +0.086 m, because the thrust band absorbs the bias. The hover-relative cost states the intent directly.)
 
 subject to:
 
@@ -165,7 +169,7 @@ The closed-loop transfer from 3D disturbance $\mathbf{w} \in \mathbb{R}^3$ to 3D
 
 $$\|T_{zw}\|_\infty = \sup_{\omega \in \mathbb{R}} \bar{\sigma}\!\left[T_{zw}(j\omega)\right] < \gamma$$
 
-The worst-case disturbance direction now includes the vertical updraft channel; the optimal $\gamma^*$ is expected to increase relative to the 2D case because the vertical dynamics introduce additional resonant modes.
+The worst-case disturbance direction now includes the vertical updraft channel. Because $A$, $B$ and $E$ are block-diagonal per axis, the vertical channel is one more decoupled double integrator with drag, not a new resonant mode. With the smaller control weight $R_z$ it has a *lower* worst-case gain than the horizontal channels, so $\gamma^*$ equals the 2D value (0.5289 in the implementation). (Corrected: an earlier version expected $\gamma^*$ to increase.)
 
 ### 3D Tracking Error Metrics
 
