@@ -85,7 +85,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s100_3d_grand_challenge.py
 ```
 
-Runtime: 6.1–6.9 min (411, 383 and 368 s over three runs; other simulations were running on the machine at the same time). The Monte Carlo was cut from 200 to 100 missions, and the factorial to 50 missions per cell, to stay below 8 min. Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading. The asserts of S100 are kept (speed ≤ 8 m/s, acceleration ≤ 10 m/s², inside the arena including the 60 m ceiling, battery ≥ 0), plus the reproduction of S100.
+Runtime: 6.1–6.9 min in our three runs (411, 383 and 368 s); the independent reviewer measured 413–451 s. Other simulations were running on the machine at the same time. This is close to the 8 min mark. The Monte Carlo was cut from 200 to 100 missions, and the factorial to 50 missions per cell, to stay below 8 min. Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading. The asserts of S100 are kept (speed ≤ 8 m/s, acceleration ≤ 10 m/s², inside the arena including the 60 m ceiling, battery ≥ 0), plus the reproduction of S100.
 
 ---
 
@@ -151,8 +151,9 @@ The table above compares a 25 m star (2D baseline) with a 55 m star (3D), so its
 
 Lowest battery multiplier (of ×1.25, ×1.5, ×1.75) at which every formation completes: 2D waypoints ×1.25 / ×1.5 / ×1.5 / ×1.75 for a 10 / 25 / 40 / 55 m star; bands ×1.25 / ×1.5 / ×1.75 / more than ×1.75.
 
-- The show altitude sets most of the battery requirement: with the 2D waypoints it rises from ×1.25 (10 m) to ×1.75 (55 m).
-- The altitude bands make no difference for a star at 10 or 25 m (identical cells), but at 40 and 55 m they push the requirement up by one step (×1.5 → ×1.75 at 40 m, ×1.75 → above ×1.75 at 55 m). At ×1 they also cost a package (B aborts the 20 m waypoint, see Phase 2).
+- The show altitude raises the battery requirement: with the 2D waypoints it rises from ×1.25 (10 m) to ×1.75 (55 m), at this ×0.25 resolution.
+- At this ×0.25 resolution the altitude bands give identical cells for a star at 10 or 25 m, and at 40 and 55 m they push the requirement up by one step (×1.5 → ×1.75 at 40 m, ×1.75 → above ×1.75 at 55 m). A finer grid could separate them at 25 m as well; it is not run here, to keep the runtime below 8 min. At ×1 the bands also cost a package (B aborts the 20 m waypoint, see Phase 2).
+- Between the 2D baseline (25 m star) and the 3D card (55 m star, bands), the star altitude and the bands each move the requirement by one ×0.25 step in this grid. The printed grid does not resolve which of the two contributes more.
 
 ### Phase 4: stratified against direct ascent
 
@@ -171,7 +172,7 @@ At ×5 the stratified ascent gives a larger minimum separation in 100/100 missio
 
 **Key findings**:
 
-- **Altitude decides the battery outcome, and most of it is the show altitude.** With the card's climb cost, the 2D baseline (25 m star) forms the star from ×1.5 on, while both 3D variants (55 m star, bands) need ×2 (0/100 at ×1.5, courier B lands on its failsafe in all 100). The factorial shows that this gap comes mainly from the higher star: with the 2D waypoints alone, a 55 m star already needs ×1.75. The bands add one more step only for high stars (40 and 55 m), and at ×1 they make the 3D mission fail Phase 2 as well (B cannot afford the 20 m waypoint): 2.50 in every mission, against 3.62 for the 2D baseline and 3.74 for the S100 code on the same 100 missions.
+- **Altitude decides the battery outcome, through both the show altitude and the bands.** With the card's climb cost, the 2D baseline (25 m star) forms the star from ×1.5 on, while both 3D variants (55 m star, bands) need ×2 (0/100 at ×1.5, courier B lands on its failsafe in all 100). In the factorial (×0.25 resolution), the higher star alone (2D waypoints) moves the requirement from ×1.5 to ×1.75, and the bands add one more step for high stars (40 and 55 m); which of the two contributes more is not resolved by this grid. At ×1 the bands also make the 3D mission fail Phase 2 (B cannot afford the 20 m waypoint): 2.50 in every mission, against 3.62 for the 2D baseline and 3.74 for the S100 code on the same 100 missions.
 - **Lowering the show does not rescue the card's battery (×1), but it lowers the battery needed.** At ×1 the 2D baseline fails Phase 4 at every fixed show altitude from 10 to 55 m, because B arrives with 25.94 % and the climb cost plus the reserve exceed it; a 10 m star already works at ×1.25. At ×3 every altitude works and a higher show mainly costs search time (P3 47.0 → 39.0 % from 10 to 55 m).
 - **The card's stratified ascent solves a problem that does not occur here.** The Hungarian assignment already keeps the drones 7.36 m apart in the direct ascent (4.87 m in the 2D baseline); ORCA never acts. Stratification raises the separation to 8.25 m but, combined with the card's PID, makes Phase 4 take 71.3 s instead of 25.8 s, and at ×5 only 52/100 formations finish by 300 s (score 7.50 against 8.71). The PD probe shows that the integral term, not the profile itself, causes the delay.
 - **The card's 60 m show altitude does not fit its own 60 m arena** (overshoot above 60 m in 100/100 missions); 55 m was used.
