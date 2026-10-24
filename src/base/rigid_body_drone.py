@@ -43,10 +43,20 @@ body-rate command (racing / acrobatics), ``step_wrench(thrust, torque)`` the out
 external attitude controller and ``step_motors`` raw rotor-speed commands. ``ext_force`` (N, 3)
 adds a world-frame force (e.g. quadratic aerodynamic drag) held constant over one step.
 
+Mixer saturation handling (``desat_mode``):
+  * 'airmode' (default, Betaflight-airmode-like): yaw torque has priority over collective thrust -
+    when the torques do not fit, the collective is shifted first, yaw is reduced only if no shift
+    works. A large yaw-rate error can therefore raise the collective a lot (on fpv_5inch a
+    150 rad/s yaw-rate error under step_position climbs about 140 m in 6 s, see the self-test).
+  * 'px4' (PX4-like): roll/pitch > collective thrust > yaw - yaw is reduced first without moving
+    the collective; the collective is shifted only for roll/pitch.
+
 What the model does NOT include (see the scenario READMEs, "Sim2Real Notes"): blade flapping and
-rotor drag beyond a linear term, ground effect, downwash, propeller gyroscopic torque, battery
-voltage sag, ESC/motor nonlinearity beyond saturation, sensor latency and state estimation (the
-outer loops use the true or noise-corrupted state).
+rotor drag beyond a linear term, ground effect, downwash, propeller gyroscopic torque, rotor
+spin-up reaction torque (J_r * d omega_i / dt, which dominates fast yaw transients on real quads;
+only the steady reaction torque k_m omega^2 is modelled), battery voltage sag, ESC/motor
+nonlinearity beyond saturation, sensor latency and state estimation (the outer loops use the true
+or noise-corrupted state).
 """
 
 import numpy as np
@@ -65,8 +75,11 @@ E_Z = np.array([0.0, 0.0, 1.0])
 #   <mass value="0.027"/> <inertia ixx="1.4e-5" iyy="1.4e-5" izz="2.17e-5"/>
 # gym-pybullet-drones applies kf, km to rotor speeds in RPM (BaseAviary._dynamics:
 # forces = rpm**2 * KF), so they are converted here to rad/s: k[rad/s] = k[RPM] / (2 pi / 60)^2.
-# Its drag model is F = -drag_coeff * sum(rotor speed in rad/s) * v_body; here that is evaluated
-# once at the hover rotor speed and used as a constant linear drag (N per m/s).
+# Its drag model (BaseAviary._drag) is F_body = -drag_coeff (elementwise) * sum(rotor speed in
+# rad/s) * (R^T v_world), i.e. a per-axis coefficient applied in the body frame to the world
+# velocity rotated into the body frame. This model uses the same form, F_world = -R diag(c) R^T
+# (v - v_wind), with c evaluated once at the hover rotor speed (constant linear drag, N per m/s);
+# the rotor-speed dependence is dropped.
 # Not in the URDF (estimates, labelled as such): motor time constant, minimum rotor speed,
 # motor efficiency. Caveat: the URDF km is a yaw-torque coefficient; used as shaft power
 # k_m w^3 it gives ~10 W at hover (figure of merit ~0.11), so Crazyflie energy numbers from this
@@ -305,7 +318,7 @@ class RigidBodyDrone:
 
     def __init__(self, init_pos, preset='crazyflie', dt=0.002, n_substeps=1, params=None,
                  gains=None, wind=None, imu_noise=None, seed=0, init_yaw=0.0,
-                 ground_z=None, drag_ff=True, record=True):
+                 ground_z=None, drag_ff=True, record=True, desat_mode='airmode'):
         self.init_pos = np.atleast_2d(np.asarray(init_pos, dtype=float)).copy()
         self.n = self.init_pos.shape[0]
         self.preset = preset
@@ -322,6 +335,9 @@ class RigidBodyDrone:
         self.ground_z = ground_z
         self.drag_ff = drag_ff
         self.record = record
+        if desat_mode not in ('airmode', 'px4'):
+            raise ValueError(f'unknown desat_mode {desat_mode!r}')
+        self.desat_mode = desat_mode
         self.max_speed = self.g['v_max']         # DroneBase compatibility
         self.reset()
 
@@ -463,9 +479,11 @@ class RigidBodyDrone:
     def mix(self, thrust, torque):
         """(N,) collective thrust + (N,3) body torque -> (N,4) rotor-speed commands.
 
-        Airmode-style desaturation: (1) shift the collective so the torques fit,
-        (2) if that is impossible, scale the yaw torque down, (3) then roll/pitch,
-        (4) finally clip to the per-motor limits.
+        desat_mode 'airmode': (1) shift the collective so the torques fit, (2) if that is
+        impossible, scale the yaw torque down, (3) then roll/pitch, (4) clip to the limits.
+        desat_mode 'px4': (1) scale the yaw torque down with the collective unchanged, (2) if
+        roll/pitch alone do not fit, drop yaw and shift the collective, (3) then scale
+        roll/pitch, (4) clip.
         """
         p = self.p
         Ai = p.alloc_inv
@@ -479,7 +497,8 @@ class RigidBodyDrone:
         if np.any(bad):
             self.n_sat += 1
             idx = np.where(bad)[0]
-            F[idx] = self._desaturate(f_t[idx], f_rp[idx], f_y[idx], lo[idx], hi[idx])
+            desat = self._desaturate_px4 if self.desat_mode == 'px4' else self._desaturate
+            F[idx] = desat(f_t[idx], f_rp[idx], f_y[idx], lo[idx], hi[idx])
         F = np.clip(F, lo, hi)
         return np.sqrt(F / p.kf)
 
@@ -487,6 +506,29 @@ class RigidBodyDrone:
     def _gap(x, lo, hi):
         """>0 when no common collective offset brings every motor of x inside [lo, hi]."""
         return np.max(lo - x, axis=1) - np.min(hi - x, axis=1)
+
+    @staticmethod
+    def _viol(x, lo, hi):
+        """>0 when some motor of x is outside [lo, hi] (no collective shift allowed)."""
+        return np.max(np.maximum(lo - x, x - hi), axis=1)
+
+    def _desaturate_px4(self, f_t, f_rp, f_y, lo, hi):
+        n = len(f_t)
+        base = f_t + f_rp
+        fits = self._viol(base, lo, hi) <= 0      # thrust + roll/pitch fit without yaw
+        # largest yaw scale that still fits with the collective unchanged (violation is convex
+        # in the scale and <= 0 at 0, so the feasible scales form an interval [0, s*])
+        a, b = np.zeros(n), np.ones(n)
+        for _ in range(10):
+            m = 0.5 * (a + b)
+            ok = self._viol(base + m[:, None] * f_y, lo, hi) <= 0
+            a, b = np.where(ok, m, a), np.where(ok, b, m)
+        out = base + np.where(fits, a, 0.0)[:, None] * f_y
+        if np.any(~fits):
+            # yaw dropped; roll/pitch handled as in airmode (collective shift, then scaling)
+            k = np.where(~fits)[0]
+            out[k] = self._desaturate(f_t[k], f_rp[k], np.zeros_like(f_y[k]), lo[k], hi[k])
+        return out
 
     def _desaturate(self, f_t, f_rp, f_y, lo, hi):
         s_y = np.ones(len(f_t))

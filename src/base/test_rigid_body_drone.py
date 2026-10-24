@@ -118,6 +118,35 @@ def test_single_motor_saturation():
                 assert np.max(np.abs(L['omega'][:, 0, 2])) < 1.0
 
 
+def test_desat_modes():
+    """Large yaw-rate error: 'airmode' trades collective for yaw authority (climbs), 'px4'
+    reduces yaw first and holds altitude."""
+    res = {}
+    for mode in ('airmode', 'px4'):
+        d = RigidBodyDrone([0, 0, 10], preset='fpv_5inch', dt=DT, desat_mode=mode)
+        d.set_state(omega=[0.0, 0.0, 150.0])
+        L = run(d, 3000, lambda dr, k: dr.step_position([0, 0, 10]))
+        z = L['pos'][:, 0, 2]
+        for k in ('pos', 'quat', 'omega', 'rotor'):
+            assert np.all(np.isfinite(L[k]))
+        res[mode] = (z.max() - 10.0, np.abs(z - 10.0).max(), abs(L['omega'][-1, 0, 2]),
+                     np.degrees(tilt_angle(L['quat'][:, 0]).max()))
+        print(f'  [{mode}] yaw rate 150 rad/s at t=0: max climb {res[mode][0]:.2f} m, max '
+              f'|z - z0| {res[mode][1]:.2f} m, final yaw rate {res[mode][2]:.3f} rad/s, max tilt '
+              f'{res[mode][3]:.1f} deg')
+    assert res['px4'][1] < 0.5, res['px4']          # altitude held
+    # yaw authority without collective change is small (motors near idle limit): slow decay
+    assert res['px4'][2] < 0.25 * 150.0 and res['px4'][3] < 10.0
+    assert res['airmode'][0] > 10 * max(res['px4'][1], 0.01)   # documented airmode behaviour
+    # unsaturated wrench: both modes give the same rotor speeds
+    rng = np.random.default_rng(2)
+    T = 0.6 * G * rng.uniform(0.9, 1.1, 20)
+    tau = 1e-3 * rng.uniform(-1, 1, (20, 3))
+    da = RigidBodyDrone(np.zeros((20, 3)), preset='fpv_5inch', dt=DT, desat_mode='airmode')
+    dp = RigidBodyDrone(np.zeros((20, 3)), preset='fpv_5inch', dt=DT, desat_mode='px4')
+    assert np.array_equal(da.mix(T, tau), dp.mix(T, tau))
+
+
 def test_quaternion_norm():
     for pr in PRESETS:
         d = RigidBodyDrone([0, 0, 10], preset=pr, dt=DT)
@@ -192,7 +221,7 @@ def test_wind_noise_determinism():
 
 def main():
     tests = [test_hover_thrust, test_step_response, test_velocity_command, test_mixer_roundtrip,
-             test_single_motor_saturation, test_quaternion_norm, test_energy,
+             test_single_motor_saturation, test_desat_modes, test_quaternion_norm, test_energy,
              test_wind_noise_determinism]
     for t in tests:
         print(t.__name__)
