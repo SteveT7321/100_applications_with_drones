@@ -1,6 +1,6 @@
 # S055 Coastline Oil Spill Tracking
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
@@ -240,7 +240,7 @@ def extract_boundary_landmarks(C, grid_x, grid_y, n_landmarks, c_thr):
     total  = cumlen[-1]
     sample_d = np.linspace(0, total, n_landmarks, endpoint=False)
     landmarks = np.array([
-        np.interp(d, cumlen, verts[:, col]) for col in range(2)
+        np.interp(sample_d, cumlen, verts[:, col]) for col in range(2)
     ]).T
     return landmarks
 
