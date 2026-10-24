@@ -89,7 +89,7 @@ conda activate drones
 python src/05_special_entertainment/s099_obstacle_relay.py
 ```
 
-Runtime: 4.3–4.4 min, measured while other simulations shared the machine (the independent review measured 2.4 min). On the flown path, the script asserts every step that both drones stay above the ground, stay at or below $v_{max}$ = 3 m/s, and never enter a pillar. A run is scored a success only if its pillar clearance stays above 0.
+Runtime: 3.1–3.8 min, measured while other simulations shared the machine. On the flown path, the script asserts every step that both drones stay above the ground, stay at or below $v_{max}$ = 3 m/s, and never enter a pillar. A run is scored a success only if its pillar clearance stays above 0.
 
 ---
 
@@ -140,7 +140,7 @@ Seed 3, velocity-matched relay: isometric (left) and top-down (right) views. Gre
 
 ### Gate Miss Distance
 
-Miss distance at each gate plane for every strategy on the demo course; the dashed line is $r_{gate}$.
+Miss distance at each gate plane for every strategy on the demo course; the dashed line is $r_{gate}$. A bar for a gate passed outside the opening would be hatched with a thick black edge; there are none on this course (title: "0 here").
 
 ![Gate miss](./gate_miss.png)
 

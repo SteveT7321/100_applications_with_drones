@@ -588,15 +588,23 @@ def plot_course(course, plans, res, out_dir):
 def plot_gate_miss(res, out_dir):
     fig, ax = plt.subplots(figsize=(9, 4.8))
     w = 0.2
+    n_out = 0
     for j, s in enumerate(STRATS):
         m = res[s]['miss']
-        cols = [SCOL[s] if (np.isfinite(x) and x <= R_GATE) else 'red' for x in m]
-        ax.bar(np.arange(N_GATES) + (j - 1.5) * w, np.nan_to_num(m, nan=0.0), w, color=cols,
-               edgecolor='k', lw=0.5, label=LABELS[s])
+        outside = ~(np.isfinite(m) & (m <= R_GATE))
+        n_out += int(outside.sum())
+        bars = ax.bar(np.arange(N_GATES) + (j - 1.5) * w, np.nan_to_num(m, nan=0.0), w,
+                      color=SCOL[s], edgecolor='k', lw=0.5, label=LABELS[s])
+        for b, o in zip(bars, outside):        # missed gate: hatched with a thick black edge
+            if o:
+                b.set_hatch('xx'); b.set_linewidth(2.0)
+    ax.bar([np.nan], [np.nan], color='white', edgecolor='k', lw=2.0, hatch='xx',
+           label='outside the gate (hatched)')
     ax.axhline(R_GATE, color='k', ls='--', label=f'$r_{{gate}}$ = {R_GATE} m')
     ax.set_xticks(range(N_GATES)); ax.set_xticklabels([f'Gate {k + 1}' for k in range(N_GATES)])
     ax.set_ylabel('Distance from gate centre at plane crossing (m)')
-    ax.set_title(f'Gate miss distance, course seed {DEMO_SEED} (red bar = outside the gate)')
+    ax.set_title(f'Gate miss distance, course seed {DEMO_SEED} '
+                 f'(hatched bar = outside the gate; {n_out} here)')
     ax.legend(fontsize=8)
     fig.tight_layout()
     path = os.path.join(out_dir, 'gate_miss.png')
