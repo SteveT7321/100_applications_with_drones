@@ -473,7 +473,7 @@ def plot_strategy_bars(res, mc, out_dir):
 
 
 def plot_mc(mc, out_dir):
-    fig, ax = plt.subplots(figsize=(8, 4.5))
+    fig, ax = plt.subplots(figsize=(11, 5.5))
     data, labels = [], []
     cols = []
     for mode in ('trunc', 'fit'):
@@ -486,7 +486,8 @@ def plot_mc(mc, out_dir):
         patch.set_facecolor(COLORS[s])
     ax.axhline(100 * C_TARGET, color='red', ls='--', lw=1, label='90 % target')
     ax.set_ylabel('coverage C (%)')
-    ax.tick_params(axis='x', labelsize=7)
+    ax.tick_params(axis='x', labelsize=7, rotation=35)
+    plt.setp(ax.get_xticklabels(), ha='right')
     ax.legend(fontsize=8)
     ax.set_title(f'S053 Coverage within the 500 m budget, {N_MC} random reefs')
     _save(fig, out_dir, 'mc_coverage.png')
