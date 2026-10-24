@@ -1,6 +1,6 @@
 # S099 Cross-Obstacle Relay Pass
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 
 **Algorithm**: RRT* Gate Planning + Velocity-Matched Mid-Air Handoff | **Dimension**: 3D
 
@@ -67,6 +67,13 @@ The planner minimises a penalised total time objective:
 $$J = T_\text{total} + \lambda \sum_{k=1}^{5} \max\!\left(0,\; \|\mathbf{p}(t_k) - \mathbf{g}_k\| - r_\text{gate}\right)^2$$
 
 where $\lambda = 50$ is the gate-miss penalty weight. A zero-penalty solution corresponds to all gates being cleanly threaded.
+
+> **Implementation notes (2026-10)**: $T_\text{total}$ is the time at which the baton reaches the
+> finish; the sum `path_a.duration + path_b.duration` in the code below counts the overlap of the two
+> flights twice. The axial condition $|(\mathbf p(t_k) - \mathbf g_k)\cdot\hat{\mathbf n}_k| \le \delta_\text{tol}$
+> holds by construction when $t_k$ is the plane-crossing time, so only the radial miss distance is
+> scored. See the outputs README for the comparison strategies added (single drone, hover handoff,
+> plain RRT).
 
 ---
 
