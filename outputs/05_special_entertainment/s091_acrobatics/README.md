@@ -94,7 +94,7 @@ conda activate drones
 python src/05_special_entertainment/s091_acrobatics.py
 ```
 
-Runtime ≈ 40–45 s (measured while about 10 other simulations shared the 12-thread machine).
+Runtime ≈ 80–140 s with about 10 other simulations sharing the 12-thread machine (measured 79–125 s here, 96–136 s by the reviewer).
 
 ---
 
