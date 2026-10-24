@@ -1,6 +1,6 @@
 # S073 3D Upgrade — Solar Panel Thermal Inspection
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S073 original](../S073_solar_thermal.md)
 
 ---
@@ -13,15 +13,23 @@ The original S073 locks the drone at a fixed altitude `h = 5.0 m` throughout the
 2. **No glare avoidance**: when the drone's viewing angle is close to the specular-reflection angle of the panel surface, reflected sunlight floods the thermal sensor and masks genuine hot spots. The specular condition depends on drone altitude, along-track position, and sun elevation — a purely 2D model cannot represent this.
 3. **No inter-row obstacle clearance**: row-to-row transit legs in the original model are horizontal at fixed altitude. In reality the drone must clear panel edges and support-frame structures when crossing between rows; the minimum safe transit altitude depends on the panel height profile along the transition segment.
 
+> **Card corrections (2026-10-24, verified in `src/04_industrial_agriculture/3d/s073_3d_solar_thermal.py`)**:
+> (1) With $W_{panel} = FARM\_W/N_{rows} = 6$ m the rows ($10 \times (6\cos 25° + 2) = 74.4$ m) do not fit the 60 m farm, and the listed $h_{edge} \approx 1.27$ m belongs to a 3 m panel. The geometry now uses a 6 m row pitch: horizontal depth $6 - g_{row} = 4.0$ m, slant width $4.0/\cos 25° = 4.414$ m, $h_{edge} = 4.0\tan 25° = 1.865$ m, $y_i^{bot} = 6i + 1$ m.
+> (2) The glare test must use the direction from the panel to the drone, $(\mathbf{p}_d - \mathbf{c}_{ij})/\|\cdot\|$; the card's $\mathbf{c}_{ij} - \mathbf{p}_d$ flags the drone only when it is on the sun side.
+> (3) The shadow tip lies at $\mathbf{p}_{top} + (h_{edge}/\tan\varepsilon_{sun})\,\hat{\mathbf{s}}_{xy}$ (away from the sun, horizontal length $h/\tan\varepsilon$), not $-\,(h/\sin\varepsilon)\,\hat{\mathbf{s}}_{xy}$.
+> (4) "South-facing (positive y)": with $\hat{\mathbf{s}}$ as written, x = east and y = north, so south is $-y$; the normal $[0, -\sin\alpha, \cos\alpha]$ is correct. Reflection follows the law of specular reflection, not Snell's law.
+> (5) With these corrections, at the card sun (120°, 35°) the specular direction is 46.1° from the panel normal, at least 23° outside the 45° FOV of a nadir or tilt-normal camera, so no altitude is glare-limited and the card rule gives $h_{scan} = h_{edge} + 1 = 2.865$ m for every strip; the cast shadow reaches 1.33 m north, less than the 2 m gap, so no panel is shaded. For planar parallel panels the specular direction is the same everywhere, so whether glare is in view depends only on the camera attitude; altitude only moves where the reflection lands (on a panel or in a gap).
+> (6) $v_{max,tilt} \approx 1.2$ m/s is wrong for the listed 2.3–5 m altitudes: blur is $b = \omega t_{exp}/\text{IFOV}$ with $\omega \le v/\rho$, so $v_{max} = b_{max}\,\text{IFOV}\,\rho_{min}/t_{exp}$ (IFOV = 0.004 rad); at $h_{scan} = 2.865$ m ($\rho_{min} = 1.0$ m over the top edge) it is 0.31 m/s.
+
 This upgrade adds: (a) full 3D panel-array geometry with tilt and row-gap structure; (b) a glare-free altitude band derived from specular-reflection geometry; (c) per-strip altitude optimisation that balances footprint width, GSD, and specular exclusion; (d) 3D transition arcs between strips that clear physical obstacles; and (e) a shadow-mask that suppresses hot-spot detection when a panel falls in its own or a neighbour's cast shadow.
 
 ---
 
 ## Problem Definition
 
-**Setup**: A single drone inspects an $80 \times 60$ m solar farm containing 120 panels in 10 rows of 12. Each panel is tilted at elevation angle $\alpha_{tilt} = 25°$ facing due south (positive y-direction). Panels in a row share a common tilt axis running east-west; adjacent rows are separated by a ground gap $g_{row} = 2.0$ m used for maintenance access. The drone carries a thermal camera gimbal that can pitch to point perpendicular to the panel surface (tilt-normal pointing), eliminating the oblique-projection distortion present in a fixed nadir camera.
+**Setup**: A single drone inspects an $80 \times 60$ m solar farm containing 120 panels in 10 rows of 12. Each panel is tilted at elevation angle $\alpha_{tilt} = 25°$ facing due south ($-y$; x = east, y = north). Panels in a row share a common tilt axis running east-west; adjacent rows are separated by a ground gap $g_{row} = 2.0$ m used for maintenance access. The drone carries a thermal camera gimbal that can pitch to point perpendicular to the panel surface (tilt-normal pointing), eliminating the oblique-projection distortion present in a fixed nadir camera.
 
-The sun is modelled at a fixed azimuth and elevation appropriate for a mid-morning inspection pass (azimuth $\phi_{sun} = 120°$ east of north, elevation $\varepsilon_{sun} = 35°$). The specular exclusion zone is computed from Snell's law of reflection for each panel surface; the drone must remain outside this zone at all times to avoid glare contamination.
+The sun is modelled at a fixed azimuth and elevation appropriate for a mid-morning inspection pass (azimuth $\phi_{sun} = 120°$ east of north, elevation $\varepsilon_{sun} = 35°$). The specular exclusion zone is computed from the law of specular reflection for each panel surface; the drone must remain outside this zone at all times to avoid glare contamination.
 
 Flight altitude now varies per strip: scan legs over panel surfaces fly at $h_{scan}$ chosen to keep the camera within the glare-free band; row-crossing transition legs climb to $h_{transit}$ to clear panel top edges plus a safety margin.
 
@@ -51,13 +59,13 @@ $$\hat{\mathbf{n}}_{panel} = \begin{bmatrix} 0 \\ -\sin\alpha_{tilt} \\ \cos\alp
 
 The bottom edge of row $i$ sits at ground-level y-coordinate:
 
-$$y_i^{bot} = i \cdot (W_{panel} \cos\alpha_{tilt} + g_{row})$$
+$$y_i^{bot} = i \cdot (W_{panel} \cos\alpha_{tilt} + g_{row}) + g_{row}/2, \qquad W_{panel}\cos\alpha_{tilt} + g_{row} = FARM\_W/N_{rows} = 6\ \text{m}$$
 
 The top-edge height (z) of row $i$ is:
 
 $$h_{edge,i} = W_{panel} \sin\alpha_{tilt}$$
 
-where $W_{panel} = FARM\_W / N_{rows}$ is the panel width before projection. The 3D centre of panel $p_{ij}$ is:
+where $W_{panel} = (FARM\_W/N_{rows} - g_{row})/\cos\alpha_{tilt} = 4.414$ m is the slant width of the panel (corrected: the card used $W_{panel} = FARM\_W/N_{rows}$, which does not fit the farm), so $h_{edge} = 1.865$ m. The 3D centre of panel $p_{ij}$ is:
 
 $$\mathbf{c}_{ij} = \begin{bmatrix} (j + \tfrac{1}{2}) L_{panel} \\ y_i^{bot} + \tfrac{1}{2} W_{panel} \cos\alpha_{tilt} \\ \tfrac{1}{2} W_{panel} \sin\alpha_{tilt} \end{bmatrix}$$
 
@@ -73,7 +81,9 @@ $$\hat{\mathbf{r}}_{spec} = \hat{\mathbf{s}} - 2(\hat{\mathbf{s}} \cdot \hat{\ma
 
 The drone's viewing direction from position $\mathbf{p}_d$ toward panel centre $\mathbf{c}_{ij}$ is:
 
-$$\hat{\mathbf{v}}_{view} = \frac{\mathbf{c}_{ij} - \mathbf{p}_d}{\|\mathbf{c}_{ij} - \mathbf{p}_d\|}$$
+$$\hat{\mathbf{v}}_{view} = \frac{\mathbf{p}_d - \mathbf{c}_{ij}}{\|\mathbf{p}_d - \mathbf{c}_{ij}\|}$$
+
+(corrected sign: the reflected ray travels from the panel toward the drone)
 
 Glare contamination occurs when the angular separation between the viewing direction and the specular direction falls below the glare half-angle $\gamma_{glare} = 5°$:
 
@@ -123,7 +133,9 @@ A panel is within the sensor footprint when $\mathbf{p}_{hit}$ lies inside the p
 
 The shadow boundary of row $i$ on the ground plane is cast by the top edge of panel row $i$ in the direction opposite to $\hat{\mathbf{s}}$. The shadow tip on the ground is at:
 
-$$\mathbf{p}_{shadow,i} = \mathbf{p}_{top,i} - \frac{h_{edge,i}}{\sin\varepsilon_{sun}} \hat{\mathbf{s}}_{xy}$$
+$$\mathbf{p}_{shadow,i} = \mathbf{p}_{top,i} + \frac{h_{edge,i}}{\tan\varepsilon_{sun}} \hat{\mathbf{s}}_{xy}$$
+
+(corrected: the shadow falls along the light direction $\hat{\mathbf{s}}_{xy}$, and its horizontal length is $h/\tan\varepsilon$)
 
 where $\hat{\mathbf{s}}_{xy}$ is the horizontal component of $\hat{\mathbf{s}}$ (normalised). A panel $p_{kj}$ in the next row ($k = i+1$) is shadow-masked when its centre $\mathbf{c}_{kj}$ lies between $y_i^{top}$ and $p_{shadow,i,y}$:
 
@@ -188,17 +200,17 @@ $$v_{max,tilt} = \frac{b_{max} \cdot \text{GSD}_{tilt}}{t_{exp}}$$
 | Panel array | — | 10 rows × 12 cols = 120 panels |
 | Panel tilt angle | $\alpha_{tilt}$ | 25° (south-facing) |
 | Row gap (maintenance aisle) | $g_{row}$ | 2.0 m |
-| Panel top-edge height | $h_{edge}$ | $W_{panel}\sin 25° \approx 1.27$ m |
+| Panel top-edge height | $h_{edge}$ | $W_{panel}\sin 25° = 4.0\tan 25° \approx 1.865$ m (corrected from 1.27 m) |
 | Defective panels | $M$ | 8 |
 | Thermal camera FOV | $\theta_{FOV}$ | 45° |
 | Glare half-angle | $\gamma_{glare}$ | 5° |
 | Safety clearance above edge | $\Delta_{safe}$ | 1.0 m |
 | Transit clearance margin | $\delta_{transit}$ | 0.5 m |
-| Scan altitude range | $h_{scan,i}$ | 2.3 – 5.0 m (per strip) |
-| Transit altitude | $h_{transit}$ | $h_{edge} + 1.5$ m $\approx 2.77$ m |
+| Scan altitude range | $h_{scan,i}$ | 2.865 – 5.0 m (per strip; corrected lower bound $h_{edge} + 1$ m) |
+| Transit altitude | $h_{transit}$ | $h_{edge} + 1.5$ m $\approx 3.365$ m (corrected) |
 | Cross-track overlap | $\rho$ | 20% |
 | Nominal inspection speed | $v$ | 1.0 m/s |
-| Max safe speed (tilt-corrected) | $v_{max,tilt}$ | ~1.2 m/s |
+| Max safe speed (tilt-corrected) | $v_{max,tilt}$ | $b_{max}\,\text{IFOV}\,\rho_{min}/t_{exp}$: 0.31 m/s at 2.865 m, 1.41 m/s for a 6.24 m row-aligned pass (corrected from ~1.2 m/s) |
 | Sun azimuth | $\phi_{sun}$ | 120° E of N |
 | Sun elevation | $\varepsilon_{sun}$ | 35° |
 | Nominal panel temperature | $T_{nominal}$ | 35°C |
@@ -217,7 +229,7 @@ $$v_{max,tilt} = \frac{b_{max} \cdot \text{GSD}_{tilt}}{t_{exp}}$$
 - **Glare-free band visualisation** (`plt.subplots()`, cross-section view): for a representative strip, plot the angular separation $\arccos(\hat{\mathbf{v}}_{view} \cdot \hat{\mathbf{r}}_{spec})$ as a function of drone altitude $z$; mark the glare threshold $\gamma_{glare} = 5°$ and the selected scan altitude.
 - **Detection results overlay** (2D top-down projected view): panel grid with healthy panels grey, detected hot panels red, missed panels (false negatives) orange, shadow-masked panels dark grey, glare-contaminated panels yellow; drone ground-track overlaid as a black line.
 - **Shadow mask time series**: fraction of panels in shadow as a function of inspection time of day (08:00–16:00); mark the chosen inspection window where shadow fraction is below 10%.
-- **Animation** (`FuncAnimation`): 3D perspective view of the drone sweeping the tilted panel array; panel surfaces colour-coded by thermal reading; drone marker moves along the 3D path including altitude transitions; panels flash red on detection; shadow boundary advances with time; saved as `outputs/04_industrial_agriculture/s073_3d_solar_thermal/s073_3d_animation.gif`.
+- **Animation** (`FuncAnimation`): 3D perspective view of the drone sweeping the tilted panel array; panel surfaces colour-coded by thermal reading; drone marker moves along the 3D path including altitude transitions; panels flash red on detection; shadow boundary advances with time; saved as `outputs/04_industrial_agriculture/3d/s073_3d_solar_thermal/animation.gif`.
 - **Console metrics**: per-strip scan altitude, glare-free fraction, shadow-masked fraction, tilt-corrected $v_{max}$, 3D path length, coverage time, detection rate.
 
 ---
