@@ -78,7 +78,7 @@ Runtime: 16 s in each of the two reproducibility runs (single-threaded BLAS); th
 
 The pure run-plus-turn time for the whole field is 3599.8 s, so the ideal 4-drone share is 900.0 s.
 
-Per-drone breakdown (time until each drone's last spray):
+Per-drone breakdown (Spray, Turns and Swaps up to each drone's last spray; Ferry also includes the final flight home, so the columns sum to slightly more than "Last spray"):
 
 | | Drone | Runs (x range) | Last spray | Spray | Turns | Ferry | Swaps |
 |---|---|---|---:|---:|---:|---:|---:|
