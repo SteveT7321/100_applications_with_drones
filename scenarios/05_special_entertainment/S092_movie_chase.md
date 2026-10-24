@@ -25,7 +25,7 @@ the future, then feeds that prediction into a **Model Predictive Controller** (M
   while avoiding 5 pillars; broadcasts no active signals — purely reactive observer.
 
 **Objective**: Maximise the fraction of mission time during which (a) the drone is within a
-tolerance ball of the desired offset position and (b) the car occupies 20–40 % of the camera
+tolerance ball of the desired offset position and (b) the car occupies 10–20 % of the camera
 frame height, while maintaining a minimum safety clearance r_safe = 1.5 m from every pillar.
 
 ---
@@ -114,6 +114,13 @@ This nonlinear constraint is linearised around the current drone position p_0 as
 
 $$\hat{\mathbf{n}}_k^\top (\mathbf{p}_i^{xy} - \mathbf{o}_k^{xy}) \geq r_{safe}, \qquad \hat{\mathbf{n}}_k = \frac{\mathbf{p}_0^{xy} - \mathbf{o}_k^{xy}}{\|\mathbf{p}_0^{xy} - \mathbf{o}_k^{xy}\|}$$
 
+Note (from the implementation): imposing the constraint only at the knots $i = 1..N$ is not
+enough. At 10–15 m/s the knots are 2–3 m apart and the path between them cuts the corner;
+with pillars 1.5–2.0 m from the camera path the drone entered a pillar in 5/10 runs. The
+implementation imposes the half-plane at every 0.05 s instant of the horizon (positions there
+are still linear in the accelerations), with one normal per instant taken from the previous
+plan instead of a single normal from $\mathbf{p}_0$, which over-constrains.
+
 **Velocity and acceleration bounds**:
 
 $$\|\mathbf{v}_i\|_\infty \leq v_{max} = 12\ \text{m/s}, \qquad \|\mathbf{u}_i\|_\infty \leq a_{max} = 6\ \text{m/s}^2$$
@@ -167,7 +174,7 @@ ROAD_LEN   = 300.0   # m
 CAR_SPEED  = 8.0     # m/s
 A_WAVE     = 15.0    # m  (road amplitude)
 L_WAVE     = 80.0    # m  (road wavelength)
-D_OFFSET   = np.array([0.0, -8.0, 5.0])   # body-frame offset (behind, above)
+D_OFFSET   = np.array([-8.0, 0.0, 5.0])   # body-frame offset (x forward, y left): behind, above
 
 # NOTE: these pillars are 4.6-15.0 m from the desired camera path (verified), so the 1.5 m
 # clearance constraint never binds. The implementation moves each pillar to the camera path
@@ -345,7 +352,7 @@ def run_simulation(T_total=37.5, rng_seed=0):
 - **Tracking error time-series**: RMS position error ||p_drone(t) - p_d(t)|| vs time; shaded
   bands mark windows where car is near a pillar; dashed horizontal line at 1.0 m tolerance.
 
-- **Camera framing plot**: f_height(t) vs time with shaded target zone [0.20, 0.40];
+- **Camera framing plot**: f_height(t) vs time with shaded target zone [0.10, 0.20];
   framing score f_score annotated in legend.
 
 - **Obstacle clearance plot**: minimum distance from drone to nearest pillar vs time; red

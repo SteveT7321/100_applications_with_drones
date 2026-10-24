@@ -72,12 +72,17 @@ OBS_RANGE = 40.0          # m pillars farther than this are not added to the QP
 T_SKIP   = 3.0            # s start-up transient excluded from the "steady" RMS
 N_MC     = 10
 SEED_FREE = ('oracle', 'oracle_card')   # no measurement noise -> run once
+OFFSET_SWEEP = (0.5, 1.0, 1.5, 2.0, 3.0)   # m pillar distance from the desired camera path
+QV_SWEEP = (1.0, 3.0, 10.0, 30.0, 100.0)  # velocity-tracking weight sensitivity
+N_WORKERS = 6                             # process pool; results collected in input order
+CLEAR_SUB = 10                            # clearance check points per 0.05 s step
 SEEDS    = list(range(N_MC))
 MAIN_SEED = 0
 
-VARIANTS = ['kf_mpc', 'kf_cardcost', 'no_pred', 'oracle', 'oracle_card', 'kf_noobs',
-            'kf_cardlin', 'kf_card']
+VARIANTS = ['kf_mpc', 'kf_knots', 'kf_cardcost', 'no_pred', 'oracle', 'oracle_card',
+            'kf_noobs', 'kf_cardlin', 'kf_card']
 V_LABEL = {'kf_mpc': 'KF prediction + MPC (proposed)',
+           'kf_knots': 'Proposed, pillar constraints only at the 0.2 s knots',
            'kf_cardcost': 'KF prediction + card MPC cost (no velocity term)',
            'no_pred': 'No prediction (hold KF estimate)',
            'oracle': 'Oracle future reference',
@@ -85,10 +90,10 @@ V_LABEL = {'kf_mpc': 'KF prediction + MPC (proposed)',
            'kf_noobs': 'Proposed, no obstacle constraints',
            'kf_cardlin': 'Proposed, card linearisation (at p0)',
            'kf_card': 'Proposed, card pillar layout'}
-V_SHORT = {'kf_mpc': 'proposed', 'kf_cardcost': 'card\ncost', 'no_pred': 'no\nprediction',
+V_SHORT = {'kf_mpc': 'proposed', 'kf_knots': 'knots\nonly', 'kf_cardcost': 'card\ncost', 'no_pred': 'no\nprediction',
            'oracle': 'oracle', 'oracle_card': 'oracle,\ncard cost', 'kf_noobs': 'no obstacle\nconstraints',
            'kf_cardlin': 'card\nlinearisation', 'kf_card': 'card\npillars'}
-V_COLOR = {'kf_mpc': 'red', 'kf_cardcost': 'tab:pink', 'no_pred': 'tab:purple',
+V_COLOR = {'kf_mpc': 'red', 'kf_knots': 'tab:olive', 'kf_cardcost': 'tab:pink', 'no_pred': 'tab:purple',
            'oracle': 'black', 'oracle_card': 'tab:gray', 'kf_noobs': 'tab:orange',
            'kf_cardlin': 'tab:cyan', 'kf_card': 'tab:brown'}
 
@@ -124,9 +129,9 @@ def desired_pos(t):
     return offset_point(p[..., :2], psi)
 
 
-def relocated_pillars():
-    """Pillars at the card's x stations, moved onto the desired camera path (0.5 m to the
-    side, alternating), so that the 1.5 m clearance constraint actually binds."""
+def relocated_pillars(lateral=PILLAR_LATERAL):
+    """Pillars at the card's x stations, moved onto the desired camera path (lateral m to
+    the side, alternating), so that the 1.5 m clearance constraint actually binds."""
     tt = np.linspace(-1.0, T_TOTAL + 1.0, 200001)
     pd = desired_pos(tt)
     out = []
@@ -135,7 +140,7 @@ def relocated_pillars():
         tan = pd[min(i + 1, len(tt) - 1), :2] - pd[max(i - 1, 0), :2]
         tan /= np.linalg.norm(tan)
         nrm = np.array([-tan[1], tan[0]]) * (1 if k % 2 == 0 else -1)
-        out.append(pd[i, :2] + PILLAR_LATERAL * nrm)
+        out.append(pd[i, :2] + lateral * nrm)
     return np.array(out)
 
 
@@ -166,6 +171,16 @@ for _i in range(1, N_HOR + 1):
         GP[_i - 1, _j] = DT_MPC ** 2 * (_i - _j - 0.5)
         GV[_i - 1, _j] = DT_MPC
 W_POS = np.array([Q_MPC] * (N_HOR - 1) + [P_F])
+N_C = N_HOR * SUB                      # obstacle constraint points: every 0.05 s of the horizon
+TAU_C = np.arange(1, N_C + 1) * DT_SIM
+GS = np.zeros((N_C, N_HOR))            # p(tau_j) = p0 + tau_j v0 + GS u (exact, ZOH accel)
+for _j in range(N_C):
+    _i = _j // SUB
+    _s = TAU_C[_j] - _i * DT_MPC
+    for _m in range(_i):
+        GS[_j, _m] = DT_MPC ** 2 * (_i - _m - 0.5) + DT_MPC * _s
+    GS[_j, _i] = 0.5 * _s ** 2
+KNOT_ROWS = np.arange(SUB - 1, N_C, SUB)   # rows of GS that coincide with the knots
 
 
 def qp_ipm(H, g, G, h, tol=1e-8, max_iter=60):
@@ -213,20 +228,25 @@ def qp_ipm(H, g, G, h, tol=1e-8, max_iter=60):
     return x, False, max_iter
 
 
-def solve_mpc(p0, v0, ref_full, pillars, use_obs, p_lin=None, q_vel=Q_VEL):
+def solve_mpc(p0, v0, ref_full, pillars, use_obs, p_lin=None, q_vel=Q_VEL, knots_only=False):
     """Condensed MPC QP in the accelerations u (3 x N) plus one slack per nearby pillar.
     ref_full: (N_HOR + 1, 3) references at tau = 0..N; positions p_1..p_N track ref_full[1:]
     and, if q_vel > 0, velocities v_1..v_N track the reference finite differences.
-    Obstacle half-planes are linearised at p_lin
-    (N_HOR, 2), one normal per horizon step; p_lin=None uses the current position p0 for
-    every step (card). Returns (u0, predicted positions (N, 3), (converged, slack > 0))."""
+    Obstacle half-planes are imposed at every 0.05 s point of the horizon (N_C points, or only
+    at the N_HOR knots if knots_only) and linearised at p_lin (N_C, 2), one normal per point;
+    p_lin=None uses the current position p0 for every point (card).
+    Returns (u0, predicted positions at the N_C points, (converged, slack > 0))."""
     ref = ref_full[1:]
     v_ref = np.diff(ref_full, axis=0) / DT_MPC
     free = p0[None, :] + _IDX[:, None] * DT_MPC * v0[None, :]           # (N, 3)
     E = ref - free
+    rows_c = KNOT_ROWS if knots_only else np.arange(N_C)
+    GC = GS[rows_c]
+    free_c = p0[None, :] + TAU_C[rows_c, None] * v0[None, :]
     obs = []
     if use_obs:
-        lin = np.repeat(p0[None, :2], N_HOR, 0) if p_lin is None else p_lin
+        lin = np.repeat(p0[None, :2], N_C, 0) if p_lin is None else p_lin
+        lin = lin[rows_c]
         for o in pillars:
             if np.linalg.norm(p0[:2] - o) < OBS_RANGE:
                 d = lin - o
@@ -255,13 +275,13 @@ def solve_mpc(p0, v0, ref_full, pillars, use_obs, p_lin=None, q_vel=Q_VEL):
             C[:, a * N_HOR:(a + 1) * N_HOR] = sign * np.eye(N_HOR)
             rows.append(C)
             rhs.append(np.full(N_HOR, A_MAX))
-    for k, (n, o) in enumerate(obs):                     # n.(p_i - o) + s_k >= R_SAFE
-        C = np.zeros((N_HOR, nz))
-        C[:, 0:N_HOR] = -n[:, 0:1] * GP
-        C[:, N_HOR:2 * N_HOR] = -n[:, 1:2] * GP
+    for k, (n, o) in enumerate(obs):                     # n.(p(tau) - o) + s_k >= R_SAFE
+        C = np.zeros((len(rows_c), nz))
+        C[:, 0:N_HOR] = -n[:, 0:1] * GC
+        C[:, N_HOR:2 * N_HOR] = -n[:, 1:2] * GC
         C[:, nU + k] = -1.0
         rows.append(C)
-        rhs.append(np.sum((free[:, :2] - o) * n, axis=1) - R_SAFE)
+        rhs.append(np.sum((free_c[:, :2] - o) * n, axis=1) - R_SAFE)
         C = np.zeros((1, nz))
         C[0, nU + k] = -1.0                              # s_k >= 0
         rows.append(C)
@@ -269,7 +289,7 @@ def solve_mpc(p0, v0, ref_full, pillars, use_obs, p_lin=None, q_vel=Q_VEL):
     z, ok, _ = qp_ipm(H, g, np.vstack(rows), np.concatenate(rhs))
     u = z[:nU].reshape(3, N_HOR)
     slack = bool(K and z[nU:].max() > 1e-6)
-    pred = free + GP @ u.T
+    pred = p0[None, :] + TAU_C[:, None] * v0[None, :] + GS @ u.T
     return np.clip(u[:, 0], -A_MAX, A_MAX), pred, (ok, slack)
 
 
@@ -279,12 +299,12 @@ def framing(dist):
     return 2 * np.arctan(H_CAR / (2 * dist)) / np.radians(FOV_DEG)
 
 
-def simulate(variant, seed, keep=False):
+def simulate(variant, seed, keep=False, lateral=PILLAR_LATERAL, q_vel=None):
     rng = np.random.default_rng(seed)
     n_steps = int(round(T_TOTAL / DT_SIM))
     t_all = np.arange(n_steps + 1) * DT_SIM
     noise = rng.normal(0.0, SIGMA_MEAS, (n_steps + 1, 2))      # common random numbers
-    pillars = PILLARS_CARD if variant == 'kf_card' else PILLARS
+    pillars = PILLARS_CARD if variant == 'kf_card' else relocated_pillars(lateral)
     use_obs = variant != 'kf_noobs'
     p_car_all, v_car_all, psi_all = car_state(t_all)
     p_des_all = offset_point(p_car_all[:, :2], psi_all)
@@ -325,11 +345,13 @@ def simulate(variant, seed, keep=False):
             if variant == 'kf_cardlin':
                 p_lin = None
             elif pred_prev is None:
-                p_lin = ref[1:, :2]
+                p_lin = np.column_stack([np.interp(TAU_C, tau, ref[:, a]) for a in range(2)])
             else:
-                p_lin = np.vstack([pred_prev[1:, :2], pred_prev[-1:, :2]])
-            q_vel = 0.0 if variant in ('kf_cardcost', 'oracle_card') else Q_VEL
-            u, pred_prev, info = solve_mpc(p, v, ref, pillars, use_obs, p_lin, q_vel)
+                p_lin = np.vstack([pred_prev[SUB:, :2], np.repeat(pred_prev[-1:, :2], SUB, 0)])
+            qv = 0.0 if variant in ('kf_cardcost', 'oracle_card') else \
+                (Q_VEL if q_vel is None else q_vel)
+            u, pred_prev, info = solve_mpc(p, v, ref, pillars, use_obs, p_lin, qv,
+                                           knots_only=(variant == 'kf_knots'))
             info_count['solves'] += 1
             info_count['fail'] += int(not info[0])
             info_count['slack'] += int(info[1])
@@ -349,9 +371,16 @@ def simulate(variant, seed, keep=False):
     f_h = framing(dist_car)
     dxy = np.linalg.norm(P[:, None, :2] - pillars[None], axis=2)      # (T, 5)
     clear = dxy.min(axis=1)
-    near_h = P[:, 2] <= PILLAR_HEIGHT
-    pillar_hits = int(np.sum(clear[near_h] <= PILLAR_RADIUS))
-    if use_obs:
+    # true integrated path between samples (constant acceleration within each 0.05 s step)
+    ss = np.linspace(0.0, DT_SIM, CLEAR_SUB, endpoint=False)
+    Pf = (P[:-1, None, :] + log['v'][:-1, None, :] * ss[None, :, None]
+          + 0.5 * log['u'][:-1, None, :] * ss[None, :, None] ** 2).reshape(-1, 3)
+    Pf = np.vstack([Pf, P[-1:]])
+    clear_f = np.linalg.norm(Pf[:, None, :2] - pillars[None], axis=2).min(axis=1)
+    near_h = Pf[:, 2] <= PILLAR_HEIGHT
+    inside = near_h & (clear_f <= PILLAR_RADIUS)
+    pillar_hits = int(np.sum(inside))
+    if use_obs and variant != 'kf_knots':
         assert pillar_hits == 0, 'drone inside a pillar'
     steady = t_all >= T_SKIP
     vmax_inf = float(np.abs(log['v']).max())
@@ -368,7 +397,8 @@ def simulate(variant, seed, keep=False):
         'in_ball_steady': float(np.mean(err[steady] <= TOL_BALL)),
         'f_card': float(np.mean((f_h >= BAND_CARD[0]) & (f_h <= BAND_CARD[1]))),
         'f_fixed': float(np.mean((f_h >= BAND_FIXED[0]) & (f_h <= BAND_FIXED[1]))),
-        'min_clear': float(clear.min()),
+        'min_clear': float(clear_f.min()),
+        'hit_run': bool(pillar_hits > 0),
         'max_speed': float(np.linalg.norm(log['v'], axis=1).max()),
         'max_speed_inf': vmax_inf,
         'max_err': float(err.max()),
@@ -415,22 +445,44 @@ def offline_floor(a_max):
             float(np.mean(en <= TOL_BALL)))
 
 
+SUMMARY_KEYS = ('rms', 'rms_steady', 'in_ball', 'in_ball_steady', 'f_card', 'f_fixed',
+                'min_clear', 'max_speed', 'max_speed_inf', 'max_err', 'pred_rms', 'pred_max',
+                'kf_rms', 'n_solves', 'n_fail', 'n_slack', 'pillar_hits', 'hit_run')
+
+
+def _job(args):
+    variant, seed, keep, lateral, q_vel = args
+    r = simulate(variant, seed, keep=keep, lateral=lateral, q_vel=q_vel)
+    return r if keep else {k: r[k] for k in SUMMARY_KEYS}
+
+
 def run_simulation():
-    main, mc = {}, {v: [] for v in VARIANTS}
+    """All runs in a process pool; results are returned in job order (deterministic)."""
+    from concurrent.futures import ProcessPoolExecutor
+    jobs = []
     for seed in SEEDS:
         for var in VARIANTS:
             if var in SEED_FREE and seed != MAIN_SEED:
                 continue
-            r = simulate(var, seed, keep=(seed == MAIN_SEED))
-            if seed == MAIN_SEED:
+            jobs.append(('main', var, (var, seed, seed == MAIN_SEED, PILLAR_LATERAL, None)))
+    for off in OFFSET_SWEEP:
+        for var in ('kf_mpc', 'kf_knots'):
+            for seed in SEEDS:
+                jobs.append((('offset', off, var), var, (var, seed, False, off, None)))
+    for qv in QV_SWEEP:
+        for seed in SEEDS:
+            jobs.append((('qv', qv), 'kf_mpc', ('kf_mpc', seed, False, PILLAR_LATERAL, qv)))
+    with ProcessPoolExecutor(max_workers=min(N_WORKERS, os.cpu_count() or 1)) as ex:
+        results = list(ex.map(_job, [j[2] for j in jobs], chunksize=1))
+    main, mc, sweep = {}, {v: [] for v in VARIANTS}, {}
+    for (tag, var, args), r in zip(jobs, results):
+        if tag == 'main':
+            if args[2]:
                 main[var] = r
-            mc[var].append({k: r[k] for k in ('rms', 'rms_steady', 'in_ball',
-                                              'in_ball_steady', 'f_card', 'f_fixed',
-                                              'min_clear', 'max_speed', 'max_speed_inf',
-                                              'max_err', 'pred_rms', 'pred_max', 'kf_rms',
-                                              'n_solves', 'n_fail', 'n_slack',
-                                              'pillar_hits')})
-    return main, mc
+            mc[var].append({k: r[k] for k in SUMMARY_KEYS})
+        else:
+            sweep.setdefault(tag, []).append(r)
+    return main, mc, sweep
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -531,7 +583,7 @@ def plot_framing(main, out_dir):
 
 def plot_clearance(main, out_dir):
     fig, ax = plt.subplots(figsize=(13, 4.8))
-    for var in ('kf_mpc', 'kf_noobs', 'kf_cardlin', 'kf_card'):
+    for var in ('kf_mpc', 'kf_knots', 'kf_noobs', 'kf_cardlin', 'kf_card'):
         r = main[var]
         ax.plot(r['t'], r['clear'], color=V_COLOR[var], lw=1.3,
                 label=f"{V_LABEL[var]} (min {r['min_clear']:.2f} m)")
@@ -665,7 +717,7 @@ def _ms(vals, fmt='{:.3f}', scale=1.0):
 
 
 if __name__ == '__main__':
-    main, mc = run_simulation()
+    main, mc, sweep = run_simulation()
     tt = np.linspace(0, T_TOTAL, 75001)
     pc, vc, psi = car_state(tt)
     pd = desired_pos(tt)
@@ -729,8 +781,8 @@ if __name__ == '__main__':
               f'(worst {min(x["min_clear"] for x in m):.3f} m, runs below r_safe: '
               f'{sum(x["min_clear"] < R_SAFE for x in m)}/{len(m)}, runs hitting a pillar: '
               f'{sum(x["pillar_hits"] > 0 for x in m)}/{len(m)})')
-        print(f'    Max speed        : {max(x["max_speed"] for x in m):.2f} m/s, '
-              f'max per-axis {max(x["max_speed_inf"] for x in m):.2f} m/s')
+        print(f'    Max speed        : {max(x["max_speed"] for x in m):.2f} m/s (norm; '
+              f'the card bound applies per axis: max per-axis {max(x["max_speed_inf"] for x in m):.2f} m/s)')
         print(f'    QP not converged : {sum(x["n_fail"] for x in m)} of '
               f'{sum(x["n_solves"] for x in m)}; solves with obstacle slack > 0: '
               f'{_ms([x["n_slack"] for x in m], "{:.1f}")} per run')
@@ -743,8 +795,28 @@ if __name__ == '__main__':
     print(f'    proposed < card cost in {sum(x < y for x, y in zip(a, c))}/{N_MC} seeds')
     print(f"    oracle (steady RMS {mc['oracle'][0]['rms_steady']:.3f} m) < proposed in "
           f"{sum(mc['oracle'][0]['rms_steady'] < x for x in a)}/{N_MC} seeds")
-    print('\n  Offline optimum (true reference known for the whole 37.5 s, same speed and '
-          'acceleration limits, no pillars, card position/control weights):')
+    print(f'\n  Pillar-offset sweep ({N_MC} seeds each; offset = pillar distance from the desired '
+          'camera path; clearance on the integrated path, 10 points per 0.05 s):')
+    for off in OFFSET_SWEEP:
+        for var in ('kf_mpc', 'kf_knots'):
+            rows = sweep[('offset', off, var)]
+            print(f'    {off:3.1f} m  {"0.05 s constraints" if var == "kf_mpc" else "knots only        "}: '
+                  f'steady RMS {_ms([x["rms_steady"] for x in rows])} m, min clearance '
+                  f'{_ms([x["min_clear"] for x in rows])} m (worst {min(x["min_clear"] for x in rows):.3f} m), '
+                  f'runs < r_safe {sum(x["min_clear"] < R_SAFE for x in rows)}/{len(rows)}, '
+                  f'runs inside a pillar {sum(x["hit_run"] for x in rows)}/{len(rows)}, '
+                  f'slack-active solves {_ms([x["n_slack"] for x in rows], "{:.1f}")}')
+    print(f'\n  Velocity-weight sensitivity (proposed, pillars {PILLAR_LATERAL} m from the path, '
+          f'{N_MC} seeds each):')
+    for qv in QV_SWEEP:
+        rows = sweep[('qv', qv)]
+        print(f'    Q_v = {qv:5.1f}: steady RMS {_ms([x["rms_steady"] for x in rows])} m, '
+              f'within 1 m {_ms([x["in_ball"] for x in rows], "{:.1f}", 100)} %, '
+              f'min clearance worst {min(x["min_clear"] for x in rows):.3f} m, '
+              f'runs inside a pillar {sum(x["hit_run"] for x in rows)}/{len(rows)}')
+    print('\n  Offline optimum (one QP over the whole 37.5 s with the true reference: minimises the '
+          'card-weighted position/control cost at the 0.2 s knots, same speed and acceleration '
+          'limits, no pillars; a reference point, not a strict bound on RMS):')
     for amax in (A_MAX, 10.0):
         fl = offline_floor(amax)
         print(f'    a_max {amax:4.1f} m/s²: RMS {fl[0]:.3f} m, t >= {T_SKIP:.0f} s: {fl[1]:.3f} m, '
