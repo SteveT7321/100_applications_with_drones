@@ -73,6 +73,7 @@ TAU_BIAS     = 10.0         # s
 SIGMA_REL    = 0.001        # m  relative (neighbour) measurement noise
 N_MC         = 20
 BIAS_SWEEP   = [0.0, 0.005, 0.01]
+WIND_SWEEP   = [(0.0, 0.0), (0.01, 0.003)]   # (common, individual) m/s^2, run with no bias
 STRATS       = ['card', 'indep', 'consensus']
 LABELS       = {'card': 'Card law (absolute consensus)', 'indep': 'Independent (eps = 0)',
                 'consensus': 'Error consensus + coupled fit'}
@@ -144,6 +145,7 @@ def run_simulation(strategy, seed=0, sigma_bias=SIGMA_BIAS, record=False,
     log = dict(t=[], pos=[], psi=[], err=[], gap=[], phase=[], min_sep=[], fc=[]) \
         if record else None
     hold_err, hold_gap, hold_fc, hold_rel = [], [], [], []
+    t_fit = None
     min_sep_all = np.inf
     k_hold0 = None
     for k in range(n_steps):
@@ -221,6 +223,8 @@ def run_simulation(strategy, seed=0, sigma_bias=SIGMA_BIAS, record=False,
             log['min_sep'].append(sep); log['fc'].append(fmag.copy())
         if phase >= 2:
             hold_err.append(np.linalg.norm(pos - TARGETS, axis=1).max())
+            if t_fit is None and hold_err[-1] <= DELTA_FIT:
+                t_fit = t + DT            # card: impedance phase ends at eps <= 5 mm
             hold_gap.append(np.abs(gap).max())
             hold_rel.append(np.linalg.norm(np.roll(e_true, -1, axis=0) - e_true, axis=1).max())
             hold_fc.append(fmag.max())
@@ -230,6 +234,7 @@ def run_simulation(strategy, seed=0, sigma_bias=SIGMA_BIAS, record=False,
         if phase < 2 and t >= T_LIMIT:
             break
     res = dict(t_asc=t_asc, t_conv=t_conv, converged=t_conv is not None, min_sep=min_sep_all,
+               fit_time=(t_fit - t_conv) if t_fit is not None else np.nan,
                final_err=float(np.linalg.norm(pos - TARGETS, axis=1).max()),
                final_radius=float(np.linalg.norm(pos[:, :2] - P_CENTRE[:2], axis=1).mean()))
     if hold_err:
@@ -260,9 +265,10 @@ def relative_errors(pos, rel_noise):
 
 # ── Experiments ───────────────────────────────────────────────────────────────
 
-def monte_carlo(strategy, sigma_bias=SIGMA_BIAS, n=N_MC):
-    rows = [run_simulation(strategy, seed=s, sigma_bias=sigma_bias) for s in range(n)]
-    keys = ['t_conv', 'hold_err_max', 'hold_err_mean', 'hold_gap_max', 'hold_gap_mean',
+def monte_carlo(strategy, sigma_bias=SIGMA_BIAS, n=N_MC, wind=(WIND_COMMON, WIND_INDIV)):
+    rows = [run_simulation(strategy, seed=s, sigma_bias=sigma_bias, wind_common=wind[0],
+                           wind_indiv=wind[1]) for s in range(n)]
+    keys = ['t_conv', 'fit_time', 'hold_err_max', 'hold_err_mean', 'hold_gap_max', 'hold_gap_mean',
             'hold_rel_max', 'frac_err_ok', 'frac_gap_ok', 'fc_max', 'min_sep', 'final_radius']
     out = {k: np.array([r.get(k, np.nan) if r.get(k) is not None else np.nan for r in rows],
                        dtype=float) for k in keys}
@@ -439,7 +445,10 @@ def mc_line(tag, m):
               f'{1000 * np.nanstd(m["hold_gap_max"]):.2f} mm'
               f', time all gaps <= 5 mm {100 * np.nanmean(m["frac_gap_ok"]):.1f}%'
               f', time slot error <= 5 mm {100 * np.nanmean(m["frac_err_ok"]):.1f}%'
-              f', max contact force {np.nanmax(m["fc_max"]):.3f} N')
+              f', max contact force {np.nanmax(m["fc_max"]):.3f} N'
+              f', impedance fit to 5 mm reached in {np.isfinite(m["fit_time"]).sum()}/{len(c)}'
+              + (f' (mean {np.nanmean(m["fit_time"]):.2f} s after the switch)'
+                 if np.isfinite(m['fit_time']).any() else ''))
     else:
         s += f', final mean radius {np.nanmean(m["final_radius"]):.3f} m'
     s += f', min separation {np.nanmin(m["min_sep"]):.3f} m'
@@ -474,7 +483,9 @@ if __name__ == '__main__':
             line += (f' at {r["t_conv"]:.2f} s, worst slot error over hold '
                      f'{1000 * r["hold_err_max"]:.2f} mm, worst edge gap '
                      f'{1000 * r["hold_gap_max"]:.2f} mm, worst neighbour misalignment '
-                     f'{1000 * r["hold_rel_max"]:.2f} mm')
+                     f'{1000 * r["hold_rel_max"]:.2f} mm, impedance fit to 5 mm '
+                     + (f'{r["fit_time"]:.2f} s after the switch' if np.isfinite(r['fit_time'])
+                        else 'not reached during the hold'))
         else:
             line += (f' (stopped at {T_LIMIT:.0f} s), final mean radius '
                      f'{r["final_radius"]:.4f} m, final error {1000 * r["final_err"]:.1f} mm')
@@ -514,6 +525,15 @@ if __name__ == '__main__':
             f'{LABELS[s]} gap {1000 * np.mean(sweep[b][s]["hold_gap_max"]):.2f}, '
             f'slot {1000 * np.mean(sweep[b][s]["hold_err_max"]):.2f}'
             for s in ('indep', 'consensus')))
+
+    print('\nWind sweep with no position bias (mean over seeds of the worst value, mm):')
+    for wc, wi in WIND_SWEEP:
+        r = {s: monte_carlo(s, sigma_bias=0.0, wind=(wc, wi)) for s in ('indep', 'consensus')}
+        print(f'  wind common {wc} / individual {wi} m/s^2: ' + '; '.join(
+            f'{LABELS[s]} gap {1000 * np.mean(r[s]["hold_gap_max"]):.2f}, '
+            f'slot {1000 * np.mean(r[s]["hold_err_max"]):.2f} (max '
+            f'{1000 * np.max(r[s]["hold_err_max"]):.2f}), fit to 5 mm in '
+            f'{np.isfinite(r[s]["fit_time"]).sum()}/{N_MC}' for s in ('indep', 'consensus')))
 
     print()
     plot_3d(runs, OUTPUT_DIR)
