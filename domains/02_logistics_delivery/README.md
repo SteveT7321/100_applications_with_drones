@@ -338,6 +338,6 @@ metrics = {
 
 ## Related Documents
 
-- [MATH_FOUNDATIONS.md §3](../MATH_FOUNDATIONS.md) — Path planning mathematics
-- [docs/algorithm_index.md](../docs/algorithm_index.md) — VRP, A*, RRT* reference index
-- [S018 Multi-Target Intercept](../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) — Hungarian algorithm implementation reference
+- [MATH_FOUNDATIONS.md §3](../../MATH_FOUNDATIONS.md) — Path planning mathematics
+- [docs/algorithm_index.md](../../docs/algorithm_index.md) — VRP, A*, RRT* reference index
+- [S018 Multi-Target Intercept](../../scenarios/01_pursuit_evasion/S018_multi_target_intercept.md) — Hungarian algorithm implementation reference
