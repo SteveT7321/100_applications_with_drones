@@ -20,7 +20,7 @@
 
 | Key | Layout | Aisle altitude | Aisle change |
 |---|---|---|---|
-| **2D base** | rows x = 2–38 m (headlands; width swept 2.0 / 1.5 / 1.0 m) | 1.0 m fixed | sideways in the headland at 1.0 m (the base strategy, with the 3D altitude estimator) |
+| **2D base** | rows x = 2–38 m (headlands; width swept 2.0–1.0 m) | 1.0 m fixed | sideways in the headland at 1.0 m (the base strategy, with the 3D altitude estimator) |
 | **3D crossing** | rows x = 0–40 m | 1.0 m | climb to 2.0 m, translate, descend |
 | **3D card rule** | rows x = 0–40 m | the card's per-aisle midpoint rule (see Mathematical Model) | climb to 2.0 m, translate, descend |
 | Base strategy in the full-length greenhouse | rows x = 0–40 m | 1.0 m fixed | sideways at 1.0 m, through the row (10 seeds) |
@@ -83,8 +83,8 @@ The card meant this as the midpoint of a feasible band. The band is empty: its l
 | $K_{rep}$ / $d_{safe}$ / $d_{wp}$ | 1.5 m/s / 0.25 m / 0.5 m | card |
 | Capture: climb / translate / descend | 0.05 m / 0.1 m / 0.05 m | card (descend tolerance added) |
 | Δt / $T_{max}$ | 0.05 s / 300 s | card |
-| Headland width (2D arm) | 2.0 m (base); swept 1.5 and 1.0 m, turn line at the headland centre | 2D base / added |
-| Monte Carlo | 30 seeds (0–29) for the three main set-ups, the headland sweep and the base-equivalence check; 10 seeds (0–9) for the other sweeps and the base strategy in the full-length greenhouse | added |
+| Headland width (2D arm) | 2.0 m (base); swept 1.5, 1.375, 1.25, 1.125 and 1.0 m with the turn line at the headland centre (100 seeds each); turn-line probes at (1.0 m, x = 0.40 / 0.45 m) and (1.5 m, x = 1.0 m) | 2D base / added |
+| Monte Carlo | 30 seeds (0–29) for the three main set-ups, the turn-line probes and the base-equivalence check; 100 seeds (0–99) for the headland-width safety verdict; 10 seeds (0–9) for the other sweeps and the base strategy in the full-length greenhouse | added |
 
 ---
 
@@ -99,7 +99,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s064_3d_greenhouse.py
 ```
 
-Runtime ≈ 1.2 min (6 worker processes; results are collected in job order). Two runs with `OMP/OPENBLAS/MKL_NUM_THREADS=1` and one with default threading printed byte-identical output and wrote byte-identical PNGs and GIF.
+Runtime ≈ 3.5 min (6 worker processes; results are collected in job order). Two runs with `OMP/OPENBLAS/MKL_NUM_THREADS=1` and one with default threading printed byte-identical output and wrote byte-identical PNGs and GIF.
 
 ---
 
@@ -124,15 +124,27 @@ The mean 3D error $E_{3D}$ is 0.0190 m for the 2D base, 0.0226 m for the 3D cros
 - Mission time: +22.5 ± 0.6 s (+11.2 %), longer in 30/30 seeds.
 - What this buys: the full-length layout has 40 m of plantable row instead of 36 m, +11.1 % against the base's 2 m headlands.
 
-**Headland width of the 2D arm** (30 seeds; the turn line sits at the headland centre). The +11.1 % assumes the base's 2 m headlands, but narrower headlands also work:
+**Headland width of the 2D arm** (100 seeds per width; the turn line sits at the headland centre). The +11.1 % assumes the base's 2 m headlands, but narrower headlands also work. "Safe" means all 100 runs complete with no step below $d_{safe}$ under the 3D box clearance:
 
-| Headland width | Row length | Complete | Runs with steps < $d_{safe}$ (mean steps) | Worst clearance | Mission time | Mean / peak $E_{lat}$ | Full-length gain |
-|---|---|---|---|---|---|---|---|
-| 2.0 m (base) | 36 m | 30/30 | 0/30 (0.0) | 0.361 m | 200.0 s | 0.0140 / 0.1003 m | +11.1 % |
-| **1.5 m** | 37 m | 30/30 | **0/30 (0.0)** | 0.260 m | 202.2 s | 0.0138 / 0.0958 m | **+8.1 %** |
-| 1.0 m | 38 m | 30/30 | 30/30 (62.9) — unsafe | 0.152 m | 204.5 s | 0.0135 / 0.0939 m | +5.3 % |
+| Headland width | Row length | Leg length | Runs with steps < $d_{safe}$ (mean steps) | Worst clearance (3D box) | Base metric: runs < $d_{safe}$, worst | Mission time | Mean / peak $E_{lat}$ | Full-length gain |
+|---|---|---|---|---|---|---|---|---|
+| 2.000 m (base) | 36.00 m | 38.000 m | 0/100 (0.0) | 0.349 m | 0/100, 0.366 m | 200.0 s | 0.0141 / 0.1041 m | +11.1 % |
+| 1.500 m | 37.00 m | 38.500 m | 0/100 (0.0) | 0.260 m | 0/100, 0.292 m | 202.2 s | 0.0138 / 0.0960 m | +8.1 % |
+| 1.375 m | 37.25 m | 38.625 m | 0/100 (0.0) | 0.274 m | 0/100, 0.312 m | 202.8 s | 0.0138 / 0.0945 m | +7.4 % |
+| **1.250 m** | 37.50 m | 38.750 m | **0/100 (0.0)** | 0.262 m | 0/100, 0.295 m | 203.3 s | 0.0137 / 0.0927 m | **+6.7 %** |
+| 1.125 m | 37.75 m | 38.875 m | 58/100 (2.9) — unsafe | 0.218 m | 1/100, 0.243 m | 203.9 s | 0.0136 / 0.0928 m | +6.0 % |
+| 1.000 m | 38.00 m | 39.000 m | 100/100 (62.8) — unsafe | 0.152 m | 100/100, 0.180 m | 204.5 s | 0.0135 / 0.0934 m | +5.3 % |
 
-At 1.5 m, the narrowest headland in the sweep that the 2D arm flies without any $d_{safe}$ violation, the full-length layout gains **+8.1 %** row length. Against that arm the 3D crossing takes +20.3 ± 0.6 s longer (longer in 30/30 seeds). Its mean lateral error is lower in 0/30 seeds (ratio 1.235) and its peak in 1/30 (ratio 1.636).
+All runs complete and none crash. **The narrowest safe headland in the sweep is 1.25 m, so against a safe 2D layout the full-length rows gain +6.7 % row length.**
+
+**The boundary is set by the turn geometry, not by the width alone.** The worst clearance is not monotone in width: 0.274 m at 1.375 m and 0.262 m at 1.25 m, against 0.260 m at 1.5 m. The drone leaves each leg as soon as it is within the 0.5 m capture radius of the turn point, so it cuts the corner around the row end, and how close that corner passes depends on where the turn line sits relative to the row end. The turn-line probes (30 seeds) show the same:
+
+- At 1.0 m, moving the turn line from the centre (x = 0.5 m) to x = 0.40 m leaves 2/30 runs below $d_{safe}$ (worst 0.244 m); x = 0.45 m leaves 29/30 (0.194 m).
+- At 1.5 m, putting the turn line at the 3D layout's x = 1.0 m makes 30/30 runs violate (worst 0.159 m). So the 2D arm cannot simply use the 3D arm's leg ends.
+
+**The verdict also depends on the clearance metric.** The 3D variant measures box-to-box clearance against the row boxes, the walls and the floor. The 2D base measured the planar distance to the nearest row box minus the 0.15 m half-size, a rounded-corner measure. Under the base metric, 1.125 m would be nearly safe (1/100 runs, worst 0.243 m) instead of 58/100.
+
+**Head-to-head against the 1.25 m arm (seeds 0–29)**: the 3D crossing takes +19.2 ± 0.5 s longer (longer in 30/30 seeds). This comparison slightly favours 3D. The 2D arm's turn line sits at the headland centre, so its legs grow as the headland narrows (38.75 m at 1.25 m, against 38 m for the 3D arm), and on the same seeds it flies +3.3 s longer than the 2 m arm. The 3D arm's mean lateral error is lower in 0/30 seeds (ratio 1.245) and its peak in 1/30 (ratio 1.652).
 
 **Equivalence with the 2D S064**: with the base's $K_{alt}$ = 1.2, start z = 1.0 m and 1.0 m/s turns restored, the 2D arm gives a mean $E_{lat}$ of 0.0136 m against 0.0135 m for the base itself. The largest per-seed difference is 0.0003 m. The peak is 0.0967 m in both, the time 195.2 s in both, and both complete 30/30 (z is still estimated in the arm).
 
@@ -182,7 +194,7 @@ The full-length layout takes +22.4 s at 0.5 m/s and +22.9 s at 1.0 m/s.
 
 - **Altitude is now a real control variable, and the useful aisle altitude is "below the lowest canopy".** The lateral fix needs the drone under the canopy top. From 0.5 to 1.0 m nothing changes (90.4–90.8 % fix steps). At 1.25 m the fix rate falls to 80.8 % and the mean lateral error rises from 0.0174 to 0.0248 m; at 1.5 m it falls to 52.2 % and the error reaches 0.0467 m. In this model nothing penalises flying low, so the 2D base's 1.0 m is already a good choice. The 3D gain does not come from the aisle altitude.
 - **The card's altitude rule is counter-productive.** Its band is empty (1.39 m lower bound vs ≤ 1.35 m upper bound). The formula returns 1.070–1.115 m, which is above the shortest canopy segments. It lowers the share of steps with a lateral fix from 90.4 % to 89.4 % and raises the mean lateral error in 28/30 seeds (ratio 1.088). The result holds for canopy segments of 1–40 m (card worse in 8–10 of 10 seeds).
-- **What 3D buys is the layout, not accuracy.** Climbing over the rows lets them run to the gable walls. That gains **+8.1 % plantable row length against the narrowest headland the 2D strategy can fly safely in the sweep (1.5 m)**, or +11.1 % against the base's 2 m headlands. A 1.0 m headland is not a safe alternative: all 30 runs go below $d_{safe}$. Against the 2 m layout the cost is +22.5 s (+11.2 %) of mission time and a worse peak lateral error (0.1566 vs 0.1003 m, ratio 1.561, 3D lower in only 3/30 seeds). The peak falls inside an aisle change in 30/30 3D runs, against 15/30 for the 2D base. During a crossing the drone is above the canopy, so it has no lateral fix for the whole manoeuvre (34.8 s in total vs 12.5 s). Doubling the lateral crossing speed shortens the aisle changes from 34.7 to 30.5 s but leaves the peak almost unchanged (0.1623 → 0.1580 m). This suggests the climb and descent, which the speed does not change, dominate the no-fix time; this is a hypothesis, since the no-fix duration was not measured on its own. All 3D runs stay collision-free, with a worst clearance of 0.313 m.
+- **What 3D buys is the layout, not accuracy.** Climbing over the rows lets them run to the gable walls. That gains **+6.7 % plantable row length against the narrowest headland the 2D strategy flies safely in the sweep (1.25 m, 0/100 runs below $d_{safe}$)**, or +11.1 % against the base's 2 m headlands. At 1.125 m, 58/100 runs go below $d_{safe}$, and at 1.0 m all of them. Where exactly the boundary lies depends on the turn geometry and on the clearance metric (see the headland table). Against the 2 m layout the cost is +22.5 s (+11.2 %) of mission time and a worse peak lateral error (0.1566 vs 0.1003 m, ratio 1.561, 3D lower in only 3/30 seeds). The peak falls inside an aisle change in 30/30 3D runs, against 15/30 for the 2D base. During a crossing the drone is above the canopy, so it has no lateral fix for the whole manoeuvre (34.8 s in total vs 12.5 s). Doubling the lateral crossing speed shortens the aisle changes from 34.7 to 30.5 s but leaves the peak almost unchanged (0.1623 → 0.1580 m). This suggests the climb and descent, which the speed does not change, dominate the no-fix time; this is a hypothesis, since the no-fix duration was not measured on its own. All 3D runs stay collision-free, with a worst clearance of 0.313 m.
 - **The card's $z_{cross} = 1.9$ m violates its own $d_{safe}$.** The worst row clearance at 1.9 m is 0.230 m, with 1.5 steps per flight below $d_{safe}$; the ToF repulsion pushes the drone back up. The arithmetic minimum is 1.925 m, 1.95 m was already clean on these seeds, and 2.0 m leaves 0.335 m. The extra altitude is cheap: the mission takes 222.5 s at 2.0 m and 223.0 s at 2.1 m.
 - **The ToF fusion is what makes the crossing safe.** Without ToF (β = 1.0) the barometric dead reckoning drifts to a peak of 0.1788 m, the worst row clearance during a crossing drops to 0.081 m, and there are 9.8 steps below $d_{safe}$ per flight. With β = 0.75 there are none. The card's β = 0.75 is not optimal: β = 0.9 gives a lower mean altitude error (0.0084 vs 0.0109 m).
 - **The ToF gate is necessary.** Over a row the ToF reads the canopy, not the floor. With a 1.5 m gate those readings are accepted, and the peak altitude error jumps to 1.2928 m. With 0.15 m and 0.3 m gates the peak is 0.0712 / 0.0716 m, and both accept ToF fixes on 99.3 % of the steps.
@@ -244,8 +256,8 @@ Top view of the 3D crossing on seed 0. The drone marker is coloured by altitude:
 | Translate "at 0.5 m/s" | $v_y = \mathrm{clip}(-0.8(\hat y - y_{next}), \pm 0.5)$; the same limit is used for the 2D headland turn | Same envelope for both layouts; the 1.0 m/s variant is also run (+22.9 s difference). |
 | Ultrasonic echo independent of altitude | Echo only where $z <$ local canopy top | This is the physical effect that makes the aisle altitude matter. |
 | $K_{alt} = 1.5$ (base 1.2) | 1.5 for every set-up, including the 2D arm | Same envelope. |
-| 2D base: z known, start z = 1.0 m, $K_{alt}$ = 1.2, vertical drift σ = 0.02 m/√s, turn speed ≤ 1.0 m/s | The 2D arm uses the 3D variant's settings: z estimated (baro/IMU + ToF), start z = 0.4 m, $K_{alt}$ = 1.5, $\sigma_z$ = 0.008 m/√s, turn speed ≤ 0.5 m/s | Same envelope as the 3D set-ups. With the base's $K_{alt}$, start height and turn speed restored, the arm matches the 2D S064 within 0.0003 m per seed (printed). |
-| Base headland width 2 m | 2 m in the main comparison; 1.5 and 1.0 m added | The row-length gain depends on it (+11.1 / +8.1 / +5.3 %). |
+| 2D base: z known, start z = 1.0 m, $K_{alt}$ = 1.2, vertical drift σ = 0.02 m/√s, turn speed ≤ 1.0 m/s, uniform 1.5 m rows, lateral repulsion only, planar rounded-corner clearance (distance to row box − 0.15 m) | The 2D arm uses the 3D variant's settings: z estimated (baro/IMU + ToF), start z = 0.4 m, $K_{alt}$ = 1.5, $\sigma_z$ = 0.008 m/√s, turn speed ≤ 0.5 m/s, random canopy segments (1.0–1.6 m) with the echo condition $z < h$ at z = 1.0 m, ToF vertical repulsion, box-to-box clearance including the floor | Same envelope as the 3D set-ups. With the base's $K_{alt}$, start height and turn speed restored, the arm matches the 2D S064 within 0.0003 m per seed (printed). |
+| Base headland width 2 m | 2 m in the main comparison; 1.5–1.0 m added (100 seeds) plus turn-line probes | The row-length gain depends on it: +11.1 % at 2 m, +6.7 % at 1.25 m (the narrowest safe width in the sweep). The base-metric clearance is printed alongside. |
 | — | 30-seed Monte Carlo with common random numbers; sweeps; base strategy in the full-length greenhouse | X2, X5 |
 | Plot file names `s064_3d_gh_*.png`, 25 fps | `trajectory_3d.png`, `altitude.png`, `analysis.png`, `comparison.png`, `animation.gif` (12 fps) | Naming convention of the 3D folders. |
 
