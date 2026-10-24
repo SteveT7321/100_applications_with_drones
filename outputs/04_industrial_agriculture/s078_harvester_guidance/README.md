@@ -93,11 +93,11 @@ Runtime ≈ 3 min (180–182 s measured while other simulations shared the CPU).
 
 ### Monte Carlo, 100 seeds (186 on-track obstacles in total)
 
-| Configuration | Collisions / run | Runs with a collision | On-track: timely / marginal / late / missed | Extra path | Start delay | Mission time |
-|---|---:|---:|---|---:|---:|---:|
-| 3-pass lawnmower (card) | 1.01 ± 0.99 | 62/100 | 39.2 % / 5.9 % / 38.2 % / 16.7 % | 0.17 ± 0.34 m | 50.3 s | 183.8 s |
-| **1-pass centreline** | **0.52 ± 0.66** | **43/100** | **82.8 % / 0.0 % / 0.0 % / 17.2 %** | 0.21 ± 0.42 m | 14.9 s | 148.4 s |
-| Oracle | 0.00 ± 0.00 | 0/100 | — | 0.36 ± 0.50 m | 0.0 s | 133.6 s |
+| Configuration | Collisions / run | Runs with a collision | On-track: timely / marginal / late / missed | Replans / run | Obstacles detected / run | Extra path | Start delay | Mission time |
+|---|---:|---:|---|---:|---:|---:|---:|---:|
+| 3-pass lawnmower (card) | 1.01 ± 0.99 | 62/100 | 39.2 % / 5.9 % / 38.2 % / 16.7 % | 0.98 | 3.24 / 15 | 0.17 ± 0.34 m | 50.3 s | 183.8 s |
+| **1-pass centreline** | **0.52 ± 0.66** | **43/100** | **82.8 % / 0.0 % / 0.0 % / 17.2 %** | 1.39 | 1.54 / 15 | 0.21 ± 0.42 m | 14.9 s | 148.4 s |
+| Oracle | 0.00 ± 0.00 | 0/100 | — | 0.00 (planned once at the start) | all known | 0.36 ± 0.50 m | 0.0 s | 133.6 s |
 
 Paired by seed, 1-pass has fewer collisions than 3-pass in 44 seeds, the same number in 46 and more in 10. The 3-pass scout's lead shrinks to −56.2 m on average, meaning the harvester ends up 56 m **ahead** of its scout. The 1-pass scout keeps 44.6 m.
 
@@ -106,7 +106,8 @@ Paired by seed, 1-pass has fewer collisions than 3-pass in 44 seeds, the same nu
 - **A narrower scan that keeps its lead is safer.** The 1-pass scout holds its 44.6 m lead, and every on-track obstacle it detects is reported in time (82.8 % timely, 0 late). It misses the 17.2 % whose centres lie 1.9–2.5 m from the track, outside its scan band, which the harvester then grazes. It has 52 collisions in total, 23 of them with on-track obstacles. The others occur during detours, when the harvester swings out of the scanned band and meets an obstacle no scout looked at. The oracle has none.
 - **Lead distance: a trade-off for 3-pass, irrelevant for 1-pass.** For 3-pass, raising $L_{lead}$ from 15 to 75 m cuts collisions from 2.00 to 0.24 per run, because a longer head start delays the overtaking. But the start delay grows from 13.7 to 86.9 s. At 75 m the 3-pass is the safest configuration tested (0.24 vs 0.60 for 1-pass at 75 m), at the cost of an 86.9 s start delay (24.9 s for 1-pass at the same lead). For 1-pass, collisions stay between 0.48 and 0.60 for every lead. Its failures come from the scan width, not from timing.
 - **Latency hardly matters at this lead.** With 1-pass, latencies of 0, 1, 2, 4 and 8 s give the same 81.1 % timely detections and 0.60 collisions per run. The extra path changes by +0.004, +0.007, +0.005 and +0.108 m (paired against 0 s). With a 45 m (30 s) lead, the relay delay is a small fraction of the warning time. The card's $\Delta x_{latency} = 3$ m is the distance the harvester covers during the delay, not a detour cost.
-- **Sensor range is the main safety knob for the 1-pass scout.** Collisions per run are 1.12, 0.60, 0.28, 0.24 and 0.04 for $r_{sensor}$ = 1.5, 2.0, 2.5, 3.0 and 4.0 m. Missed on-track obstacles fall from 54.7 % to 0 % once $r_{sensor} - \sigma_{GPS} \ge 2.5$ m. The remaining collisions at 2.5–3 m happen during detours.
+- **Sensor range is the main safety knob for the 1-pass scout.** Collisions per run are 1.12, 0.60, 0.28, 0.24 and 0.04 for $r_{sensor}$ = 1.5, 2.0, 2.5, 3.0 and 4.0 m. Missed on-track obstacles fall from 54.7 % (1.5 m) and 18.9 % (2.0 m) to 0 % at 2.5 m and above. At 2.5 m the detection radius is 2.4 m, slightly less than the 2.5 m on-track band, so the 0 % there (53 on-track obstacles over 25 seeds) is partly luck; full coverage of the band is guaranteed only from $r_{sensor} - \sigma_{GPS} \ge 2.5$ m, i.e. $r_{sensor} \ge 2.6$ m. The remaining collisions at 2.5–3 m happen during detours.
+- **Replanning events (card output 2).** The 3-pass scout detects more obstacles per run (3.24 vs 1.54 of 15), but triggers fewer replans (0.98 vs 1.39 per run). A replan happens only when a relayed obstacle blocks the remaining path. The wide scan mostly finds obstacles beside the track, and its late on-track detections arrive after the harvester has passed. The oracle plans once at the start and never replans.
 - **Detour cost is not a useful comparison metric here.** Extra path is below 0.5 m on average for every configuration, and the oracle has the largest (0.36 m) because it is the only one that avoids every obstacle. Scouts that miss obstacles drive straight through them, which makes their path shorter. Collisions and detection timing are the meaningful metrics.
 
 ### Field Overview (seed 42)
