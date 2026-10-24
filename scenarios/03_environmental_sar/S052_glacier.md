@@ -1,6 +1,6 @@
 # S052 Glacier Melt Area Measurement
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
@@ -145,9 +145,10 @@ $$C(\mathbf{q}) = \sum_{k=1}^{N_{total}} \mathbf{1}\bigl[\mathbf{q} \in \text{fo
 The minimum coverage over the survey area must satisfy $\min_{\mathbf{q}} C(\mathbf{q}) \geq 3$
 for SfM reconstruction. The mean coverage:
 
-$$\bar{C} = \frac{1}{|O_f|} \cdot \frac{1}{|O_s|}$$
+$$\bar{C} = \frac{1}{1 - O_f} \cdot \frac{1}{1 - O_s} = 12.5$$
 
-where $\bar{C} = 1 / ((1 - O_f)(1 - O_s))$ follows directly from the overlap fractions.
+(each image's footprint length is $1/(1-O_f) = 5$ trigger intervals and its width is
+$1/(1-O_s) = 2.5$ strip spacings; an earlier version wrote $1/|O_f| \cdot 1/|O_s|$, which gives 2.08).
 
 ---
 
@@ -181,7 +182,7 @@ def compute_footprint(altitude, focal_length_mm, sensor_w_mm, sensor_h_mm):
     """Compute ground footprint width and height from camera parameters."""
     fp_w = altitude * sensor_w_mm / focal_length_mm
     fp_h = altitude * sensor_h_mm / focal_length_mm
-    gsd  = altitude * (sensor_w_mm / IMAGE_W) / focal_length_mm * 1000  # m/px → cm/px
+    gsd  = altitude * (sensor_w_mm / IMAGE_W) / focal_length_mm * 100   # m/px → cm/px
     return fp_w, fp_h, gsd
 
 def compute_strip_geometry(fp_w, fp_h, forward_overlap, side_overlap,
@@ -283,7 +284,7 @@ def run_simulation():
     fp_w, fp_h, gsd_cm = compute_footprint(
         ALTITUDE, FOCAL_LENGTH, SENSOR_W, SENSOR_H
     )
-    gsd_m = gsd_cm / 100.0  # convert cm/px to m/px (gsd_cm is actually in m here)
+    gsd_m = gsd_cm / 100.0  # convert cm/px to m/px
     # Recompute properly: gsd in metres
     gsd_m = ALTITUDE * (SENSOR_W / IMAGE_W) / FOCAL_LENGTH  # m/px
 
@@ -326,19 +327,19 @@ def run_simulation():
 | Focal length $f$ | 25 mm |
 | Sensor size | 17.3 × 13.0 mm (micro four-thirds) |
 | Image resolution | 4608 × 3456 px |
-| GSD | $\approx 4.8$ cm/px |
+| GSD | $\approx 1.2$ cm/px ($80 \times 0.003754 / 25$ m; 5 cm/px would need $h \approx 333$ m) |
 | Camera footprint | $\approx 55.4 \times 41.6$ m |
 | Forward overlap $O_f$ | 80% |
 | Side overlap $O_s$ | 60% |
 | Base distance $B_x$ | $\approx 8.3$ m |
 | Strip spacing $B_y$ | $\approx 22.2$ m |
 | Glacier area | 800 × 600 m |
-| Number of strips $N_{strips}$ | $\approx 27$ |
+| Number of strips $N_{strips}$ | $\lceil 600 / 22.144 \rceil = 28$ |
 | Photos per strip $N_{photos}$ | $\approx 97$ |
-| Total photos $N_{total}$ | $\approx 2619$ |
+| Total photos $N_{total}$ | $28 \times 97 = 2716$ |
 | Drone cruise speed $v$ | 10 m/s |
-| Survey flight distance | $\approx 21.7$ km |
-| Estimated survey time | $\approx 36$ min |
+| Survey flight distance | $28 \times 800 + 27 \times 22.144 \approx 23.0$ km (boustrophedon) |
+| Estimated survey time | $\approx 38.3$ min |
 | NDWI threshold $\theta$ | 0.2 |
 | Minimum coverage count | 3 images/point |
 | Mean coverage $\bar{C}$ | $= 1 / ((1-O_f)(1-O_s)) = 12.5$ images/point |
