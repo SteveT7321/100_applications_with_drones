@@ -160,8 +160,10 @@ def pid_hover3d(z0, zn, kd, bias, hw, H, wxy, sd_z=None):
         u = KP * e + KI * integ + kd * (e - prev) / DT
         un = np.linalg.norm(u, axis=1, keepdims=True)
         u = np.where(un > V, u * V / np.maximum(un, 1e-12), u)
-        assert np.all(np.linalg.norm(u, axis=1) <= V + 1e-9), 'hover speed above limit'
+        pos_old = pos
         pos = pos + u * DT
+        # end-to-end check on the flown hover track (independent of the clip above)
+        assert np.all(np.linalg.norm(pos - pos_old, axis=1) / DT <= V + 1e-6), 'hover speed above limit'
         assert np.all(np.isfinite(pos)) and np.all(np.abs(pos) < 2.0), 'hover diverged'
         prev = e
         err2 += np.sum((pos + bias) ** 2, axis=1)
@@ -603,12 +605,22 @@ def report(trials):
         dd = thr[zb] - thr[Z_BASE]
         dc = thr[zb] - thr[z_card]
         sc = _agg(trials, zb, lambda r: r['sweep_clear'])
-        print(f'  Highest throughput ({name}) on the grid: {zb:.2f} m ({n_passes(zb)} passes), '
+        print(f'  Highest mean throughput ({name}) on the grid (not necessarily distinguishable from the '
+              f'runner-up, see below): {zb:.2f} m ({n_passes(zb)} passes), '
               f'{thr[zb].mean():.3f} ± {se(thr[zb]):.3f}/min; vs {Z_BASE} m: higher in {int(np.sum(dd > 0))}/'
               f'{N_TRIALS}, {dd.mean():+.3f} ± {se(dd):.3f} ({dd.mean() / se(dd):+.1f} s.e.); vs card z* '
               f'{z_card} m: higher in {int(np.sum(dc > 0))}/{N_TRIALS}, {dc.mean():+.3f} ± {se(dc):.3f} '
               f'({dc.mean() / se(dc):+.1f} s.e.); minimum sweep clearance {sc.min():.3f} m, canopy contacts '
               f'{rows[zb][st].mean():.2f} per trial')
+        za, zb2 = 2.23, 1.78                            # the two altitudes just above a pass-count step
+        dz = thr[za] - thr[zb2]
+        print(f'    {za} m vs {zb2} m ({name}, per trial): higher / lower in {int(np.sum(dz > 0))} / '
+              f'{int(np.sum(dz < 0))}, {dz.mean():+.3f} ± {se(dz):.3f} ({dz.mean() / se(dz):+.1f} s.e.)')
+    dt_ = rows[best_ok]['oki'] - rows[z_card]['oki']
+    rank = sorted(Z_GRID, key=lambda z: -rows[z]['oki'].mean()).index(z_card) + 1
+    print(f'  Weeds treated (PI), {best_ok} m vs card z* {z_card} m per trial: more / fewer in '
+          f'{int(np.sum(dt_ > 0))} / {int(np.sum(dt_ < 0))}, {dt_.mean():+.2f} ± {se(dt_):.2f} '
+          f'({dt_.mean() / se(dt_):+.1f} s.e.); {z_card} m ranks {rank} of {len(Z_GRID)} altitudes')
     for zc in sorted({z_card, best_ok} - {Z_BASE}):
         b, c = rows[Z_BASE], rows[zc]
         print(f"  z = {zc} m vs 2D base altitude {Z_BASE} m (per trial, CRN): treated PI more in "
