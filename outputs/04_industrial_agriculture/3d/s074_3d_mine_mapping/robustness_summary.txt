@@ -1,0 +1,5 @@
+=== S074 3D robustness summary (3d missions, true pose; the seed-42 default run is in the main script) ===
+  runs 22 (seeds/layouts and one-at-a-time planner changes): all three levels in 21/22, two levels in 1/22, one level in 0/22, aborted 0/22
+  xi over completed runs: median 71.71%, min 56.32%, max 72.35%; runs reaching all three levels: 71.12-72.35%
+  not all levels: SHAFT_DZ = 2.2 (default 1.8) 3d       levels 2/3  xi  56.32%  L1/L2/L3 84.12/76.49/ 0.00%  T  211.6 s  min clearance 0.50 m  no frontier left
+  3d_fixed (altitude held) on the same seeds and layouts: xi 36.51-38.45%

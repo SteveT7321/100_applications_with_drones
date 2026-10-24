@@ -6,8 +6,12 @@ plane of a single-level mine. Here the mine has three galleries (centre heights 
 and 11.0 m, 3 x 3 m section) joined by two vertical 2 x 2 m shafts, and the drone carries
 a 16-layer LiDAR (360 x 16 beams, +-15 deg, 10 m) plus up/down rangefinders. It builds a
 0.2 m log-odds voxel map and explores by flying to the nearest 3D frontier: lateral
-frontiers at a gallery level and vertical frontiers inside a detected shaft, so altitude
-is a planned state (shaft climbs and descents). Dust attenuates beams by Beer-Lambert.
+frontiers at a gallery level, and vertical frontiers that open a candidate shaft. A
+candidate is tested with the rangefinders from below (or above); a confirmed shaft is
+traversed as the card describes: align under the opening centre, then climb (descend) to
+the gallery beyond. Planning keeps traversable cells >= 0.4 m from every occupied voxel.
+Altitude is therefore a planned state. Dust attenuates beams by Beer-Lambert.
+Robustness (seeds, layouts, planner constants): s074_3d_mine_mapping_robustness.py.
 
 Missions (seed 42), mapped and navigated with the true pose:
   3d        16-layer LiDAR + rangefinders, 3D frontiers, shaft traversal   (card)
@@ -34,7 +38,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from scipy.spatial import cKDTree
-from scipy.ndimage import binary_dilation, label, maximum_filter, generate_binary_structure, find_objects
+from scipy.ndimage import binary_dilation, label, maximum_filter, find_objects
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import dijkstra
 
@@ -77,15 +81,22 @@ PLANAR_RATIO = 0.1
 LAM_TH = 3e4
 MAX_VISITS = 3
 SHAFT_ZPAD = 3.0                 # m, vertical reach of a shaft box beyond its frontier cells
+REJECT_EXCL = 1.0                # m, vertical clusters this close to a rejected test point stay excluded
 REJECT_R = 0.3                   # m, a candidate shaft is rejected only from near its centre
-MAX_VISITS_SHAFT = 10            # visits before frontier cells in a confirmed shaft are given up
-GALLERY_RF = 2.5                 # m, floor and ceiling both closer than this = inside a gallery
 VISIT_GAP = 3 * int(round(DT_SCAN / DT))   # steps (3 scans) between counted visits
 LAT_DZ = 0.6                     # m, lateral frontier: has cells this close to a cruise level
 SHAFT_DZ = 1.8                   # m, vertical frontier: beyond the gallery half-height (1.5 m) + 0.3 m
-SHAFT_EXT = 3.2                  # m, max horizontal extent of a shaft frontier cluster
 SHAFT_PAD = 0.6                  # m, shaft box margin
-OCC_MIN_SUB = 2                  # occupied 0.2 m voxels for a 0.4 m planning cell to be occupied
+CLR_VOX = 1                      # voxels of occupied-map dilation: traversable cell centres >= 0.4 m from walls
+T_TRAV_MAX = 120.0               # s, a shaft traverse that has not arrived by then is given up
+TRAV_TOL = 0.5                   # m, arrival tolerance at the gallery beyond a shaft
+ALIGN_TOL = 0.15                 # m, horizontal alignment with the cell under the shaft centre before climbing
+ALIGN_MAX = 0.6                  # m, that cell must be this close to the estimated shaft centre
+TRAV_STOP = 0.1                  # m, stop distance while traversing a shaft
+CLIMB_HTOL = 0.1                 # m, vertical motion only while this close to the shaft axis
+CENTRE_WIN = 1.5                 # m, search window for the opening around the drone
+GUARD_DZ = 0.2                   # m, wait this far inside the gallery until the shaft axis is re-centred
+CLIMB_VXY = 0.3                  # m/s, horizontal speed limit of the axis-holding controller
 R_RF = 12.0                      # m, up/down rangefinder range
 RF_GATE = 0.3                    # m, rangefinder pair used only if consistent with the prior
 STOP_DIST = 0.5
@@ -380,21 +391,8 @@ def pool2(a):
     return a[:, :, 0::2] + a[:, :, 1::2]
 
 
-def pooled(vm, lo_c, hi_c):
-    """Planning classes on the crop [lo_c, hi_c) of the 0.4 m grid."""
-    L = vm.lo.reshape(GSHAPE)[2 * lo_c[0]:2 * hi_c[0], 2 * lo_c[1]:2 * hi_c[1], 2 * lo_c[2]:2 * hi_c[2]]
-    fr = pool2((L < LO_FREE_T).view(np.uint8))
-    oc = pool2((L > LO_OCC_T).view(np.uint8))
-    occ = oc >= OCC_MIN_SUB
-    free = (fr >= 2) & ~occ
-    return free, occ
-
-
 def dil(a, size=3):
     return maximum_filter(a.view(np.uint8), size=size, mode='constant', cval=0) > 0
-
-
-CROSS = generate_binary_structure(3, 1)
 
 
 def pcell(p):
@@ -405,13 +403,75 @@ def pcentre(ijk):
     return GMIN + (np.asarray(ijk) + 0.5) * PLAN_RES
 
 
-def plan(vm, p_est, layer, ignored, keep_goal=None, levels=None, shaft_boxes=None):
+AX_IDX = [a * N_EL for a in (0, 180, 90, 270)]   # beams toward +x, -x, +y, -y (lowest layer)
+
+
+def recentre(trav, p, r, ret, gal_half, levels):
+    """Shaft axis from the steepest LiDAR layer: in each of +x/-x and +y/-y, if both beams hit a
+    wall beyond the current gallery's ceiling (climbing) or floor (descending), the axis lies
+    midway between the two hits."""
+    up = trav['zt'] > p[2]
+    k = N_EL - 1 if up else 0
+    lvl = min(levels, key=lambda z: abs(z - p[2]))
+    edge = lvl + (gal_half if up else -gal_half)
+    s, c = np.sin(EL[k]), np.cos(EL[k])
+    for ax, (i, j) in enumerate(((AX_IDX[0], AX_IDX[1]), (AX_IDX[2], AX_IDX[3]))):
+        i, j = i + k, j + k
+        if ret[i] and ret[j]:
+            zi, zj = p[2] + r[i] * s, p[2] + r[j] * s
+            beyond = (zi > edge and zj > edge) if up else (zi < edge and zj < edge)
+            if beyond:
+                trav['goal'][ax] = p[ax] + 0.5 * (r[i] - r[j]) * c
+                trav['centred'][ax] = True
+
+
+def climb_guard(trav, gal_half, levels, z):
+    """Height the drone may not pass before the axis has been re-centred from shaft-wall
+    returns in both directions: GUARD_DZ inside the current gallery's ceiling (floor)."""
+    if all(trav['centred']):
+        return None
+    up = trav['zt'] > z
+    lvl = min(levels, key=lambda q: abs(q - z))
+    return lvl + gal_half - GUARD_DZ if up else lvl - gal_half + GUARD_DZ
+
+
+def shaft_centre(vm, p, sgn, gal_half, levels):
+    """Centre of a shaft opening: centroid of the voxels mapped free within CENTRE_WIN of the
+    drone (which is under the opening), in the first 0.4 m beyond the current gallery's
+    ceiling (sgn = +1) or floor (sgn = -1)."""
+    ax = voxel_centres()
+    lvl = min(levels, key=lambda q: abs(q - p[2]))
+    z_edge = lvl + sgn * gal_half                 # ceiling (floor) of the current gallery
+    zlo, zhi = (z_edge, z_edge + 2 * VOX) if sgn > 0 else (z_edge - 2 * VOX, z_edge)
+    ix = np.flatnonzero(np.abs(ax[0] - p[0]) <= CENTRE_WIN)
+    iy = np.flatnonzero(np.abs(ax[1] - p[1]) <= CENTRE_WIN)
+    iz = np.flatnonzero((ax[2] >= zlo) & (ax[2] <= zhi))
+    if not (len(ix) and len(iy) and len(iz)):
+        return p[0], p[1]
+    L = vm.lo.reshape(GSHAPE)[ix[0]:ix[-1] + 1, iy[0]:iy[-1] + 1, iz[0]:iz[-1] + 1]
+    f = np.argwhere(L < LO_FREE_T)
+    if len(f) == 0:
+        return p[0], p[1]
+    return float(ax[0][ix[0] + f[:, 0]].mean()), float(ax[1][iy[0] + f[:, 1]].mean())
+
+
+def plan(vm, p_est, layer, ignored, keep_goal=None, levels=None, shaft_boxes=None, target=None):
+    """Dijkstra on the 0.4 m planning grid. Without a target: path to the nearest frontier goal
+    (lateral frontiers at a known gallery level, vertical frontiers that open a candidate shaft
+    box). With a target (shaft traverse): path to the reachable cell closest to it."""
     pad = GOAL_CELLS + 3
     lo_c = np.maximum(vm.bb_lo - pad, 0)
     hi_c = np.minimum(vm.bb_hi + pad + 1, np.array(PSHAPE))
     shp = hi_c - lo_c
-    free, occ = pooled(vm, lo_c, hi_c)
-    hard = binary_dilation(occ, structure=CROSS)      # face neighbours: >= 0.2-0.6 m clearance
+    L = vm.lo.reshape(GSHAPE)[2 * lo_c[0]:2 * hi_c[0], 2 * lo_c[1]:2 * hi_c[1], 2 * lo_c[2]:2 * hi_c[2]]
+    occ_v = (L > LO_OCC_T).view(np.uint8)
+    fr = pool2((L < LO_FREE_T).view(np.uint8))
+    occ = pool2(occ_v) >= 1
+    free = (fr >= 2) & ~occ
+    # clearance on the 0.2 m map: no sub-voxel of a traversable cell may touch the
+    # (CLR_VOX)-voxel dilation of an occupied voxel -> cell centre >= 0.2 (CLR_VOX + 1) m
+    # from every occupied voxel face
+    hard = pool2(maximum_filter(occ_v, size=2 * CLR_VOX + 1, mode='constant', cval=0)) > 0
     soft = dil(occ, 5)
     zc = GMIN[2] + (np.arange(lo_c[2], hi_c[2]) + 0.5) * PLAN_RES
     zok = (zc >= Z_MIN) & (zc <= Z_MAX)
@@ -422,61 +482,6 @@ def plan(vm, p_est, layer, ignored, keep_goal=None, levels=None, shaft_boxes=Non
         lay[layer - lo_c[2]] = True
         trav &= lay[None, None, :]
     trav[s[0], s[1], s[2]] = True
-    ign = ignored[lo_c[0]:hi_c[0], lo_c[1]:hi_c[1], lo_c[2]:hi_c[2]]
-    front = ~free & ~occ & dil(free) & ~ign
-    if layer is not None:
-        near = np.zeros(shp[2], bool)
-        near[max(layer - 1 - lo_c[2], 0):layer + 2 - lo_c[2]] = True
-        front &= near[None, None, :]
-    st = np.ones((3, 3, 3), bool)
-    lab, nl = label(front, structure=st)
-    if nl == 0:
-        return None, 0, None
-    sizes = np.bincount(lab.ravel())
-    big = np.flatnonzero(sizes >= MIN_FRONTIER)
-    big = big[big > 0]
-    if len(big) == 0:
-        return None, 0, None
-    if layer is None:
-        # card: lateral frontiers (at a cruise level) and vertical frontiers inside a shaft box;
-        # floor / ceiling patches of a gallery are not pursued
-        objs = find_objects(lab)
-        keep = []
-        # shaft boxes: [x0, x1, y0, y1, state], state 0 candidate, 1 confirmed by the
-        # rangefinders (free space beyond the gallery height), -1 rejected (a ceiling patch)
-        in_box = lambda x, y, z: [bx for bx in shaft_boxes
-                                  if bx[0] <= x <= bx[1] and bx[2] <= y <= bx[3] and bx[5] <= z <= bx[6]]
-        drone_boxes = [bx for bx in in_box(*p_est) if bx[4] >= 0]
-        for b in big:
-            sl = objs[b - 1]
-            idx = np.argwhere(lab[sl] == b) + np.array([q.start for q in sl])
-            cen = pcentre(idx.mean(0) + lo_c)
-            ext = np.array([q.stop - q.start for q in sl[:2]]) * PLAN_RES
-            zc_ = pcentre(idx + lo_c)[:, 2]
-            dzl = np.min(np.abs(zc_[:, None] - np.array(levels)[None, :]), axis=1)
-            if dzl.min() < LAT_DZ:
-                keep.append(b)
-            elif drone_boxes and any(
-                    np.any((cw[:, 0] >= bx[0]) & (cw[:, 0] <= bx[1]) & (cw[:, 1] >= bx[2]) & (cw[:, 1] <= bx[3])
-                           & (cw[:, 2] >= bx[5]) & (cw[:, 2] <= bx[6]))
-                    for bx in drone_boxes for cw in [pcentre(idx + lo_c)]):
-                keep.append(b)                       # touches the shaft the drone is in
-            elif dzl.max() >= SHAFT_DZ and ext.max() <= SHAFT_EXT:
-                boxes = in_box(*cen)
-                if any(bx[4] < 0 for bx in boxes):
-                    continue
-                keep.append(b)
-                if not boxes:
-                    lo_xy = pcentre(idx.min(0) + lo_c)[:2] - SHAFT_PAD
-                    hi_xy = pcentre(idx.max(0) + lo_c)[:2] + SHAFT_PAD
-                    zr = pcentre(idx + lo_c)[:, 2]
-                    shaft_boxes.append([lo_xy[0], hi_xy[0], lo_xy[1], hi_xy[1], 0,
-                                        zr.min() - SHAFT_ZPAD, zr.max() + SHAFT_ZPAD])
-        big = np.array(keep, int)
-        if len(big) == 0:
-            return None, 0, None
-    lab_big = np.isin(lab, big)
-    cand_m = dil(lab_big, 2 * GOAL_CELLS + 1) & trav
     ti = np.argwhere(trav)
     nid = -np.ones(tuple(shp), np.int64)
     nid[ti[:, 0], ti[:, 1], ti[:, 2]] = np.arange(len(ti))
@@ -494,24 +499,81 @@ def plan(vm, p_est, layer, ignored, keep_goal=None, levels=None, shaft_boxes=Non
                    shape=(len(ti), len(ti)))
     start = nid[s[0], s[1], s[2]]
     dist, pred = dijkstra(G, indices=start, return_predecessors=True)
-    cand = np.argwhere(cand_m)
-    if len(cand) == 0:
-        return None, len(big), None
-    cd = dist[nid[cand[:, 0], cand[:, 1], cand[:, 2]]]
-    if not np.isfinite(cd).any():
-        return None, len(big), None
-    g = cand[int(np.argmin(cd))]
-    if keep_goal is not None:
-        kg = np.all(cand == keep_goal - lo_c, axis=1)
-        if kg.any() and np.isfinite(cd[kg][0]):
-            g = keep_goal - lo_c
+    if target is not None:
+        reach = np.isfinite(dist)
+        cw = pcentre(ti[reach] + lo_c)
+        g = ti[reach][int(np.argmin(np.linalg.norm(cw - target, axis=1)))]
+        n_big = 1
+    else:
+        ign = ignored[lo_c[0]:hi_c[0], lo_c[1]:hi_c[1], lo_c[2]:hi_c[2]]
+        front = ~free & ~occ & dil(free) & ~ign
+        if layer is not None:
+            near = np.zeros(shp[2], bool)
+            near[max(layer - 1 - lo_c[2], 0):layer + 2 - lo_c[2]] = True
+            front &= near[None, None, :]
+        st = np.ones((3, 3, 3), bool)
+        lab, nl = label(front, structure=st)
+        if nl == 0:
+            return None, 0, None
+        sizes = np.bincount(lab.ravel())
+        big = np.flatnonzero(sizes >= MIN_FRONTIER)
+        big = big[big > 0]
+        if len(big) == 0:
+            return None, 0, None
+        if layer is None:
+            # card: lateral frontiers (at a known gallery level) and vertical frontiers that
+            # may be a shaft; floor / ceiling patches of a gallery are not pursued. Shaft boxes:
+            # [x0, x1, y0, y1, state, z0, z1]; state 0 candidate, 1 confirmed (being traversed),
+            # 2 traversed, -1 rejected (ceiling or floor patch), -2 traverse failed
+            objs = find_objects(lab)
+            keep = []
+            in_box = lambda x, y, z: [bx for bx in shaft_boxes
+                                      if bx[0] <= x <= bx[1] and bx[2] <= y <= bx[3] and bx[5] <= z <= bx[6]]
+            for b in big:
+                sl = objs[b - 1]
+                idx = np.argwhere(lab[sl] == b) + np.array([q.start for q in sl])
+                cen = pcentre(idx.mean(0) + lo_c)
+                zc_ = pcentre(idx + lo_c)[:, 2]
+                dzl = np.min(np.abs(zc_[:, None] - np.array(levels)[None, :]), axis=1)
+                if dzl.min() < LAT_DZ:
+                    keep.append(b)                    # lateral: part of a known gallery
+                    continue
+                boxes = in_box(*cen)
+                if any(bx[4] in (2, -2) for bx in boxes):
+                    continue                          # already traversed, or given up
+                if any(bx[4] == -1 and np.hypot(cen[0] - 0.5 * (bx[0] + bx[1]), cen[1] - 0.5 * (bx[2] + bx[3]))
+                       < REJECT_EXCL for bx in boxes):
+                    continue                          # the patch whose centre was tested and rejected
+                if dzl.max() >= SHAFT_DZ:
+                    keep.append(b)
+                    if not any(bx[4] in (0, 1) for bx in boxes):
+                        lo_xy = pcentre(idx.min(0) + lo_c)[:2] - SHAFT_PAD
+                        hi_xy = pcentre(idx.max(0) + lo_c)[:2] + SHAFT_PAD
+                        shaft_boxes.append([lo_xy[0], hi_xy[0], lo_xy[1], hi_xy[1], 0,
+                                            zc_.min() - SHAFT_ZPAD, zc_.max() + SHAFT_ZPAD])
+            big = np.array(keep, int)
+            if len(big) == 0:
+                return None, 0, None
+        n_big = len(big)
+        cand_m = dil(np.isin(lab, big), 2 * GOAL_CELLS + 1) & trav
+        cand = np.argwhere(cand_m)
+        if len(cand) == 0:
+            return None, n_big, None
+        cd = dist[nid[cand[:, 0], cand[:, 1], cand[:, 2]]]
+        if not np.isfinite(cd).any():
+            return None, n_big, None
+        g = cand[int(np.argmin(cd))]
+        if keep_goal is not None:
+            kg = np.all(cand == keep_goal - lo_c, axis=1)
+            if kg.any() and np.isfinite(cd[kg][0]):
+                g = keep_goal - lo_c
     node = nid[g[0], g[1], g[2]]
     path = []
     while node != start and node >= 0:
         path.append(ti[node])
         node = pred[node]
     path = np.array(path[::-1]) if path else np.array([s])
-    return pcentre(path + lo_c), len(big), np.array(g) + lo_c
+    return pcentre(path + lo_c), n_big, np.array(g) + lo_c
 
 
 # ── Closed-loop mission ───────────────────────────────────────────────────────
@@ -545,6 +607,7 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
     levels, shaft_boxes = [START[2]], []
     rf_ref, n_anchor = [None, None], 0
     gal_half = None
+    traverse, n_traverse, n_trav_fail = None, 0, 0
     status, k, t = 'timeout', 0, 0.0
     min_clear, vz_max_seen = np.inf, 0.0
     r_meas, ok_ret = None, None
@@ -585,16 +648,30 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
             dw = dirs @ Rw.T
             hits = p_est[None, :] + body[ret] @ Rw.T
             if mode == '3d':
+                if gal_half is None and ret_rf.all():
+                    gal_half = 0.5 * (rm_rf[0] + rm_rf[1])   # gallery half-height, measured at start
+                far = np.where(ret_rf, rm_rf, R_RF)
                 for bx in shaft_boxes:                # test candidate shafts with the rangefinders
-                    if (bx[4] == 0 and bx[0] + SHAFT_PAD <= p_est[0] <= bx[1] - SHAFT_PAD
+                    if (traverse is None and bx[4] == 0 and bx[0] + SHAFT_PAD <= p_est[0] <= bx[1] - SHAFT_PAD
                             and bx[2] + SHAFT_PAD <= p_est[1] <= bx[3] - SHAFT_PAD
-                            and bx[5] <= p_est[2] <= bx[6] and ret_rf.any()):
-                        far = np.where(ret_rf, rm_rf, R_RF)
-                        if far.max() > GALLERY_RF + 0.5:
-                            bx[4] = 1
-                        elif (ret_rf.all() and far.max() < GALLERY_RF and
-                              np.hypot(p_est[0] - 0.5 * (bx[0] + bx[1]), p_est[1] - 0.5 * (bx[2] + bx[3])) < REJECT_R):
-                            bx[4] = -1                # ceiling right above the box centre
+                            and bx[5] <= p_est[2] <= bx[6]):
+                        if far.max() > 2 * gal_half:   # free space beyond a full gallery height
+                            j = int(np.argmax(far))
+                            sgn = 1.0 if j == 0 else -1.0
+                            zt = p_est[2] + sgn * (far[j] - gal_half)   # centre of the gallery beyond
+                            if min(abs(zt - z) for z in levels) > SHAFT_DZ:
+                                xc, yc = shaft_centre(vm, p_est, sgn, gal_half, levels)
+                                bx[4] = 1
+                                traverse = dict(box=bx, goal=np.array([xc, yc, p_est[2]]), t0=t, zt=zt,
+                                                phase='align')
+                                n_traverse += 1
+                            else:
+                                bx[4] = 2             # leads to a known level
+                        elif (np.hypot(p_est[0] - 0.5 * (bx[0] + bx[1]), p_est[1] - 0.5 * (bx[2] + bx[3])) < REJECT_R
+                              and ret_rf.all()):
+                            bx[4] = -1                # ceiling and floor right at the box centre
+                if traverse is not None and traverse['phase'] == 'climb':
+                    recentre(traverse, p_est, r_meas, ret, gal_half, levels)
                 dw = np.vstack([dw, RF_DIRS])
                 L_free = np.concatenate([L_free, np.where(ret_rf, rm_rf, np.minimum(R_RF, reach_rf))])
                 hits = np.vstack([hits, p_est[None, :] + rm_rf[ret_rf, None] * RF_DIRS[ret_rf]])
@@ -606,56 +683,79 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
             if k == 0:
                 snaps.append(0)
         # planning
+        if traverse is not None:
+            if (traverse['phase'] == 'align' and path is not None
+                    and np.linalg.norm(path[-1][:2] - p_est[:2]) < ALIGN_TOL
+                    and np.linalg.norm(path[-1][:2] - traverse['goal'][:2]) < ALIGN_MAX):
+                traverse['phase'] = 'climb'           # centred under / over the opening: go vertical
+                traverse['goal'] = np.array([path[-1][0], path[-1][1], traverse['zt']])
+                traverse['centred'] = [False, False]
+                path = None
+            elif traverse['phase'] == 'climb' and abs(traverse['zt'] - p_est[2]) < TRAV_TOL:
+                levels.append(float(traverse['zt']))  # arrived in the gallery beyond the shaft
+                traverse['box'][4] = 2
+                traverse, path = None, None
+            elif t - traverse['t0'] > T_TRAV_MAX:
+                traverse['box'][4] = -2               # give up this shaft
+                traverse, path = None, None
+                n_trav_fail += 1
         reached = path is not None and np.linalg.norm(path[-1] - p_est) < STOP_DIST
-        if reached:
+        if reached and traverse is None:
             # lateral frontier cells near a reached goal are given up (as in 2D); vertical
             # ones (in other planning layers) stay, because climbing reveals them,
             # unless the same goal cell has been reached MAX_VISITS times
             gc = pcell(path[-1])
             key = tuple(int(v) for v in gc)
-            in_conf = any(bx[4] == 1 and bx[0] <= path[-1][0] <= bx[1] and bx[2] <= path[-1][1] <= bx[3]
-                          and bx[5] <= path[-1][2] <= bx[6] for bx in shaft_boxes)
             if k - last_visit.get(key, -10 ** 9) >= VISIT_GAP:   # one visit = a new reach after
                 visits[key] = visits.get(key, 0) + 1          # at least VISIT_GAP steps of scans
                 last_visit[key] = k
             r = int(np.ceil(IGNORE_R / PLAN_RES))
-            rz = r if (visits[key] >= (MAX_VISITS_SHAFT if in_conf else MAX_VISITS) or not vertical) else 0
+            rz = r if (visits[key] >= MAX_VISITS or not vertical) else 0
             sl = (slice(max(gc[0] - r, 0), gc[0] + r + 1), slice(max(gc[1] - r, 0), gc[1] + r + 1),
                   slice(max(gc[2] - rz, 0), gc[2] + rz + 1))
             ignored[sl] = True
-        if path is None or (reached and k - k_plan >= SCAN_STEPS) or k - k_plan >= REPLAN_EVERY:
+        climbing = traverse is not None and traverse['phase'] == 'climb'
+        if not climbing and (path is None or (reached and k - k_plan >= SCAN_STEPS) or k - k_plan >= REPLAN_EVERY):
             path, n_front, goal = plan(vm, p_est, layer, ignored, None if reached else goal,
-                                       levels, shaft_boxes)
+                                       levels, shaft_boxes, None if traverse is None else traverse['goal'])
             k_plan = k
             if path is None:
                 status = 'no frontier left' if n_front == 0 else 'frontiers unreachable'
                 break
-        dpath = np.linalg.norm(path - p_est, axis=1)
-        j = int(np.argmin(dpath))
-        ahead = path[j:]
-        far = np.flatnonzero(np.linalg.norm(ahead - p_est, axis=1) >= CARROT)
-        carrot = ahead[far[0]] if len(far) else path[-1]
-        d = carrot - p_est
-        if not vertical:
-            d[2] = 0.0
-        if np.linalg.norm(path[-1] - p_est) < STOP_DIST or np.linalg.norm(d) < 1e-9:
+        if climbing:
+            # card's shaft-traverse mode: hold the shaft axis (re-centred from the shaft-wall
+            # returns), and move vertically only while within CLIMB_HTOL of it
+            herr = traverse['goal'][:2] - p_est[:2]
             v = np.zeros(3)
+            v[:2] = herr * min(1.0, CLIMB_VXY / max(np.linalg.norm(herr), 1e-9))
+            if np.linalg.norm(herr) < CLIMB_HTOL:
+                z_to = traverse['zt']
+                zg = climb_guard(traverse, gal_half, levels, p_est[2])
+                if zg is not None:                    # not centred yet: stop short of the rim
+                    z_to = min(z_to, zg) if z_to > p_est[2] else max(z_to, zg)
+                v[2] = float(np.clip(z_to - p_est[2], -VZ_MAX, VZ_MAX))
+            modes.append('shaft')
+            path = None
         else:
-            v = V_NAV * d / np.linalg.norm(d)
-            if abs(v[2]) > VZ_MAX:
-                v *= VZ_MAX / abs(v[2])
-        vert = abs(d[2]) > np.linalg.norm(d[:2])
-        modes.append('shaft' if vert else 'cruise')
-        if vertical:
-            # a ceiling (or floor) within GALLERY_RF marks a gallery whose centre lies half a
-            # gallery height (measured at the start) below (above) it
-            if gal_half is None and ret_rf.all():
-                gal_half = 0.5 * (rm_rf[0] + rm_rf[1])
-            for j, sgn in ((0, -1.0), (1, 1.0)):
-                if ret_rf[j] and rm_rf[j] < GALLERY_RF:
-                    zl = p_est[2] - sgn * rm_rf[j] + sgn * gal_half
-                    if min(abs(zl - z) for z in levels) > SHAFT_DZ:
-                        levels.append(float(zl))
+            v = None
+        if v is None:
+            dpath = np.linalg.norm(path - p_est, axis=1)
+            j = int(np.argmin(dpath))
+            ahead = path[j:]
+            far = np.flatnonzero(np.linalg.norm(ahead - p_est, axis=1) >= CARROT)
+            carrot = ahead[far[0]] if len(far) else path[-1]
+            d = carrot - p_est
+            if not vertical:
+                d[2] = 0.0
+            if np.linalg.norm(path[-1] - p_est) < (TRAV_STOP if traverse is not None else STOP_DIST) \
+                    or np.linalg.norm(d) < 1e-9:
+                v = np.zeros(3)
+            else:
+                v = V_NAV * d / np.linalg.norm(d)
+                if abs(v[2]) > VZ_MAX:
+                    v *= VZ_MAX / abs(v[2])
+            vert = abs(d[2]) > np.linalg.norm(d[:2])
+            modes.append('shaft' if vert else 'cruise')
         # reactive safety filter on raw returns (body frame) + vertical rangefinders
         vb = rotz(-th_est) @ v
         close = ok_ret & (r_meas < SAFE_R)
@@ -699,7 +799,7 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
             tt.append(p_true.copy())
             te.append(p_est.copy())
             break
-        assert c >= R_DRONE, f'clearance {c:.2f} m'
+        assert c >= R_DRONE, f'clearance {c:.2f} m at {np.round(p_true, 2)}, t = {t:.1f} s, traverse {traverse is not None}'
         assert Z_MIN - 1e-9 <= p_true[2] <= Z_MAX + 1e-9, 'altitude bounds'
         vz_max_seen = max(vz_max_seen, abs(vb[2]))
         t += DT
@@ -718,7 +818,8 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
                 scans=scans, cov_log=cov_log, snaps=snaps, t=t, status=status,
                 icp_it=np.array(icp_it), tau_max=tau_max, lost_dust=lost_dust, n_beams=n_beams,
                 min_clear=min_clear, vz_max=vz_max_seen, wall=time.time() - t_wall,
-                ignored=ignored, visits=visits, levels=levels, shaft_boxes=shaft_boxes, n_anchor=n_anchor)
+                ignored=ignored, visits=visits, levels=levels, shaft_boxes=shaft_boxes, n_anchor=n_anchor,
+                n_traverse=n_traverse, n_trav_fail=n_trav_fail)
 
 
 # ── Replays on the flown 3D trajectory ────────────────────────────────────────
@@ -899,7 +1000,7 @@ def plot_occupancy_3d(res, out_dir):
     ax.set_zlabel('z (m)')
     ax.set_box_aspect((83, 44, 26))
     ax.view_init(elev=24, azim=-58)
-    plt.colorbar(sc, ax=ax, shrink=0.5, label='z (m)')
+    plt.colorbar(sc, ax=ax, shrink=0.5, pad=0.1, label='altitude of the true path (m)')
     ax.legend(loc='upper left', fontsize=8)
     ax.set_title(f"3D mission: occupancy map and trajectories (T_exp = {m['t']:.0f} s)")
     path = os.path.join(out_dir, 'occupancy_3d.png')
@@ -1016,9 +1117,9 @@ def plot_dust(res, out_dir):
     ax.set_xticks(x)
     ax.set_xticklabels([f'mu x{u:g}\n({u * MU_EXT:.2f})' for u in mus])
     ax.set_ylabel('%')
-    ax.set_ylim(0, 110)
+    ax.set_ylim(0, 125)
     ax.set_title('Dust: Level 1 scans of the 3D mission rebuilt with stronger extinction')
-    ax.legend(fontsize=8, loc='center right')
+    ax.legend(fontsize=8, loc='upper center', ncol=3)
     path = os.path.join(out_dir, 'dust_deficit.png')
     plt.savefig(path, dpi=130, bbox_inches='tight')
     plt.close(fig)
@@ -1104,15 +1205,18 @@ def report(res):
               f'{m["min_clear"]:.2f} m (asserted >= {R_DRONE}); max |v_z| {m["vz_max"]:.2f} m/s')
         if mode == '3d':
             print(f'    galleries found at z = ' + ', '.join(f'{z:.2f}' for z in m['levels'])
-                  + f' m; shaft boxes: {sum(b[4] == 1 for b in m["shaft_boxes"])} confirmed, '
+                  + f' m; shaft traverses {m["n_traverse"]} (given up {m["n_trav_fail"]}); candidate shaft boxes: '
+                  f'{sum(b[4] == 2 for b in m["shaft_boxes"])} traversed or leading to a known level, '
                   f'{sum(b[4] == -1 for b in m["shaft_boxes"])} rejected, {sum(b[4] == 0 for b in m["shaft_boxes"])} untested')
         for thr in (0.25, 0.5):
             hit = [x[0] for x in m['cov_log'] if x[1]['xi'] >= thr]
             print(f'    xi reached {int(100 * thr)}% at ' + (f'{hit[0]:.0f} s' if hit else 'never'))
     c3, cf, c2 = (res['missions'][k]['cov_log'][-1][1] for k in ('3d', '3d_fixed', '2d'))
-    print(f'  2D baseline -> 3D: xi {100 * c2["xi"]:.2f}% -> {100 * c3["xi"]:.2f}% (x{c3["xi"] / c2["xi"]:.1f}); '
-          f'16-layer LiDAR at fixed altitude {100 * cf["xi"]:.2f}% (sensor +{100 * (cf["xi"] - c2["xi"]):.2f} pts, '
-          f'altitude control / shaft traversal +{100 * (c3["xi"] - cf["xi"]):.2f} pts)')
+    print(f'  Fair comparison (same 16-layer sensor): xi 3d_fixed {100 * cf["xi"]:.2f}% -> 3d {100 * c3["xi"]:.2f}% '
+          f'(+{100 * (c3["xi"] - cf["xi"]):.2f} pts from altitude control / shaft traversal)')
+    print(f'  2D baseline on its own plane (Level 1 layer at z = 1.5 m): {100 * c2["plane"]:.2f}% vs 3d '
+          f'{100 * c3["plane"]:.2f}% (its volumetric xi {100 * c2["xi"]:.2f}% is limited by construction to one '
+          f'{VOX} m layer)')
     t3, tf = res['missions']['3d']['t'], res['missions']['3d_fixed']['t']
     print(f'  T_exp: 3d {t3:.1f} s vs 3d_fixed {tf:.1f} s (+{t3 - tf:.1f} s); time above z = 4.25 m in the 3d mission '
           f'{100 * np.mean(res["missions"]["3d"]["tt"][:, 2] > 4.25):.1f}% of steps')
