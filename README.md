@@ -98,7 +98,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-3"></a>
-<details open><summary><b>3 · Environmental & SAR</b> — 15/20 done</summary>
+<details open><summary><b>3 · Environmental & SAR</b> — 20/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -113,11 +113,11 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S049 | [Dynamic Zone Search](outputs/03_environmental_sar/s049_dynamic_zone/README.md) | [card](scenarios/03_environmental_sar/S049_dynamic_zone.md) | [3D](outputs/03_environmental_sar/3d/s049_3d_dynamic_zone/README.md) |
 | S050 | [Swarm Cooperative Mapping (Distributed EKF-SLAM)](outputs/03_environmental_sar/s050_slam/README.md) | [card](scenarios/03_environmental_sar/S050_slam.md) | [3D](outputs/03_environmental_sar/3d/s050_3d_slam/README.md) |
 | S051 | [Post-Disaster Communication Network Restoration](outputs/03_environmental_sar/s051_post_disaster_comm/README.md) | [card](scenarios/03_environmental_sar/S051_post_disaster_comm.md) |  |
-| S052 | Glacier Melt Area Measurement *(planned)* | [card](scenarios/03_environmental_sar/S052_glacier.md) |  |
-| S053 | Coral Reef 3D Reconstruction *(planned)* | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
-| S054 | Minefield Detection *(planned)* | [card](scenarios/03_environmental_sar/S054_minefield.md) |  |
-| S055 | Coastline Oil Spill Tracking *(planned)* | [card](scenarios/03_environmental_sar/S055_oil_spill.md) |  |
-| S056 | Nuclear Plant Leak Detection (Radiation Hotspot Localization) *(planned)* | [card](scenarios/03_environmental_sar/S056_radiation.md) |  |
+| S052 | [Glacier Melt Area Measurement](outputs/03_environmental_sar/s052_glacier/README.md) | [card](scenarios/03_environmental_sar/S052_glacier.md) |  |
+| S053 | [Coral Reef 3D Reconstruction](outputs/03_environmental_sar/s053_coral_reef/README.md) | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
+| S054 | [Minefield Detection](outputs/03_environmental_sar/s054_minefield/README.md) | [card](scenarios/03_environmental_sar/S054_minefield.md) |  |
+| S055 | [Coastline Oil Spill Tracking](outputs/03_environmental_sar/s055_oil_spill/README.md) | [card](scenarios/03_environmental_sar/S055_oil_spill.md) |  |
+| S056 | [Nuclear Plant Leak Detection (Radiation Hotspot Localization)](outputs/03_environmental_sar/s056_radiation/README.md) | [card](scenarios/03_environmental_sar/S056_radiation.md) |  |
 | S057 | [Wildlife Population Census](outputs/03_environmental_sar/s057_wildlife/README.md) | [card](scenarios/03_environmental_sar/S057_wildlife.md) |  |
 | S058 | [Typhoon Eye Probing](outputs/03_environmental_sar/s058_typhoon/README.md) | [card](scenarios/03_environmental_sar/S058_typhoon.md) |  |
 | S059 | [Underwater Target Sonar Marking (Surface Cooperative Localization)](outputs/03_environmental_sar/s059_sonar_relay/README.md) | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) |  |
@@ -239,10 +239,10 @@ drones/
 |--------|------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 15 | 20 |
+| Environmental & SAR | 20 | 20 |
 | Industrial & Agriculture | 20 | 20 |
 | Special Ops & Entertainment | 6 | 20 |
-| **Total** | **81** | **100** |
+| **Total** | **86** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 

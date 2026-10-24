@@ -80,7 +80,7 @@
 
 ---
 
-## Domain 3: Environmental & SAR — 15/20
+## Domain 3: Environmental & SAR — 20/20
 
 - [x] **S041** Wildfire Boundary Scan
 - [x] **S042** Missing Person Search
@@ -93,11 +93,11 @@
 - [x] **S049** Dynamic Zone Assignment
 - [x] **S050** Swarm SLAM
 - [x] **S051** Post-Disaster Comm Network
-- [ ] **S052** Glacier Area Monitoring
-- [ ] **S053** Coral Reef 3D Mapping
-- [ ] **S054** Minefield Detection
-- [ ] **S055** Oil Spill Tracking
-- [ ] **S056** Radiation Hotspot Detection
+- [x] **S052** Glacier Area Monitoring
+- [x] **S053** Coral Reef 3D Mapping
+- [x] **S054** Minefield Detection
+- [x] **S055** Oil Spill Tracking
+- [x] **S056** Radiation Hotspot Detection
 - [x] **S057** Wildlife Census
 - [x] **S058** Typhoon Eye Penetration
 - [x] **S059** Sonar Buoy Relay
@@ -161,7 +161,7 @@
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 15 | 20 |
+| Environmental & SAR | 20 | 20 |
 | Industrial & Agriculture | 20 | 20 |
 | Special Ops & Entertainment | 6 | 20 |
-| **Total** | **81** | **100** |
+| **Total** | **86** | **100** |
