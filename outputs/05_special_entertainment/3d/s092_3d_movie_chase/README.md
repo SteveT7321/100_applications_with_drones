@@ -15,11 +15,11 @@
 - the desired camera position is 8 m behind and **4.62 m** above the car (the card's 5 m gives a 32.0° gimbal pitch, outside its own ±30° envelope; its adjustment rule gives $8\tan 30°$ = 4.619 m);
 - the MPC gets a linearised gimbal-pitch-rate penalty ($w_\phi$ = 2) and separate vertical limits ($|v_z| \le$ 4 m/s, $|a_z| \le$ 3 m/s²).
 
-**Variants** (10 seeds; every variant sees the same measurement noise on a given seed):
+**Variants** (20 seeds; every variant sees the same measurement noise on a given seed):
 
 | Variant | Altitude | Pillars | Deck | Source |
 |---|---|---|---|---|
-| 2D baseline | fixed 4.62 m (S092 plan, horizontal KF) | always around (infinitely tall, as S092) | unknown | X5 baseline |
+| 2D baseline | fixed 4.62 m (S092 plan, horizontal KF); also fixed 2.0, 2.5, 3.0 m | always around (infinitely tall, as S092) | unknown | X5 baseline (altitude swept) |
 | 3D, card deck rule | tracks car $z$ + 4.62 m | MPC chooses around / over | card rule (smaller $\lvert\Delta z\rvert$) | card |
 | **3D, underfly deck** | as above | MPC chooses | always under | added |
 | 3D, no pillar overfly | as above | always around | under | added ablation |
@@ -60,7 +60,8 @@
 | Camera FoV / car height | 60° / 1.5 m | card |
 | Framing band | 10–20 % (card 20–40 % also computed) | S092 correction |
 | Overfly rows / deck margin | within 2.5 m of a pillar / deck span ± 1.5 m | added |
-| Seeds | 10, noise of seed $s$ from `default_rng(9200 + s)` | added (as S092) |
+| Seeds | 20, noise of seed $s$ from `default_rng(9200 + s)` | added (S092 used 10) |
+| 2D baseline altitudes | 2.0, 2.5, 3.0, 4.62 m | added (X5) |
 
 ---
 
@@ -75,69 +76,107 @@ conda activate drones
 python src/05_special_entertainment/3d/s092_3d_movie_chase.py
 ```
 
-The QP solver, the condensed-MPC matrices, the road and the pillar layout are imported from the S092 script. 170 runs go through a process pool of 4 workers; results are collected in job order. Runtime ≈ 2 min. Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
+The QP solver, the condensed-MPC matrices, the road and the pillar layout are imported from the S092 script. 400 runs go through a process pool of 4 workers; results are collected in job order. Runtime 3–4.5 min on a shared machine (181–260 s measured). Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
 
 ---
 
 ## Results
 
-### Main comparison (10 seeds, mean ± std)
+### Main comparison (20 seeds, mean ± std)
 
 | Variant | RMS error | RMS, $t \ge 3$ s, outside deck | horizontal / vertical part | Within 1 m | Framed and visible | Visible (in deck span) | Gimbal within ±30° | Ramp altitude RMS |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 2D baseline | 3.896 ± 0.104 m | 3.687 ± 0.119 m | 3.613 / 0.730 m | 10.7 % | 80.2 % | 91.0 % (7.0 %) | 95.2 % | 1.394 m |
-| 3D, card deck rule | 2.759 ± 0.064 m | 2.205 ± 0.047 m | 2.167 / 0.408 m | 17.2 % | 88.6 % | 92.3 % (20.8 %) | 77.9 % | 0.229 m |
-| **3D, underfly deck** | 2.901 ± 0.029 m | 2.291 ± 0.042 m | 2.249 / 0.439 m | 17.1 % | **92.8 %** | 96.6 % (**70.6 %**) | 91.8 % | 0.229 m |
-| 3D, no pillar overfly | 3.901 ± 0.104 m | 3.640 ± 0.120 m | 3.614 / 0.440 m | 13.4 % | 85.4 % | 96.2 % (70.6 %) | 94.5 % | 0.230 m |
-| 3D underfly, $w_\phi$ = 0 | 2.901 ± 0.029 m | 2.291 ± 0.042 m | 2.249 / 0.439 m | 17.1 % | 92.8 % | 96.6 % (70.6 %) | 91.8 % | 0.229 m |
-| 3D underfly, no z prediction | 2.914 ± 0.029 m | 2.310 ± 0.041 m | 2.248 / 0.530 m | 17.1 % | 92.8 % | 96.6 % (70.6 %) | 90.1 % | 0.612 m |
+| 2D baseline, fixed 4.62 m | 3.910 ± 0.081 m | 3.698 ± 0.094 m | 3.626 / 0.730 m | 10.6 % | 80.1 % | 90.9 % (6.6 %) | 94.3 % | 1.394 m |
+| 2D baseline, fixed 2.0 m | 4.852 ± 0.065 m | 4.710 ± 0.074 m | 3.626 / 3.005 m | 0.0 % | 70.3 % | 96.0 % (70.4 %) | 100.0 % | 3.845 m |
+| **2D baseline, fixed 2.5 m** (best feasible) | 4.572 ± 0.069 m | 4.416 ± 0.079 m | 3.626 / 2.520 m | 0.0 % | 75.7 % | 96.0 % (70.4 %) | **100.0 %** | 3.357 m |
+| 2D baseline, fixed 3.0 m | 4.332 ± 0.073 m | 4.161 ± 0.083 m | 3.626 / 2.042 m | 0.0 % | 77.4 % | 91.9 % (12.8 %) | 100.0 % | 2.874 m |
+| 3D, card deck rule | 2.737 ± 0.060 m | 2.186 ± 0.066 m | 2.149 / 0.402 m | 17.0 % | 87.9 % | 91.7 % (14.4 %) | 76.1 % | 0.223 m |
+| **3D, underfly deck** | 2.900 ± 0.041 m | 2.283 ± 0.063 m | 2.239 / 0.444 m | 17.1 % | **92.7 %** | 96.5 % (70.5 %) | 91.7 % | 0.223 m |
+| 3D, no pillar overfly | 3.914 ± 0.080 m | 3.653 ± 0.094 m | 3.626 / 0.444 m | 13.3 % | 85.3 % | 96.2 % (70.4 %) | 94.2 % | 0.224 m |
+| 3D underfly, $w_\phi$ = 0 | 2.900 ± 0.041 m | 2.283 ± 0.063 m | 2.239 / 0.444 m | 17.1 % | 92.7 % | 96.5 % (70.5 %) | 91.8 % | 0.223 m |
+| 3D underfly, no z prediction | 2.912 ± 0.041 m | 2.302 ± 0.062 m | 2.239 / 0.533 m | 17.0 % | 92.7 % | 96.5 % (70.5 %) | 89.9 % | 0.612 m |
 | 3D underfly, oracle | 2.450 m | 1.721 m | 1.676 / 0.394 m | 40.7 % | 94.1 % | 98.0 % (83.0 %) | 100.0 % | 0.028 m |
 
-**Paired per seed against 3D underfly**: against the 2D baseline it has a lower RMS outside the deck in 10/10 seeds (−1.395 m), lower horizontal RMS in 10/10 (−1.365 m), higher framing in 10/10 (+12.6 pp) and lower ramp altitude error in 10/10 (−1.165 m). Against the card deck rule: higher RMS outside the deck in 10/10 (+0.086 m) but higher framing in 8/10 (+4.2 pp). Against no pillar overfly: lower RMS in 10/10 (−1.349 m), higher framing in 10/10 (+7.5 pp). Against no z prediction: lower ramp altitude error in 10/10 (−0.382 m). Against $w_\phi$ = 0: no measurable difference (mean differences +0.000 m and +0.0 pp).
+The vertical part of every fixed-altitude baseline is large by construction (its set-point is car + 4.62 m), so the horizontal part and framing are the fair tracking comparisons.
 
-**Safety** (over all seeds; 3D variants asserted never inside a pillar or the deck):
+### 2D baseline altitude sweep (X5)
 
-| Variant | Min 3D clearance to any surface | Min horizontal pillar clearance below the top | Min height above a pillar top (within $r_{safe}$) | Fine-path points inside pillar / deck | Max $\lvert v_{xy}\rvert_\infty$ / $\lvert v_z\rvert$ | Altitude range |
+| Fixed altitude | Fine-path points inside the deck | Min 3D clearance to any surface | Visible in deck span | Gimbal within ±30° | Horizontal RMS | Framed and visible | |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 2.0 m | 0 | 0.857 m | 70.4 % | 100.0 % | 3.626 m | 70.3 % | feasible |
+| **2.5 m** | 0 | 0.500 m | 70.4 % | 100.0 % | 3.626 m | 75.7 % | feasible, best framing |
+| 3.0 m | 9232 | 0.000 m | 12.8 % | 100.0 % | 3.626 m | 77.4 % | inside the deck |
+| 4.62 m | 9232 | 0.000 m | 6.6 % | 94.3 % | 3.626 m | 80.1 % | inside the deck |
+
+**Paired per seed, 3D underfly against each variant** (20 seeds; ties excluded from the two-sided sign test):
+
+| vs | Lower horizontal RMS | Higher framing | Higher gimbal-in-envelope | Lower ramp altitude RMS |
+|---|---|---|---|---|
+| 2D, 2.5 m | 20/20, −1.386 m (p = 1.91e-06) | 20/20, +17.0 pp (p = 1.91e-06) | **0/20, −8.3 pp** (p = 1.91e-06) | 20/20, −3.134 m |
+| 2D, 2.0 m | 20/20, −1.386 m | 20/20, +22.4 pp | 0/20, −8.3 pp | 20/20, −3.621 m |
+| 2D, 4.62 m | 20/20, −1.386 m | 20/20, +12.6 pp | 0/20 (1 tie), −2.6 pp | 20/20, −1.171 m |
+| 3D, card deck rule | 0/20 (2 ties), +0.090 m (p = 7.63e-06) | 18/20 (2 ties), +4.8 pp (p = 7.63e-06) | 18/20 (2 ties), +15.6 pp (p = 7.63e-06) | 0/20 (20 ties) |
+| 3D, no pillar overfly | 20/20, −1.386 m | 20/20, +7.4 pp | 0/20 (1 tie), −2.5 pp | 14/20, −0.001 m (p = 0.115) |
+| 3D, no z prediction | 6/20, +0.000 m (p = 0.115) | 0/20 (19 ties) | 18/20, +1.8 pp (p = 0.000402) | 20/20, −0.389 m (p = 1.91e-06) |
+
+All 20/20 and 0/20 rows without ties have p = 1.91e-06.
+
+**Safety** (over all seeds; 3D variants asserted never inside a pillar or the deck). Pillar clearances are given from the pillar **axis** and from its **surface** (axis − 0.6 m):
+
+| Variant | Min 3D clearance to any surface | Min horizontal pillar clearance below the top, axis / surface | Min height above a pillar top (within $r_{safe}$ of the axis) | Fine-path points inside pillar / deck | Max $\lvert v_{xy}\rvert_\infty$ / $\lvert v_z\rvert$ | Altitude range |
 |---|---|---|---|---|---|---|
-| 2D baseline | **0.000 m** | — (never below a top) | 0.619 m | 0 / **4594** | 12.00 / 0.00 m/s | 4.62 m |
-| 3D, card deck rule | 0.500 m | 1.502 m | 0.537 m | 0 / 0 | 12.00 / 2.08 m/s | 2.40–6.97 m |
-| 3D, underfly deck | 0.500 m | 1.488 m | 0.537 m | 0 / 0 | 12.00 / 2.08 m/s | 2.40–6.97 m |
-| 3D, no pillar overfly | 0.500 m | 1.488 m | 0.522 m | 0 / 0 | 12.00 / 2.08 m/s | 2.40–6.97 m |
-| 3D underfly, oracle | 0.500 m | 2.212 m | 0.613 m | 0 / 0 | 12.00 / 1.89 m/s | 2.41–6.63 m |
+| 2D, 4.62 m | **0.000 m** | — (never below a top) | 0.619 m | 0 / **9232** | 12.00 / 0.00 m/s | 4.62 m |
+| 2D, 2.5 m | 0.500 m | 1.457 / 0.857 m | — | 0 / 0 | 12.00 / 0.00 m/s | 2.50 m |
+| 3D, card deck rule | 0.500 m | 1.502 / 0.902 m | 0.537 m | 0 / 0 | 12.00 / 2.15 m/s | 2.40–6.97 m |
+| 3D, underfly deck | 0.500 m | 1.488 / 0.888 m | 0.537 m | 0 / 0 | 12.00 / 2.15 m/s | 2.40–6.97 m |
+| 3D, no pillar overfly | 0.500 m | 1.488 / 0.888 m | 0.514 m | 0 / 0 | 12.00 / 2.15 m/s | 2.40–6.97 m |
+| 3D underfly, oracle | 0.500 m | 2.212 / 1.612 m | 0.613 m | 0 / 0 | 12.00 / 1.89 m/s | 2.41–6.63 m |
 
-MPC: 1880 solves per variant, none failed to converge; slack was active in 57 solves for the 2D baseline and 10 for 3D underfly. 3D underfly chose overfly for at least one pillar in 394 planning cycles and underflew the deck in 235; the card rule overflew it in 188 and underflew in 47.
+MPC: 3760 solves per variant, none failed to converge; slack was active in 103 solves for the 2D baselines and 20 for 3D underfly. 3D underfly chose overfly for at least one pillar in 791 planning cycles and underflew the deck in 470. The card rule is re-evaluated every cycle: it overflew the deck in 423 cycles and underflew in 47 (it switches to underfly when the drone happens to be closer to 2.5 m than to 6.5 m when the deck enters the horizon).
 
-**Gimbal pitch rate** after 3 s (RMS / max): 2D 4.98 / 14.27 °/s, card rule 4.24 / 12.49, underfly 4.68 / 14.83, no overfly 5.37 / 15.55, $w_\phi$ = 0 4.69 / 14.84, oracle 3.72 / 11.81 °/s. Over the whole run the maximum is 32.2 °/s for every variant (start-up). The card's "rate ≤ 30 °/s" fraction is 99.9 % for every variant, so it does not discriminate.
+**Gimbal pitch rate** after 3 s (RMS / max, °/s): 2D 4.62 m 5.03 / 14.25; 2D 2.5 m 3.34 / 11.55; card rule 4.25 / 12.09; underfly 4.73 / 14.72; no overfly 5.41 / 15.29; $w_\phi$ = 0 4.73 / 14.72; oracle 3.72 / 11.81. Whole-run maxima (start-up): 32.1 °/s for the 2D baseline at 4.62 m and the oracle, 32.2 °/s for the other 3D variants, 16.9 °/s for the 2D baseline at 2.5 m. The card's "rate ≤ 30 °/s" fraction is 99.9–100.0 % for every variant, so it does not discriminate.
 
-**$w_\phi$ sweep** (3D underfly; pitch-rate RMS after 3 s / RMS outside deck / framed): 0: 4.685 °/s / 2.291 m / 92.8 %; 2 (card): 4.684 / 2.291 / 92.8 %; 200: 4.578 / 2.304 / 92.7 %; 2000: 4.122 / 2.357 / 91.1 %.
+**$w_\phi$ sweep** (3D underfly; pitch-rate RMS after 3 s / RMS outside deck / framed): 0: 4.733 °/s / 2.283 m / 92.7 %; 2 (card): 4.732 / 2.283 / 92.7 %; 200: 4.629 / 2.294 / 92.6 %; 2000: 4.168 / 2.349 / 90.8 %.
 
 **Pillar-height sweep** (RMS outside deck, horizontal part in brackets):
 
-| Pillar height | 2D baseline | 3D underfly (overfly allowed) | 3D, no pillar overfly | Overfly vs no overfly (horizontal) |
+| Pillar height | 2D baseline, 2.5 m | 3D underfly (overfly allowed) | 3D, no pillar overfly | Overfly vs no overfly (horizontal) |
 |---|---|---|---|---|
-| 4 m (card) | 3.687 m (3.613) | 2.291 m (2.249) | 3.640 m (3.614) | −1.365 m, better on 10/10 |
-| 6 m | 3.687 m (3.613) | 3.615 m (3.588) | 3.640 m (3.614) | −0.025 m, better on 9/10 |
-| 8 m | 3.687 m (3.613) | 3.627 m (3.600) | 3.640 m (3.614) | −0.014 m, better on 8/10 |
+| 4 m (card) | 4.416 m (3.626) | 2.283 m (2.239) | 3.653 m (3.626) | −1.386 m, better on 20/20 (p = 1.91e-06) |
+| 6 m | 4.416 m (3.626) | 3.554 m (3.526) | 3.653 m (3.626) | −0.100 m, better on 19/20 (p = 4.01e-05) |
+| 8 m | 4.416 m (3.626) | 3.632 m (3.603) | 3.653 m (3.626) | −0.023 m, better on 17/20 (p = 0.00258) |
+
+**Card targets** (3D underfly / 3D card rule / best feasible 2D at 2.5 m):
+
+| Target | 3D underfly | 3D card rule | 2D, 2.5 m |
+|---|---|---|---|
+| Framing ≥ 0.75 | met (92.7 %) | met (87.9 %) | met (75.7 %) |
+| RMS ≤ 2.0 m | **not met** (2.900 m) | **not met** (2.737 m) | **not met** (4.572 m) |
+| Clearance ≥ 1.5 m from every obstacle surface | **not met** (0.500 m to the deck; 0.888 m to a pillar surface) | **not met** (0.500 m) | **not met** (0.500 m) |
+| Gimbal within ±30° ≥ 95 % | **not met** (91.7 %) | **not met** (76.1 %) | **met** (100.0 %) |
+| $\lvert v_{xy}\rvert_\infty \le$ 12 m/s, $\lvert v_z\rvert \le$ 4 m/s | met | met | met |
 
 **Key findings**
 
-- **A fixed-altitude plan is not feasible in this world.** The 2D baseline flies straight into the bridge deck (4594 fine-path points, at 0.005 s spacing, inside the slab over the 10 seeds; 458 on seed 0) and sees the car only 7.0 % of the deck passage. Altitude planning is needed for safety, not only for the shot.
-- **Underflying the deck keeps the shot; the card's mode rule loses it.** The card's "smaller $|\Delta z|$" rule picks overfly (1.88 m up vs 2.12 m down), and the deck then hides the car: visible 20.8 % of the deck passage vs 70.6 % when underflying, framing 88.6 % vs 92.8 % (underfly better in 8/10 seeds), gimbal within ±30° 77.9 % vs 91.8 %. The card rule tracks slightly better outside the deck (2.205 vs 2.291 m), possibly because its altitude change is smaller (1.88 vs 2.12 m); this was not probed.
-- **Flying over the card's 4 m pillars removes the detour cost.** The nominal camera height (4.62 m) is already above the 4 m pillars, so overflying costs no climb: the horizontal RMS drops from 3.614 m (always around, the S092 behaviour) to 2.249 m on 10/10 seeds, and framing rises by 7.5 pp. With 6 m or 8 m pillars the drone would have to climb to 6.5 m or 8.5 m ($H$ + 0.5 m) and the benefit nearly disappears (−0.025 m and −0.014 m). The vertical-evasion benefit therefore depends on the pillar height the card chose.
-- **The 6-state KF does anticipate the ramp.** Predicting the car's vertical velocity cuts the altitude error on the ramp from 0.612 m to 0.229 m (10/10 seeds); the horizontal error is unchanged.
-- **The gimbal-rate penalty at the card's weight has no effect.** With $w_\phi$ = 2 the pitch-rate RMS is 4.684 °/s against 4.685 °/s without the penalty. Only $w_\phi$ = 2000 lowers it noticeably, to 4.122 °/s, and then the RMS error rises from 2.291 m to 2.357 m and framing falls from 92.8 % to 91.1 %.
-- **The 2D baseline is not worse because of altitude alone.** Its horizontal error (3.613 m) equals the 3D no-overfly variant's (3.614 m); the 3D improvement on the main comparison comes from overflying the pillars, plus the ramp tracking and the deck.
-- **Card targets**: framing ≥ 0.75 — met (92.8 % with underfly, 88.6 % with the card rule); RMS ≤ 2.0 m — not met (2.901 m; 2.291 m after 3 s outside the deck; the oracle reaches 2.450 m / 1.721 m); minimum clearance ≥ 1.5 m — met horizontally below pillar tops (1.488 m, within the S092 soft-constraint margin), but vertical clearances are 0.5 m by the card's own $z_{clearance}$ (the two requirements conflict); gimbal within ±30° ≥ 95 % — not met (91.8 %; on seed 0 the pitch leaves the envelope briefly on some bends, read from the figure, while under the deck it is shallow); speed ≤ 12 m/s per axis and $|v_z| \le$ 4 m/s — met (12.00 and 2.08 m/s).
+- **A fixed altitude is feasible; it just has to be low.** At the S092 height (4.62 m) or at 3.0 m the 2D plan flies into or onto the deck (9232 fine-path points over 20 seeds). At 2.0 m or 2.5 m it never touches the deck, keeps the same 0.500 m minimum clearance as the 3D underfly (2.5 m), sees the car in the deck span as often (70.4 % vs 70.5 %), and is the only variant that meets the card's gimbal target (100.0 %). Altitude planning is therefore **not** needed for safety.
+- **What 3D buys is framing and horizontal tracking, at the cost of the gimbal target.** Against the best feasible fixed altitude (2.5 m), 3D underfly frames +17.0 pp better (92.7 vs 75.7 %) and has −1.386 m lower horizontal RMS (2.239 vs 3.626 m), both on 20/20 seeds, but keeps the gimbal within ±30° only 91.7 % of the time against 100.0 % (worse on 20/20 seeds). Its lower horizontal error comes entirely from flying over the 4 m pillars: the 3D variant without overfly has the same horizontal RMS as every 2D baseline (3.626 m).
+- **Underflying the deck beats the card's mode rule for the shot.** The card rule overflies in most cycles (423 of 470) and the deck then hides the car: visible 14.4 % of the deck span vs 70.5 %. Underfly frames better on 18/20 seeds (+4.8 pp, p = 7.63e-06) and keeps the gimbal in the envelope better (+15.6 pp). The card rule tracks slightly better horizontally (0.090 m on 18/20 seeds, 2 ties), possibly because its altitude change is smaller (1.88 vs 2.12 m); this was not probed.
+- **The overfly benefit depends on the pillar height the card chose.** At 4 m (below the 4.62 m camera height) overflying costs no climb and removes the detour (−1.386 m, 20/20). With 6 m or 8 m pillars the drone must climb to $H$ + 0.5 m and the gain shrinks to −0.100 m (19/20) and −0.023 m (17/20).
+- **The 6-state KF anticipates the ramp**: the altitude error on the ramp falls from 0.612 m to 0.223 m with vertical prediction (20/20 seeds).
+- **The gimbal-rate penalty at the card's weight has no effect**: pitch-rate RMS 4.732 °/s with $w_\phi$ = 2 vs 4.733 °/s without it. Only $w_\phi$ = 2000 lowers it noticeably (4.168 °/s), at an RMS of 2.349 m instead of 2.283 m and framing of 90.8 % instead of 92.7 %.
+- **Card targets**: see the table above. RMS ≤ 2.0 m and clearance ≥ 1.5 m from every surface are missed by every variant; the 1.5 m margin is met only from the pillar **axis** (1.488 m with the S092 soft constraints, i.e. 0.888 m from the surface), and the card's own 0.5 m vertical clearance puts the drone 0.500 m from the deck underside. The gimbal target is met only by the fixed-altitude baselines below the deck.
+- **Seed count**: 20 seeds; every win count quoted above has a two-sided sign-test p ≤ 0.00258 except the two ablation rows marked p = 0.115.
+
 
 ### 3D trajectory
 
-Seed 0: car with the ramp (blue), desired offset (green dashed), underfly (red), card rule (orange, over the deck) and the 2D baseline (grey dotted, through the deck); pillars and deck in grey:
+Seed 0: car with the ramp (blue), desired offset (green dashed), underfly (red), card rule (orange, over the deck), the 2D baseline at 4.62 m (grey dotted, through the deck) and at 2.5 m (green dashed, under the deck); pillars and deck in grey:
 
 ![3D trajectory](./trajectory_3d.png)
 
 ### Altitude
 
-Seed 0: car altitude (ramp), desired altitude, the drone altitude of four variants, and the deck slab during its span. The underfly drone drops to 2.5 m, the card rule climbs to 6.5 m, the 2D baseline stays at 4.62 m inside the slab; without z prediction the climb onto the ramp lags:
+Seed 0: car altitude (ramp), desired altitude, the drone altitude of five variants, and the deck slab during its span. The underfly drone drops to 2.5 m, the card rule climbs to 6.5 m, the 2D baselines stay at 4.62 m (inside the slab) and 2.5 m; without z prediction the climb onto the ramp lags:
 
 ![Altitude](./altitude.png)
 
@@ -149,13 +188,13 @@ Seed 0. Top: pitch to the car's centre with the ±30° envelope. Bottom: car hei
 
 ### Obstacle clearance
 
-Seed 0: 3D distance to the nearest obstacle surface along the integrated path; the 2D baseline reaches 0 (inside the deck):
+Seed 0: 3D distance to the nearest obstacle surface along the integrated path; the 2D baseline at 4.62 m reaches 0 (inside the deck), the one at 2.5 m does not:
 
 ![Clearance](./clearance.png)
 
 ### Monte Carlo
 
-Horizontal RMS outside the deck span, framing, ramp altitude error (10 seeds), and the pillar-height sweep:
+Horizontal RMS outside the deck span, framing, ramp altitude error (20 seeds), and the pillar-height sweep:
 
 ![Monte Carlo](./monte_carlo.png)
 
@@ -176,17 +215,17 @@ Seed 0, 3D underfly. Top: 3D view following the car (sight line black when the c
 | Overfly "when the horizontal corridor is tighter than $r_{safe}$" | the MPC solves every around/over combination of the nearby pillars and keeps the cheapest | a corridor test is not defined for single pillars |
 | Deck mode by smaller $\lvert\Delta z\rvert$ | run as the card rule and as forced underfly | the card rule loses the shot |
 | $f_{height} = \theta/(\text{FoV}\cos\phi)$, band 20–40 % | $\theta\cos\phi/\text{FoV}$, 10–20 %, only when visible; card corrected | foreshortening makes a vertical object smaller; 20–40 % is unreachable (S092) |
-| Clearance ≥ 1.5 m from every surface | horizontal clearance below pillar tops, vertical clearance above tops / below the deck reported separately | the card's own vertical clearance is 0.5 m |
+| Clearance ≥ 1.5 m from every surface | reported as **not met**; pillar clearance given from the axis and from the surface, vertical clearances above tops / below the deck reported separately | the MPC keeps 1.5 m from the pillar axis (S092) and the card's own vertical clearance is 0.5 m |
 | Pitch to the car's ground point | pitch to the car's centre (0.75 m) | at the ground point the nominal camera sits exactly on the ±30° limit, so the in-envelope fraction would flip with noise; nominal pitch to the centre is 25.8° |
 | Gimbal-rate cost on the nonlinear pitch | linearised about the reference | keeps the QP convex |
 | Velocity-reference weight not in the card cost | $Q_v$ = 10 (S092) | S092 showed the card cost lags badly |
-| Single run | 10 seeds, same noise for every variant; sweeps of pillar height and $w_\phi$ | X2, added-parameter sweeps |
+| Single run | 20 seeds, same noise for every variant, sign tests; sweeps of pillar height, $w_\phi$ and the 2D baseline altitude | X2, X5, added-parameter sweeps |
 
 ---
 
 ## Extensions
 
-1. **Occlusion-aware underflight**: add a visibility cost; the car is visible only 70.6 % of the deck passage even when underflying (the causes — the pier at $x$ ≈ 150 m or the descent near the deck edges — were not separated).
+1. **Occlusion-aware underflight**: add a visibility cost; the car is visible only 70.5 % of the deck passage even when underflying (the causes — the pier at $x$ ≈ 150 m or the descent near the deck edges — were not separated).
 2. **Mode choice by shot value**: choose under/over by predicted visibility and framing, not by $|\Delta z|$.
 3. **Taller pillars**: with 6–8 m pillars, a lateral offset of the desired shot near each pillar may beat both climbing and detouring.
 4. **Rotor–deck interaction**: underflight 0.5 m below a deck changes thrust (ceiling effect); model it before trusting the 0.5 m margin.
