@@ -708,7 +708,7 @@ if __name__ == "__main__":
 | Treatment hover duration $T_{treat}$ | 2.0 s |
 | Hover accuracy threshold $\epsilon_{pos}$ | 0.15 m RMS |
 | PID gains $(K_p, K_i, K_d)$ | (2.0, 0.1, 0.5) |
-| Steady-state hover RMS (theoretical) | $\approx$ 0.06 m |
+| Steady-state hover RMS (theoretical) | $\approx$ 0.06 m (card value; its own formula gives 0.033 m, see the correction note above) |
 | Expected weeds detected | $\approx$ 25.5 / 30 |
 | Expected weeds successfully treated | $\approx$ 25.4 / 30 |
 | Simulation timestep $\Delta t$ | 0.05 s |

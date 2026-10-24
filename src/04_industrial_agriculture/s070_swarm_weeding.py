@@ -221,7 +221,7 @@ def run_trial(seed):
     out['rms_pi'], _, out['sat_pi'] = pid_hover(z0, zn, 0.0)
     out['rms_pid0'], _, _ = pid_hover(z0, zn, KD, start_sd=0.0)    # no arrival offset
     out['rms_pi0'], _, _ = pid_hover(z0, zn, 0.0, start_sd=0.0)
-    # physical invariants of the routes (X4): positions inside the field, legs flown at V
+    # route bookkeeping checks: non-negative distances, finite times, weeds and end points inside the field
     for s in STRATS:
         assert out[s]['dist'].min() >= 0 and np.all(np.isfinite(out[s]['times']))
     assert np.all((weeds >= 0) & (weeds <= FIELD)) and np.all((ends >= 0) & (ends <= FIELD))
