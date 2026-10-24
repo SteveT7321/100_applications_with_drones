@@ -1,6 +1,6 @@
 # S081 3D Upgrade — Selfie Follow Mode
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S081 original](../S081_selfie_follow.md)
 
 ---
@@ -9,10 +9,14 @@
 
 The original S081 fixes the target at $z_{tgt} = 0$ (flat ground) and the drone at a constant
 cruise altitude of $h = 4\ \text{m}$ throughout the entire mission. The Kalman Filter tracks
-only horizontal position and velocity (`state = [x, y, vx, vy]`), the desired drone position
-always has `z_d = CRUISE_ALT` hardcoded, and the orbit PD controller applies the same gains to
-all three axes but the $z$-error is always zero. The camera framing model only evaluates the
-horizontal pixel offset $u$; the vertical offset $v$ is never computed.
+only horizontal position and velocity (`state = [x, y, vx, vy]`), the drone is held at
+`z = CRUISE_ALT`, and the orbit PD controller is purely horizontal (2D position and velocity;
+there is no $z$ channel at all). The camera framing model only evaluates the horizontal offset
+$u$; the vertical offset $v$ is never computed.
+
+> **Correction (implementation, 2026-10-24):** an earlier version of this card said the 2D
+> controller "applies the same gains to all three axes but the $z$-error is always zero". The 2D
+> script has no vertical channel; the vertical PD here is new.
 
 In full 3D the subject follows a **height-varying trajectory** — running up a staircase, jumping
 obstacles, moving across hilly terrain — so target altitude $z_{tgt}(t)$ changes continuously.
@@ -79,9 +83,14 @@ distance RMS error $\bar{e}_{3D}$, comparing all three strategies.
 
 ### 3D Target Trajectory
 
-Horizontal figure-8 as in S081 (parameterised by angular frequency $\omega$):
+Horizontal figure-8 as in the corrected S081 (arc-length parameterisation):
 
-$$x_{tgt}(t) = R \sin(2\pi \omega t), \qquad y_{tgt}(t) = \tfrac{R}{2} \sin(4\pi \omega t)$$
+$$x_{tgt} = R \sin s(t), \qquad y_{tgt} = \tfrac{R}{2} \sin 2s(t), \qquad
+\int_0^{s(t)} \|\mathbf{r}'(\sigma)\|\,d\sigma = v_{tgt}\, t \pmod L$$
+
+> **Correction (implementation):** the earlier form $x = R\sin(2\pi\omega t)$ with
+> $\omega = v/(\pi R)$ walks the 48.78 m figure-8 in 16.76 s (2.91 m/s average, not 1.5 m/s);
+> S081 replaced it by the arc-length form above and so does this variant.
 
 Height profile with jump events at times $\{t_{j,i}\}$:
 
@@ -89,6 +98,10 @@ $$z_{tgt}(t) = h_{base} + \Delta h \sin\!\left(\tfrac{2\pi t}{T_{elev}}\right)
 + \sum_i \Delta h_{jump}\,\Lambda\!\left(\tfrac{t - t_{j,i}}{T_{jump}/2}\right)$$
 
 where $\Lambda(\cdot)$ is the unit triangular pulse ($\Lambda(s) = \max(0,\, 1 - |s|)$).
+With these values $z_{tgt}$ spans $-1.0$ m to at most $2.6$ m ($z$ is measured from a reference
+plane; the person walks down into a dip below it), so $z_{tgt} + \Delta z_{clear}$ reaches the
+$z_{min} = 1.5$ m floor exactly at the bottom of the dip. The jump times are not fixed by the card;
+the implementation uses eight jumps, every 7.5 s from $t = 3.75$ s.
 
 Target 3D heading (yaw only; pitch not commanded):
 
@@ -199,13 +212,18 @@ $$\dot{\phi}_{gimbal} = \frac{\phi_{cmd} - \phi_{gimbal}}{\tau_{gimbal}}$$
 
 ### 2-Axis Camera Framing Model
 
-The 3D relative vector from drone to subject:
+> **Correction (implementation):** the earlier version built the look direction from
+> $\boldsymbol{\delta} = \hat{\mathbf{p}}_{tgt} - \mathbf{p}_{drone}$ itself, so
+> $\boldsymbol{\delta}\cdot\hat{\mathbf{n}}_{right} = \boldsymbol{\delta}\cdot\hat{\mathbf{n}}_{up} = 0$
+> and $u = v = 0$ for every strategy ($F_{2D} = 100\,\%$ by construction, the same defect the 2D
+> card had). The camera axis is now set by the controller — yaw $\psi_{drone}$ toward the
+> estimate and the lagged gimbal pitch $\phi_{gimbal}$ — and the offsets are measured to the
+> **true** subject; the pinhole angle uses $\operatorname{atan2}$ of the camera-frame components.
 
-$$\boldsymbol{\delta} = \hat{\mathbf{p}}_{tgt} - \mathbf{p}_{drone}$$
+The 3D relative vector from drone to the true subject, and the camera axis:
 
-Camera look direction (unit vector toward subject):
-
-$$\hat{\mathbf{l}} = \boldsymbol{\delta} / \|\boldsymbol{\delta}\|$$
+$$\boldsymbol{\delta} = \mathbf{p}_{tgt} - \mathbf{p}_{drone}, \qquad
+\hat{\mathbf{l}} = [\cos\phi_{gimbal}\cos\psi_{drone},\; \cos\phi_{gimbal}\sin\psi_{drone},\; \sin\phi_{gimbal}]^\top$$
 
 Horizontal right-vector of the camera (perpendicular to look direction in horizontal plane):
 
@@ -218,10 +236,10 @@ $$\hat{\mathbf{n}}_{up} = \hat{\mathbf{l}} \times \hat{\mathbf{n}}_{right}$$
 
 Normalised horizontal and vertical pixel offsets:
 
-$$u = \frac{\arctan\!\left(\dfrac{\boldsymbol{\delta} \cdot \hat{\mathbf{n}}_{right}}
-{\|\boldsymbol{\delta}\|}\right)}{\theta_{FOV,h}/2}, \qquad
-v = \frac{\arctan\!\left(\dfrac{\boldsymbol{\delta} \cdot \hat{\mathbf{n}}_{up}}
-{\|\boldsymbol{\delta}\|}\right)}{\theta_{FOV,v}/2}$$
+$$u = \frac{\operatorname{atan2}(\boldsymbol{\delta} \cdot \hat{\mathbf{n}}_{right},\;
+\boldsymbol{\delta} \cdot \hat{\mathbf{l}})}{\theta_{FOV,h}/2}, \qquad
+v = \frac{\operatorname{atan2}(\boldsymbol{\delta} \cdot \hat{\mathbf{n}}_{up},\;
+\boldsymbol{\delta} \cdot \hat{\mathbf{l}})}{\theta_{FOV,v}/2}$$
 
 where $\theta_{FOV,h} = 60°$ and $\theta_{FOV,v} = 45°$ (4:3 sensor aspect ratio).
 
@@ -231,7 +249,11 @@ $$F_{2D} = \frac{1}{T} \int_0^T \mathbf{1}\!\bigl[|u(t)| \leq 0.10 \;\wedge\; |v
 
 ### 3D Orbit Distance Error
 
-$$e_{3D}(t) = \|\mathbf{p}_{drone}(t) - \hat{\mathbf{p}}_{tgt}(t)\| - r_{3D}$$
+$$e_{3D}(t) = \|\mathbf{p}_{drone}(t) - \mathbf{p}_{tgt}(t)\| - r_{3D}$$
+
+(measured to the true subject, as in S081; measuring it to the estimate would reward a drone
+that follows its own noisy estimate). Note that the cylinder strategy (horizontal 5 m, vertical
+2.5 m) sits $\sqrt{5^2 + 2.5^2} - 5 = 0.59$ m outside the sphere by construction.
 
 $$\bar{e}_{3D} = \sqrt{\frac{1}{T}\int_0^T e_{3D}^2(t)\, dt}$$
 
@@ -319,7 +341,9 @@ $$\bar{e}_{3D} = \sqrt{\frac{1}{T}\int_0^T e_{3D}^2(t)\, dt}$$
   height profile, the drone (red triangle) tracking in 3D, and a line from the drone to the
   subject representing the gimbal look direction; altitude of both agents shown in the title bar.
 
-Terminal output at mission end:
+Terminal output at mission end (card expectation; the implemented results differ — the
+cylinder strategy frames better than the spherical one because it is farther away, see the
+outputs README):
 
 ```
 === S081 3D Selfie Follow ===
