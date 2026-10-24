@@ -89,6 +89,8 @@ N_SWEEP = 10
 N_WORKERS = 4
 DZ_SWEEP = [0.0, 0.05, 0.10, 0.15, 0.25, 0.50]
 HEAD_SWEEP = [0.0, 0.25, 0.5, 1.0, 2.0]   # x the S097 start jitter (+-0.3 rad)
+SIDE_SWEEP = [0.7, 1.2, SIDE]              # card piece (half-side 0.35 m), intermediate, S097 tiling
+ATT_SWITCH_SWEEP = [2.0, 0.5, 0.2]         # deg, in-place alignment switch probe
 ZASM_SWEEP = [8.0, 10.0, 12.0, 15.0]
 VARIANTS = {'flat_conc': (0.0, 'alt', 'conc'), 'flat_card': (0.0, 'alt', 'card'),
             'cos_card': (DELTA_Z, 'cos', 'card'), 'alt_card': (DELTA_Z, 'alt', 'card'),
@@ -151,8 +153,14 @@ def expmap(v):
     return np.eye(3)[None] + s * K + (1 - c) * (K @ K)
 
 
-def piece_vertices(pos, R):
-    return pos[:, None, :] + np.einsum('kij,vj->kvi', R, LOCAL_V)       # (N, 3, 3)
+def local_vertices(side):
+    return side / math.sqrt(3) * np.column_stack(
+        [np.cos(np.pi + 2 * np.pi * np.arange(3) / 3), np.sin(np.pi + 2 * np.pi * np.arange(3) / 3),
+         np.zeros(3)])
+
+
+def piece_vertices(pos, R, lv=LOCAL_V):
+    return pos[:, None, :] + np.einsum('kij,vj->kvi', R, lv)            # (N, 3, 3)
 
 
 def interference(V):
@@ -182,7 +190,7 @@ def rel_err(pos, targets, rel_noise):
 # ── Simulation ────────────────────────────────────────────────────────────────
 
 def run_simulation(variant='alt_card', seed=0, dz=None, pattern=None, seq=None, head_scale=1.0,
-                   z_asm=Z_ASM, alpha_z=ALPHA_Z, record=False):
+                   z_asm=Z_ASM, alpha_z=ALPHA_Z, side=SIDE, att_switch=DELTA_ATT, record=False):
     dz0, pat0, seq0 = VARIANTS[variant]
     dz = dz0 if dz is None else dz
     pattern = pat0 if pattern is None else pattern
@@ -211,6 +219,9 @@ def run_simulation(variant='alt_card', seed=0, dz=None, pattern=None, seq=None, 
     t_fit_all, t_seated, t_end = None, None, None
     col_max, col_steps, col_adj_max, seat_pen_max = 0.0, 0, 0.0, 0.0
     col_phase, col_is_adj = np.nan, np.nan
+    any_max = 0.0                                          # overlap of any kind (no exclusion)
+    lv = local_vertices(side)
+    clear = (SIDE - side) / math.sqrt(3)                   # edge clearance at the slots (0 for S097)
     hold = dict(err=[], gap=[], att=[], fc=[], e6=[])
     min_sep = np.inf
     log = dict(t=[], pos=[], R=[], att=[], err=[], col=[], phase=[]) if record else None
@@ -238,7 +249,7 @@ def run_simulation(variant='alt_card', seed=0, dz=None, pattern=None, seq=None, 
             upd = -EPSILON * rel_err(pos, p_app, rel_noise) - alpha[None, :] * (meas - p_app)
             acc = KP_TRACK * upd - KD_TRACK * vel
         else:
-            stage = np.where((stage == 0) & (att <= DELTA_ATT), 1, stage)
+            stage = np.where((stage == 0) & (att <= att_switch), 1, stage)
             tgt = np.where(stage[:, None] == 1, targets, p_app)
             F = K_IMP * (tgt - meas) - B_IMP * vel - K_REL * rel_err(pos, tgt, rel_noise)
             acc = F / M_DRONE
@@ -266,12 +277,13 @@ def run_simulation(variant='alt_card', seed=0, dz=None, pattern=None, seq=None, 
         err_n = np.linalg.norm(e_true, axis=1)
         seated_pos = err_n <= DELTA_SWITCH
         seated = seated_pos & np.roll(seated_pos, -1)
-        pen_e = np.where(seated, np.maximum(-gap, 0.0), 0.0)
+        pen_e = np.where(seated, np.maximum(-(gap + clear), 0.0), 0.0)
         fmag = np.where(pen_e > 0, np.maximum(K_C * pen_e - B_C * gap_rate, 0.0), 0.0)
         fc = -fmag[:, None] * EDGE_N + np.roll(fmag[:, None] * EDGE_N, 1, axis=0)
         # collision diagnostic
-        V = piece_vertices(pos, Rm)
+        V = piece_vertices(pos, Rm, lv)
         pen = interference(V)
+        any_max = max(any_max, float(pen.max()))
         ok = seated_pos & (att <= DELTA_ATT)
         both = ok[PAIRS[:, 0]] & ok[PAIRS[:, 1]]
         col = np.where(both, 0.0, pen)
@@ -318,7 +330,7 @@ def run_simulation(variant='alt_card', seed=0, dz=None, pattern=None, seq=None, 
             break
     res = dict(t_asc=t_asc, t_conv=t_conv, t_fit_all=t_fit_all, t_seated=t_seated, t_end=t_end,
                converged=t_end is not None, col_max=col_max, col_time=col_steps * DT,
-               col_adj_max=col_adj_max, seat_pen_max=seat_pen_max, min_sep=min_sep,
+               col_adj_max=col_adj_max, seat_pen_max=seat_pen_max, min_sep=min_sep, any_max=any_max,
                col_phase=col_phase, col_is_adj=col_is_adj)
     if hold['err']:
         m = np.arange(len(hold['err'])) * DT >= 2.0           # S097: score the last 8 s
@@ -334,7 +346,7 @@ def run_simulation(variant='alt_card', seed=0, dz=None, pattern=None, seq=None, 
 
 
 KEYS = ['t_asc', 't_conv', 't_fit_all', 't_seated', 't_end', 'col_max', 'col_time', 'col_adj_max',
-        'seat_pen_max', 'min_sep', 'hold_err', 'hold_gap', 'hold_att', 'hold_fc', 'hold_e6',
+        'seat_pen_max', 'any_max', 'min_sep', 'hold_err', 'hold_gap', 'hold_att', 'hold_fc', 'hold_e6',
         'final_att', 'col_phase', 'col_is_adj']
 PHASE_NAMES = ['ascent', 'consensus approach', 'in-place alignment', 'fit / insertion']
 
@@ -507,7 +519,9 @@ def line(tag, m):
           f'{ms(m["t_seated"])} s; collision depth {ms(m["col_max"], 1000, 1)} mm (max '
           f'{1000 * np.nanmax(m["col_max"]):.1f}, seeds > 1 mm: '
           f'{int(np.sum(m["col_max"] > 1e-3))}), collision time {ms(m["col_time"])} s; '
-          f'seated overlap max {1000 * np.nanmax(m["seat_pen_max"]):.1f} mm; hold: slot '
+          f'seated overlap max {1000 * np.nanmax(m["seat_pen_max"]):.1f} mm; any overlap (no seated '
+          f'exclusion) {ms(m["any_max"], 1000, 1)} mm, free of any overlap '
+          f'{int(np.sum(m["any_max"] == 0))}/{len(m["any_max"])}; hold: slot '
           f'{ms(m["hold_err"], 1000)} mm, edge gap {ms(m["hold_gap"], 1000)} mm, attitude '
           f'{ms(m["hold_att"], 180 / np.pi, 3)} deg, eps_6DOF {ms(m["hold_e6"], 1000)} mm, '
           f'contact force max {np.nanmax(m["hold_fc"]):.3f} N; min separation '
@@ -620,6 +634,39 @@ def main():
                       f'{1000 * np.max(m["col_max"]):.1f}), collision-free '
                       f'{int(np.sum(m["col_max"] == 0))}/{N_SWEEP}, all seated '
                       f'{np.mean(m["t_seated"]):.2f} s')
+
+        print(f'\nPiece-size sweep ({N_SWEEP} seeds; card half-side 0.35 m = side 0.7 m, S097 '
+              f'tiling side {SIDE:.4f} m; edge clearance at the slots = (S097 side - side) / sqrt 3):')
+        jobs = [(v, s, dict(side=sd)) for sd in SIDE_SWEEP for v in VARIANTS for s in range(N_SWEEP)]
+        out = batch(pool, jobs)
+        i = 0
+        for sd in SIDE_SWEEP:
+            for v in VARIANTS:
+                m = collect(out[i:i + N_SWEEP]); i += N_SWEEP
+                print(f'  side {sd:.4f} m (clearance {1000 * (SIDE - sd) / math.sqrt(3):6.1f} mm) '
+                      f'{v:9s}: collision depth mean {1000 * np.mean(m["col_max"]):.1f} mm (max '
+                      f'{1000 * np.max(m["col_max"]):.1f}), collision-free {int(np.sum(m["col_max"] == 0))}'
+                      f'/{N_SWEEP}; any overlap max {1000 * np.max(m["any_max"]):.1f} mm, free of any '
+                      f'overlap {int(np.sum(m["any_max"] == 0))}/{N_SWEEP}; all seated '
+                      f'{np.mean(m["t_seated"]):.2f} s')
+
+        print(f'\nAlignment-switch probe (alt_card, {N_SWEEP} seeds; card switch 2 deg):')
+        jobs = [('alt_card', s, dict(att_switch=math.radians(a))) for a in ATT_SWITCH_SWEEP
+                for s in range(N_SWEEP)]
+        out = batch(pool, jobs)
+        for i, a in enumerate(ATT_SWITCH_SWEEP):
+            m = collect(out[i * N_SWEEP:(i + 1) * N_SWEEP])
+            ph = m['col_phase'][np.isfinite(m['col_phase'])]
+            print(f'  switch {a:.1f} deg: collision depth mean {1000 * np.mean(m["col_max"]):.1f} mm (max '
+                  f'{1000 * np.max(m["col_max"]):.1f}), collision-free {int(np.sum(m["col_max"] == 0))}/'
+                  f'{N_SWEEP}, deepest collision in fit / insertion in {int(np.sum(ph == 3))}, all seated '
+                  f'{np.mean(m["t_seated"]):.2f} s')
+
+        print(f'\nCard cos stagger with the concurrent sequence ({N_SWEEP} seeds):')
+        m = collect(batch(pool, [('alt_conc', s, dict(pattern='cos')) for s in range(N_SWEEP)]))
+        print(f'  cos_conc: collision depth mean {1000 * np.mean(m["col_max"]):.2f} mm (max '
+              f'{1000 * np.max(m["col_max"]):.1f}), collision-free {int(np.sum(m["col_max"] == 0))}/'
+              f'{N_SWEEP}, all seated {np.mean(m["t_seated"]):.2f} s')
 
         print(f'\n2D baseline at other fixed assembly altitudes (flat, concurrent, {N_SWEEP} '
               f'seeds; staging altitude {Z_STAGE} m):')
