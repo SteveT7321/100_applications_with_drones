@@ -1,6 +1,6 @@
 # S070 3D Upgrade — Swarm Weeding
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S070 original](../S070_swarm_weeding.md)
 
 ---
@@ -18,6 +18,9 @@ In this 3D upgrade three major additions are made:
    Gaussian random field $h_{canopy}(x,y)$. After a weed is detected during the Phase 1 sweep,
    the treating drone must descend to $z_{treat} = h_{canopy}(\mathbf{w}_j) + \Delta h_{clear}$
    (just above the weed), navigate under the canopy layer, and apply herbicide from close range.
+   (Corrected: this $z_{treat}$ is 0.2 m above the *canopy* over the weed, not just above the weed, and
+   the descent constraint below forbids entering the canopy; the implementation treats from 0.2 m above
+   the estimated canopy height, with the stereo depth error applied to that estimate.)
 
 2. **Altitude-dependent vision resolution** — the multispectral sensor has a fixed pixel count.
    Its ground-sampling distance (GSD) scales linearly with altitude, so detection probability
@@ -89,6 +92,8 @@ Ground-sampling distance (GSD) increases with altitude, degrading detection prob
 $$P_{detect}(z) = P_{detect,0} \cdot \left(\frac{z_{ref}}{z}\right)^{\beta}, \qquad
   P_{detect,0} = 0.85,\; \beta = 0.5$$
 
+(Corrected: this exceeds 1 below $z = 2 \cdot 0.85^2 = 1.445$ m, e.g. 1.202 at 1.0 m; it is clipped at 1.)
+
 A weed at 3D position $\mathbf{w}_j = (x_j, y_j, z_{weed,j})$ is within the sensor footprint of
 drone at $\mathbf{p}_i = (p_x, p_y, z)$ when:
 
@@ -130,6 +135,8 @@ $$z_{sweep}^* = \arg\max_{z \in [1.0,\, 3.5]} \frac{\mathbb{E}[N_{det}(z)]}{T_{s
 
 This can be solved analytically or by a 1D line search over $z$.
 
+> **Correction (3D implementation, 2026-10-24).** This criterion gives $z^* = 1.60$ m (the kink where $v_{sweep}$ reaches $v_{max}$), but it ignores that the footprint $r_s(z)$ grows with $z$, so fewer passes are needed; with $T_{sweep} \propto n_{passes}(z)/v_{sweep}(z)$ the same rate peaks at 2.97 m. Neither accounts for Phase 2 or for the stereo depth error. The lower end of the search range is also infeasible: the canopy reaches about 1.0 m (1.011 m in field 0), so a 1.0 m sweep clears it by less than $\Delta h_{clear}$ in 200/200 simulated fields (and by less than zero in 81/200), and 1.25 m fails the 0.2 m clearance in 50/200. Simulated over 200 fields (PI hover): most weeds treated at 1.5 m (22.73 per field), highest throughput at 2.0 m (3.714 weeds/min; 3.706 at 1.6 m, 3.634 at 2.5 m).
+
 ### 3D Hungarian Task Assignment
 
 The 3D cost matrix uses full Euclidean distance including altitude:
@@ -165,6 +172,12 @@ $$\sigma_{hover,3D}^2 = \frac{\sigma_{GPS}^2 + \sigma_{GPS}^2 + \sigma_z^2}{1 + 
 Treatment succeeds if $\|\mathbf{e}\|_2 \leq \epsilon_{pos,3D} = 0.20$ m (relaxed from 2D
 threshold to account for vertical estimation error).
 
+(Corrected: the $\sigma_{hover}$ formula and the Rayleigh expression below are 2D results; a 3D error norm
+with three Gaussian components is chi-distributed with 3 degrees of freedom. More importantly, the
+formula ignores the arrival transient that the 2D S070 identified as the main failure cause: it predicts
+$P_{success} = 0.950$ (28.5 of 30 weeds) at $z^* = 1.6$ m, while the simulation treats 22.41 (PI) and 11.02
+(card PID) per field.)
+
 ### Canopy Penetration Descent Profile
 
 To reach $z_{treat,j}$, each drone follows a straight-line 3D approach from its current position
@@ -195,7 +208,7 @@ $$= P_{detect,0} \cdot \left(\frac{z_{ref}}{z_{sweep}^*}\right)^{\!\beta}
 - **Canopy height field**: Gaussian random field $h_{canopy}(x,y)$ with $\sigma_h = 0.15$ m and
   correlation length $\ell = 4$ m; bilinearly interpolated at each weed and drone position.
 - **Altitude-dependent detection**: $P_{detect}(z) = 0.85 \cdot (z_{ref}/z)^{0.5}$; footprint
-  radius $r_s(z) = 1.5 \cdot z / 2.0$ m; both degrade above $z_{ref} = 2.0$ m.
+  radius $r_s(z) = 1.5 \cdot z / 2.0$ m; detection degrades above $z_{ref} = 2.0$ m while the footprint grows (corrected: the footprint does not degrade).
 - **Stereo depth noise**: vertical weed position uncertainty $\sigma_z(z) = 0.05 \cdot (z/z_{ref})^2$ m;
   drives 3D weed centroid estimation error.
 - **Optimal sweep altitude search**: 1D optimisation over $z \in [1.0, 3.5]$ m maximising
