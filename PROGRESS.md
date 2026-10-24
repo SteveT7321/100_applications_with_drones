@@ -130,15 +130,15 @@
 
 ---
 
-## Domain 5: Special Ops & Entertainment — 1/20
+## Domain 5: Special Ops & Entertainment — 6/20
 
-- [ ] **S081** Selfie Follow Mode
+- [x] **S081** Selfie Follow Mode
 - [ ] **S082** FPV Racing
-- [ ] **S083** Light Show Single Drone Test
+- [x] **S083** Light Show Single Drone Test
 - [ ] **S084** High-Wind Endurance Test
-- [ ] **S085** Light Matrix Positioning
-- [ ] **S086** Multi-Angle Cinematography
-- [ ] **S087** LED Formation Text
+- [x] **S085** Light Matrix Positioning
+- [x] **S086** Multi-Angle Cinematography
+- [x] **S087** LED Formation Text
 - [ ] **S088** Formation Shape Morphing
 - [ ] **S089** Large-Scale Collision Avoidance
 - [ ] **S090** Racing Optimal Path
@@ -163,5 +163,5 @@
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 15 | 20 |
 | Industrial & Agriculture | 15 | 20 |
-| Special Ops & Entertainment | 1 | 20 |
-| **Total** | **71** | **100** |
+| Special Ops & Entertainment | 6 | 20 |
+| **Total** | **76** | **100** |

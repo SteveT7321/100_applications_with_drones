@@ -154,17 +154,17 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-5"></a>
-<details open><summary><b>5 · Special Ops & Entertainment</b> — 1/20 done</summary>
+<details open><summary><b>5 · Special Ops & Entertainment</b> — 6/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
-| S081 | Selfie Follow Mode *(planned)* | [card](scenarios/05_special_entertainment/S081_selfie_follow.md) |  |
+| S081 | [Selfie Follow Mode](outputs/05_special_entertainment/s081_selfie_follow/README.md) | [card](scenarios/05_special_entertainment/S081_selfie_follow.md) |  |
 | S082 | FPV Racing Circuit *(planned)* | [card](scenarios/05_special_entertainment/S082_fpv_racing.md) |  |
-| S083 | Light Show Single-Drone Test *(planned)* | [card](scenarios/05_special_entertainment/S083_light_show_single.md) |  |
+| S083 | [Light Show Single-Drone Test](outputs/05_special_entertainment/s083_light_show_single/README.md) | [card](scenarios/05_special_entertainment/S083_light_show_single.md) |  |
 | S084 | Extreme Weather Wind Resistance Test *(planned)* | [card](scenarios/05_special_entertainment/S084_wind_endurance.md) |  |
-| S085 | Drone Light Matrix Positioning *(planned)* | [card](scenarios/05_special_entertainment/S085_light_matrix.md) |  |
-| S086 | Cooperative Multi-Angle Filming *(planned)* | [card](scenarios/05_special_entertainment/S086_multi_angle_cinema.md) |  |
-| S087 | Aerial Light Show Text Display *(planned)* | [card](scenarios/05_special_entertainment/S087_led_text.md) |  |
+| S085 | [Drone Light Matrix Positioning](outputs/05_special_entertainment/s085_light_matrix/README.md) | [card](scenarios/05_special_entertainment/S085_light_matrix.md) |  |
+| S086 | [Cooperative Multi-Angle Filming](outputs/05_special_entertainment/s086_multi_angle_cinema/README.md) | [card](scenarios/05_special_entertainment/S086_multi_angle_cinema.md) |  |
+| S087 | [Aerial Light Show Text Display](outputs/05_special_entertainment/s087_led_text/README.md) | [card](scenarios/05_special_entertainment/S087_led_text.md) |  |
 | S088 | Formation Geometric Shape Morphing *(planned)* | [card](scenarios/05_special_entertainment/S088_formation_morphing.md) |  |
 | S089 | Large-Scale Swarm Collision Avoidance Test *(planned)* | [card](scenarios/05_special_entertainment/S089_collision_avoidance.md) |  |
 | S090 | Racing Drone Optimal Path *(planned)* | [card](scenarios/05_special_entertainment/S090_racing_optimal.md) |  |
@@ -241,8 +241,8 @@ drones/
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 15 | 20 |
 | Industrial & Agriculture | 15 | 20 |
-| Special Ops & Entertainment | 1 | 20 |
-| **Total** | **71** | **100** |
+| Special Ops & Entertainment | 6 | 20 |
+| **Total** | **76** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
