@@ -178,7 +178,7 @@ Every strategy touched down in all 200 trials, and the largest horizontal error 
   - **creep speed $v_{td}$**: 0.02–0.03 m/s → 93.5%, 0.07 m/s → 76.5%;
   - **flare duration**: 1 s → 90.0%, 3 s → 85.5%.
 
-  "≥ 85%" only holds for a responsive vehicle (lag ≤ 0.05 s) with a slow creep. At the two stress points, the ranking among the compensated strategies holds:
+  "≥ 85%" only holds for a responsive vehicle (lag ≤ 0.05 s) with a slow creep. At the two stress points, the ranking among the three compensated strategies evaluated there (card bins, FFT+LS absolute, best) holds:
   - lag 0.1 s: best 15.0%, FFT+LS absolute 9.5%, card bins 3.5%;
   - creep 0.07 m/s: best 76.5%, FFT+LS absolute 19.5%, card bins 4.5%.
 
