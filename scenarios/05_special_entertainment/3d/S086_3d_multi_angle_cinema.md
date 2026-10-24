@@ -1,6 +1,6 @@
 # S086 3D Upgrade — Multi-Angle Cinematography
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S086 original](../S086_multi_angle_cinema.md)
 
 ---
@@ -70,7 +70,11 @@ corrected.
 
 $$\mathbf{q}(t) = \bigl(a \sin(\omega t),\; b \sin(2\omega t),\; 0\bigr)^\top$$
 
-with $a = 10$ m, $b = 6$ m, $\omega = 0.18$ rad/s. Subject altitude is fixed at $z_s = 0$ m.
+with $a = 10$ m, $b = 6$ m, $\omega = 0.1358$ rad/s. Subject altitude is fixed at $z_s = 0$ m.
+
+> **Correction (implementation, 2026-10-24):** this card had $\omega = 0.18$ rad/s, which gives an
+> RMS speed of 1.99 m/s, not the 1.5 m/s stated; S086 corrected it to
+> $\omega = v_{sub}/\sqrt{(a^2 + 4b^2)/2} = 0.1358$ rad/s and this variant uses the same value.
 
 ### 3D Kalman Filter for Subject Tracking
 
@@ -145,6 +149,13 @@ $$\varepsilon_k(t) = \arccos\!\Bigl(\hat{\mathbf{c}}_k(t) \cdot \frac{\boldsymbo
 where $\hat{\mathbf{c}}_k$ is the unit vector along the actual (servo-lagged) gimbal boresight.
 The normalised image offset is $\|\delta_k^{img}\| = \tan(\varepsilon_k) / \tan(\text{FOV}/2)$.
 Framing is considered good when $\|\delta_k^{img}\| \leq 0.15$.
+
+> **Correction (implementation):** the gimbal is commanded toward the estimate
+> $\boldsymbol\delta_k = \hat{\mathbf q} - \mathbf p_k$, so measuring $\varepsilon_k$ against the same
+> vector only scores the servo lag and ignores the estimation error. The implementation measures
+> $\varepsilon_k$ against the **true** subject, $\mathbf q - \mathbf p_k$ (as S086 does). Note also
+> that the 30° half-angle here is wider than the 18.4° ($\arctan(2/6)$) used by S086, so the two
+> framing scores are not directly comparable; the outputs README prints both.
 
 ### 3D Visual Occlusion Metric
 
@@ -235,7 +246,10 @@ Altitude is bounded: $z_k \in [z_{min}, z_{max}] = [0.5, 8.0]$ m.
 - **Occlusion separation plot** (`s086_occlusion.png`): all three pairwise angular
   separations $\psi_{ij}(t)$ versus time, with a red dashed line at $\psi_{min} = 30°$;
   the repulsion controller should keep all curves above the threshold after an initial
-  transient.
+  transient. (Implementation note: with 120° azimuth spacing the default 20°/45°/70°
+  assignment has ideal separations of 95.2°, 80.8° and 57.1°, so the repulsion never
+  activates; it can only matter when two drones sit high, e.g. 70°/80° at 26.4°. There the
+  card's law, which moves only the higher drone upward, is blocked by the 80° clamp.)
 - **Phase sync and 3D collision distance** (`s086_sync_separation.png`): azimuthal phase
   errors per drone (upper) and pairwise 3D distances (lower), both with threshold lines.
 - **3D animation** (`s086_animation.gif`): rotating azimuth view showing all three drones
@@ -264,7 +278,7 @@ Altitude is bounded: $z_k \in [z_{min}, z_{max}] = [0.5, 8.0]$ m.
 2. **Optimal hemisphere placement**: formulate elevation angle assignment as a non-linear
    programme maximising the minimum pairwise $\psi_{ij}$ subject to drone speed and altitude
    constraints; compare the optimised assignment against the fixed [20°, 45°, 70°] baseline.
-3. **Subject height estimation**: extend the 3D KF with a z-velocity state to track a subject
+3. **Subject height estimation**: use the z-velocity state the 6-state KF already has to track a subject
    who climbs stairs or a ramp; evaluate how quickly the gimbal and orbit setpoints adapt to
    the changing ground altitude.
 4. **N > 3 hemisphere tessellation**: generalise to $N = 6$ drones using a Fibonacci sphere
