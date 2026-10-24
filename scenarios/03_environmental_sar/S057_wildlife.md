@@ -1,6 +1,6 @@
 # S057 Wildlife Population Census
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
@@ -100,15 +100,23 @@ Miss rate (fraction of animals present in footprint but undetected):
 
 $$R_{miss}(h, v, c_g) = 1 - P_d(h, v, c_g)$$
 
-If adjacent passes overlap (overlap fraction $\delta > 0$), an animal near the strip edge may be
-detected twice. For a strip overlap $\delta = \max(0,\; 2w - W/n_{passes}) / w$, the probability
-an animal in the overlap zone is counted on both passes:
+If adjacent passes overlap, an animal near the strip edge may be detected twice. With pass
+spacing $s \le w$ (side-overlap fraction $\delta = 1 - s/w$), neighbouring strips share bands of
+width $w - s$, so a fraction $(w - s)/s$ of the reserve is covered twice. An animal in such a band
+is counted on both passes with probability
 
-$$P_{double} = P_d^2(h, v, c_g) \cdot \delta$$
+$$P_{double} = P_d^2(h, v, c_g)$$
 
-The expected number of double-counts contributed by group $g$:
+The expected number of double-counts contributed by group $g$ is
 
-$$E[D_g] = n_g \cdot \mathbb{1}[g \text{ in overlap zone}] \cdot P_{double}$$
+$$E[D_g] = n_g \cdot f_g^{ov} \cdot P_{double}$$
+
+where $f_g^{ov}$ is the fraction of group $g$ that lies in an overlap band. The contiguous layout
+above ($s = w$, $n_{passes} = \lceil W/w \rceil$) has no overlap, so $D_g = 0$.
+
+> Correction (S057 implementation): an earlier version gave $\delta = \max(0, 2w - W/n_{passes})/w$
+> and $P_{double} = P_d^2 \delta$. For contiguous strips $W/n_{passes} \le w$, so that formula gives
+> $\delta \ge 1$ (1.043 / 1.007 / 1.014 for the three strategies) although no point is covered twice.
 
 ### Population Estimate and Error
 
@@ -167,7 +175,7 @@ def detection_prob(h, v, camouflage):
 def generate_reserve(rng):
     """Randomly place G animal groups with sizes and camouflage factors."""
     centroids   = rng.uniform(20, AREA_SIZE - 20, size=(N_GROUPS, 2))
-    group_sizes = rng.integers(*N_ANIMALS_RANGE, size=N_GROUPS)
+    group_sizes = rng.integers(N_ANIMALS_RANGE[0], N_ANIMALS_RANGE[1] + 1, size=N_GROUPS)  # 1..20 inclusive
     camouflage  = rng.uniform(0.0, 0.6, size=N_GROUPS)
     return centroids, group_sizes, camouflage
 
