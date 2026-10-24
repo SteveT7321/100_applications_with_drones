@@ -6,15 +6,20 @@ with a two-frequency swell (0.40 m / 6 s plus 0.15 m / 2.5 s). It hovers at 3.5 
 64 deck-height samples at 10 Hz (sigma = 1 cm), and then descends. A touchdown is soft when
 the drone is within 0.3 m of the deck centre and the relative vertical speed is <= 0.1 m/s.
 
-Four descent strategies are compared on the same 200 random wave phases and the same sensor
-noise (common random numbers):
-  1. Naive (card)      - constant 0.4 m/s descent right after the observation window.
-  2. Phase-blind flare - 0.4 m/s cruise, flare to a 0.05 m/s creep just above the highest deck
-                         sample seen, started right away (no timing).
-  3. FFT-timed (bins)  - the card's FFT estimator (64-point rFFT, two largest bins) predicts the
-                         next crest; the same flare profile is timed to reach the crest at it.
-  4. FFT-timed (LS)    - zero-padded FFT peaks initialise a nonlinear least-squares fit of the
-                         two sinusoids; same timed flare profile.
+Six descent strategies plus one ablation are compared on the same 200 random wave phases and
+the same sensor noise (common random numbers):
+  1. Naive (card)          - constant 0.4 m/s descent right after the observation window.
+  2. Phase-blind flare     - 0.4 m/s cruise, flare to a 0.05 m/s creep just above the highest
+                             deck sample seen, started right away (no timing).
+  3. FFT bins, absolute    - the card's FFT estimator (64-point rFFT, two largest bins) predicts
+                             the next crest; the flare profile is timed to reach it (card ref).
+  4. FFT+LS, absolute      - zero-padded FFT peaks initialise a nonlinear least-squares fit of
+                             the two sinusoids; same timed absolute profile.
+  5. FFT bins, deck-rel.   - card estimator; the flare also follows the predicted deck motion.
+  6. FFT+LS, deck-rel.     - least-squares estimator with the deck-relative flare (best).
+  Ablation                 - strategy 6 without ground-effect compensation.
+Sensitivity runs: sensor noise, and the added parameters TAU_THRUST, V_TD, T_FLARE, Z_ROTOR
+(with a strategy ranking at the two stress points TAU_THRUST = 0.1 s and V_TD = 0.07 m/s).
 
 Physics: NumPy point-mass model (no attitude states) with a first-order thrust lag, thrust and
 tilt limits, and a Cheeseman-Bennett ground effect from the deck surface. The controller
@@ -73,6 +78,8 @@ V_LIMIT    = 5.0       # m/s  sanity bound asserted on the speed
 N_PAD      = 4096      # zero-padded FFT length used to initialise the LS fit
 SEED       = 95
 NOISE_SWEEP = [0.005, 0.01, 0.02, 0.05]
+STRESS_POINTS = [('TAU_THRUST', 0.1), ('V_TD', 0.07)]
+STRESS_STRATEGIES = ['fft_bin', 'fft_ls', 'fft_ls_rel_nogc']   # best strategy is in the sweep
 PARAM_SWEEPS = {                         # added-parameter sensitivity of the best strategy
     'TAU_THRUST': [0.02, 0.05, 0.1],
     'V_TD':       [0.02, 0.03, 0.05, 0.07],
@@ -590,7 +597,7 @@ def plot_monte_carlo(mc, out_dir):
     print(f'Saved: {path}')
 
 
-SWEEP_STRATEGIES = ['fft_ls', 'fft_bin_rel', 'fft_ls_rel']
+SWEEP_STRATEGIES = ['fft_ls', 'fft_ls_rel']
 
 
 def plot_noise_sensitivity(sweep, out_dir):
@@ -816,6 +823,14 @@ if __name__ == '__main__':
         print(f'  {name:10s}: ' + ', '.join(
             f'{v:g}{"" if gc else " (no GE comp.)"} -> {100 * s:.1f}%'
             for (v, gc), s in psens[name].items()))
+    print('  Strategy ranking at the two stress points (success %, same 200 trials):')
+    for name, val in STRESS_POINTS:
+        old = set_params(**{name: val})
+        r = run_monte_carlo(phis, noise, strategies=STRESS_STRATEGIES)
+        set_params(**old)
+        print(f'    {name} = {val:g}: ' + ', '.join(
+            f'{LABELS[s]} {100 * r[s]["success"].mean():.1f}%' for s in STRESS_STRATEGIES)
+              + (f' (best strategy: {100 * psens[name][(val, True)]:.1f}%, see above)'))
     print(f'  (baseline TAU_THRUST={TAU_THRUST}, V_TD={V_TD}, T_FLARE={T_FLARE}, '
           f'Z_ROTOR={Z_ROTOR}; D_FLARE back to {D_FLARE:.3f} m)')
 

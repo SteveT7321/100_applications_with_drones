@@ -108,7 +108,7 @@ conda activate drones
 python src/05_special_entertainment/s095_water_landing.py
 ```
 
-Runtime: 6.5–8.8 min, measured while other simulations shared the machine. The parameter sweeps added 11 Monte Carlo sets; the version without them measured 1.7 min (independent review). The script asserts that the thrust stays within its limits, the speed stays below 5 m/s, the drone never goes below sea level, contact happens only in the descent phase, and deck penetration at contact is no more than one step of closing speed.
+Runtime: 5.9–7.3 min, measured while other simulations shared the machine. The parameter sweeps and stress-point rankings add 17 single-strategy Monte Carlo sets of 200 trials (11 sweep values + 2 stress points × 3 strategies). To make room for them, the uninformative "FFT bins, deck-relative" curve was dropped from the noise sweep (1.5% success in the main Monte Carlo at σ = 1 cm). The script asserts that the thrust stays within its limits, the speed stays below 5 m/s, the drone never goes below sea level, contact happens only in the descent phase, and deck penetration at contact is no more than one step of closing speed.
 
 ---
 
@@ -159,12 +159,12 @@ Every strategy touched down in all 200 trials, and the largest horizontal error 
 
 **Noise sensitivity** (same phases; the noise draws are scaled):
 
-| σ | FFT+LS, absolute ref | FFT bins, deck-relative | FFT+LS, deck-relative |
-|---|---:|---:|---:|
-| 0.5 cm | 21.5% | 1.5% | 97.5% |
-| 1.0 cm | 18.0% | 1.5% | 88.0% |
-| 2.0 cm | 13.5% | 0.5% | 63.0% |
-| 5.0 cm | 6.0% | 0.5% | 22.0% |
+| σ | FFT+LS, absolute ref | FFT+LS, deck-relative |
+|---|---:|---:|
+| 0.5 cm | 21.5% | 97.5% |
+| 1.0 cm | 18.0% | 88.0% |
+| 2.0 cm | 13.5% | 63.0% |
+| 5.0 cm | 6.0% | 22.0% |
 
 **Key findings**:
 
@@ -178,7 +178,11 @@ Every strategy touched down in all 200 trials, and the largest horizontal error 
   - **creep speed $v_{td}$**: 0.02–0.03 m/s → 93.5%, 0.07 m/s → 76.5%;
   - **flare duration**: 1 s → 90.0%, 3 s → 85.5%.
 
-  The strategy ranking is robust, but "≥ 85%" only holds for a responsive vehicle (lag ≤ 0.05 s) with a slow creep.
+  "≥ 85%" only holds for a responsive vehicle (lag ≤ 0.05 s) with a slow creep. At the two stress points, the ranking among the compensated strategies holds:
+  - lag 0.1 s: best 15.0%, FFT+LS absolute 9.5%, card bins 3.5%;
+  - creep 0.07 m/s: best 76.5%, FFT+LS absolute 19.5%, card bins 4.5%.
+
+  The uncompensated ablation, however, is much more tolerant: 92.0% at lag 0.1 s and 96.0% at creep 0.07 m/s. The ground-effect cushion masks both the slow thrust response and the faster creep.
 - **The card's FFT estimator cannot predict this sea.** With 64 samples at 10 Hz, the bins are 0.156 Hz apart. Both wave frequencies fall between bins, and the estimate locks onto 0.156 Hz and 0.3125 Hz instead of 0.1667 Hz and 0.4 Hz. The RMS prediction error (0.2136 m) is about as large as the waves themselves. With this estimator, timing is no better than the phase-blind flare (2.0% vs 1.5%), even when the descent follows the predicted deck (1.5%).
 - **Accurate timing alone is not enough.** With an accurate prediction (1 cm RMS) but the card's absolute reference, success is only 18.0%. Once the drone reaches the predicted crest height, it creeps at 0.05 m/s. If it arrives a few millimetres high, the deck falls away, and the next contact is with a rising deck at several tenths of a m/s. Following the predicted deck during the flare removes that sensitivity: the 24 remaining failures have $\Delta\dot z$ mostly between −0.100 and −0.163 m/s, just outside the band, plus three hard cases (−0.423, −0.697, −0.797).
 - **Card naive ceiling (≤ 45%) holds**: the naive descent succeeded in 0.5% of trials.
@@ -216,6 +220,13 @@ FFT+LS deck-relative flare, the same 200 trials for every value (baseline in bol
 | Rotor height above gear (no GE compensation) | 0.05 m → 99.0%, **0.1 m → 98.0%**, 0.2 m → 90.5% |
 
 With a slower thrust response (0.1 s) success collapses, most likely because the drone can no longer follow the deck's crest acceleration (up to 1.386 m/s²) during the deck-relative flare (not diagnosed further). A faster creep (0.07 m/s) leaves less margin to the 0.1 m/s limit.
+
+**Ranking at the stress points** (same 200 trials; success %):
+
+| Stress point | FFT bins, abs. (card) | FFT+LS, abs. | FFT+LS deck-rel. (best) | FFT+LS deck-rel., no GE comp. |
+|---|---:|---:|---:|---:|
+| Thrust lag 0.1 s | 3.5% | 9.5% | 15.0% | 92.0% |
+| Creep 0.07 m/s | 4.5% | 19.5% | 76.5% | 96.0% |
 
 ![Parameter sensitivity](./parameter_sensitivity.png)
 
