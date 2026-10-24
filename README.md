@@ -133,13 +133,13 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S061 | [Power Line Inspection](outputs/04_industrial_agriculture/s061_power_line/README.md) | [card](scenarios/04_industrial_agriculture/S061_power_line.md) |  |
 | S062 | [Wind Turbine Blade Inspection](outputs/04_industrial_agriculture/s062_wind_turbine/README.md) | [card](scenarios/04_industrial_agriculture/S062_wind_turbine.md) |  |
 | S063 | [Single-Plant Precision Spraying](outputs/04_industrial_agriculture/s063_precision_spraying/README.md) | [card](scenarios/04_industrial_agriculture/S063_precision_spraying.md) |  |
-| S064 | [Greenhouse Interior Precision Flight](outputs/04_industrial_agriculture/s064_greenhouse/README.md) | [card](scenarios/04_industrial_agriculture/S064_greenhouse.md) |  |
+| S064 | [Greenhouse Interior Precision Flight](outputs/04_industrial_agriculture/s064_greenhouse/README.md) | [card](scenarios/04_industrial_agriculture/S064_greenhouse.md) | [3D](outputs/04_industrial_agriculture/3d/s064_3d_greenhouse/README.md) |
 | S065 | [Building 3D Modeling — Multi-Angle Scan Path](outputs/04_industrial_agriculture/s065_3d_scan_path/README.md) | [card](scenarios/04_industrial_agriculture/S065_3d_scan_path.md) |  |
 | S066 | [Cooperative Crane Simulation](outputs/04_industrial_agriculture/s066_cooperative_crane/README.md) | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) |  |
-| S067 | [Spray Coverage Overlap Optimization](outputs/04_industrial_agriculture/s067_spray_overlap/README.md) | [card](scenarios/04_industrial_agriculture/S067_spray_overlap.md) |  |
-| S068 | [Large-Scale Farmland Cooperative Spraying](outputs/04_industrial_agriculture/s068_large_field_spray/README.md) | [card](scenarios/04_industrial_agriculture/S068_large_field_spray.md) |  |
+| S067 | [Spray Coverage Overlap Optimization](outputs/04_industrial_agriculture/s067_spray_overlap/README.md) | [card](scenarios/04_industrial_agriculture/S067_spray_overlap.md) | [3D](outputs/04_industrial_agriculture/3d/s067_3d_spray_overlap/README.md) |
+| S068 | [Large-Scale Farmland Cooperative Spraying](outputs/04_industrial_agriculture/s068_large_field_spray/README.md) | [card](scenarios/04_industrial_agriculture/S068_large_field_spray.md) | [3D](outputs/04_industrial_agriculture/3d/s068_3d_large_field_spray/README.md) |
 | S069 | [Automated Warehouse Inventory](outputs/04_industrial_agriculture/s069_warehouse_inventory/README.md) | [card](scenarios/04_industrial_agriculture/S069_warehouse_inventory.md) |  |
-| S070 | [Swarm Weeding Task](outputs/04_industrial_agriculture/s070_swarm_weeding/README.md) | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) |  |
+| S070 | [Swarm Weeding Task](outputs/04_industrial_agriculture/s070_swarm_weeding/README.md) | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) | [3D](outputs/04_industrial_agriculture/3d/s070_3d_swarm_weeding/README.md) |
 | S071 | [Bridge Underside Structural Inspection](outputs/04_industrial_agriculture/s071_bridge_inspection/README.md) | [card](scenarios/04_industrial_agriculture/S071_bridge_inspection.md) |  |
 | S072 | [Oil Pipeline Leak Detection](outputs/04_industrial_agriculture/s072_pipeline_leak/README.md) | [card](scenarios/04_industrial_agriculture/S072_pipeline_leak.md) |  |
 | S073 | [Solar Panel Thermal Imaging Inspection](outputs/04_industrial_agriculture/s073_solar_thermal/README.md) | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) |  |
@@ -245,7 +245,7 @@ drones/
 | Special Ops & Entertainment | 20 | 20 |
 | **Total** | **100** | **100** |
 
-> **3D Upgrades**: 56 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 14 in Environmental & SAR (S041–S052, S054, S055) and 4 in Special Ops & Entertainment (S081, S083, S086, S092). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
+> **3D Upgrades**: 60 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 14 in Environmental & SAR (S041–S052, S054, S055), 4 in Industrial & Agriculture (S064, S067, S068, S070) and 4 in Special Ops & Entertainment (S081, S083, S086, S092). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
