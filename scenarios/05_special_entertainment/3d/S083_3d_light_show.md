@@ -1,6 +1,6 @@
 # S083 3D Upgrade — Light Show Single Drone Test
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S083 original](../S083_light_show_single.md)
 
 ---
@@ -40,8 +40,8 @@ acts on all three axes. Point-mass dynamics are integrated with `scipy.integrate
 - **Drone**: single UAV commanded by a full 3D position controller, with LED brightness output
   driven by the altitude profile.
 - **Reference path**: 3D lifted figure-8 — horizontal Lissajous lobes combined with a vertical
-  sinusoid, forming a saddle-shaped closed curve at altitudes between $z_{low} = 40$ m and
-  $z_{high} = 60$ m.
+  sinusoid, at altitudes between $z_{low} = 40$ m and $z_{high} = 60$ m. (With $\phi_z = 0$ the
+  curve is planar — see the correction below.)
 - **Audience arc**: a semi-circular ring of $N_{aud} = 36$ observer positions at ground level,
   radius $R_{aud} = 100$ m, used to score viewing-angle quality of the choreography.
 - **Wind disturbance**: independent Gaussian noise on all three axes, modelling atmospheric
@@ -50,7 +50,10 @@ acts on all three axes. Point-mass dynamics are integrated with `scipy.integrate
 **Objective**: For each control variant, simulate the full 60 s mission and report:
 
 1. **RMS tracking error** $\varepsilon_{RMS}$ (m) — must be $\leq 0.15$ m (3D spec, relaxed from 2D
-   because the path now uses the full vertical axis).
+   because the path now uses the full vertical axis). Note (implementation): with feedforward of
+   the spline acceleration and a matched initial state the linear tracking error does not depend
+   on the path at all, so the relaxation is not needed for that controller; the 2D S083 already
+   misses the 0.10 m spec at this wind level.
 2. **Maximum instantaneous deviation** $\varepsilon_{max}$ (m).
 3. **Path completion** — fraction of time steps within 0.5 m of the 3D reference.
 4. **Mean minimum viewing angle** $\bar{\Phi}_{min}$ (°) — audience legibility score.
@@ -78,9 +81,16 @@ $$\mathbf{p}_{ref}(\tau) = \begin{pmatrix}
 
 where $z_c = (z_{high} + z_{low})/2 = 50$ m is the central altitude, and
 $A_z = (z_{high} - z_{low})/2 = 10$ m is the vertical semi-amplitude.
-The z-component shares the same $4\pi\tau$ frequency as $y$, coupling the vertical arcs to the
-outer lobes of the figure-8: the drone climbs to 60 m on each outer lobe and descends to 40 m
-at the central crossing. Horizontal semi-amplitudes remain $A_x = A_y = 20$ m.
+Horizontal semi-amplitudes remain $A_x = A_y = 20$ m.
+
+> **Correction (implementation, 2026-10-24):** an earlier version said that this formula makes the
+> drone "climb to 60 m on each outer lobe and descend to 40 m at the central crossing" and called
+> the curve "saddle-shaped". Because $z$ uses the same $\sin 4\pi\tau$ as $y$,
+> $z = z_c + (A_z/A_y)\,y = 50 + y/2$: the curve is a flat figure-8 in a plane tilted by
+> $\arctan(10/20) = 26.6°$, it crosses itself at 50 m, and it reaches 60 m / 40 m where
+> $y = \pm 20$ m (once in each lobe). The shape described in words needs a phase offset,
+> $z = z_c + A_z \sin(4\pi\tau - \pi/2) = 40 + x^2/20$. The implementation runs both (and the
+> legibility-optimised phase), see the outputs README.
 
 ### Cubic Spline Interpolation (3D)
 
@@ -125,7 +135,8 @@ $$\dot{\mathbf{p}} = \mathbf{v}, \qquad
 \qquad \mathbf{w}(t) \sim \mathcal{N}(\mathbf{0},\, \sigma_w^2 \mathbf{I}_3)$$
 
 Altitude is soft-bounded to $z \in [z_{low} - 5,\; z_{high} + 5]$ m by a saturation on $\mathbf{a}_{cmd,z}$
-when the drone approaches the boundary.
+when the drone approaches the boundary. (Implementation: the drone stays within 39.5–60.5 m in
+every run, so the bound is asserted rather than enforced.)
 
 ### Altitude-Varying LED Intensity
 
@@ -135,14 +146,17 @@ $$\ell(t) = \ell_{min} + (\ell_{max} - \ell_{min}) \cdot
   \frac{p_z(t) - z_{low}}{z_{high} - z_{low}}$$
 
 clamped to $[\ell_{min}, \ell_{max}] = [0.3, 1.0]$. A higher drone therefore produces a brighter
-light output, yielding a visually salient altitude cue for ground observers.
+light output, yielding a visually salient altitude cue for ground observers. On the 2D path
+(constant 50 m) the brightness would be a constant 0.65.
 
 The apparent colour temperature may also be modulated; a simple linear model maps intensity to
 a warm-to-cold hue shift:
 
 $$H(t) = H_{warm} + (H_{cold} - H_{warm}) \cdot \ell(t)$$
 
-where $H_{warm} = 30°$ (orange) and $H_{cold} = 200°$ (sky-blue) in HSV hue space.
+where $H_{warm} = 30°$ (orange) and $H_{cold} = 200°$ (sky-blue) in HSV hue space. Because
+$\ell \ge 0.3$, the hue actually spans $30 + 170 \cdot 0.3 = 81°$ (yellow-green) to $200°$; the
+orange end is never reached (correction, implementation).
 
 ### 3D Audience Viewing-Angle Score
 
@@ -211,7 +225,7 @@ $$\text{Path completion} = \frac{|\{k : \|\mathbf{e}_k\| \leq 0.5\}|}{N_{steps}}
 | Mission duration | $T_{total}$ | 60 s |
 | Number of scripted waypoints | $N_{wp}$ | 200 |
 | Simulation timestep | $\Delta t$ | 0.05 s (20 Hz) |
-| Wind disturbance std dev (per axis) | $\sigma_w$ | 0.5 m/s |
+| Wind disturbance std dev (per axis) | $\sigma_w$ | 0.5 m/s² (added to $\dot{\mathbf v}$, so an acceleration; corrected as in S083) |
 | Proportional gain | $K_p$ | 2.0 |
 | Integral gain | $K_i$ | 0.1 |
 | Derivative gain | $K_d$ | 0.8 |
