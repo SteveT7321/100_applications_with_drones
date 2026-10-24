@@ -73,6 +73,12 @@ V_LIMIT    = 5.0       # m/s  sanity bound asserted on the speed
 N_PAD      = 4096      # zero-padded FFT length used to initialise the LS fit
 SEED       = 95
 NOISE_SWEEP = [0.005, 0.01, 0.02, 0.05]
+PARAM_SWEEPS = {                         # added-parameter sensitivity of the best strategy
+    'TAU_THRUST': [0.02, 0.05, 0.1],
+    'V_TD':       [0.02, 0.03, 0.05, 0.07],
+    'T_FLARE':    [1.0, 2.0, 3.0],
+    'Z_ROTOR':    [0.05, 0.1, 0.2],      # run with and without ground-effect compensation
+}
 DEMO_PHI   = (0.3, 1.1)    # card's single-run phases
 
 D_FLARE    = T_FLARE * (V_DESC + V_TD) / 2.0      # 0.45 m covered during the flare
@@ -182,11 +188,11 @@ def fft_ls_estimator(t_obs, z_obs):
     return z_hat, comps
 
 
-def card_phase_check():
+def card_phase_check(t0=10.0):
     """Card formula phase = angle(Z[k]) + 2 pi f t_start vs the corrected conversion, on a
-    bin-aligned noise-free sinusoid (f = 1 bin = 0.15625 Hz) observed from t_start = 10 s."""
+    bin-aligned noise-free sinusoid (f = 1 bin = 0.15625 Hz) observed from t_start = t0."""
     fk = F_SAMPLE / N_OBS
-    t_obs = 10.0 + np.arange(N_OBS) / F_SAMPLE
+    t_obs = t0 + np.arange(N_OBS) / F_SAMPLE
     z = 0.4 * np.sin(2 * np.pi * fk * t_obs + 0.7)
     Z = np.fft.rfft(z)
     amp = 2 * abs(Z[1]) / N_OBS
@@ -399,6 +405,17 @@ def draw_trials(n=N_TRIALS, seed=SEED):
     return phis, noise
 
 
+def set_params(**kw):
+    """Override added parameters (TAU_THRUST, V_TD, T_FLARE, Z_ROTOR) for a sensitivity run.
+
+    Returns the previous values so they can be restored."""
+    global D_FLARE
+    old = {k: globals()[k] for k in kw}
+    globals().update(kw)
+    D_FLARE = T_FLARE * (V_DESC + V_TD) / 2.0
+    return old
+
+
 def run_monte_carlo(phis, noise, sigma=SIGMA_Z, strategies=STRATEGIES):
     res = {}
     for s in strategies:
@@ -597,6 +614,29 @@ def plot_noise_sensitivity(sweep, out_dir):
     print(f'Saved: {path}')
 
 
+def plot_param_sensitivity(psens, out_dir):
+    units = {'TAU_THRUST': 's', 'V_TD': 'm/s', 'T_FLARE': 's', 'Z_ROTOR': 'm'}
+    fig, axes = plt.subplots(1, 4, figsize=(18, 4.2), sharey=True)
+    for ax, (name, d) in zip(axes, psens.items()):
+        for gc, ls, lab in ((True, 'o-', 'GE compensated'), (False, 's--', 'no GE comp.')):
+            pts = sorted((v, s) for (v, g), s in d.items() if g == gc)
+            if pts:
+                ax.plot([p[0] for p in pts], [100 * p[1] for p in pts], ls,
+                        color=COLORS['fft_ls_rel'] if gc else COLORS[ABLATION], label=lab)
+        ax.axvline(globals()[name], color='grey', ls=':', lw=1)
+        ax.axhline(85, color='k', ls='--', lw=1)
+        ax.set_xlabel(f'{name} ({units[name]})'); ax.set_title(f'{name} (dotted = baseline)')
+        ax.legend(fontsize=8)
+    axes[0].set_ylabel('Soft-landing success (%)'); axes[0].set_ylim(0, 105)
+    fig.suptitle('FFT+LS deck-relative flare: sensitivity to added parameters '
+                 f'({N_TRIALS} trials each, dashed = card 85 % target)')
+    fig.tight_layout()
+    path = os.path.join(out_dir, 'parameter_sensitivity.png')
+    fig.savefig(path, dpi=130, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {path}')
+
+
 def gif_indices(n, step):
     n_frames = math.ceil((n - 1) / step) + 1
     return [min(i * step, n - 1) for i in range(n_frames)]
@@ -683,9 +723,14 @@ if __name__ == '__main__':
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     print('=== S095 Water Surface Landing ===')
     amp, rms_card, rms_corr = card_phase_check()
-    print(f'Card phase-formula check (bin-aligned 0.4 m sinusoid, 8 s ahead): '
-          f'amplitude {amp:.4f} m, RMS error card formula {rms_card:.4f} m, '
+    print(f'Card phase-formula check (bin-aligned 0.4 m sinusoid, window from t0 = 10 s, 8 s '
+          f'ahead): amplitude {amp:.4f} m, RMS error card formula {rms_card:.4f} m, '
           f'corrected {rms_corr:.2e} m')
+    t0s = np.arange(0.0, 1.0 / (F_SAMPLE / N_OBS), 0.05)          # one full period, 6.4 s
+    errs = np.array([card_phase_check(t0)[1:] for t0 in t0s])
+    print(f'  over window start t0 in [0, {t0s[-1]:.2f}] s: card formula RMS error '
+          f'{errs[:, 0].min():.4f} to {errs[:, 0].max():.4f} m (corrected max '
+          f'{errs[:, 1].max():.1e} m)')
     print(f'FFT bin spacing {F_SAMPLE / N_OBS:.5f} Hz vs swell {1 / T1:.5f} Hz '
           f'({N_OBS / F_SAMPLE / T1:.3f} bins) and chop {1 / T2:.5f} Hz '
           f'({N_OBS / F_SAMPLE / T2:.3f} bins)')
@@ -752,9 +797,32 @@ if __name__ == '__main__':
         print(f'  sigma {100 * sg:4.1f} cm: ' + ', '.join(
             f'{LABELS[s]} {100 * sweep[sg][s]:.1f}%' for s in SWEEP_STRATEGIES))
 
+    print('\nAdded-parameter sensitivity of FFT+LS deck-relative (success %, same 200 trials):')
+    psens = {}
+    for name, values in PARAM_SWEEPS.items():
+        psens[name] = {}
+        base_val = globals()[name]
+        for val in values:
+            for gc in ((True, False) if name == 'Z_ROTOR' else (True,)):
+                key = 'fft_ls_rel' if gc else ABLATION
+                if val == base_val:
+                    succ = float(mc[key]['success'].mean())
+                else:
+                    old = set_params(**{name: val})
+                    succ = float(run_monte_carlo(phis, noise, strategies=[key])[key]
+                                 ['success'].mean())
+                    set_params(**old)
+                psens[name][(val, gc)] = succ
+        print(f'  {name:10s}: ' + ', '.join(
+            f'{v:g}{"" if gc else " (no GE comp.)"} -> {100 * s:.1f}%'
+            for (v, gc), s in psens[name].items()))
+    print(f'  (baseline TAU_THRUST={TAU_THRUST}, V_TD={V_TD}, T_FLARE={T_FLARE}, '
+          f'Z_ROTOR={Z_ROTOR}; D_FLARE back to {D_FLARE:.3f} m)')
+
     print()
     plot_approach(demo, OUTPUT_DIR)
     plot_wave_prediction(demo, mc, OUTPUT_DIR)
     plot_monte_carlo(mc, OUTPUT_DIR)
     plot_noise_sensitivity(sweep, OUTPUT_DIR)
+    plot_param_sensitivity(psens, OUTPUT_DIR)
     save_animation(demo, OUTPUT_DIR)

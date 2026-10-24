@@ -77,7 +77,7 @@ at bin $k_i$ (frequency $f_i = k_i f_s / N_{obs}$):
 - **Phase**: for $z = A\sin(2\pi f t + \varphi)$ the FFT angle at the first sample $t_0$ is
   $\varphi_0 - \pi/2$, so $\hat{\varphi}_i = \angle\hat{Z}[k_i] + \pi/2 - 2\pi \hat f_i t_0$
   (corrected 2026-10: the earlier formula $\angle\hat Z[k_i] + 2\pi f t_0$ mixed sine and cosine
-  phase and had the wrong sign; it gives a 0.20 m RMS error on a bin-aligned 0.4 m sinusoid).
+  phase and had the wrong sign; on a bin-aligned 0.4 m sinusoid it gives a 0.20 m RMS error for a window starting at 10 s, and 0 to 0.57 m depending on the window start).
   Note: with $f_s/N_{obs} = 0.156$ Hz neither wave frequency lies on a bin (1.07 and 2.56 bins),
   so the raw-bin estimate is poor; the implementation refines it with least squares.
 
@@ -114,6 +114,7 @@ $z_{deck,0} = \hat{z}_{deck}(t_{start})$, and $v_{desc} = 0.4$ m/s is the nomina
 > touches down at a relative speed of 0.4 m/s, which is 4 times $v_{land,max} = 0.1$ m/s. The
 > implementation therefore adds a 2 s flare to a 0.05 m/s creep and, in the best variant, follows
 > the predicted deck motion during the flare. See the outputs README.
+
 The vertical reference trajectory during descent is:
 
 $$z_{drone}^{ref}(t) = z_{hold} - v_{desc}\,(t - t_{start}), \qquad t \in [t_{start},\; t_{crest}]$$

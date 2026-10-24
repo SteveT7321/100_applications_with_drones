@@ -92,6 +92,7 @@ Here $h$ is the gear height above the deck. This gives $k_{GE}$ = 1.0057 at 0.30
 | Rotor radius / rotor height above gear (added) | 0.12 m / 0.10 m |
 | $\Delta t$ / $T_{max}$ / Monte Carlo trials | 0.02 s / 60 s / 200 (seed 95) |
 | Noise sweep (added) | σ = 0.5, 1, 2, 5 cm |
+| Added-parameter sweeps (best strategy, same 200 trials) | thrust lag 0.02 / 0.05 / 0.1 s; creep $v_{td}$ 0.02 / 0.03 / 0.05 / 0.07 m/s; flare 1 / 2 / 3 s; rotor height 0.05 / 0.1 / 0.2 m (with and without GE compensation) |
 | Demo phases | $\varphi_1 = 0.3$, $\varphi_2 = 1.1$ (card) |
 
 ---
@@ -107,7 +108,7 @@ conda activate drones
 python src/05_special_entertainment/s095_water_landing.py
 ```
 
-Runtime ≈ 1.7 min on its own (about 5 min when three copies ran at once on the shared machine). The script asserts that the thrust stays within its limits, the speed stays below 5 m/s, the drone never goes below sea level, contact happens only in the descent phase, and deck penetration at contact is no more than one step of closing speed.
+Runtime: 6.5–8.8 min, measured while other simulations shared the machine. The parameter sweeps added 11 Monte Carlo sets; the version without them measured 1.7 min (independent review). The script asserts that the thrust stays within its limits, the speed stays below 5 m/s, the drone never goes below sea level, contact happens only in the descent phase, and deck penetration at contact is no more than one step of closing speed.
 
 ---
 
@@ -115,7 +116,7 @@ Runtime ≈ 1.7 min on its own (about 5 min when three copies ran at once on the
 
 ### Card checks
 
-- The card's phase formula $\hat\varphi = \angle\hat Z[k] + 2\pi f t_{start}$ was tested on a noise-free 0.4 m sinusoid that lies exactly on a bin. Its 8 s prediction has an RMS error of **0.2032 m**. The corrected formula gives 8.42e-17 m.
+- The card's phase formula $\hat\varphi = \angle\hat Z[k] + 2\pi f t_{start}$ was tested on a noise-free 0.4 m sinusoid that lies exactly on a bin. With the window starting at $t_0$ = 10 s, its 8 s prediction has an RMS error of **0.2032 m**; the corrected formula gives 8.42e-17 m. The card's error depends on $t_0$ (its phase error grows with $t_0$). Over one 6.4 s period of window start times, it ranges from 0.0000 to 0.5689 m RMS, while the corrected formula stays below 3.7e-16 m.
 - A constant 0.4 m/s descent onto a crest, where the deck speed is 0, gives $|\Delta\dot z| = 0.40$ m/s. That is 4× the 0.1 m/s tolerance, so the card's descent can never succeed by design. All profiles here therefore add a flare to 0.05 m/s.
 
 ### Demo run ($\varphi_1 = 0.3$, $\varphi_2 = 1.1$; observation window 8.80–15.10 s)
@@ -167,11 +168,21 @@ Every strategy touched down in all 200 trials, and the largest horizontal error 
 
 **Key findings**:
 
-- **The card's expectation holds only after three fixes.** The best strategy reaches 88.0%, above the card's 85% target. It needs a flare, because the card's constant 0.4 m/s contact is 4× too fast. It needs an estimator that resolves the off-bin frequencies (least-squares refinement). And it needs the descent to follow the predicted deck in its last 2 s. With the card's own estimator and reference, success is 2.0%.
+- **The card's expectation holds only after three fixes, and only near the chosen added parameters.** The best strategy reaches 88.0% with the baseline settings, just above the card's 85% target. It needs:
+  - a flare, because the card's constant 0.4 m/s contact is 4× too fast;
+  - an estimator that resolves the off-bin frequencies (least-squares refinement);
+  - a descent that follows the predicted deck in its last 2 s.
+
+  With the card's own estimator and reference, success is 2.0%. The 85% target also depends on parameters the card does not give (sensitivity table below):
+  - **thrust lag**: 0.02 s → 89.5%, 0.1 s → 15.0%;
+  - **creep speed $v_{td}$**: 0.02–0.03 m/s → 93.5%, 0.07 m/s → 76.5%;
+  - **flare duration**: 1 s → 90.0%, 3 s → 85.5%.
+
+  The strategy ranking is robust, but "≥ 85%" only holds for a responsive vehicle (lag ≤ 0.05 s) with a slow creep.
 - **The card's FFT estimator cannot predict this sea.** With 64 samples at 10 Hz, the bins are 0.156 Hz apart. Both wave frequencies fall between bins, and the estimate locks onto 0.156 Hz and 0.3125 Hz instead of 0.1667 Hz and 0.4 Hz. The RMS prediction error (0.2136 m) is about as large as the waves themselves. With this estimator, timing is no better than the phase-blind flare (2.0% vs 1.5%), even when the descent follows the predicted deck (1.5%).
 - **Accurate timing alone is not enough.** With an accurate prediction (1 cm RMS) but the card's absolute reference, success is only 18.0%. Once the drone reaches the predicted crest height, it creeps at 0.05 m/s. If it arrives a few millimetres high, the deck falls away, and the next contact is with a rising deck at several tenths of a m/s. Following the predicted deck during the flare removes that sensitivity: the 24 remaining failures have $\Delta\dot z$ mostly between −0.100 and −0.163 m/s, just outside the band, plus three hard cases (−0.423, −0.697, −0.797).
 - **Card naive ceiling (≤ 45%) holds**: the naive descent succeeded in 0.5% of trials.
-- **Ground effect helps if it is not cancelled.** Without compensation, ground effect cushions the last centimetres. The drone slows and rides the deck, and success rises to 98.0% (20 wins and 0 losses against the compensated version). Touchdown then happens later and farther from the crest (timing error 0.992 s vs 0.357 s). The compensated controller is still the main strategy, because it is the standard design and its result does not depend on an unmodelled aerodynamic effect. The cushion is a real effect, but this quasi-static model of it over a moving deck is approximate.
+- **Ground effect helps if it is not cancelled.** Without compensation, ground effect cushions the last centimetres. The drone slows and rides the deck, and success rises to 98.0% (20 wins and 0 losses against the compensated version). Touchdown then happens later and farther from the crest (timing error 0.992 s vs 0.357 s). The compensated controller is still the main strategy, because it is the standard design and its result does not depend on an unmodelled aerodynamic effect. The cushion is a real effect, but this quasi-static model of it over a moving deck is approximate. Its size depends on the added rotor height above the gear: without compensation, success is 99.0% at 0.05 m, 98.0% at 0.1 m and 90.5% at 0.2 m. With compensation it is 93.5%, 88.0% and 88.0%.
 - **Sensor noise matters**: the best strategy drops from 97.5% at 0.5 cm to 63.0% at 2 cm and 22.0% at 5 cm.
 
 ### Approach Analysis
@@ -191,6 +202,22 @@ Left: the 64 noisy samples and the 8 s predictions of both estimators in the dem
 Success rate for each strategy (dashed = card target 85%, dotted = card naive ceiling 45%), the relative velocity at contact, and the touchdown time relative to the nearest true crest:
 
 ![Monte Carlo](./monte_carlo.png)
+
+### Added-Parameter Sensitivity
+
+FFT+LS deck-relative flare, the same 200 trials for every value (baseline in bold):
+
+| Parameter | Values → soft-landing success |
+|---|---|
+| Thrust lag | 0.02 s → 89.5%, **0.05 s → 88.0%**, 0.1 s → 15.0% |
+| Creep speed $v_{td}$ | 0.02 m/s → 93.5%, 0.03 m/s → 93.5%, **0.05 m/s → 88.0%**, 0.07 m/s → 76.5% |
+| Flare duration | 1 s → 90.0%, **2 s → 88.0%**, 3 s → 85.5% |
+| Rotor height above gear (GE compensated) | 0.05 m → 93.5%, **0.1 m → 88.0%**, 0.2 m → 88.0% |
+| Rotor height above gear (no GE compensation) | 0.05 m → 99.0%, **0.1 m → 98.0%**, 0.2 m → 90.5% |
+
+With a slower thrust response (0.1 s) success collapses, most likely because the drone can no longer follow the deck's crest acceleration (up to 1.386 m/s²) during the deck-relative flare (not diagnosed further). A faster creep (0.07 m/s) leaves less margin to the 0.1 m/s limit.
+
+![Parameter sensitivity](./parameter_sensitivity.png)
 
 ### Noise Sensitivity
 
