@@ -1,6 +1,6 @@
 # S061 Power Line Inspection
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Frenet-Frame Line-Following + Potential Field Avoidance | **Dimension**: 3D
 
 ---
@@ -90,6 +90,11 @@ Three independent PID loops regulate the errors. Commanded accelerations:
 
 $$a_T(t) = K_p^{(T)}\bigl(v_{insp} - \dot{s}\bigr) + K_d^{(T)}\bigl(-\ddot{s}\bigr)$$
 
+> **Note (verified in the implementation)**: with the drag term below and no feed-forward, the
+> along-track loop settles at $\dot{s} = K_p^{(T)} v_{insp}/(K_p^{(T)} + c_{drag}) = 1.2/1.7 =
+> 0.706$ m/s, not 1.0 m/s. The implementation therefore also tests a drag feed-forward
+> $\mathbf{a}_{ff} = c_{drag}\, v_{insp}\, \hat{T}_i$, which restores $\dot{s} = 1.0$ m/s.
+
 $$a_N(t) = -K_p^{(N)}\, e_N - K_d^{(N)}\, \dot{e}_N - K_i^{(N)} \int e_N\, dt$$
 
 $$a_B(t) = -K_p^{(B)}\, e_B - K_d^{(B)}\, \dot{e}_B$$
@@ -129,7 +134,12 @@ $$\mathbf{a}_{cmd} = \mathbf{a}_{PID} + \mathbf{a}_{rep}$$
 
 $$\dot{\mathbf{v}}(t) = \mathbf{a}_{cmd}(t) - c_{drag}\, \mathbf{v}(t)$$
 
-$$\dot{\mathbf{p}}(t) = \mathbf{v}(t) + \boldsymbol{\eta}_{GPS}(t), \quad \boldsymbol{\eta}_{GPS} \sim \mathcal{N}(\mathbf{0},\, \sigma_{GPS}^2 \mathbf{I})$$
+$$\dot{\mathbf{p}}(t) = \mathbf{v}(t)$$
+
+GPS noise is a **measurement** error: the controller sees
+$\tilde{\mathbf{p}} = \mathbf{p} + \boldsymbol{\eta}_{GPS}$, $\boldsymbol{\eta}_{GPS} \sim \mathcal{N}(\mathbf{0},\, \sigma_{GPS}^2 \mathbf{I})$,
+drawn independently at every step. (Adding $\boldsymbol{\eta}_{GPS}$ to $\dot{\mathbf{p}}$ would
+make the true position jump 0.1 m every 0.05 s, i.e. a 2 m/s random velocity.)
 
 where $c_{drag} = 0.5\ \text{s}^{-1}$ models aerodynamic damping.
 
@@ -356,7 +366,7 @@ def run_simulation():
 
 | Parameter | Symbol | Value |
 |-----------|--------|-------|
-| Cable length | $S$ | $\approx 103$ m (polyline) |
+| Cable length | $S$ | $\approx 100.6$ m (polyline) |
 | Lateral offset from cable | $d_{lat}$ | 1.5 m |
 | Vertical offset above cable | $\Delta z$ | 0.5 m |
 | Inspection speed | $v_{insp}$ | 1.0 m/s |
@@ -395,7 +405,7 @@ def run_simulation():
 Terminal metrics printed at completion:
 
 ```
-Task time:             103.0 s
+Task time:             103.0 s   (implementation: 141.6 s without feed-forward, 100.2 s with it)
 Coverage completeness: 98.5 %
 RMS path deviation:    0.12 m
 Max |e_N|:             0.28 m
