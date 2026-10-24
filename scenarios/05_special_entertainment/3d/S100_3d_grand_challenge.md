@@ -7,11 +7,11 @@
 
 ## What Changes in 3D
 
-The original S100 already declares a $100 \times 100 \times 30$ m arena, but in practice each phase collapses altitude to a single operating band: Phase 1 evasion is restricted to the horizontal plane (perpendicular-escape velocity has `z = 0`), Phase 2 couriers fly at a fixed delivery height of $z = 5$ m, Phase 3 scout maintains a constant $z = 8$ m AGL, and Phase 4 lifts all five drones to a single star plane at $z = 50$ m. The z-axis is never used as a tactical or navigational resource.
+The original S100 already declares a $100 \times 100 \times 30$ m arena, but in practice each phase collapses altitude to a single operating band: Phase 1 catches every ball inside S094's $[0.3, 4.0]$ m altitude window with an orientation-free net in still air, Phase 2 couriers fly at a fixed delivery height of $z = 5$ m, Phase 3 scout maintains a constant $z = 8$ m AGL, and Phase 4 lifts all five drones to a single star plane at $z = 50$ m. The z-axis is never used as a tactical or navigational resource.
 
 This 3D upgrade activates the full volumetric arena across all four phases:
 
-- **Phase 1**: the rogue target executes full 3D evasion (altitude hops, helix spiral, dive-and-run), and Drone A's PNG command is computed in $\mathbb{R}^3$ with no horizontal restriction.
+- **Phase 1**: the launcher throws from a 10 m mast, the catcher may take the ball anywhere on its descending branch inside a $[0.3, 20]$ m altitude window, the net cup only accepts balls that enter through its mouth (cup axis tied to the thrust direction, as in the [S094 3D upgrade](S094_3d_ball_catching.md)), and an altitude-dependent wind drifts the ball, so the planner must choose the catch altitude, not only the catch point.
 - **Phase 2**: delivery waypoints are distributed across three altitude bands; couriers plan 3D TSP routes and must manage climb/descent energy costs separately from horizontal cruise cost.
 - **Phase 3**: the SAR belief map is extended to a $50 \times 50 \times 12$ m volumetric search volume, with the scout varying altitude to optimise the 3D sensor footprint cone against a survivor who may be sheltering at elevation (rubble pile, rooftop).
 - **Phase 4**: the star formation is assembled via a vertically stratified ascent choreography — each drone follows an altitude-stratified climb profile to avoid mid-air convergence conflicts, then locks into the $z = 50$ m show plane.
@@ -28,28 +28,25 @@ Additionally, a **heterogeneous fleet model** is introduced: each drone has dist
 
 | Drone | Role | Mass (kg) | Max thrust (N) | Battery (Wh) | Max speed (m/s) |
 |-------|------|-----------|----------------|--------------|-----------------|
-| A | Interceptor | 0.8 | 16.0 | 8.0 | 10.0 |
+| A | Catcher | 0.8 | 16.0 | 8.0 | 10.0 |
 | B | Courier 1 | 1.2 | 20.0 | 14.0 | 7.0 |
 | C | Courier 2 | 1.2 | 20.0 | 14.0 | 7.0 |
 | D | Scout | 0.9 | 14.0 | 10.0 | 6.0 |
 | E | Formation Lead | 0.8 | 16.0 | 8.0 | 8.0 |
 
 **Roles** (3D extensions):
-- **Drone A — Interceptor**: executes full 3D PNG against a rogue target that now employs altitude-varying evasion tactics (helix spiral, dive-and-run, barrel roll).
+- **Drone A — Catcher**: catches balls thrown from a 10 m launcher mast anywhere in a $[0.3, 20]$ m altitude window, with a tilt-aware cup acceptance cone and an altitude-dependent wind acting on the ball.
 - **Drones B and C — Couriers**: deliver packages to $M = 3$ waypoints distributed across three altitude bands ($z \in \{5, 12, 20\}$ m). Each must plan a 3D TSP route accounting for climb energy costs that scale with $\Delta z$ and drone mass.
 - **Drone D — Scout**: searches a $50 \times 50 \times 12$ m volumetric SAR zone. Survivors may be located at any altitude within $z \in [0, 12]$ m; the scout optimises its altitude to maximise the 3D sensor cone coverage over the highest-belief voxels.
 - **Drone E — Formation Lead**: holds a 3D figure-eight patrol orbit at $z \in [15, 20]$ m during Phases 1–3, then coordinates the altitude-stratified ascent to the $z = 60$ m star formation in Phase 4.
 
-**Rogue target (3D)**: employs one of three 3D evasion tactics, selected randomly at mission start:
-1. **Helix spiral**: $\dot{\mathbf{p}}_{target} = v_e [-\sin(\omega t),\; \cos(\omega t),\; \tan\alpha]^\top / \sec\alpha$ with $\omega = v_e \cos\alpha / R_{helix}$
-2. **Dive-and-run**: drops to $z_{min} = 2$ m in 3 s, then escapes laterally at full speed
-3. **Altitude hop**: alternates between $z_{lo} = 3$ m and $z_{hi} = 25$ m on 8 s intervals
+**Ball launcher (3D)**: the launcher sits on a mast of height $z_0 = 10$ m on an 8 m circle around the catch-zone centre $\mathbf{c}_1 = (80, 80, 0)$ m and throws up to $N_{balls} = 3$ tennis balls (quadratic drag, $k \approx 0.0202$ m⁻¹) one at a time, with speed $v_0 \sim U(10, 20)$ m/s, elevation $\theta_0 \sim U(-10°, 60°)$ and azimuth jitter $\pm 45°$ around the centre direction. Phase 1 completes at the first catch and fails when all balls are lost below $z_{min} = 0.5$ m or at $t = 60$ s.
 
 **Four-phase mission overview** (3D):
 
 | Phase | Name | Actor(s) | Key 3D Addition | Time Budget |
 |-------|------|----------|-----------------|-------------|
-| 1 | Pursuit & Intercept | Drone A | Full 3D PNG vs altitude-varying evader | 0–60 s |
+| 1 | Aerial Ball Catching | Drone A | Altitude-choosing predictive catch point, tilt-aware cup, wind on the ball | 0–60 s |
 | 2 | Logistics Delivery | Drones B, C | 3D TSP with altitude-band waypoints + climb energy model | 60–160 s |
 | 3 | Search & Rescue | Drone D | Volumetric 3D belief map + altitude-optimised sensor cone | 160–240 s |
 | 4 | Grand Formation | All 5 | Altitude-stratified ascent choreography + 3D ORCA | 240–300 s |
@@ -65,29 +62,39 @@ with phase weights $(w_1, w_2, w_3, w_4) = (2, 3, 3, 2)$ and overtime penalty $\
 
 ## Mathematical Model
 
-### Phase 1 — Full 3D Proportional Navigation Guidance
+### Phase 1 — 3D Aerial Ball Catching
 
-The LOS vector in $\mathbb{R}^3$:
+**Ball dynamics with wind** (the ball model of [S094](../S094_ball_catching.md) plus a wind
+$\mathbf{w}(z, t)$ that grows with height):
 
-$$\mathbf{r}(t) = \mathbf{p}_{target}(t) - \mathbf{p}_A(t), \qquad R = \|\mathbf{r}\|, \qquad \hat{\boldsymbol{\lambda}} = \frac{\mathbf{r}}{R}$$
+$$\dot{\mathbf{p}}_b = \mathbf{v}_b, \qquad
+\dot{\mathbf{v}}_b = \mathbf{g} - k\,\|\mathbf{v}_b - \mathbf{w}\|\,(\mathbf{v}_b - \mathbf{w}), \qquad
+\mathbf{w}(z) = \bar w_{ref} \left(\frac{z}{z_{ref}}\right)^{1/7} \hat{\mathbf{e}}_w$$
 
-The LOS angular rate in 3D (no horizontal restriction):
+with $\bar w_{ref} = 3$ m/s at $z_{ref} = 10$ m. The EKF of S100 is extended with the wind speed as
+a seventh state so that the predictor can learn the drift during the flight.
 
-$$\dot{\boldsymbol{\lambda}} = \frac{\dot{\mathbf{r}} - (\dot{\mathbf{r}} \cdot \hat{\boldsymbol{\lambda}})\hat{\boldsymbol{\lambda}}}{R}$$
+**Thrust-limited catcher**: Drone A's acceleration is limited by its thrust,
+$\|\mathbf{u} + g\hat{\mathbf{z}}\| \le T_{max,A}/m_A = 20$ m/s², so it can accelerate
+horizontally by up to $\sqrt{20^2 - g^2} = 17.4$ m/s² but upwards by only $20 - g = 10.2$ m/s².
+Its speed limit is $v_{max,A} = 10$ m/s (fleet table) and its altitude window $[0.3, 20]$ m.
 
-PNG acceleration command fully in $\mathbb{R}^3$:
+**Tilt-aware cup**: the cup axis follows the thrust direction,
+$\hat{\mathbf{n}} = (\mathbf{u} + g\hat{\mathbf{z}})/\|\mathbf{u} + g\hat{\mathbf{z}}\|$, and a catch
+requires closest approach $d \le r_c = 0.15$ m **and**
+$\angle(-\mathbf{v}_{rel}, \hat{\mathbf{n}}) \le \alpha_{cup} = 40°$, with
+$\mathbf{v}_{rel} = \mathbf{v}_b - \mathbf{v}_A$.
 
-$$\ddot{\mathbf{p}}_A^{cmd} = N \cdot V_{close} \cdot \dot{\boldsymbol{\lambda}}, \qquad V_{close} = -\dot{\mathbf{r}} \cdot \hat{\boldsymbol{\lambda}}$$
+**Altitude-choosing predictive catch point**: the candidates of S100's planner are extended from
+$\hat z_b \in [0.5, 4.0]$ m to the whole descending branch with $\hat z_b \in [0.5, 20]$ m. Among the
+reachable candidates (thrust-limited reach time plus the 0.1 s margin), the planner picks the one
+that minimises
 
-Altitude safety saturation is applied after the guidance step:
+$$J(t_j) = t_j + \beta \,\|\mathbf{u}_{arr}(t_j)\|, \qquad \beta = 0.05\ \text{s}^3/\text{m},$$
 
-$$z_A \leftarrow \text{clip}(z_A,\; z_{min,A},\; z_{max,A}) = \text{clip}(z_A,\; 1.0,\; 55.0)$$
-
-**3D Helix evasion model** (tactic 1):
-
-$$\dot{\mathbf{p}}_{target} = v_e \begin{bmatrix} -\sin(\omega t) \\ \cos(\omega t) \\ \tan\alpha \end{bmatrix} \cos\alpha, \qquad \omega = \frac{v_e \cos\alpha}{R_{helix}}$$
-
-where $\alpha = 30°$ is the helix pitch angle and $R_{helix} = 6$ m. The z-component is clipped to keep $z_{target} \in [2, 28]$ m.
+where $\mathbf{u}_{arr}$ is the acceleration the tracker still needs at arrival, so that the drone
+arrives decelerated and level enough for the cup cone. The S100 law (earliest point inside
+$[0.5, 4.0]$ m, no tilt term) is the 2D baseline on the same throws (common random numbers).
 
 ### Phase 2 — 3D TSP with Altitude-Band Energy Model
 
@@ -209,13 +216,16 @@ $$S_{mission} = \sum_{p=1}^{4} w_p \cdot s_p - \lambda_{OT} \cdot \max(0,\; t_4^
 | Fleet size | $N$ | All | 5 heterogeneous drones |
 | Drone masses | $m_A \ldots m_E$ | All | 0.8, 1.2, 1.2, 0.9, 0.8 kg |
 | Drone max speeds | $V_{max}$ | All | 10, 7, 7, 6, 8 m/s |
-| **Phase 1 — 3D Pursuit** | | | |
-| PNG nav constant | $N$ | 1 | 3 |
-| Helix radius | $R_{helix}$ | 1 | 6.0 m |
-| Helix pitch angle | $\alpha$ | 1 | 30° |
-| Dive altitude floor | $z_{min,target}$ | 1 | 2.0 m |
-| Altitude hop range | $[z_{lo}, z_{hi}]$ | 1 | [3, 25] m |
-| Capture radius | $r_{capture}$ | 1 | 1.5 m |
+| **Phase 1 — 3D Ball Catching** | | | |
+| Launcher mast height | $z_0$ | 1 | 10 m |
+| Throw speed / elevation / azimuth jitter | $v_0$, $\theta_0$, $\Delta\psi$ | 1 | U(10, 20) m/s / U(−10°, 60°) / ±45° |
+| Catcher altitude window | — | 1 | [0.3, 20] m |
+| Catcher thrust-to-mass limit | $T_{max,A}/m_A$ | 1 | 20 m/s² |
+| Cup acceptance half-angle | $\alpha_{cup}$ | 1 | 40° |
+| Wind at reference height | $\bar w_{ref}$ ($z_{ref} = 10$ m) | 1 | 3 m/s |
+| Catch-altitude cost weight | $\beta$ | 1 | 0.05 s³/m |
+| Net catch radius / lowest catchable height | $r_c$, $z_{min}$ | 1 | 0.15 m / 0.5 m |
+| Balls per phase | $N_{balls}$ | 1 | 3 |
 | **Phase 2 — 3D Logistics** | | | |
 | Waypoint altitudes | $z_{wp}$ | 2 | 5, 12, 20 m |
 | Climb penalty factor | $\gamma_{climb}$ | 2 | 2.5 |
@@ -243,12 +253,12 @@ $$S_{mission} = \sum_{p=1}^{4} w_p \cdot s_p - \lambda_{OT} \cdot \max(0,\; t_4^
 
 ## Expected Output
 
-- **3D Phase 1 plot**: full volumetric trajectory of Drone A (red) and rogue target (blue dashed) with z-variation visible; altitude vs time subplot distinguishing the three evasion tactics; LOS range vs time with capture radius line.
+- **3D Phase 1 plot**: volumetric view of the ball trajectories (blue) and Drone A's path (red) from the 10 m mast to the catch, with the catch points (green) at their chosen altitudes; histogram of catch altitudes; per-throw catch rate of the altitude-choosing planner against the S100 law (4 m window, no tilt term) on the same throws.
 - **3D Phase 2 plot**: isometric 3D view of courier routes spanning all three altitude bands; altitude-coloured waypoint markers (green = delivered, grey = missed); heterogeneous energy consumption comparison bar chart for Drones B and C.
 - **Volumetric Phase 3 visualisation**: three orthogonal cross-section slices (xy, xz, yz) of the final 3D belief map for each survivor; voxel belief rendered as a 3D scatter with alpha proportional to probability; scout altitude profile over Phase 3 time window; 3D entropy decay curve.
 - **Stratified ascent plot**: 3D trajectory of all five drones during Phase 4, colour-coded by drone; altitude vs time showing staggered climb profiles and final lock-in at $z = 60$ m; per-drone convergence error vs time with 0.20 m threshold line.
 - **Mission dashboard**: identical four-panel layout to S100 with updated arena dimensions, heterogeneous battery profiles per drone, 3D score breakdown, and volumetric entropy decay.
-- **Grand animation** (`s100_3d_grand_challenge.gif`): full-mission 3D animation at 15 fps with arena bounding box at $z \in [0, 60]$ m; Phase 4 shows staggered vertical ascent before star lock-in; rogue target trajectory animates 3D evasion tactic in Phase 1.
+- **Grand animation** (`s100_3d_grand_challenge.gif`): full-mission 3D animation at 15 fps with arena bounding box at $z \in [0, 60]$ m; Phase 4 shows staggered vertical ascent before star lock-in; the balls in flight are shown in Phase 1 together with the cup axis of Drone A.
 
 ---
 
@@ -265,6 +275,6 @@ $$S_{mission} = \sum_{p=1}^{4} w_p \cdot s_p - \lambda_{OT} \cdot \max(0,\; t_4^
 ## Related Scenarios
 
 - Original 2D version: [S100 Ultimate Grand Challenge — Multi-Domain Integration](../S100_grand_challenge.md)
-- 3D Pursuit reference: [S001 3D Upgrade — Basic Intercept](../../01_pursuit_evasion/3d/S001_3d_basic_intercept.md), [S002 3D Upgrade — Evasive Maneuver](../../01_pursuit_evasion/3d/S002_3d_evasive_maneuver.md)
+- 3D catching reference: [S094 Aerial Ball Catching](../S094_ball_catching.md), [S094 3D Upgrade — Aerial Ball Catching](S094_3d_ball_catching.md)
 - Volumetric SAR reference: [S042 Missing Person Localization](../../03_environmental_sar/S042_missing_person.md)
 - Formation reference: [S085 Drone Light Matrix Positioning](../S085_light_matrix.md), [S088 Formation Geometric Shape Morphing](../S088_formation_morphing.md)

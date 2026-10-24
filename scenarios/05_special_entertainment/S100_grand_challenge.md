@@ -1,7 +1,7 @@
 # S100 Ultimate Grand Challenge — Multi-Domain Integration
 
 **Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
-**Algorithm**: Multi-Phase Mission Sequencer (PNG + TSP + Bayesian SAR + ORCA Formation) | **Dimension**: 3D
+**Algorithm**: Multi-Phase Mission Sequencer (Predictive Catch Point + TSP + Bayesian SAR + ORCA Formation) | **Dimension**: 3D
 
 ---
 
@@ -16,9 +16,9 @@ distributed broadcast channel: each drone publishes its position, battery level,
 at 10 Hz; every other drone ingests these updates to maintain a local world model.
 
 **Roles**:
-- **Drone A — Interceptor**: participates in Phase 1 (Pursuit). Carries a narrow-field seeker
-  sensor (range $r_{seek} = 20$ m) and executes Proportional Navigation Guidance (PNG) to
-  intercept a rogue target drone.
+- **Drone A — Catcher**: participates in Phase 1 (Aerial Ball Catching). Carries a small net cup
+  on top (catch radius $r_c = 0.15$ m) and uses the **predictive catch point** law of
+  [S094](S094_ball_catching.md) to catch balls thrown by a launcher in the catch zone.
 - **Drones B and C — Couriers**: participate in Phase 2 (Logistics). Each carries a single
   package payload. They compute a joint TSP route over 3 delivery waypoints and manage their
   battery reserves to guarantee a safe return to base.
@@ -29,9 +29,11 @@ at 10 Hz; every other drone ingests these updates to maintain a local world mode
   coordinates Phase 4 (Formation). Broadcasts target star-pattern waypoints to all five drones
   once Phase 3 completes.
 
-**Rogue target drone**: a pre-programmed evasive agent that flies in the arena at $v_{evader} = 6$
-m/s using a constant-bearing evasion strategy. It is neutralised (intercepted) when Drone A closes
-to within $r_{capture} = 1.5$ m.
+**Ball launcher**: a launcher in the catch zone (north-east of the arena, centre
+$\mathbf{c}_1 = (80, 80, 0)$ m) throws tennis balls with quadratic air drag towards the zone centre,
+one at a time, up to $N_{balls} = 3$ balls. A ball is caught when it passes within $r_c = 0.15$ m of
+the net while descending and still above $z_{min} = 0.5$ m; a ball that falls below $z_{min}$ is lost
+(ground contact).
 
 **Survivors**: two stationary targets placed at unknown positions on the ground. Their prior
 probability distributions are Gaussian, centred on two seeded last-known positions with spread
@@ -41,7 +43,7 @@ $\sigma_0 = 8$ m each.
 
 | Phase | Name | Actor(s) | Algorithm | Time Budget |
 |-------|------|----------|-----------|-------------|
-| 1 | Pursuit & Intercept | Drone A | PNG (Proportional Navigation Guidance) | 0–60 s |
+| 1 | Aerial Ball Catching | Drone A | Predictive catch point (EKF + drag model, S094) | 0–60 s |
 | 2 | Logistics Delivery | Drones B, C | Nearest-neighbour TSP + battery management | 60–160 s |
 | 3 | Search & Rescue | Drone D | Bayesian belief map + greedy frontier | 160–240 s |
 | 4 | Grand Formation | All 5 drones | Hungarian assignment + ORCA repulsion | 240–300 s |
@@ -61,44 +63,69 @@ collision events and zero budget overruns.
 
 ## Mathematical Model
 
-### Phase 1 — Proportional Navigation Guidance (PNG)
+### Phase 1 — Aerial Ball Catching (Predictive Catch Point)
 
-The interceptor (Drone A) applies **pure PNG** against the rogue target. Let
-$\mathbf{r}(t) = \mathbf{p}_{target}(t) - \mathbf{p}_A(t)$ be the line-of-sight (LOS) vector
-from pursuer to evader, $R = \|\mathbf{r}\|$ the range, and
-$\hat{\boldsymbol{\lambda}} = \mathbf{r} / R$ the LOS unit vector.
+Phase 1 reuses the ball-catching model of [S094 Aerial Ball Catching](S094_ball_catching.md),
+placed in the catch zone centred at $\mathbf{c}_1 = (80, 80, 0)$ m.
 
-The **LOS rotation rate** (angular rate of the LOS vector):
+**Throws**: the launcher stands at a random point on a circle of radius $R_{throw} = 8$ m around
+$\mathbf{c}_1$ and releases the ball at $z_0 = 1.5$ m towards the centre (azimuth jitter
+$\pm 30°$), with speed $v_0 \sim U(7, 13)$ m/s and elevation $\theta_0 \sim U(35°, 60°)$.
 
-$$\dot{\boldsymbol{\lambda}} = \frac{d}{dt}\hat{\boldsymbol{\lambda}}
-  = \frac{\dot{\mathbf{r}} - (\dot{\mathbf{r}} \cdot \hat{\boldsymbol{\lambda}})\hat{\boldsymbol{\lambda}}}{R}$$
+**Ball dynamics** (tennis ball, quadratic drag):
 
-The PNG acceleration command applied to Drone A is:
+$$\dot{\mathbf{p}}_b = \mathbf{v}_b, \qquad
+\dot{\mathbf{v}}_b = \mathbf{g} - k\,\|\mathbf{v}_b\|\,\mathbf{v}_b, \qquad
+k = \frac{\rho C_d \pi r_b^2}{2 m_b} \approx 0.0202\ \text{m}^{-1}$$
 
-$$\ddot{\mathbf{p}}_A^{cmd} = N \cdot V_{close} \cdot \dot{\boldsymbol{\lambda}}$$
+with $m_b = 0.057$ kg, $r_b = 0.033$ m, $C_d = 0.55$, $\rho = 1.225$ kg/m³. Drag moves the point
+where the ball crosses $z_{min}$ by 0.4–3.7 m (S094), so the predictor must model it.
 
-where $N = 3$ is the navigation constant (dimensionless, typical value 3–5) and
-$V_{close} = -\dot{R} = -\dot{\mathbf{r}} \cdot \hat{\boldsymbol{\lambda}}$ is the closing
-speed (positive when the range is decreasing). The guidance law null-steers when
-$\dot{\boldsymbol{\lambda}} = \mathbf{0}$, i.e., when the LOS is non-rotating — the condition
-for a collision-course intercept.
+**Measurement and estimation**: motion capture reports the ball position at 100 Hz with
+Gaussian noise $\sigma_z = 0.02$ m and latency $\tau_{lat} = 20$ ms. An EKF with state
+$[\mathbf{p}_b, \mathbf{v}_b]$ and the drag model above estimates the ball state; the estimate is
+propagated over the latency before use.
 
-**Intercept condition**: mission Phase 1 is declared complete at the first timestep $t^*$ such
-that:
+**Catcher (Drone A)**: double integrator $\dot{\mathbf{p}}_A = \mathbf{v}_A$,
+$\dot{\mathbf{v}}_A = \mathbf{u}$ with $\|\mathbf{u}\| \le a_{max} = 10$ m/s²,
+$\|\mathbf{v}_A\| \le v_{max} = 8$ m/s, altitude window $0.3 \le z_A \le 4.0$ m while catching.
+Before each throw Drone A hovers at a random station within 4 m of $\mathbf{c}_1$ at $z = 2$ m;
+it reacts $t_{react} = 0.15$ s after release. The net centre is $\mathbf{p}_n = \mathbf{p}_A + [0, 0, 0.1]^\top$.
 
-$$R(t^*) = \|\mathbf{p}_{target}(t^*) - \mathbf{p}_A(t^*)\| \leq r_{capture} = 1.5 \text{ m}$$
+**Guidance law — predictive catch point (PCP)**, chosen from S094's results (93.5 ± 1.6 % of
+throws caught over 5 seeds × 300 throws, against 6.7 ± 1.3 % for proportional navigation and
+1.1 ± 0.4 % for pure pursuit). Re-planned at 20 Hz:
 
-**Time-to-go estimate** (used by the mission sequencer for budget projection):
+1. Propagate the EKF estimate with the drag model in 0.02 s steps up to 2.5 s ahead.
+2. Candidate catch times $t_j$: predicted ball descending, $\hat z_b(t_j) \in [0.5, 4.0]$ m.
+3. Pick the earliest $t_j$ the catcher can reach with margin $t_{margin} = 0.1$ s,
+   $T_{reach}(\mathbf{p}_A, \mathbf{v}_A \to \hat{\mathbf{p}}_b(t_j) - [0,0,0.1]^\top) + t_{margin} \le t_j - t$;
+   if none is reachable, take the least-late $t_j$.
+4. Fly to the chosen point so as to arrive by $t_j$.
 
-$$T_{go} = \frac{R(t)}{V_{close}(t)} \qquad \text{(first-order approximation)}$$
+**Comparison law — proportional navigation (PN)**: with $\mathbf{r} = \hat{\mathbf{p}}_b - \mathbf{p}_n$,
+$\mathbf{v}_r = \hat{\mathbf{v}}_b - \mathbf{v}_A$, $\boldsymbol{\Omega} = \mathbf{r}\times\mathbf{v}_r/\|\mathbf{r}\|^2$ and
+$V_c = -\mathbf{r}\cdot\mathbf{v}_r/\|\mathbf{r}\|$,
 
-**Evasion model**: the rogue target applies a constant-bearing evasion manoeuvre — it sets its
-velocity perpendicular to the LOS vector at each step, maintaining $v_{evader} = 6$ m/s:
+$$\mathbf{u}_{PN} = N\,V_c\,\boldsymbol{\Omega}\times\hat{\mathbf{r}}, \qquad N = 3,$$
 
-$$\dot{\mathbf{p}}_{target} = v_{evader} \cdot \hat{\mathbf{n}}_\perp(t)$$
+with a pure-pursuit fallback while $V_c \le 0$. PN treats the ball as a non-accelerating target;
+S094 found that this missing gravity term is the main reason it catches so few balls. PN runs on
+the same throws and the same measurement noise (common random numbers) only as a comparison.
 
-where $\hat{\mathbf{n}}_\perp$ is the unit vector perpendicular to $\hat{\boldsymbol{\lambda}}$
-in the horizontal plane, updated at each timestep.
+**Catch condition**: in each integration step the ball and the net move along straight
+segments; a catch is the first step whose closest approach is $d \le r_c = 0.15$ m while
+$v_{b,z} < 0$ and $z_b \ge z_{min} = 0.5$ m.
+
+**Phase 1 rules**: the launcher throws a ball only when Drone A is back on station and at least
+$T_{reload} = 5$ s after the previous ball was lost. Phase 1 is complete at the first catch. It
+fails if all $N_{balls} = 3$ balls fall below $z_{min}$ uncaught, or at $t = 60$ s. With a
+per-throw catch probability $p$ and independent throws, the Phase 1 success probability is
+
+$$P_1 = 1 - (1 - p)^{N_{balls}},$$
+
+which gives about 99.97 % for PCP ($p = 0.935$) and about 19 % for PN ($p = 0.067$). The ball is
+airborne for about 1.0–2.2 s, so Phase 1 should end well before its 60 s deadline.
 
 ### Phase 2 — Logistics: TSP + Battery Management
 
@@ -233,7 +260,7 @@ $\mathcal{S} = \{\textsc{Phase1}, \textsc{Phase2}, \textsc{Phase3}, \textsc{Phas
 **Transition logic**:
 
 $$\text{state} \leftarrow \begin{cases}
-\textsc{Phase2} & \text{if state} = \textsc{Phase1} \land (R \leq r_{capture} \lor t \geq 60) \\
+\textsc{Phase2} & \text{if state} = \textsc{Phase1} \land (\text{ball caught} \lor N_{balls} \text{ balls lost} \lor t \geq 60) \\
 \textsc{Phase3} & \text{if state} = \textsc{Phase2} \land (\text{all deliveries done} \lor t \geq 160) \\
 \textsc{Phase4} & \text{if state} = \textsc{Phase3} \land (\text{both survivors found} \lor t \geq 240) \\
 \textsc{Done}   & \text{if state} = \textsc{Phase4} \land (\varepsilon_f \leq 0.15 \lor t \geq 300)
@@ -282,12 +309,28 @@ OT_PENALTY      = 0.05          # points per second of overtime
 DT              = 0.1           # s — simulation timestep
 COMM_RANGE      = 80.0          # m — inter-drone broadcast range
 
-# Phase 1 — PNG constants
-N_PNG           = 3             # navigation constant
-V_INTERCEPTOR   = 8.0           # m/s — Drone A cruise speed
-V_EVADER        = 6.0           # m/s — rogue target speed
-R_CAPTURE       = 1.5           # m — intercept distance
-R_SEEK          = 20.0          # m — Drone A seeker range
+# Phase 1 — Aerial ball catching constants (S094 model)
+CATCH_CENTRE    = np.array([80.0, 80.0, 0.0])  # m — catch-zone centre
+R_THROW         = 8.0           # m — launcher distance from the catch-zone centre
+Z_RELEASE       = 1.5           # m — release height
+V0_RANGE        = (7.0, 13.0)   # m/s — throw speed
+EL_RANGE        = (35.0, 60.0)  # deg — throw elevation
+JITTER_DEG      = 30.0          # deg — azimuth jitter around the centre direction
+G               = 9.81          # m/s^2
+K_DRAG          = 1.225 * 0.55 * np.pi * 0.033**2 / (2 * 0.057)  # ≈ 0.0202 1/m
+V_CATCHER       = 8.0           # m/s — Drone A speed limit
+A_CATCHER       = 10.0          # m/s^2 — Drone A acceleration limit
+Z_CATCH_WIN     = (0.3, 4.0)    # m — catcher altitude window while catching
+R_CATCH         = 0.15          # m — net catch radius
+Z_MIN_BALL      = 0.5           # m — a ball below this height is lost
+T_REACT         = 0.15          # s — reaction delay after release
+F_MEAS, SIGMA_Z, T_LAT = 100.0, 0.02, 0.02   # mocap rate (Hz), noise (m), latency (s)
+REPLAN_HZ       = 20.0          # PCP re-plan rate (Hz)
+T_MARGIN        = 0.1           # s — PCP time margin
+N_BALLS         = 3             # maximum number of throws
+T_RELOAD        = 5.0           # s — minimum time from a lost ball to the next throw
+DT_CATCH        = 0.002         # s — Phase 1 sub-step (ball flight lasts 1.0–2.2 s)
+PN_N            = 3             # PN constant (comparison law only)
 
 # Phase 2 — Logistics constants
 V_COURIER       = 5.0           # m/s
@@ -374,6 +417,28 @@ def orca_repulsion(positions, i):
     return F
 
 
+def plan_catch_point(x_est, p_d, v_d, horizon=2.5, h=0.02):
+    """S094 predictive catch point: propagate the EKF ball estimate with the drag model and
+    return (drone target, time-to-go) for the earliest descending point with z in
+    [0.5, 4.0] m that the catcher can reach with a T_MARGIN margin; if none is reachable,
+    return the least-late candidate."""
+    x, t = x_est.copy(), 0.0
+    best, best_late = None, np.inf
+    while t < horizon:
+        x = rk4_ball(x, h)          # ball ODE with quadratic drag
+        t += h
+        if x[5] < 0 and x[2] < Z_MIN_BALL:
+            break                   # predicted ball lost
+        if x[5] < 0 and Z_MIN_BALL <= x[2] <= Z_CATCH_WIN[1]:
+            q = x[:3] - np.array([0.0, 0.0, 0.1])     # net sits 0.1 m above the drone
+            late = reach_time(p_d, v_d, q) + T_MARGIN - t
+            if late <= 0:
+                return q, t         # earliest reachable candidate
+            if late < best_late:
+                best, best_late = (q, t), late
+    return best if best is not None else (p_d.copy(), horizon)
+
+
 # ── SAR belief map helpers ────────────────────────────────────────────────────
 
 def build_sar_grid():
@@ -419,7 +484,7 @@ def run_mission(seed=42):
 
     # ── Drone initial positions ────────────────────────────────────────────────
     pos = np.array([
-        [50.0, 90.0,  2.0],   # Drone A — interceptor
+        [50.0, 90.0,  2.0],   # Drone A — catcher
         [45.0, 92.0,  2.0],   # Drone B — courier 1
         [55.0, 92.0,  2.0],   # Drone C — courier 2
         [50.0, 88.0,  2.0],   # Drone D — scout
@@ -427,8 +492,11 @@ def run_mission(seed=42):
     ])
     vel = np.zeros((5, 3))
 
-    # Rogue target starts at arena corner, flies perpendicular to LOS
-    target_pos = np.array([10.0, 10.0, 10.0])
+    # Phase 1 state: launcher idle, Drone A flies to its first catch station
+    ball, balls_lost, balls_caught = None, 0, 0
+    station = next_station(rng)        # random hover point within 4 m of CATCH_CENTRE, z = 2 m
+    t_next_throw, t_sub = 0.0, 0.0
+    target, t_go = station.copy(), np.inf
 
     # True survivor positions (drawn from prior)
     survivors_true = np.array([
@@ -476,7 +544,7 @@ def run_mission(seed=42):
     # ── Logging ───────────────────────────────────────────────────────────────
     t_log           = []
     pos_log         = []
-    target_log      = []
+    ball_log        = []    # Phase 1 ball position (NaN while no ball is in flight)
     energy_log      = []
     sar_entropy_log = []
     phase_log       = []
@@ -492,48 +560,41 @@ def run_mission(seed=42):
     t = 0.0
     while t <= T_TOTAL + 30.0 and state != Phase.DONE:
 
-        # ── Phase 1: PNG intercept ─────────────────────────────────────────────
+        # ── Phase 1: aerial ball catching (predictive catch point) ─────────────
         if state == Phase.PHASE1:
-            r_vec = target_pos - pos[0]
-            R_range = np.linalg.norm(r_vec)
-
-            if R_range <= R_CAPTURE:
+            # one 0.1 s mission step = 50 sub-steps of 2 ms (the ball flies fast)
+            for _ in range(int(round(DT / DT_CATCH))):
+                if ball is None:                         # launcher waiting
+                    if on_station(pos[0], vel[0], station) and t_sub >= t_next_throw:
+                        ball = launch_ball(rng)          # true state, EKF, mocap noise
+                    else:
+                        pos[0], vel[0] = goto(pos[0], vel[0], station,
+                                              V_CATCHER, A_CATCHER, DT_CATCH)
+                else:
+                    ball.step(DT_CATCH)                  # RK4, quadratic drag
+                    x_est = ball.ekf(DT_CATCH)           # 100 Hz, 20 ms latency
+                    if ball.t >= T_REACT and ball.replan_due(REPLAN_HZ):
+                        target, t_go = plan_catch_point(x_est, pos[0], vel[0])
+                        t_go += ball.t
+                    p_old = pos[0].copy()
+                    pos[0], vel[0] = track(pos[0], vel[0], target, t_go - ball.t,
+                                           V_CATCHER, A_CATCHER, Z_CATCH_WIN, DT_CATCH)
+                    if ball.caught_by(p_old, pos[0], R_CATCH, Z_MIN_BALL):
+                        balls_caught += 1                # segment closest approach
+                        ball = None
+                    elif ball.lost(Z_MIN_BALL):          # ground contact
+                        balls_lost += 1
+                        ball, t_next_throw = None, t_sub + T_RELOAD
+                        station = next_station(rng)
+                energy[0] -= C_FLY * np.linalg.norm(vel[0]) * DT_CATCH
+                t_sub += DT_CATCH
+            if balls_caught > 0:
                 phase_complete[1] = True
                 phase_end_t[1] = t
                 state = Phase.PHASE2
-            elif t >= T_PHASE[1]:
+            elif balls_lost >= N_BALLS or t >= T_PHASE[1]:
                 phase_end_t[1] = t
                 state = Phase.PHASE2
-            else:
-                if R_range > 1e-3:
-                    lam_hat = r_vec / R_range
-                    rdot = (vel[0] - np.zeros(3))  # evader vel subtracted below
-                    rdot_scalar = np.dot(rdot, lam_hat)
-                    v_close = -rdot_scalar
-                    lam_dot = (rdot - rdot_scalar * lam_hat) / R_range
-                    acc_cmd = N_PNG * max(v_close, 0.5) * lam_dot
-                    vel[0] = lam_hat * V_INTERCEPTOR + acc_cmd * DT
-                    spd = np.linalg.norm(vel[0])
-                    if spd > V_INTERCEPTOR:
-                        vel[0] = vel[0] / spd * V_INTERCEPTOR
-                pos[0] += vel[0] * DT
-                pos[0] = np.clip(pos[0],
-                                 [0, 0, 1],
-                                 [ARENA_X, ARENA_Y, ARENA_Z])
-                energy[0] -= C_FLY * np.linalg.norm(vel[0]) * DT
-
-                # Evasion: fly perpendicular to LOS
-                r_vec_new = target_pos - pos[0]
-                R_new = np.linalg.norm(r_vec_new)
-                if R_new > 1e-3:
-                    lam_hat_new = r_vec_new / R_new
-                    perp = np.array([-lam_hat_new[1], lam_hat_new[0], 0.0])
-                    if np.linalg.norm(perp) > 1e-3:
-                        perp = perp / np.linalg.norm(perp)
-                    target_pos += perp * V_EVADER * DT
-                    target_pos = np.clip(target_pos,
-                                         [5, 5, 5],
-                                         [ARENA_X - 5, ARENA_Y - 5, 20])
 
         # ── Phase 2: Logistics delivery ────────────────────────────────────────
         if state == Phase.PHASE2:
@@ -671,7 +732,7 @@ def run_mission(seed=42):
 
         t_log.append(t)
         pos_log.append(pos.copy())
-        target_log.append(target_pos.copy())
+        ball_log.append(ball.p.copy() if ball is not None else np.full(3, np.nan))
         energy_log.append(energy.copy())
         sar_entropy_log.append(entropy_sar)
         phase_log.append(state)
@@ -686,7 +747,7 @@ def run_mission(seed=42):
     return {
         "t_log":            np.array(t_log),
         "pos_log":          np.array(pos_log),       # (steps, 5, 3)
-        "target_log":       np.array(target_log),    # (steps, 3)
+        "ball_log":         np.array(ball_log),      # (steps, 3), NaN without a ball
         "energy_log":       np.array(energy_log),    # (steps, 5)
         "sar_entropy_log":  np.array(sar_entropy_log),
         "phase_log":        phase_log,
@@ -705,36 +766,38 @@ def run_mission(seed=42):
 # ── Plotting ──────────────────────────────────────────────────────────────────
 
 def plot_phase1(res):
-    """3D trajectory of interceptor and rogue target; LOS distance vs time."""
+    """3D view of the catch zone (catcher red, balls blue, catch green) and the
+    ball-to-net distance vs time."""
     fig = plt.figure(figsize=(14, 5))
     ax1 = fig.add_subplot(121, projection='3d')
     pos_log    = res["pos_log"]
-    tgt_log    = res["target_log"]
+    ball_log   = res["ball_log"]
     t_log      = res["t_log"]
     t_end_idx  = next((i for i, ph in enumerate(res["phase_log"])
                        if ph != Phase.PHASE1), len(t_log))
 
     ax1.plot(pos_log[:t_end_idx, 0, 0], pos_log[:t_end_idx, 0, 1],
-             pos_log[:t_end_idx, 0, 2], 'r-', lw=1.5, label='Interceptor (A)')
-    ax1.plot(tgt_log[:t_end_idx, 0], tgt_log[:t_end_idx, 1],
-             tgt_log[:t_end_idx, 2], 'b--', lw=1.5, label='Rogue target')
+             pos_log[:t_end_idx, 0, 2], 'r-', lw=1.5, label='Catcher (A)')
+    ax1.plot(ball_log[:t_end_idx, 0], ball_log[:t_end_idx, 1],
+             ball_log[:t_end_idx, 2], 'b.', ms=2, label='Ball(s)')
     ax1.scatter(*pos_log[0, 0], s=60, c='red', marker='o')
-    ax1.scatter(*tgt_log[0], s=60, c='blue', marker='s')
-    ax1.scatter(*pos_log[t_end_idx - 1, 0], s=80, c='red', marker='^')
+    if res["phase_complete"][1]:
+        ax1.scatter(*pos_log[t_end_idx - 1, 0], s=120, c='green', marker='*',
+                    label='Catch')
     ax1.set_xlabel('x (m)'); ax1.set_ylabel('y (m)'); ax1.set_zlabel('z (m)')
-    ax1.set_title('Phase 1 — PNG Intercept Trajectory')
+    ax1.set_title('Phase 1 — Catch Zone')
     ax1.legend(fontsize=8)
 
     ax2 = fig.add_subplot(122)
-    ranges = np.linalg.norm(
-        pos_log[:t_end_idx, 0] - tgt_log[:t_end_idx], axis=1)
-    ax2.plot(t_log[:t_end_idx], ranges, 'k-', lw=1.5)
-    ax2.axhline(R_CAPTURE, color='red', ls='--', label=f'Capture radius {R_CAPTURE} m')
-    ax2.set_xlabel('Time (s)'); ax2.set_ylabel('LOS range (m)')
-    ax2.set_title('Phase 1 — LOS Range vs Time')
+    net = pos_log[:t_end_idx, 0] + np.array([0.0, 0.0, 0.1])
+    dist = np.linalg.norm(ball_log[:t_end_idx] - net, axis=1)   # NaN without a ball
+    ax2.plot(t_log[:t_end_idx], dist, 'k-', lw=1.5)
+    ax2.axhline(R_CATCH, color='red', ls='--', label=f'Catch radius {R_CATCH} m')
+    ax2.set_xlabel('Time (s)'); ax2.set_ylabel('Ball–net distance (m)')
+    ax2.set_title('Phase 1 — Ball–Net Distance vs Time')
     ax2.legend(); ax2.grid(True, ls='--', alpha=0.4)
 
-    plt.suptitle('S100 Phase 1: Proportional Navigation Guidance Intercept',
+    plt.suptitle('S100 Phase 1: Aerial Ball Catching (Predictive Catch Point)',
                  fontweight='bold')
     plt.tight_layout()
     return fig
@@ -873,7 +936,7 @@ def plot_mission_dashboard(res):
 
     # ── Top-left: phase timeline (Gantt) ──────────────────────────────────────
     ax = axes[0, 0]
-    phase_names  = ['Phase 1\nPursuit', 'Phase 2\nLogistics',
+    phase_names  = ['Phase 1\nCatching', 'Phase 2\nLogistics',
                     'Phase 3\nSAR', 'Phase 4\nFormation']
     phase_starts = [T_PHASE[0], T_PHASE[1], T_PHASE[2], T_PHASE[3]]
     phase_budgets= [T_PHASE[1] - T_PHASE[0],
@@ -914,7 +977,7 @@ def plot_mission_dashboard(res):
     ax3 = axes[1, 0]
     scores_per_phase = [PHASE_WEIGHTS[p - 1] * res["phase_complete"].get(p, 0)
                         for p in range(1, 5)]
-    phase_labels = ['P1 Pursuit\n(w=2)', 'P2 Logistics\n(w=3)',
+    phase_labels = ['P1 Catching\n(w=2)', 'P2 Logistics\n(w=3)',
                     'P3 SAR\n(w=3)', 'P4 Formation\n(w=2)']
     bar_c = ['green' if s > 0 else 'lightgray' for s in scores_per_phase]
     ax3.bar(phase_labels, scores_per_phase, color=bar_c, edgecolor='black')
@@ -946,10 +1009,10 @@ def plot_mission_dashboard(res):
 def make_grand_animation(res, filename, fps=15, stride=5):
     """
     Grand 3D animation showing all 5 drones across the full mission timeline.
-    Rogue target shown in blue during Phase 1. Phase label annotated per frame.
+    Ball shown in blue while in flight during Phase 1. Phase label annotated per frame.
     """
     pos_log  = res["pos_log"]
-    tgt_log  = res["target_log"]
+    ball_log = res["ball_log"]
     t_log    = res["t_log"]
     phase_log= res["phase_log"]
     n_frames = len(range(0, len(t_log), stride))
@@ -961,7 +1024,7 @@ def make_grand_animation(res, filename, fps=15, stride=5):
 
     drone_lines  = [ax.plot([], [], [], 'o', ms=7, color=c)[0]
                     for c in colours]
-    target_dot,  = ax.plot([], [], [], 'bs', ms=8)
+    ball_dot,    = ax.plot([], [], [], 'bo', ms=5)
     star_scatter = ax.scatter([], [], [], s=100, c='lime', marker='*')
 
     # Star targets
@@ -981,7 +1044,7 @@ def make_grand_animation(res, filename, fps=15, stride=5):
         f   = frame_idx * stride
         f   = min(f, len(t_log) - 1)
         pos = pos_log[f]
-        tgt = tgt_log[f]
+        ball = ball_log[f]
         ph  = phase_log[f]
         t   = t_log[f]
 
@@ -989,12 +1052,12 @@ def make_grand_animation(res, filename, fps=15, stride=5):
             ln.set_data([pos[k, 0]], [pos[k, 1]])
             ln.set_3d_properties([pos[k, 2]])
 
-        if ph == Phase.PHASE1:
-            target_dot.set_data([tgt[0]], [tgt[1]])
-            target_dot.set_3d_properties([tgt[2]])
+        if ph == Phase.PHASE1 and np.all(np.isfinite(ball)):
+            ball_dot.set_data([ball[0]], [ball[1]])
+            ball_dot.set_3d_properties([ball[2]])
         else:
-            target_dot.set_data([], [])
-            target_dot.set_3d_properties([])
+            ball_dot.set_data([], [])
+            ball_dot.set_3d_properties([])
 
         if ph == Phase.PHASE4:
             star_scatter._offsets3d = (star_tgt[:, 0],
@@ -1002,7 +1065,7 @@ def make_grand_animation(res, filename, fps=15, stride=5):
                                        star_tgt[:, 2])
         time_text.set_text(f't = {t:.1f} s')
         phase_text.set_text(str(ph.name))
-        return drone_lines + [target_dot, time_text, phase_text]
+        return drone_lines + [ball_dot, time_text, phase_text]
 
     ani = animation.FuncAnimation(
         fig, update, frames=n_frames,
@@ -1034,7 +1097,7 @@ if __name__ == "__main__":
     print("===========================\n")
 
     fig1 = plot_phase1(res)
-    fig1.savefig(f"{out_dir}/s100_phase1_pursuit.png", dpi=150,
+    fig1.savefig(f"{out_dir}/s100_phase1_catching.png", dpi=150,
                  bbox_inches="tight")
     plt.close(fig1)
 
@@ -1073,12 +1136,21 @@ if __name__ == "__main__":
 | Simulation timestep | $\Delta t$ | All | 0.1 s |
 | Communication range | $r_{comm}$ | All | 80 m |
 | Number of drones | $N$ | All | 5 |
-| **Phase 1 — Pursuit** | | | |
-| PNG navigation constant | $N$ | 1 | 3 |
-| Interceptor cruise speed | $V_A$ | 1 | 8.0 m/s |
-| Evader speed | $V_{evader}$ | 1 | 6.0 m/s |
-| Capture radius | $r_{capture}$ | 1 | 1.5 m |
-| Seeker sensor range | $r_{seek}$ | 1 | 20.0 m |
+| **Phase 1 — Aerial Ball Catching** | | | |
+| Catch-zone centre | $\mathbf{c}_1$ | 1 | (80, 80, 0) m |
+| Launcher radius / release height | $R_{throw}$, $z_0$ | 1 | 8 m / 1.5 m |
+| Throw speed / elevation / azimuth jitter | $v_0$, $\theta_0$, $\Delta\psi$ | 1 | U(7, 13) m/s / U(35°, 60°) / ±30° |
+| Ball mass / radius / drag coefficient | $m_b$, $r_b$, $C_d$ | 1 | 0.057 kg / 0.033 m / 0.55 |
+| Drag constant | $k$ | 1 | 0.0202 m⁻¹ |
+| Catcher speed / acceleration limit | $v_{max}$, $a_{max}$ | 1 | 8 m/s / 10 m/s² |
+| Catcher altitude window (catching) | — | 1 | [0.3, 4.0] m |
+| Net catch radius / lowest catchable height | $r_c$, $z_{min}$ | 1 | 0.15 m / 0.5 m |
+| Reaction delay | $t_{react}$ | 1 | 0.15 s |
+| Mocap rate / noise / latency | $f_z$, $\sigma_z$, $\tau_{lat}$ | 1 | 100 Hz / 0.02 m / 0.02 s |
+| PCP re-plan rate / time margin | — | 1 | 20 Hz / 0.1 s |
+| PN constant (comparison only) | $N$ | 1 | 3 |
+| Balls per phase / reload time | $N_{balls}$, $T_{reload}$ | 1 | 3 / 5 s |
+| Phase 1 sub-step | $\Delta t_1$ | 1 | 0.002 s |
 | Phase 1 time budget | $T_1$ | 1 | 60 s |
 | **Phase 2 — Logistics** | | | |
 | Courier cruise speed | $V_{B,C}$ | 2 | 5.0 m/s |
@@ -1118,12 +1190,12 @@ if __name__ == "__main__":
 
 ## Expected Output
 
-- **Phase 1 figure** (`s100_phase1_pursuit.png`): two-panel figure. Left: 3D trajectory plot
-  of Drone A (red) and the rogue target (blue dashed) from mission start until intercept or Phase 1
-  timeout; start positions marked as spheres, capture event marked as a red star; arena boundary
-  box drawn in grey. Right: LOS range $R(t)$ vs time in seconds; capture radius $r_{capture} =
-  1.5$ m shown as a red dashed horizontal line; the moment of intercept (if achieved) annotated
-  with a vertical marker and timestamp.
+- **Phase 1 figure** (`s100_phase1_catching.png`): two-panel figure. Left: 3D view of the catch
+  zone with Drone A's path (red), the ball trajectories (blue) and the catch point (green star);
+  arena boundary box drawn in grey. Right: ball-to-net distance vs time for each throw; catch radius
+  $r_c = 0.15$ m shown as a red dashed horizontal line; the catch (if achieved) annotated with a
+  vertical marker and timestamp. A companion panel compares the per-throw catch rate of the
+  predictive catch point and PN on the same throws.
 
 - **Phase 2 figure** (`s100_phase2_logistics.png`): two-panel figure. Left: top-down ($x$–$y$)
   view of courier routes for Drones B (orange) and C (purple); three delivery waypoints shown as
@@ -1157,8 +1229,8 @@ if __name__ == "__main__":
   timeline.
 
 - **Grand animation** (`s100_grand_challenge.gif`): full-mission 3D animation at 15 fps, showing
-  all five drones as coloured spheres moving through the arena. During Phase 1 the rogue target is
-  shown as a blue square; during Phase 4 the star target vertices are shown as lime green stars.
+  all five drones as coloured spheres moving through the arena. During Phase 1 the ball in flight is
+  shown as a blue dot; during Phase 4 the star target vertices are shown as lime green stars.
   Current mission time and active phase state label are annotated per frame. Duration covers 0–300 s
   (or until mission completion), with stride 5 (every 0.5 s rendered).
 
@@ -1172,11 +1244,10 @@ if __name__ == "__main__":
 
 ## Extensions
 
-1. **Adversarial evader with learned policy**: replace the constant-bearing evasion strategy in
-   Phase 1 with a reinforcement-learning agent trained via self-play (MADDPG or PPO); measure the
-   intercept success rate of the PNG pursuer against increasingly capable evaders as a function of
-   the speed ratio $V_A / V_{evader}$, and derive an empirical capture boundary in speed-ratio vs
-   arena-size space.
+1. **Two catchers and moving launchers**: add a second catcher and let the launcher throw from a
+   moving vehicle; assign each ball to the catcher with the earliest feasible catch time and hand
+   over when the prediction changes, and measure the per-throw catch rate and the Phase 1
+   completion time as functions of the throw rate.
 
 2. **Online re-planning under drone failure**: introduce a random hardware failure event (battery
    depletion or motor fault) for one drone between Phase 1 and Phase 3; the mission sequencer must
@@ -1187,8 +1258,8 @@ if __name__ == "__main__":
 
 3. **Full 3D physics with wind and turbulence**: replace the point-mass kinematics in all four
    phases with a 6-DOF quadrotor model (inertia tensor, rotor thrust limits, aerodynamic drag)
-   driven by a Dryden turbulence model at each altitude band; tune phase-specific controllers (PNG
-   in Phase 1, PID in Phase 4) to reject wind disturbances, and measure score degradation as a
+   driven by a Dryden turbulence model at each altitude band; tune phase-specific controllers (the catch
+   tracker in Phase 1, PID in Phase 4) to reject wind disturbances, and measure score degradation as a
    function of wind speed $\|w\| \in \{0, 3, 6, 10\}$ m/s — establishing the operational wind
    envelope for a perfect-score ($S = 10$) mission.
 
@@ -1196,9 +1267,10 @@ if __name__ == "__main__":
 
 ## Related Scenarios
 
-- **Domain 1 — Pursuit**: [S001 Basic Intercept](../01_pursuit_evasion/S001_basic_intercept.md)
-  (PNG foundations), [S002 Evasive Maneuver](../01_pursuit_evasion/S002_evasive_maneuver.md)
-  (constant-bearing evasion model)
+- **Phase 1 — Ball catching**: [S094 Aerial Ball Catching](S094_ball_catching.md)
+  (ball model, EKF, predictive catch point and the PN comparison);
+  [S008 Stochastic Pursuit — Kalman Filter Tracking](../01_pursuit_evasion/S008_stochastic_pursuit.md)
+  (Domain 1 — Kalman-filter state estimation of a moving object)
 - **Domain 2 — Logistics**: [S021 Point Delivery](../02_logistics_delivery/S021_point_delivery.md)
   (waypoint-following fundamentals), [S068 Large-Scale Farmland Cooperative Spraying](../04_industrial_agriculture/S068_large_field_spray.md)
   (multi-agent coverage with battery management)
