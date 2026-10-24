@@ -154,7 +154,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-5"></a>
-<details open><summary><b>5 · Special Ops & Entertainment</b> — 0/20 done</summary>
+<details open><summary><b>5 · Special Ops & Entertainment</b> — 1/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -171,7 +171,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S091 | Aerial Acrobatic Maneuvers *(planned)* | [card](scenarios/05_special_entertainment/S091_acrobatics.md) |  |
 | S092 | Movie Car Chase Scene *(planned)* | [card](scenarios/05_special_entertainment/S092_movie_chase.md) |  |
 | S093 | Earthquake Rubble Search and Rescue *(planned)* | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
-| S094 | Aerial Ball Catching *(planned)* | [card](scenarios/05_special_entertainment/S094_ball_catching.md) |  |
+| S094 | [Aerial Ball Catching](outputs/05_special_entertainment/s094_ball_catching/README.md) | [card](scenarios/05_special_entertainment/S094_ball_catching.md) |  |
 | S095 | Water Surface Landing Simulation *(planned)* | [card](scenarios/05_special_entertainment/S095_water_landing.md) |  |
 | S096 | Drone Relay Race *(planned)* | [card](scenarios/05_special_entertainment/S096_relay_race.md) |  |
 | S097 | Aerial Puzzle Assembly *(planned)* | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) |  |
@@ -241,8 +241,8 @@ drones/
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 11 | 20 |
 | Industrial & Agriculture | 5 | 20 |
-| Special Ops & Entertainment | 0 | 20 |
-| **Total** | **56** | **100** |
+| Special Ops & Entertainment | 1 | 20 |
+| **Total** | **57** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 

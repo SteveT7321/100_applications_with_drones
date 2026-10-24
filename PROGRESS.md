@@ -130,7 +130,7 @@
 
 ---
 
-## Domain 5: Special Ops & Entertainment — 0/20
+## Domain 5: Special Ops & Entertainment — 1/20
 
 - [ ] **S081** Selfie Follow Mode
 - [ ] **S082** FPV Racing
@@ -145,7 +145,7 @@
 - [ ] **S091** Acrobatic Maneuvers
 - [ ] **S092** Movie Chase Scene
 - [ ] **S093** Rubble Search and Rescue
-- [ ] **S094** Aerial Ball Catching
+- [x] **S094** Aerial Ball Catching
 - [ ] **S095** Water Surface Takeoff/Landing
 - [ ] **S096** Drone Relay Race
 - [ ] **S097** Aerial Puzzle Assembly
@@ -163,5 +163,5 @@
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 11 | 20 |
 | Industrial & Agriculture | 5 | 20 |
-| Special Ops & Entertainment | 0 | 20 |
-| **Total** | **56** | **100** |
+| Special Ops & Entertainment | 1 | 20 |
+| **Total** | **57** | **100** |
