@@ -1,19 +1,19 @@
 # S094 Aerial Ball Catching
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Kalman Ballistic Prediction + Time-Feasible Catch-Point Planning vs Pure Pursuit / Proportional Navigation | **Dimension**: 3D
 
 ---
 
 ## Problem Definition
 
-**Setup**: A $20 \times 20 \times 6$ m indoor flying arena (the kind used for public drone demos,
+**Setup**: A $20 \times 20 \times 8$ m indoor flying arena (the kind used for public drone demos,
 e.g. ETH Zürich's Flying Machine Arena) hosts a crowd-pleasing act: a person on the arena edge
 throws a tennis ball into the air and a drone carrying a small net cup on top must catch it
 before it falls below $z_{min} = 0.5$ m. The ball follows a ballistic trajectory with quadratic
 air drag. A motion-capture system reports the ball position at 100 Hz with Gaussian noise and a
 small latency; the drone must estimate the ball's state and decide where to go while the ball is
-still in flight (total flight time ≈ 1.1–2.1 s, so there is no time to wait for a perfect
+still in flight (total flight time to $z_{min}$ ≈ 1.0–2.2 s, so there is no time to wait for a perfect
 estimate).
 
 Each throw is randomised: the thrower stands at a random point on a circle of radius 8 m around
@@ -51,8 +51,8 @@ $$\dot{\mathbf{p}}_b = \mathbf{v}_b, \qquad
 k = \frac{\rho \, C_d \, \pi r_b^2}{2 m_b}$$
 
 With $\rho = 1.225$ kg/m³ this gives $k \approx 0.0202$ m⁻¹ and a terminal speed
-$v_{term} = \sqrt{g/k} \approx 22$ m/s, so drag changes the landing point by tens of
-centimetres — larger than the catch radius — and cannot be ignored by the predictor.
+$v_{term} = \sqrt{g/k} \approx 22$ m/s, so drag changes the landing point (at $z_{min}$) by 0.4–3.7 m (mean 1.6 m over the
+300 throws of seed 0) — far larger than the catch radius — and cannot be ignored by the predictor.
 
 ### Measurement Model
 
@@ -145,7 +145,7 @@ $\eta = N_{catch} / N_{reachable}$.
 
 ```python
 # ── Parameters ────────────────────────────────────────────────────────────────
-ARENA      = (20.0, 20.0, 6.0)   # m
+ARENA      = (20.0, 20.0, 8.0)   # m  (fastest, steepest throw peaks at 7.1 m)
 G          = 9.81
 RHO, CD    = 1.225, 0.55
 M_BALL, R_BALL = 0.057, 0.033
@@ -191,7 +191,7 @@ def run_monte_carlo(seed=0):
 
 | Parameter | Symbol | Value |
 |-----------|--------|-------|
-| Arena size | — | $20 \times 20 \times 6$ m |
+| Arena size | — | $20 \times 20 \times 8$ m |
 | Thrower distance from centre | $R_{throw}$ | 8 m |
 | Release height | $z_0$ | 1.5 m |
 | Throw speed | $v_0$ | U(7, 13) m/s |
