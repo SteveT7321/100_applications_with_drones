@@ -1,6 +1,6 @@
 # S074 Mine 3D Mapping
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: ICP Scan-Matching + Occupancy Grid + Frontier Exploration | **Dimension**: 3D
 
 ---
@@ -8,7 +8,8 @@
 ## Problem Definition
 
 **Setup**: A single drone is deployed at the entrance of an underground mine tunnel network to
-produce a complete 3D occupancy map. The network spans a total tunnel length of $150$ m, organised
+produce a complete 3D occupancy map. The network spans a total tunnel length of $175$ m (centrelines of the branches defined in
+the code below; earlier versions of this card said 150 m), organised
 as a main corridor with three branches; each tunnel has a square cross-section of $3 \times 3$ m.
 No GPS signal penetrates underground, so all localisation must be derived from the drone's onboard
 sensors alone. The drone carries a simulated 2D LiDAR scanner (360°, maximum range $r_{lidar} = 10$
@@ -201,7 +202,7 @@ from collections import deque
 
 # ── Domain constants ──────────────────────────────────────────────────────────
 TUNNEL_HALF_WIDTH = 1.5      # m — half cross-section (3×3 m tunnel)
-TOTAL_LENGTH      = 150.0    # m — total tunnel network arc-length
+TOTAL_LENGTH      = 175.0    # m — total centreline length of the branches below
 GPS_ERROR         = 0.1      # m — completely denied underground (nominal)
 
 # ── LiDAR parameters ──────────────────────────────────────────────────────────
@@ -664,7 +665,7 @@ if __name__ == '__main__':
 
 | Parameter | Symbol | Value |
 |-----------|--------|-------|
-| Tunnel total length | $L_{total}$ | 150 m |
+| Tunnel total length | $L_{total}$ | 175 m (80 + 35 + 35 + 25) |
 | Tunnel cross-section | $w \times w$ | 3 × 3 m |
 | Number of branches | — | 3 (+ main corridor) |
 | LiDAR beams | $N_{beams}$ | 180 |
