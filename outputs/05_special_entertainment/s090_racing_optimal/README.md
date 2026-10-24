@@ -47,7 +47,7 @@ The reference $(\mathbf{p}, \mathbf{v}, \mathbf{a}, \mathbf{j})$ comes analytica
 - **Tracking error**: RMS and maximum.
 - **Shaft energy**: $\int k_m\sum\omega_i^3\,dt$.
 - **Rotor activity**: the RMS of $d\omega_i/dt$ (rad/s²), a wear proxy.
-- **Snap as a predictor**: the Spearman rank correlation of $J$ with mean shaft power, rotor activity and tracking error over all robustness flights.
+- **Snap as a predictor**: the Spearman rank correlation of $J$ with mean shaft power, rotor activity and tracking error, computed both pooled over all 40 robustness flights and within each allocation group (20 layouts each). The two groups differ in $J$ by about 17×, so a pure group split already produces a large pooled correlation. Its baseline (effort ranked by group only, random within groups, 2000 permutations) is printed.
 
 ---
 
@@ -64,7 +64,7 @@ The reference $(\mathbf{p}, \mathbf{v}, \mathbf{a}, \mathbf{j})$ comes analytica
 | $T_{min}$ / η / iterations / λ | 0.2 s / 10⁻³ / 200 / 0.5 (card) |
 | Line search | trust region 20 % per segment, Armijo constant 10⁻⁴ |
 | Gradient | central differences, ε = 10⁻⁶ s |
-| Rigid body | `fpv_5inch` (0.6 kg, T/W 6.12 as printed by `src/base/test_rigid_body_drone.py`, motor time constant 15 ms), tilt limit 89°, rate limit 15 rad/s, 500 Hz |
+| Rigid body | `fpv_5inch` (0.6 kg, T/W 6.12, motor time constant 15 ms), tilt limit 89°, rate-setpoint clip 15 rad/s, 500 Hz |
 | Plane-crossing search radius | 1 m |
 | Robustness | 20 layouts, gates jittered by U(−0.5, 0.5) m per axis (gate height ≥ 0.8 m), seeds 0–19 |
 
@@ -82,7 +82,7 @@ conda activate drones
 python src/05_special_entertainment/s090_racing_optimal.py
 ```
 
-Runtime ≈ 140–200 s (measured while about 10 other simulations shared the 12-thread machine).
+Runtime ≈ 260–400 s with about 10 other simulations sharing the 12-thread machine (measured 262–354 s here, 321–399 s by the reviewer); below the 8 min risk mark.
 
 ---
 
@@ -96,7 +96,7 @@ Runtime ≈ 140–200 s (measured while about 10 other simulations shared the 12
 | Exact $\partial J/\partial T_i$ | −1298026.7 | −133030.7 | −15318.4 | −4046.5 | −6186.1 | −2893.4 |
 | Card's "dominant" term | 461014.7 | 16448.8 | 2461.5 | 1210.9 | 315.6 | −0.0 |
 
-The card's term has the wrong sign on every segment. With the card's step η = 10⁻³ the first projected step would change a segment by 1054.776 s.
+The card's term has the opposite sign to the exact gradient on 5 of 6 segments. On segment 6 it is about 0 (−8.4·10⁻¹¹), because the snap vanishes at the free end of the trajectory. With the card's step η = 10⁻³ the first projected step would change a segment by 1054.776 s.
 
 **Plans and rigid-body flights (main course):**
 
@@ -128,15 +128,23 @@ The redistribution needed 1270 backtracking halvings over its 200 iterations. Th
 | **Redistributed** | **0.059 ± 0.011** (lower on 20/20) | 10.00 s | 6.00/6 (all 20) | 1.2 / 4.1 cm | **0.803 ± 0.021** (lower on 20/20) | 723 rad/s² |
 | J + λT | 0.0001 ± 0.0000 | 46.1 ± 0.1 s | planned only | — | — | — |
 
-Spearman rank correlation of $J$ over the 40 robustness flights: **+0.80** with mean shaft power, **+0.94** with rotor-speed rate RMS and **+0.92** with tracking RMS.
+Spearman rank correlation of $J$ with flown effort:
+
+| | Mean shaft power | Rotor-speed rate RMS | Tracking RMS |
+|---|---:|---:|---:|
+| Pooled, 40 flights ($J$ differs about 17× between the groups) | +0.80 | +0.94 | +0.92 |
+| Within fixed time (20 layouts) | −0.29 | +0.85 | +0.79 |
+| Within redistributed (20 layouts) | +0.68 | +0.63 | +0.61 |
+
+The pooled baseline from the group split alone is +0.75 (95th percentile +0.82, 2000 permutations).
 
 **Key findings**:
 - **Redistribution is a large, free improvement.** At the same 10 s lap it lowers $J$ by 94.8 % on the main course and by 94.1 % on average over 20 layouts (lower on 20/20), far beyond the card's "≥ 15 %". The uniform allocation gives the first, 2 m segment only 0.762 s while it must bend onto gate 1's heading. The optimiser stretches it to 2.723 s and takes the time from the straighter runs to G4 and G6.
-- **Snap is a good proxy for physical effort.** Flown on the rigid body, the redistributed plan uses 19.7 % less shaft energy per lap (0.803 ± 0.021, lower on 20/20 layouts). It also cuts the rotor-speed rate RMS from 1944 to 723 rad/s² and the tracking error from 3.2 to 1.0 cm RMS. Over 40 flights $J$ is rank-correlated with power (+0.80), rotor activity (+0.94) and tracking error (+0.92). The card's motivation holds.
+- **Lowering snap saves energy here, but snap is a reliable proxy only for rotor activity and tracking error.** The paired comparison is clear. Flown on the rigid body, the redistributed plan uses 19.7 % less shaft energy per lap (0.803 ± 0.021, lower on 20/20 layouts). It also cuts the rotor-speed rate RMS from 1944 to 723 rad/s² and the tracking error from 3.2 to 1.0 cm RMS. The pooled correlations (+0.80 power, +0.94 rotor activity, +0.92 tracking) mostly reflect the 17× gap in $J$ between the two groups; the group split alone already gives +0.75. Within each group, $J$ still ranks rotor activity (+0.85 / +0.63) and tracking error (+0.79 / +0.61). For power the within-group correlation is inconsistent: −0.29 among the fixed-time laps and +0.68 among the redistributed ones. The card's "rotor wear" motivation holds; its "battery consumption" motivation holds for this paired comparison but not as a general ranking.
 - **Planned gate miss cannot tell the plans apart; flown miss shows only small differences.** Both 10 s plans pass all 6 gates on all 20 layouts. The fixed plan's worst miss is 10.7 cm at G1 on the main course (10.9 cm over the layouts), still inside $r_{tol}$. The rigid body follows the fixed plan through a 2.81 g, 15.69 rad/s entry without missing a gate, because the `fpv_5inch` airframe has T/W 6.12.
 - **Neither 10 s plan respects the card's 2g limit** (2.81 g and 2.53 g). The redistributed plan's peak is the free end acceleration at the last gate (speed profile below). The card's expectation that both stay within the limits does not hold. Both stay under $v_{max}$ = 12 m/s (10.49 and 5.94 m/s).
 - **J + λT does the opposite of what the card claims.** With λ = 0.5 the descent lengthens the lap from 10 s to 46.100 s after 200 iterations, and it is still lengthening it. It removes almost all snap ($J$ = 61.8), but at 4.6× the lap time and 2.8× the energy (3246.8 J, mostly hover power). The slow plan also loops around between gates (3D plot). A shorter lap needs λ > 9715–130174 (card corrected).
-- **The card's gradient formula would not work.** The "dominant" explicit term has the wrong sign on every segment, because the coefficients change with $T_i$ and that dependence dominates. The fixed step η = 10⁻³ would move a segment by about 1000 s in one iteration. The exact gradient and a line search are required (card corrected).
+- **The card's gradient formula would not work.** The "dominant" explicit term has the opposite sign to the exact gradient on 5 of 6 segments (on the sixth it is about 0), because the coefficients change with $T_i$ and that dependence dominates. The fixed step η = 10⁻³ would move a segment by about 1000 s in one iteration. The exact gradient and a line search are required (card corrected).
 
 ### 3D Trajectory
 
@@ -182,7 +190,7 @@ Rigid-body flights of the fixed-time plan (red) and the redistributed plan (blue
 |------|----------------|--------|
 | "3D point-mass with quadrotor dynamics" | Plans flown by the 6-DOF rigid body; the ideal point mass (zero error) is the baseline | Planned gate miss is zero by construction (X3). Flying the plans tests the snap-as-effort claim. |
 | Per-segment solve with acceleration and jerk fixed to 0 at every gate (card code) | One QP per axis: position and velocity fixed, acceleration and jerk free and continuous (the card's text: $C^3$ continuity, minimum snap) | With all 8 boundary values fixed there is nothing left to optimise, so the card code is not minimum-snap. |
-| Gradient = explicit $\partial\mathbf{Q}/\partial T$ term (finite differences in the card code) | Exact central-difference gradient; the explicit term is printed only for comparison (card corrected) | The explicit term has the wrong sign on all 6 segments (printed). |
+| Gradient = explicit $\partial\mathbf{Q}/\partial T$ term (finite differences in the card code) | Exact central-difference gradient; the explicit term is printed only for comparison (card corrected) | The explicit term has the opposite sign on 5 of 6 segments and is about 0 on the sixth (printed). |
 | Fixed step η = 10⁻³ | η is the initial step, capped by a 20 % trust region and halved by Armijo backtracking | The card step would move a segment by 1054.776 s in the first iteration. For J + λT it jumped straight to an absurdly long lap in a development run. |
 | λ = 0.5 shortens the lap (card note) | Kept λ = 0.5 and reported that the lap gets longer; printed the λ needed to shorten it (card corrected) | X6/X7: verified numerically ($dJ/dT_{total}$ = −130174 and −9715 per s). |
 | Gate miss = endpoint distance of the plan | Flown miss at the first forward gate-plane crossing within 1 m (inside the opening if possible), plus heading error | The planned miss is about 10⁻¹² m for every plan. The slow J + λT plan crosses some gate planes beside the gate before flying through it. |

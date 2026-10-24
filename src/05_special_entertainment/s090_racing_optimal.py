@@ -582,12 +582,21 @@ if __name__ == '__main__':
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
     print('\n=== S090 Racing Drone Optimal Path - Results ===')
+    pf = make_params('fpv_5inch')
+    print(f'  Rigid body: fpv_5inch preset, m = {pf.mass} kg, T/W = {pf.t2w:.2f}, '
+          f'{1 / DT_INNER:.0f} Hz')
     Jf = R['J']['fixed']
     print('  Initial (fixed) segment times (s): ' + ', '.join(f'{x:.3f}' for x in R['T_fixed']))
     print('  dJ/dT at the fixed allocation, exact (central difference): '
           + ', '.join(f'{x:.1f}' for x in R['g_true']))
     print("  card's 'dominant' term c^T dQ/dT c:                        "
           + ', '.join(f'{x:.1f}' for x in R['g_dom']))
+    gt, gd = R['g_true'], R['g_dom']
+    sig = np.abs(gd) > 1e-6 * np.abs(gd).max()
+    print(f"  explicit term has the opposite sign to the exact gradient on "
+          f"{int(np.sum(sig & (np.sign(gd) != np.sign(gt))))} of {len(gt)} segments; on "
+          f"{int(np.sum(~sig))} segment(s) it is ~0 ({', '.join(f'{x:.1e}' for x in gd[~sig])}: "
+          f"snap vanishes at the free end)")
     print(f'  card step eta = {ETA}: first step on the projected gradient changes T by up to '
           f"{ETA * np.abs(R['g_true'] - R['g_true'].mean()).max():.3f} s")
     for s in STRATS:
@@ -636,7 +645,8 @@ if __name__ == '__main__':
               f"flown gates {hits.mean():.2f}/6 (all 6 on {np.sum(hits == 6)}); miss mean "
               f"{100 * miss.mean():.1f} cm, max {100 * miss.max():.1f} cm; energy/fixed "
               f"{relE.mean():.3f} +- {relE.std():.3f} (lower on {np.sum(relE < 1)}); rotor-rate "
-              f"RMS {rr.mean():.0f} rad/s^2")
+              f"RMS {rr.mean():.0f} rad/s^2; mean J reduction {100 * (1 - rel.mean()):.1f} %, "
+              f"mean energy saving {100 * (1 - relE.mean()):.1f} %")
     # does snap predict the flown effort? rank correlation over all flights
     Js = np.array([r['J'] for s in ROB_FLOWN for r in rob[s]])
     Es = np.array([r['energy'] / r['T'] for s in ROB_FLOWN for r in rob[s]])
@@ -648,7 +658,20 @@ if __name__ == '__main__':
         return np.corrcoef(ra, rb)[0, 1]
     print(f'  Spearman rank correlation of J with: mean shaft power {spearman(Js, Es):+.2f}, '
           f'rotor-rate RMS {spearman(Js, Rr):+.2f}, tracking RMS {spearman(Js, Ms):+.2f} '
-          f'({len(Js)} flights)')
+          f'({len(Js)} flights, pooled; J differs ~{np.median(Js[:N_LAYOUTS]) / np.median(Js[N_LAYOUTS:]):.0f}x '
+          f'between the two groups)')
+    # a pure group split with no within-group relation: J ranks by group, effort random
+    rng = np.random.default_rng(7)
+    null = np.array([spearman(Js, np.concatenate([rng.permutation(N_LAYOUTS) + N_LAYOUTS,
+                                                  rng.permutation(N_LAYOUTS)]))
+                     for _ in range(2000)])
+    print(f'  pooled-correlation baseline from the group split alone: {null.mean():+.2f} '
+          f'(95th percentile {np.percentile(null, 95):+.2f}, 2000 permutations)')
+    for gi, s in enumerate(ROB_FLOWN):
+        sl = slice(gi * N_LAYOUTS, (gi + 1) * N_LAYOUTS)
+        print(f'  within {LABEL_TXT[s]} ({N_LAYOUTS} layouts): Spearman of J with mean shaft '
+              f'power {spearman(Js[sl], Es[sl]):+.2f}, rotor-rate RMS '
+              f'{spearman(Js[sl], Rr[sl]):+.2f}, tracking RMS {spearman(Js[sl], Ms[sl]):+.2f}')
     print(f"  Mixer desaturation steps: main {R['lg']['n_sat']}")
 
     plot_trajectory_3d(R, out)
