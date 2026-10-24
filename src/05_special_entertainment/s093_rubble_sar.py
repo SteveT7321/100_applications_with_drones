@@ -45,7 +45,13 @@ R_DRONE = 0.15                              # m body radius
 R_INF = 0.25                                # m inflation radius
 INFL = R_INF + VOX / 2                      # m centre-to-centre blocking distance (0.35)
 INFL_UNK = 0.30                             # m blocking distance around unknown voxels
-INFL_RECOVER = R_DRONE + VOX / 2            # m obstacle inflation of the recovery plan (0.25)
+INFL_RECOVER = 0.25                         # m obstacle inflation of the recovery plan. It
+                                            # blocks face neighbours only, so a voxel-centre
+                                            # drone may come within 0.141 m of an edge-diagonal
+                                            # obstacle box (< 0.15 m body radius, <= 9 mm
+                                            # overlap); every flown path is checked against the
+                                            # true geometry. 0.30 m (safe at voxel centres)
+                                            # leaves the drone trapped by noise-narrowed gaps.
 V_MAX = 0.8                                 # m/s
 DT = 0.1                                    # s
 T_MAX = 300.0                               # s
@@ -80,7 +86,10 @@ ENTRANCE = (slice(0, 7), slice(46, 54), slice(0, 7))   # x 0-1.4, y 9.2-10.8, z 
 START = np.array([0.7, 10.0, 0.7])
 
 SEED_MAIN = 42
-MC_SEEDS = [42, 43, 44]
+MC_SEEDS = [42, 43, 44, 45, 46, 47, 48]
+SENS_SEEDS = [42, 43, 44]                   # unknown-inflation sensitivity
+INFL_UNK_SWEEP = (0.25,)                    # besides the baseline INFL_UNK = 0.30
+N_WORKERS = 8                               # process pool; results collected in input order
 
 OUTPUT_DIR = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)), '..', '..',
@@ -97,19 +106,32 @@ def to_idx(p):
 
 # ── Environment ───────────────────────────────────────────────────────────────
 
+_BALLS = {}
+
+
+def ball(r):
+    """Structuring element: voxel offsets whose centre distance is <= r (metres)."""
+    if r not in _BALLS:
+        n = int(math.floor(r / VOX + 1e-9))
+        g = np.arange(-n, n + 1)
+        X, Y, Z = np.meshgrid(g, g, g, indexing='ij')
+        _BALLS[r] = (np.sqrt(X ** 2 + Y ** 2 + Z ** 2) * VOX) <= r + 1e-9
+    return _BALLS[r]
+
+
 def blocked_mask(obstacle, infl=INFL):
     """Voxels whose centre is within infl of an obstacle voxel centre or of the outside
-    of the field (walls, floor and ceiling count as obstacles)."""
-    pad = np.pad(obstacle, 1, constant_values=True)
-    d = distance_transform_edt(~pad, sampling=VOX)[1:-1, 1:-1, 1:-1]
-    return d <= infl + 1e-9
+    of the field (walls, floor and ceiling count as obstacles). Exact ball dilation."""
+    n = int(math.floor(infl / VOX + 1e-9))
+    pad = np.pad(obstacle, n, constant_values=True)
+    dil = binary_dilation(pad, structure=ball(infl))
+    return dil[n:-n, n:-n, n:-n] if n else dil
 
 
-def blocked_estimate(occ_e, unknown, infl=INFL):
-    """Planner's no-fly set: within r_inf + vox/2 of a mapped obstacle, or within INFL_UNK
-    of an unknown voxel (a voxel-centre drone then stays >= 0.17 m from any unknown box)."""
-    d_unk = distance_transform_edt(~unknown, sampling=VOX)
-    return blocked_mask(occ_e, infl) | (d_unk <= INFL_UNK + 1e-9)
+def blocked_estimate(occ_e, unknown, infl=INFL, infl_unk=INFL_UNK):
+    """Planner's no-fly set: within r_inf + vox/2 of a mapped obstacle, or within infl_unk
+    of an unknown voxel (at 0.30 m a voxel-centre drone stays >= 0.17 m from any unknown box)."""
+    return blocked_mask(occ_e, infl) | binary_dilation(unknown, structure=ball(infl_unk))
 
 
 def generate_rubble(seed):
@@ -220,13 +242,13 @@ def build_graph(trav):
     return g, ids, nodes
 
 
-def plan(log_odds, pos, banned, infl=INFL):
+def plan(log_odds, pos, banned, infl=INFL, infl_unk=INFL_UNK, score_mode='card'):
     """Returns (path as (n, 3) waypoint positions, goal viewpoint index, n_frontier_voxels,
     n_clusters) or (None, ...) if no reachable frontier."""
     occ_e = log_odds > L_OCC_TH
     free_e = log_odds < L_FREE_TH
     unknown = ~occ_e & ~free_e
-    trav = ~blocked_estimate(occ_e, unknown, infl)
+    trav = ~blocked_estimate(occ_e, unknown, infl, infl_unk)
     start = to_idx(pos)
     trav[start] = True                       # the drone's own voxel
     frontier = unknown & binary_dilation(free_e, structure=np.ones((3, 3, 3))) & ~banned
@@ -255,7 +277,10 @@ def plan(log_odds, pos, banned, infl=INFL):
     ok = np.isfinite(geo) & (geo > 0)
     if not ok.any():
         return None, None, n_front, n_cl
-    score = geo[ok] / np.sqrt(sizes[clus[ok]])
+    if score_mode == 'card':
+        score = geo[ok] / np.sqrt(sizes[clus[ok]])
+    else:                                    # nearest frontier: geodesic distance only
+        score = geo[ok]
     best = int(np.argmin(score))
     goal_node = nid[ok][best]
     path = [goal_node]
@@ -285,7 +310,8 @@ def clearance_to_rubble(traj, occ):
     return out
 
 
-def run_mission(seed, keep_frames=False, frame_every=20):
+def run_mission(seed, keep_frames=False, frame_every=20, infl_unk=INFL_UNK, score_mode='card',
+                strict=True):
     occ, victims, reach, attempts = generate_rubble(seed)
     rng_lidar = np.random.default_rng([seed, 1])
     rng_ac = np.random.default_rng([seed, 2])
@@ -338,7 +364,7 @@ def run_mission(seed, keep_frames=False, frame_every=20):
             occ_e = log_odds > L_OCC_TH
             unk = ~occ_e & ~(log_odds < L_FREE_TH)
             pidx = np.floor(path / VOX).astype(int)
-            blk = blocked_estimate(occ_e, unk)
+            blk = blocked_estimate(occ_e, unk, INFL, infl_unk)
             if blk[pidx[:, 0], pidx[:, 1], pidx[:, 2]][1:].any():
                 need = True
         if need:
@@ -353,12 +379,13 @@ def run_mission(seed, keep_frames=False, frame_every=20):
                 unk_now = np.abs(log_odds[tuple(sub.T)]) <= L_OCC_TH
                 banned[tuple(sub[unk_now].T)] = True
                 n_banned_events += 1
-            path, goal, nf, ncl = plan(log_odds, pos, banned)
+            path, goal, nf, ncl = plan(log_odds, pos, banned, INFL, infl_unk, score_mode)
             n_replans += 1
             next_replan = t + REPLAN_T
             if path is None:
                 # recovery: obstacle inflation reduced to body radius + half a voxel
-                path, goal, nf, ncl = plan(log_odds, pos, banned, INFL_RECOVER)
+                path, goal, nf, ncl = plan(log_odds, pos, banned, INFL_RECOVER, infl_unk,
+                                           score_mode)
                 n_recover += 1
                 next_replan = t + DT                 # return to normal planning next step
             if path is None:
@@ -382,7 +409,9 @@ def run_mission(seed, keep_frames=False, frame_every=20):
     det = det[:len(traj)]
     clear = clearance_to_rubble(traj, occ)
     speeds = np.linalg.norm(np.diff(traj, axis=0), axis=1) / DT
-    assert clear.min() >= R_DRONE, f'drone body hits rubble (clearance {clear.min():.3f} m)'
+    n_contact = int(np.sum(clear < R_DRONE))
+    if strict:
+        assert n_contact == 0, f'drone body hits rubble (clearance {clear.min():.3f} m)'
     assert speeds.max() <= V_MAX + 1e-9, 'speed limit violated'
     free_e = log_odds < L_FREE_TH
     occ_e = log_odds > L_OCC_TH
@@ -395,6 +424,7 @@ def run_mission(seed, keep_frames=False, frame_every=20):
         'fill': float(occ.mean()), 'reach_frac': reach_free / total_free,
         'path_len': float(np.linalg.norm(np.diff(traj, axis=0), axis=1).sum()),
         'min_clear': float(clear.min()), 'max_speed': float(speeds.max()),
+        'n_contact': n_contact, 'infl_unk': infl_unk, 'score_mode': score_mode,
         'n_replans': n_replans, 'n_banned_events': n_banned_events, 'n_recover': n_recover,
         'false_free': int((free_e & occ).sum()), 'false_occ': int((occ_e & ~occ).sum()),
         'n_occ_est': int(occ_e.sum()), 'det': det,
@@ -426,10 +456,31 @@ def expected_curves(traj, victims, seed):
     return {'e_card': e_card, 'e_rule': found_by.sum(axis=1), 'p_rule_final': found_by[-1]}
 
 
+LIGHT_DROP = ('occ', 'log_odds', 'banned', 'frames', 'det', 'traj')
+
+
+def _mission_job(args):
+    seed, keep, infl_unk, score_mode, strict = args
+    r = run_mission(seed, keep_frames=keep, infl_unk=infl_unk, score_mode=score_mode,
+                    strict=strict)
+    return r if keep else {k: v for k, v in r.items() if k not in LIGHT_DROP}
+
+
 def run_simulation():
-    main = run_mission(SEED_MAIN, keep_frames=True)
-    mc = [main] + [run_mission(s) for s in MC_SEEDS if s != SEED_MAIN]
-    return main, mc
+    """All missions in a process pool; results come back in job order (deterministic)."""
+    from concurrent.futures import ProcessPoolExecutor
+    jobs = [('card', (s, s == SEED_MAIN, INFL_UNK, 'card', True)) for s in MC_SEEDS]
+    jobs += [('nearest', (s, False, INFL_UNK, 'nearest', True)) for s in MC_SEEDS]
+    jobs += [(('unk', iu), (s, False, iu, 'card', False)) for iu in INFL_UNK_SWEEP
+             for s in SENS_SEEDS]
+    with ProcessPoolExecutor(max_workers=min(N_WORKERS, os.cpu_count() or 1)) as ex:
+        out = list(ex.map(_mission_job, [j[1] for j in jobs], chunksize=1))
+    groups = {}
+    for (tag, _), r in zip(jobs, out):
+        groups.setdefault(tag, []).append(r)
+    mc = groups['card']
+    main = mc[MC_SEEDS.index(SEED_MAIN)]
+    return main, mc, groups
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -506,14 +557,15 @@ def plot_coverage(mc, out_dir):
         for tf in r['found_t'][~np.isnan(r['found_t'])]:
             ax.plot(tf, np.interp(tf, r['cov_t'], r['cov_xi']), 'k*', ms=7)
     ax.plot([], [], color='tab:blue', label=r'$\xi$: known free / all free voxels (card)')
-    ax.plot([], [], color='tab:green', label=r'$\xi_{reach}$: known free / free voxels '
-            'connected to flyable space')
+    ax.plot([], [], color='tab:green', label=r'$\xi_{reach}$: known free in / size of the '
+            'reachable flyable component')
     ax.plot([], [], 'k*', label='victim confirmed')
     ax.axhline(75, color='orange', ls='--', lw=1, label='card range 75–90 %')
     ax.axhline(90, color='orange', ls='--', lw=1)
     ax.set_xlabel('time (s)')
     ax.set_ylabel('explored volume (%)')
-    ax.set_title(f'S093 Explored volume vs time (thick = seed {SEED_MAIN}, thin = other seeds)')
+    ax.set_title(f'S093 Explored volume vs time, {len(mc)} fields '
+                 f'(thick = seed {SEED_MAIN}, thin = other seeds)')
     ax.grid(alpha=0.3)
     ax.legend(fontsize=8)
     path = os.path.join(out_dir, 'coverage.png')
@@ -561,25 +613,32 @@ def plot_detection(r, out_dir):
     print(f'Saved: {path}')
 
 
-def plot_monte_carlo(mc, out_dir):
-    fig, axes = plt.subplots(1, 4, figsize=(18, 4.5))
+def plot_monte_carlo(mc, nr, out_dir):
+    fig, axes = plt.subplots(1, 3, figsize=(17, 4.6))
     seeds = [r['seed'] for r in mc]
-    vals = [('n_found', 'Victims found', None),
-            ('t_mission', 'Mission time (s)', T_MAX),
-            ('xi', r'Coverage $\xi$ (%)', None),
-            ('path_len', 'Path length (m)', None)]
-    for ax, (key, title, ref) in zip(axes, vals):
-        v = [r[key] for r in mc]
-        ax.bar(range(len(mc)), v, color='tab:blue', edgecolor='k', alpha=0.8)
-        if ref:
-            ax.axhline(ref, color='red', ls='--', lw=1, label='T_max')
-            ax.legend(fontsize=8)
-        ax.set_xticks(range(len(mc)))
+    x = np.arange(len(mc))
+    vals = [('n_found', 'Victims found'),
+            ('xi', r'Coverage $\xi$ (%)'),
+            ('path_len', 'Path length (m)')]
+    for ax, (key, title) in zip(axes, vals):
+        a = [r[key] for r in mc]
+        b = [r[key] for r in nr]
+        ax.bar(x - 0.2, a, 0.4, color='tab:blue', edgecolor='k',
+               label=f'card score (mean {np.mean(a):.2f})')
+        ax.bar(x + 0.2, b, 0.4, color='tab:orange', edgecolor='k',
+               label=f'nearest frontier (mean {np.mean(b):.2f})')
+        ax.set_xticks(x)
         ax.set_xticklabels([str(s) for s in seeds])
         ax.set_xlabel('rubble seed')
-        ax.set_title(f'{title}\nmean {np.mean(v):.1f} ± {np.std(v):.1f}', fontsize=10)
+        ax.set_title(title, fontsize=10)
+        ax.legend(fontsize=8)
         ax.grid(alpha=0.3, axis='y')
-    fig.suptitle(f'S093 Monte Carlo over {len(mc)} rubble fields')
+    axes[0].set_yticks(range(N_VICTIMS + 1))
+    n_to = sum(r['t_mission'] >= T_MAX for r in mc)
+    n_to_n = sum(r['t_mission'] >= T_MAX for r in nr)
+    fig.suptitle(f'S093 {len(mc)} rubble fields, two frontier-selection rules '
+                 f'(missions reaching the {T_MAX:.0f} s limit: card score {n_to}/{len(mc)}, '
+                 f'nearest frontier {n_to_n}/{len(nr)})')
     plt.tight_layout()
     path = os.path.join(out_dir, 'monte_carlo.png')
     plt.savefig(path, dpi=130, bbox_inches='tight')
@@ -629,7 +688,7 @@ def save_animation(r, out_dir, step=20):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    main, mc = run_simulation()
+    main, mc, groups = run_simulation()
     r = main
     print('\n=== S093 Earthquake Rubble SAR — Results ===')
     print(f'  Grid {SHAPE} at {VOX} m; LiDAR {len(DIRS)} beams per scan, mean spacing '
@@ -642,8 +701,9 @@ if __name__ == '__main__':
     print(f'  P_detect at r_acoustic = {p_detect(R_ACOUSTIC):.4f}; P_detect >= 0.9 needs '
           f'd <= {SIGMA_A * math.sqrt(2 * math.log(1 / 0.9)):.3f} m')
     print(f"\n  Main seed {r['seed']} (field generated in {r['attempts']} attempt(s)):")
-    print(f"    Fill rate {100 * r['fill']:.1f} %; free voxels connected to the reachable "
-          f"flyable space: {100 * r['reach_frac']:.1f} % of all free voxels")
+    print(f"    Fill rate {100 * r['fill']:.1f} %; the flyable component reachable from the "
+          f"entrance (voxel centres > {INFL:.2f} m from rubble) holds "
+          f"{100 * r['reach_frac']:.1f} % of all free voxels")
     for i, v in enumerate(r['victims']):
         print(f'    Victim {i + 1} at ({v[0]:.1f}, {v[1]:.1f}, {v[2]:.1f}) m: '
               f"closest approach {r['min_dist_victim'][i]:.2f} m, "
@@ -661,7 +721,8 @@ if __name__ == '__main__':
           f"{r['false_occ']} free voxels mapped occupied (of {r['n_occ_est']} mapped occupied)")
     print(f"    E[N_found] at end : card formula {r['e_card'][-1]:.3f}, "
           f"K-of-window Monte Carlo {r['e_rule'][-1]:.3f}, actual {r['n_found']}")
-    print(f'\n  Monte Carlo over {len(mc)} rubble fields (seeds {MC_SEEDS[0]}–{MC_SEEDS[-1]}):')
+    print(f'\n  Monte Carlo over {len(mc)} rubble fields (seeds {MC_SEEDS[0]}–{MC_SEEDS[-1]}), '
+          'card frontier score:')
     for x in mc:
         print(f"    seed {x['seed']}: found {x['n_found']}/{N_VICTIMS}, T {x['t_mission']:6.1f} s "
               f"({x['end_reason']}), xi {x['xi']:5.1f} %, xi_reach {x['xi_reach']:5.1f} %, "
@@ -676,11 +737,41 @@ if __name__ == '__main__':
           f"{np.std([x['xi'] for x in mc]):.1f} %")
     print(f"    E[N] at end    : card {np.mean([x['e_card'][-1] for x in mc]):.2f}, "
           f"rule {np.mean([x['e_rule'][-1] for x in mc]):.2f}, actual {np.mean(nf):.2f}")
+    print(f"    Viewpoints exhausted / replans: "
+          f"{sum(x['n_banned_events'] for x in mc)} / {sum(x['n_replans'] for x in mc)}")
+    nr = groups['nearest']
+    print(f'\n  Nearest-frontier policy (score = geodesic distance only), same {len(nr)} fields:')
+    for x, y in zip(mc, nr):
+        print(f"    seed {y['seed']}: found {y['n_found']}/{N_VICTIMS} (card score {x['n_found']}), "
+              f"T {y['t_mission']:6.1f} s ({y['end_reason']}), "
+              f"xi {y['xi']:5.1f} % (card {x['xi']:5.1f} %), path {y['path_len']:6.1f} m, "
+              f"min clearance {y['min_clear']:.3f} m")
+    nfn = [y['n_found'] for y in nr]
+    print(f'    Victims found  : {np.mean(nfn):.2f} ± {np.std(nfn):.2f} '
+          f'(all three in {sum(v == N_VICTIMS for v in nfn)}/{len(nr)} fields); '
+          f'more than card score in {sum(a > b for a, b in zip(nfn, nf))}, '
+          f'fewer in {sum(a < b for a, b in zip(nfn, nf))}, equal in '
+          f'{sum(a == b for a, b in zip(nfn, nf))}')
+    print(f"    Coverage xi    : {np.mean([y['xi'] for y in nr]):.1f} ± "
+          f"{np.std([y['xi'] for y in nr]):.1f} %; higher than card score in "
+          f"{sum(y['xi'] > x['xi'] for x, y in zip(mc, nr))}/{len(nr)} fields")
+    print(f'\n  Unknown-space inflation sensitivity (card score, seeds {SENS_SEEDS}; '
+          f'{INFL_UNK:.2f} m is the baseline; below 0.30 m a voxel-centre drone may be '
+          f'< 0.15 m from an unknown box, so contacts are counted instead of asserted):')
+    base = [x for x in mc if x['seed'] in SENS_SEEDS]
+    for iu, rows in [(INFL_UNK, base)] + [(iu, groups[('unk', iu)]) for iu in INFL_UNK_SWEEP]:
+        print(f'    INFL_UNK = {iu:.2f} m: found ' +
+              ', '.join(f"{x['n_found']}" for x in rows) +
+              f" (mean {np.mean([x['n_found'] for x in rows]):.2f}), xi " +
+              ', '.join(f"{x['xi']:.1f}" for x in rows) +
+              f" % (mean {np.mean([x['xi'] for x in rows]):.1f} %), min clearance "
+              f"{min(x['min_clear'] for x in rows):.3f} m, contact points "
+              f"{sum(x['n_contact'] for x in rows)}")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     plot_rubble_3d(main, OUTPUT_DIR)
     plot_top_down(main, OUTPUT_DIR)
     plot_coverage(mc, OUTPUT_DIR)
     plot_detection(main, OUTPUT_DIR)
-    plot_monte_carlo(mc, OUTPUT_DIR)
+    plot_monte_carlo(mc, groups['nearest'], OUTPUT_DIR)
     save_animation(main, OUTPUT_DIR)
