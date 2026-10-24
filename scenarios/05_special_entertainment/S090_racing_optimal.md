@@ -1,6 +1,6 @@
 # S090 Racing Drone Optimal Path
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Algorithm**: Minimum-Snap QP + Time Allocation Optimisation | **Dimension**: 3D
 
 ---
@@ -125,9 +125,20 @@ snap cost with respect to segment duration $T_i$ is obtained by implicit differe
 $$\frac{\partial J}{\partial T_i} = \mathbf{c}_i^{\alpha\top} \frac{\partial \mathbf{Q}(T_i)}{\partial T_i} \mathbf{c}_i^\alpha
 + 2 \mathbf{c}_i^{\alpha\top} \mathbf{Q}(T_i) \frac{\partial \mathbf{c}_i^\alpha}{\partial T_i}$$
 
-The dominant contribution comes from the explicit $T_i$ dependence of $\mathbf{Q}(T_i)$:
+The explicit $T_i$ dependence of $\mathbf{Q}(T_i)$ contributes:
 
 $$\frac{\partial Q_{jk}}{\partial T} = \frac{j!\;k!}{(j-4)!\,(k-4)!} \cdot T^{j+k-8}, \quad j,k \geq 4$$
+
+This explicit term alone is **not** a usable gradient: it is always non-negative, while the true
+$\partial J/\partial T_i$ is negative whenever lengthening a segment lowers the snap (the usual case).
+For the S090 course the explicit term at the uniform allocation is $+4.6\times10^5$ for segment 1,
+while the exact gradient is $-1.3\times10^6$. The coefficient sensitivity
+$\partial\mathbf{c}/\partial T_i$ (through the boundary-condition matrix) dominates. Use the exact gradient,
+for example by central differences on $J(\mathbf{T})$ (12 QP solves for 6 segments), or by the
+envelope theorem applied to the KKT system.
+
+Because $|\partial J/\partial T_i|$ reaches $10^6$, a fixed step $\eta = 10^{-3}$ would change $T_1$
+by about 1000 s in the first iteration; a line search or trust region is required.
 
 Time re-distribution gradient descent maintains $T_{total} = \mathrm{const}$ by projecting the
 gradient onto the constraint manifold $\sum_i T_i = T_{total}$:
@@ -146,8 +157,11 @@ When joint minimisation of snap cost and total time is desired, the augmented ob
 
 $$J_{aug} = J + \lambda \, T_{total} = \sum_i \mathbf{c}_i^\top \mathbf{Q}(T_i) \mathbf{c}_i + \lambda \sum_i T_i$$
 
-The gradient $\partial J_{aug} / \partial T_i = \partial J / \partial T_i + \lambda$ drives all
-segments shorter until the snap cost gradient balances the time penalty. The trade-off weight
+The gradient $\partial J_{aug} / \partial T_i = \partial J / \partial T_i + \lambda$ drives the
+segment times toward the point where the snap-cost gradient balances the time penalty. Snap cost
+falls steeply with time, so the lap gets **shorter** only if $\lambda > -\partial J/\partial T_{total}$.
+For this course that is about $1.3\times10^5$ at the uniform allocation and about $10^4$ after
+redistribution. With $\lambda = 0.5$ the optimum is a much **longer** lap. The trade-off weight
 $\lambda$ controls the Pareto front between lap time and snap cost.
 
 ### Gate Miss Distance
@@ -690,8 +704,9 @@ if __name__ == '__main__':
 
 > **Note**: The redistribution optimiser holds total lap time fixed at 10.0 s and achieves snap
 > cost reduction purely by reallocating time between segments — assigning more time to dynamically
-> demanding segments and less to straight inter-gate runs. The total-time reduction mode (with
-> $\lambda = 0.5$) will additionally shorten the lap at the cost of higher peak snap.
+> demanding segments and less to straight inter-gate runs. The total-time mode shortens the lap
+> only when $\lambda$ exceeds $-\partial J/\partial T_{total}$ (about $10^4$–$10^5$ here). With
+> $\lambda = 0.5$ it lengthens the lap (an earlier version of this note claimed the opposite).
 
 ---
 
