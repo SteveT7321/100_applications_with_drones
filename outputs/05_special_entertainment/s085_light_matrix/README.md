@@ -15,7 +15,7 @@
 2. **Greedy + repulsion** (added): repeatedly pair the closest free drone and free slot, a simple non-optimal assignment.
 3. **Random + repulsion** (card's assignment baseline; the card only compares its cost, here it is also flown).
 4. **Hungarian, no repulsion** (added): shows what the repulsion contributes.
-5. **Hungarian, card PID (windup)** (added): the card's PID exactly, with the integral accumulating while the command is clipped. Configurations 1–4 use conditional integration (see Deviations).
+5. **Hungarian, card PID (windup)** (added): the card's integral law, i.e. the integral keeps accumulating while the command is clipped. Two small differences from the card's code remain, as in all configurations: the derivative starts from `prev_err = e(0)` (no derivative kick at $t = 0$) and $T_{conv}$ is recorded as $(k+1)\Delta t$. Configurations 1–4 use conditional integration (see Deviations).
 
 ---
 
@@ -95,7 +95,7 @@ Random permutations: mean 1136.6 m (min 1130.2 m), so $\eta_{assign}$ = 1.27 %; 
 Per layout, Hungarian vs greedy: lower $D_{assign}$ in 30/30, faster $T_{conv}$ in 14/30 (ties 10). Hungarian vs random: lower $D_{assign}$ in 30/30, faster $T_{conv}$ in 20/30 (ties 3), fewer close pairs in 7/30 (ties 23). Random assignment has at least one pair closer than 0.5 m in 7 of 30 layouts (23/30 collision-free), despite the repulsion; Hungarian and greedy are collision-free in 30/30.
 
 **Key findings**:
-- **With the card's PID the swarm never forms the grid.** The integral keeps growing during the climb at the 5 m/s limit (8–10 s for 40–49 m, hand calculation), the drones overshoot the grid by 8.89 m, and after 60 s the worst drone is still 1.242 ± 0.023 m from its slot in every layout (0/30 converged). Freezing the integral while the command is saturated fixes this: overshoot drops to 0.23 m and all 30 layouts converge.
+- **With the card's integral law the swarm never forms the grid.** The integral keeps growing during the climb at the 5 m/s limit (8–10 s for 40–49 m, hand calculation), the drones overshoot the grid by 8.89 m, and after 60 s the worst drone is still 1.242 ± 0.023 m from its slot in every layout (0/30 converged). Freezing the integral while the command is saturated fixes this: overshoot drops to 0.23 m and all 30 layouts converge.
 - **$T_{conv}$ is set by the controller, not by the assignment.** All configurations with conditional integration converge at about 36 s (35.98 / 36.05 / 36.08 s for Hungarian / greedy / random) and end with the same 0.035 m error. The climb takes about 10 s; the remaining ~26 s are the slow integral mode (22.8 s time constant) removing the last ~0.2 m (timings and the 0.2 m read from the convergence plot). The Hungarian assignment is faster than random in 20/30 layouts, but only by 0.1 s on average.
 - **The Hungarian saving looks small because the climb dominates.** Every drone must climb 40–49 m, and the total vertical climb in the showcase layout is 1117.5 m out of 1122.2 m. Above that climb, the Hungarian assignment adds only 4.7 m, random adds 19.2 m. In horizontal distance, the part the assignment actually controls, Hungarian (107.8 m) is about half of random (207.9 m) and about 7 % below greedy (115.7 m) (ratios by hand from the table).
 - **The Hungarian paths never come close to each other**, so the repulsion never acts: in the showcase it is active in 0 steps, and "Hungarian, no repulsion" gives exactly the same results as "Hungarian + repulsion" in all 30 layouts. The minimum separation (1.315 m on average) stays above $r_{safe}$. Random assignment creates crossing paths, the repulsion has to act, and it still lets a pair get within 0.5 m in 7/30 layouts.
@@ -111,7 +111,7 @@ Left: 3D paths of the Hungarian + repulsion run (showcase layout). Right: top-do
 
 ### Convergence
 
-Left: maximum error over the swarm for every configuration (log scale). The card's PID (purple) climbs back to 8.9 m after the overshoot and decays slowly; the others drop to about 0.2 m at 12 s and then cross 0.1 m at about 36 s. Right: altitude of every drone (Hungarian + repulsion):
+Left: maximum error over the swarm for every configuration (log scale). The card's integral law (purple) climbs back to 8.9 m after the overshoot and decays slowly; the others drop to about 0.2 m at 12 s and then cross 0.1 m at about 36 s. Right: altitude of every drone (Hungarian + repulsion):
 
 ![Convergence](./convergence.png)
 
@@ -137,7 +137,7 @@ Total and horizontal assignment distance, $T_{conv}$, pairs closer than 0.5 m an
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| PID integral accumulates every step | Conditional integration (integral frozen while the PID command exceeds $v_{max}$); the card's PID kept as configuration 5 | With the card's integral the grid is never reached within 60 s (0/30 layouts). Card corrected. |
+| PID integral accumulates every step | Conditional integration (integral frozen while the PID command exceeds $v_{max}$); the card's integral law kept as configuration 5 | With the card's integral the grid is never reached within 60 s (0/30 layouts). Card corrected. |
 | `prev_err = 0` at start | `prev_err = e(0)` | Avoids a derivative kick of $K_d\,\mathbf e(0)/\Delta t$ in the first step. Card corrected. |
 | `T_conv = t` recorded before the time is advanced | $T_{conv} = (k+1)\Delta t$, the time at which the position is reached | Off by one step in the card's code. |
 | Collision count = number of (pair, step) events | Number of distinct pairs that ever came within 0.5 m, plus the (pair, step) events for the showcase | Counting every step of one long close approach inflates the number. |
