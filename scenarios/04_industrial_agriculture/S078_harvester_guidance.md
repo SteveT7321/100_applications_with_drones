@@ -591,7 +591,7 @@ if __name__ == "__main__":
    cost and path quality with the full-horizon A* baseline.
 6. **3D terrain extension**: add a Digital Elevation Model (DEM) for sloped agricultural land;
    the harvester's speed varies with slope (energy model); the drone must maintain a fixed
-   above-ground altitude using the DEM; connect to [S065 3D Scan Path Planning](S065_3d_scan_path.md).
+   above-ground altitude using the DEM; connect to [S065 Building 3D Modeling — Multi-Angle Scan Path](S065_3d_scan_path.md).
 
 ---
 
