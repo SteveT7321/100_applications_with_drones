@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h12 ===
+ALIGN_MAX = 0.4 (default 0.6)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+ALIGN_MAX = 0.8 (default 0.6)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+GUARD_DZ = 0.1 (default 0.2)       3d       levels 3/3  xi  97.09%  L1/L2/L3 96.33/99.47/99.43%  T  422.5 s  min clearance 0.544 m  traverses 2 (given up 0)  no frontier left
+CLIMB_VXY = 0.2 (default 0.3)      3d       levels 3/3  xi  97.28%  L1/L2/L3 96.59/99.48/99.43%  T  413.3 s  min clearance 0.531 m  traverses 2 (given up 0)  no frontier left
+CLIMB_VXY = 0.4 (default 0.3)      3d       levels 3/3  xi  97.20%  L1/L2/L3 96.45/99.47/99.43%  T  432.2 s  min clearance 0.485 m  traverses 2 (given up 0)  no frontier left

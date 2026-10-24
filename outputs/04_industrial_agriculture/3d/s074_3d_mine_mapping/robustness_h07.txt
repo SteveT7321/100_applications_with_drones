@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h07 ===
+SHAFT_PAD = 0.7 (default 0.6)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  no frontier left
+SHAFT_ZPAD = 2.5 (default 3)       3d       levels 3/3  xi  97.27%  L1/L2/L3 96.59/99.46/99.43%  T  434.1 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+SHAFT_ZPAD = 3.5 (default 3)       3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+REJECT_R = 0.25 (default 0.3)      3d       levels 3/3  xi  97.34%  L1/L2/L3 96.64/99.48/99.43%  T  443.5 s  min clearance 0.490 m  traverses 2 (given up 0)  frontiers unreachable
+REJECT_R = 0.4 (default 0.3)       3d       levels 3/3  xi  97.16%  L1/L2/L3 96.51/99.48/99.39%  T  429.8 s  min clearance 0.460 m  traverses 2 (given up 0)  frontiers unreachable

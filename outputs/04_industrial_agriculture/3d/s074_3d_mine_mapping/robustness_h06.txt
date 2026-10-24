@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h06 ===
+layout C (development)             3d       levels 3/3  xi  97.08%  L1/L2/L3 96.23/99.56/99.43%  T  418.7 s  min clearance 0.544 m  traverses 2 (given up 0)  frontiers unreachable
+LAT_DZ = 0.45 (default 0.6)        3d       levels 3/3  xi  97.21%  L1/L2/L3 96.56/99.48/99.43%  T  412.9 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+LAT_DZ = 0.75 (default 0.6)        3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+SHAFT_DZ = 1.7 (default 1.8)       3d       levels 3/3  xi  97.58%  L1/L2/L3 96.94/99.47/99.36%  T  445.7 s  min clearance 0.565 m  traverses 2 (given up 0)  no frontier left
+SHAFT_PAD = 0.5 (default 0.6)      3d       levels 3/3  xi  97.08%  L1/L2/L3 96.29/99.48/99.44%  T  444.8 s  min clearance 0.541 m  traverses 2 (given up 0)  no frontier left

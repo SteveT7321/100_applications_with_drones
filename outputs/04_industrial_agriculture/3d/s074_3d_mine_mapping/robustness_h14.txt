@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h14 ===
+TRAV_STOP = 0.2 (default 0.1)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+CENTRE_WIN = 1.2 (default 1.5)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+CENTRE_WIN = 2 (default 1.5)       3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+T_TRAV_MAX = 90 (default 120)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+T_TRAV_MAX = 180 (default 120)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable

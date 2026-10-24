@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h08 ===
+REJECT_EXCL = 0.8 (default 1)      3d       levels 3/3  xi  97.24%  L1/L2/L3 96.47/99.48/99.43%  T  420.9 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+REJECT_EXCL = 1.25 (default 1)     3d       levels 3/3  xi  97.05%  L1/L2/L3 96.33/99.48/99.43%  T  418.4 s  min clearance 0.511 m  traverses 2 (given up 0)  frontiers unreachable
+MAX_VISITS = 2 (default 3)         3d       levels 3/3  xi  97.02%  L1/L2/L3 96.30/99.48/99.43%  T  422.9 s  min clearance 0.546 m  traverses 2 (given up 0)  frontiers unreachable
+MAX_VISITS = 4 (default 3)         3d       levels 3/3  xi  97.65%  L1/L2/L3 96.95/99.46/99.43%  T  498.1 s  min clearance 0.480 m  traverses 2 (given up 0)  frontiers unreachable
+MIN_FRONTIER = 6 (default 8)       3d       levels 3/3  xi  97.32%  L1/L2/L3 96.59/99.48/99.43%  T  484.1 s  min clearance 0.545 m  traverses 2 (given up 0)  no frontier left

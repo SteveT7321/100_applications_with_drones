@@ -1,5 +1,95 @@
-=== S074 3D robustness summary (3d missions, true pose; the seed-42 default run is in the main script) ===
-  runs 22 (seeds/layouts and one-at-a-time planner changes): all three levels in 21/22, two levels in 1/22, one level in 0/22, aborted 0/22
-  xi over completed runs: median 71.71%, min 56.32%, max 72.35%; runs reaching all three levels: 71.12-72.35%
-  not all levels: SHAFT_DZ = 2.2 (default 1.8) 3d       levels 2/3  xi  56.32%  L1/L2/L3 84.12/76.49/ 0.00%  T  211.6 s  min clearance 0.50 m  no frontier left
-  3d_fixed (altitude held) on the same seeds and layouts: xi 36.51-38.45%
+=== S074 3D held-out robustness set: per-run table (true pose; seed 42 unless named) ===
+  review: seed 2026                  3d       levels 3/3  xi  97.27%  L1/L2/L3 96.64/99.47/99.43%  T  459.4 s  min clearance 0.463 m  traverses 2 (given up 0)  no frontier left
+  review: seed 99                    3d       levels 3/3  xi  97.54%  L1/L2/L3 96.72/99.48/99.23%  T  536.7 s  min clearance 0.481 m  traverses 2 (given up 0)  frontiers unreachable
+  review: layout D                   3d       levels 3/3  xi  97.34%  L1/L2/L3 96.51/99.55/99.42%  T  419.4 s  min clearance 0.608 m  traverses 2 (given up 0)  no frontier left
+  review: SHAFT_DZ = 2               3d       levels 3/3  xi  96.83%  L1/L2/L3 96.06/99.47/99.43%  T  361.9 s  min clearance 0.490 m  traverses 2 (given up 0)  no frontier left
+  review: LAT_DZ = 0.5, seed 7       3d       levels 3/3  xi  97.01%  L1/L2/L3 96.40/99.46/99.44%  T  387.2 s  min clearance 0.514 m  traverses 2 (given up 0)  frontiers unreachable
+  review: CARROT = 0.9               3d       levels 3/3  xi  97.34%  L1/L2/L3 96.72/99.50/99.42%  T  546.0 s  min clearance 0.394 m  traverses 2 (given up 0)  frontiers unreachable
+  review: GOAL_CELLS = 3             3d       levels 3/3  xi  97.35%  L1/L2/L3 96.49/99.49/99.43%  T  779.9 s  min clearance 0.465 m  traverses 2 (given up 0)  no frontier left
+  review: GUARD_DZ = 0.4             3d       levels 1/3  xi  50.51%  L1/L2/L3 96.47/ 0.15/ 0.00%  T  284.3 s  min clearance 0.547 m  traverses 1 (given up 1)  no frontier left
+  review: SOFT_COST = 2              3d       levels 3/3  xi  97.81%  L1/L2/L3 97.05/99.49/99.43%  T  521.9 s  min clearance 0.352 m  traverses 2 (given up 0)  frontiers unreachable
+  review: ALIGN_TOL = 0.25           3d       levels 3/3  xi  97.60%  L1/L2/L3 96.78/99.47/99.43%  T  513.2 s  min clearance 0.457 m  traverses 2 (given up 0)  frontiers unreachable
+  review: REJECT_R = 0.2, seed 43    3d       levels 3/3  xi  97.05%  L1/L2/L3 96.25/99.47/99.43%  T  446.1 s  min clearance 0.540 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 100                     3d       levels 3/3  xi  97.12%  L1/L2/L3 96.32/99.48/99.43%  T  433.6 s  min clearance 0.548 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 100                     3d_fixed levels 1/3  xi  49.87%  L1/L2/L3 95.47/ 0.00/ 0.00%  T   96.5 s  min clearance 0.911 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 101                     3d       levels 3/3  xi  97.74%  L1/L2/L3 96.92/99.48/99.43%  T  516.3 s  min clearance 0.466 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 101                     3d_fixed levels 1/3  xi  49.76%  L1/L2/L3 95.32/ 0.00/ 0.00%  T   99.5 s  min clearance 0.974 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 102                     3d       levels 3/3  xi  97.12%  L1/L2/L3 96.43/99.47/99.43%  T  403.5 s  min clearance 0.416 m  traverses 2 (given up 0)  no frontier left
+  fresh seed 102                     3d_fixed levels 1/3  xi  49.87%  L1/L2/L3 95.50/ 0.00/ 0.00%  T   96.5 s  min clearance 0.953 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 103                     3d       levels 3/3  xi  97.06%  L1/L2/L3 96.28/99.46/99.43%  T  401.4 s  min clearance 0.478 m  traverses 2 (given up 0)  no frontier left
+  fresh seed 103                     3d_fixed levels 1/3  xi  49.88%  L1/L2/L3 95.48/ 0.00/ 0.00%  T   96.5 s  min clearance 0.990 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 104                     3d       levels 3/3  xi  97.05%  L1/L2/L3 96.49/99.47/99.43%  T  427.9 s  min clearance 0.506 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 104                     3d_fixed levels 1/3  xi  49.81%  L1/L2/L3 95.44/ 0.00/ 0.00%  T   96.5 s  min clearance 0.978 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 105                     3d       levels 3/3  xi  97.17%  L1/L2/L3 96.43/99.46/99.43%  T  445.7 s  min clearance 0.537 m  traverses 2 (given up 0)  no frontier left
+  fresh seed 105                     3d_fixed levels 1/3  xi  49.86%  L1/L2/L3 95.51/ 0.00/ 0.00%  T   96.5 s  min clearance 0.952 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 106                     3d       levels 3/3  xi  97.25%  L1/L2/L3 96.48/99.48/99.43%  T  471.9 s  min clearance 0.430 m  traverses 2 (given up 0)  no frontier left
+  fresh seed 106                     3d_fixed levels 1/3  xi  49.88%  L1/L2/L3 95.52/ 0.00/ 0.00%  T   96.5 s  min clearance 0.966 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 107                     3d       levels 3/3  xi  96.95%  L1/L2/L3 96.31/99.48/99.43%  T  404.8 s  min clearance 0.494 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 107                     3d_fixed levels 1/3  xi  49.46%  L1/L2/L3 95.02/ 0.00/ 0.00%  T   93.5 s  min clearance 1.001 m  traverses 0 (given up 0)  no frontier left
+  fresh seed 108                     3d       levels 3/3  xi  96.84%  L1/L2/L3 96.11/99.47/99.43%  T  456.9 s  min clearance 0.470 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 108                     3d_fixed levels 1/3  xi  49.58%  L1/L2/L3 95.17/ 0.00/ 0.00%  T   93.5 s  min clearance 0.973 m  traverses 0 (given up 0)  frontiers unreachable
+  fresh seed 109                     3d       levels 3/3  xi  97.00%  L1/L2/L3 96.34/99.47/99.44%  T  418.0 s  min clearance 0.458 m  traverses 2 (given up 0)  frontiers unreachable
+  fresh seed 109                     3d_fixed levels 1/3  xi  49.62%  L1/L2/L3 95.23/ 0.00/ 0.00%  T   93.0 s  min clearance 0.921 m  traverses 0 (given up 0)  no frontier left
+  layout B (development)             3d       levels 3/3  xi  96.72%  L1/L2/L3 96.02/99.48/99.43%  T  409.8 s  min clearance 0.506 m  traverses 2 (given up 0)  no frontier left
+  layout C (development)             3d       levels 3/3  xi  97.08%  L1/L2/L3 96.23/99.56/99.43%  T  418.7 s  min clearance 0.544 m  traverses 2 (given up 0)  frontiers unreachable
+  LAT_DZ = 0.45 (default 0.6)        3d       levels 3/3  xi  97.21%  L1/L2/L3 96.56/99.48/99.43%  T  412.9 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  LAT_DZ = 0.75 (default 0.6)        3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  SHAFT_DZ = 1.7 (default 1.8)       3d       levels 3/3  xi  97.58%  L1/L2/L3 96.94/99.47/99.36%  T  445.7 s  min clearance 0.565 m  traverses 2 (given up 0)  no frontier left
+  SHAFT_PAD = 0.5 (default 0.6)      3d       levels 3/3  xi  97.08%  L1/L2/L3 96.29/99.48/99.44%  T  444.8 s  min clearance 0.541 m  traverses 2 (given up 0)  no frontier left
+  SHAFT_PAD = 0.7 (default 0.6)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  no frontier left
+  SHAFT_ZPAD = 2.5 (default 3)       3d       levels 3/3  xi  97.27%  L1/L2/L3 96.59/99.46/99.43%  T  434.1 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  SHAFT_ZPAD = 3.5 (default 3)       3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  REJECT_R = 0.25 (default 0.3)      3d       levels 3/3  xi  97.34%  L1/L2/L3 96.64/99.48/99.43%  T  443.5 s  min clearance 0.490 m  traverses 2 (given up 0)  frontiers unreachable
+  REJECT_R = 0.4 (default 0.3)       3d       levels 3/3  xi  97.16%  L1/L2/L3 96.51/99.48/99.39%  T  429.8 s  min clearance 0.460 m  traverses 2 (given up 0)  frontiers unreachable
+  REJECT_EXCL = 0.8 (default 1)      3d       levels 3/3  xi  97.24%  L1/L2/L3 96.47/99.48/99.43%  T  420.9 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  REJECT_EXCL = 1.25 (default 1)     3d       levels 3/3  xi  97.05%  L1/L2/L3 96.33/99.48/99.43%  T  418.4 s  min clearance 0.511 m  traverses 2 (given up 0)  frontiers unreachable
+  MAX_VISITS = 2 (default 3)         3d       levels 3/3  xi  97.02%  L1/L2/L3 96.30/99.48/99.43%  T  422.9 s  min clearance 0.546 m  traverses 2 (given up 0)  frontiers unreachable
+  MAX_VISITS = 4 (default 3)         3d       levels 3/3  xi  97.65%  L1/L2/L3 96.95/99.46/99.43%  T  498.1 s  min clearance 0.480 m  traverses 2 (given up 0)  frontiers unreachable
+  MIN_FRONTIER = 6 (default 8)       3d       levels 3/3  xi  97.32%  L1/L2/L3 96.59/99.48/99.43%  T  484.1 s  min clearance 0.545 m  traverses 2 (given up 0)  no frontier left
+  MIN_FRONTIER = 10 (default 8)      3d       levels 3/3  xi  97.18%  L1/L2/L3 96.40/99.48/99.43%  T  439.5 s  min clearance 0.543 m  traverses 2 (given up 0)  no frontier left
+  GOAL_CELLS = 1 (default 2)         3d       levels 3/3  xi  96.33%  L1/L2/L3 95.86/99.48/99.41%  T  338.5 s  min clearance 0.533 m  traverses 2 (given up 0)  frontiers unreachable
+  SOFT_COST = 8 (default 5)          3d       levels 3/3  xi  96.96%  L1/L2/L3 96.19/99.48/99.44%  T  445.9 s  min clearance 0.505 m  traverses 2 (given up 0)  frontiers unreachable
+  CARROT = 0.4 (default 0.6)         3d       levels 3/3  xi  97.27%  L1/L2/L3 96.63/99.48/99.43%  T  533.7 s  min clearance 0.541 m  traverses 2 (given up 0)  frontiers unreachable
+  REPLAN_EVERY = 20 (default 30)     3d       levels 3/3  xi  97.46%  L1/L2/L3 96.74/99.47/99.43%  T  454.3 s  min clearance 0.483 m  traverses 2 (given up 0)  frontiers unreachable
+  REPLAN_EVERY = 45 (default 30)     3d       levels 3/3  xi  96.96%  L1/L2/L3 96.31/99.47/99.43%  T  413.4 s  min clearance 0.484 m  traverses 2 (given up 0)  frontiers unreachable
+  IGNORE_R = 0.8 (default 1)         3d       levels 3/3  xi  97.29%  L1/L2/L3 96.58/99.47/99.43%  T  576.8 s  min clearance 0.502 m  traverses 2 (given up 0)  no frontier left
+  IGNORE_R = 1.2 (default 1)         3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  STOP_DIST = 0.4 (default 0.5)      3d       levels 3/3  xi  97.01%  L1/L2/L3 96.36/99.30/99.43%  T  458.9 s  min clearance 0.511 m  traverses 2 (given up 0)  frontiers unreachable
+  STOP_DIST = 0.6 (default 0.5)      3d       levels 3/3  xi  97.01%  L1/L2/L3 96.25/99.42/99.43%  T  382.6 s  min clearance 0.475 m  traverses 2 (given up 0)  no frontier left
+  VISIT_GAP = 10 (default 15)        3d       levels 3/3  xi  96.98%  L1/L2/L3 96.25/99.47/99.43%  T  391.2 s  min clearance 0.521 m  traverses 2 (given up 0)  frontiers unreachable
+  VISIT_GAP = 25 (default 15)        3d       levels 3/3  xi  97.07%  L1/L2/L3 96.40/99.47/99.40%  T  490.4 s  min clearance 0.497 m  traverses 2 (given up 0)  frontiers unreachable
+  CLR_VOX = 0 (default 1)            3d       levels 3/3  xi  97.14%  L1/L2/L3 96.40/99.47/99.43%  T  486.8 s  min clearance 0.410 m  traverses 2 (given up 0)  no frontier left
+  CLR_VOX = 2 (default 1)            3d       levels 3/3  xi  96.63%  L1/L2/L3 96.08/99.46/99.44%  T  377.9 s  min clearance 0.592 m  traverses 2 (given up 0)  frontiers unreachable
+  ALIGN_TOL = 0.1 (default 0.15)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.39/99.45/99.42%  T  438.9 s  min clearance 0.466 m  traverses 2 (given up 0)  no frontier left
+  ALIGN_MAX = 0.4 (default 0.6)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  ALIGN_MAX = 0.8 (default 0.6)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  GUARD_DZ = 0.1 (default 0.2)       3d       levels 3/3  xi  97.09%  L1/L2/L3 96.33/99.47/99.43%  T  422.5 s  min clearance 0.544 m  traverses 2 (given up 0)  no frontier left
+  CLIMB_VXY = 0.2 (default 0.3)      3d       levels 3/3  xi  97.28%  L1/L2/L3 96.59/99.48/99.43%  T  413.3 s  min clearance 0.531 m  traverses 2 (given up 0)  no frontier left
+  CLIMB_VXY = 0.4 (default 0.3)      3d       levels 3/3  xi  97.20%  L1/L2/L3 96.45/99.47/99.43%  T  432.2 s  min clearance 0.485 m  traverses 2 (given up 0)  no frontier left
+  CLIMB_HTOL = 0.05 (default 0.1)    3d       levels 3/3  xi  97.06%  L1/L2/L3 96.31/99.47/99.36%  T  446.3 s  min clearance 0.488 m  traverses 2 (given up 0)  frontiers unreachable
+  CLIMB_HTOL = 0.15 (default 0.1)    3d       levels 3/3  xi  96.82%  L1/L2/L3 96.22/99.47/99.43%  T  443.9 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  TRAV_TOL = 0.3 (default 0.5)       3d       levels 3/3  xi  97.12%  L1/L2/L3 96.45/99.47/99.43%  T  445.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  TRAV_TOL = 0.7 (default 0.5)       3d       levels 3/3  xi  97.25%  L1/L2/L3 96.50/99.49/99.42%  T  445.2 s  min clearance 0.543 m  traverses 2 (given up 0)  frontiers unreachable
+  TRAV_STOP = 0.05 (default 0.1)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  TRAV_STOP = 0.2 (default 0.1)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  CENTRE_WIN = 1.2 (default 1.5)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  CENTRE_WIN = 2 (default 1.5)       3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  T_TRAV_MAX = 90 (default 120)      3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  T_TRAV_MAX = 180 (default 120)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+  SAFE_R = 0.6 (default 0.7)         3d       levels 3/3  xi  96.95%  L1/L2/L3 96.30/99.48/99.43%  T  373.4 s  min clearance 0.524 m  traverses 2 (given up 0)  frontiers unreachable
+  SAFE_R = 0.8 (default 0.7)         3d       levels 3/3  xi  97.19%  L1/L2/L3 96.47/99.46/99.43%  T  454.2 s  min clearance 0.576 m  traverses 2 (given up 0)  frontiers unreachable
+  K_REPEL = 0.5 (default 1)          3d       levels 3/3  xi  97.16%  L1/L2/L3 96.51/99.47/99.43%  T  405.8 s  min clearance 0.508 m  traverses 2 (given up 0)  no frontier left
+  K_REPEL = 2 (default 1)            3d       levels 3/3  xi  97.24%  L1/L2/L3 96.56/99.47/99.42%  T  422.2 s  min clearance 0.484 m  traverses 2 (given up 0)  no frontier left
+  [Totals, 3d missions]
+  review settings: 11 runs; all three levels 10/11, two levels 0/11, one level 1/11, aborted 0/11
+    xi over completed runs: median 97.34%, min 50.51%, max 97.81%; runs with all three levels 96.83-97.81%; min wall clearance over completed runs 0.352 m
+  fresh default seeds: 10 runs; all three levels 10/10, two levels 0/10, one level 0/10, aborted 0/10
+    xi over completed runs: median 97.09%, min 96.84%, max 97.74%; runs with all three levels 96.84-97.74%; min wall clearance over completed runs 0.416 m
+  development layouts: 2 runs; all three levels 2/2, two levels 0/2, one level 0/2, aborted 0/2
+    xi over completed runs: median 96.90%, min 96.72%, max 97.08%; runs with all three levels 96.72-97.08%; min wall clearance over completed runs 0.506 m
+  planner constants: 48 runs; all three levels 48/48, two levels 0/48, one level 0/48, aborted 0/48
+    xi over completed runs: median 97.11%, min 96.33%, max 97.65%; runs with all three levels 96.33-97.65%; min wall clearance over completed runs 0.410 m
+  all: 71 runs; all three levels 70/71, two levels 0/71, one level 1/71, aborted 0/71
+    xi over completed runs: median 97.11%, min 50.51%, max 97.81%; runs with all three levels 96.33-97.81%; min wall clearance over completed runs 0.352 m
+    failed: review: GUARD_DZ = 0.4  3d  levels 1/3  xi  50.51%  L1/L2/L3 96.47/ 0.15/ 0.00%  T  284.3 s  min clearance 0.547 m  traverses 1 (given up 1)  no frontier left
+  3d_fixed (altitude held) on the fresh seeds: 10 runs, xi 49.46-49.88%, levels ['1']

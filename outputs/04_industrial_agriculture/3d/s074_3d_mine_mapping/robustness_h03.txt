@@ -1,0 +1,8 @@
+=== S074 3D held-out robustness, part h03 ===
+review: REJECT_R = 0.2, seed 43    3d       levels 3/3  xi  97.05%  L1/L2/L3 96.25/99.47/99.43%  T  446.1 s  min clearance 0.540 m  traverses 2 (given up 0)  frontiers unreachable
+fresh seed 100                     3d       levels 3/3  xi  97.12%  L1/L2/L3 96.32/99.48/99.43%  T  433.6 s  min clearance 0.548 m  traverses 2 (given up 0)  frontiers unreachable
+fresh seed 100                     3d_fixed levels 1/3  xi  49.87%  L1/L2/L3 95.47/ 0.00/ 0.00%  T   96.5 s  min clearance 0.911 m  traverses 0 (given up 0)  no frontier left
+fresh seed 101                     3d       levels 3/3  xi  97.74%  L1/L2/L3 96.92/99.48/99.43%  T  516.3 s  min clearance 0.466 m  traverses 2 (given up 0)  frontiers unreachable
+fresh seed 101                     3d_fixed levels 1/3  xi  49.76%  L1/L2/L3 95.32/ 0.00/ 0.00%  T   99.5 s  min clearance 0.974 m  traverses 0 (given up 0)  no frontier left
+fresh seed 102                     3d       levels 3/3  xi  97.12%  L1/L2/L3 96.43/99.47/99.43%  T  403.5 s  min clearance 0.416 m  traverses 2 (given up 0)  no frontier left
+fresh seed 102                     3d_fixed levels 1/3  xi  49.87%  L1/L2/L3 95.50/ 0.00/ 0.00%  T   96.5 s  min clearance 0.953 m  traverses 0 (given up 0)  no frontier left

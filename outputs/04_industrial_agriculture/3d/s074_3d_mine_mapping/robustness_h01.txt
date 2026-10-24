@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h01 ===
+review: seed 2026                  3d       levels 3/3  xi  97.27%  L1/L2/L3 96.64/99.47/99.43%  T  459.4 s  min clearance 0.463 m  traverses 2 (given up 0)  no frontier left
+review: seed 99                    3d       levels 3/3  xi  97.54%  L1/L2/L3 96.72/99.48/99.23%  T  536.7 s  min clearance 0.481 m  traverses 2 (given up 0)  frontiers unreachable
+review: layout D                   3d       levels 3/3  xi  97.34%  L1/L2/L3 96.51/99.55/99.42%  T  419.4 s  min clearance 0.608 m  traverses 2 (given up 0)  no frontier left
+review: SHAFT_DZ = 2               3d       levels 3/3  xi  96.83%  L1/L2/L3 96.06/99.47/99.43%  T  361.9 s  min clearance 0.490 m  traverses 2 (given up 0)  no frontier left
+review: LAT_DZ = 0.5, seed 7       3d       levels 3/3  xi  97.01%  L1/L2/L3 96.40/99.46/99.44%  T  387.2 s  min clearance 0.514 m  traverses 2 (given up 0)  frontiers unreachable

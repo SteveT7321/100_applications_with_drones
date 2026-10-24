@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h13 ===
+CLIMB_HTOL = 0.05 (default 0.1)    3d       levels 3/3  xi  97.06%  L1/L2/L3 96.31/99.47/99.36%  T  446.3 s  min clearance 0.488 m  traverses 2 (given up 0)  frontiers unreachable
+CLIMB_HTOL = 0.15 (default 0.1)    3d       levels 3/3  xi  96.82%  L1/L2/L3 96.22/99.47/99.43%  T  443.9 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+TRAV_TOL = 0.3 (default 0.5)       3d       levels 3/3  xi  97.12%  L1/L2/L3 96.45/99.47/99.43%  T  445.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+TRAV_TOL = 0.7 (default 0.5)       3d       levels 3/3  xi  97.25%  L1/L2/L3 96.50/99.49/99.42%  T  445.2 s  min clearance 0.543 m  traverses 2 (given up 0)  frontiers unreachable
+TRAV_STOP = 0.05 (default 0.1)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable

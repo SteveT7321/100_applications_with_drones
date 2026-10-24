@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h10 ===
+REPLAN_EVERY = 45 (default 30)     3d       levels 3/3  xi  96.96%  L1/L2/L3 96.31/99.47/99.43%  T  413.4 s  min clearance 0.484 m  traverses 2 (given up 0)  frontiers unreachable
+IGNORE_R = 0.8 (default 1)         3d       levels 3/3  xi  97.29%  L1/L2/L3 96.58/99.47/99.43%  T  576.8 s  min clearance 0.502 m  traverses 2 (given up 0)  no frontier left
+IGNORE_R = 1.2 (default 1)         3d       levels 3/3  xi  97.11%  L1/L2/L3 96.31/99.48/99.43%  T  406.4 s  min clearance 0.547 m  traverses 2 (given up 0)  frontiers unreachable
+STOP_DIST = 0.4 (default 0.5)      3d       levels 3/3  xi  97.01%  L1/L2/L3 96.36/99.30/99.43%  T  458.9 s  min clearance 0.511 m  traverses 2 (given up 0)  frontiers unreachable
+STOP_DIST = 0.6 (default 0.5)      3d       levels 3/3  xi  97.01%  L1/L2/L3 96.25/99.42/99.43%  T  382.6 s  min clearance 0.475 m  traverses 2 (given up 0)  no frontier left

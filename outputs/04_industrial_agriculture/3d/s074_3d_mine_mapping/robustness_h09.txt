@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h09 ===
+MIN_FRONTIER = 10 (default 8)      3d       levels 3/3  xi  97.18%  L1/L2/L3 96.40/99.48/99.43%  T  439.5 s  min clearance 0.543 m  traverses 2 (given up 0)  no frontier left
+GOAL_CELLS = 1 (default 2)         3d       levels 3/3  xi  96.33%  L1/L2/L3 95.86/99.48/99.41%  T  338.5 s  min clearance 0.533 m  traverses 2 (given up 0)  frontiers unreachable
+SOFT_COST = 8 (default 5)          3d       levels 3/3  xi  96.96%  L1/L2/L3 96.19/99.48/99.44%  T  445.9 s  min clearance 0.505 m  traverses 2 (given up 0)  frontiers unreachable
+CARROT = 0.4 (default 0.6)         3d       levels 3/3  xi  97.27%  L1/L2/L3 96.63/99.48/99.43%  T  533.7 s  min clearance 0.541 m  traverses 2 (given up 0)  frontiers unreachable
+REPLAN_EVERY = 20 (default 30)     3d       levels 3/3  xi  97.46%  L1/L2/L3 96.74/99.47/99.43%  T  454.3 s  min clearance 0.483 m  traverses 2 (given up 0)  frontiers unreachable

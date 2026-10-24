@@ -1,9 +1,0 @@
-=== S074 3D robustness, part planner_b (base: seed 42, default layout) ===
-REJECT_R = 0.2 (default 0.3) 3d       levels 3/3  xi  71.84%  L1/L2/L3 84.53/76.50/76.26%  T  472.3 s  min clearance 0.28 m  frontiers unreachable
-REJECT_R = 0.5 (default 0.3) 3d       levels 3/3  xi  71.76%  L1/L2/L3 84.44/76.58/76.28%  T  476.9 s  min clearance 0.58 m  no frontier left
-REJECT_EXCL = 0.6 (default 1) 3d       levels 3/3  xi  71.72%  L1/L2/L3 84.63/76.43/76.19%  T  453.6 s  min clearance 0.54 m  frontiers unreachable
-REJECT_EXCL = 1.5 (default 1) 3d       levels 3/3  xi  71.52%  L1/L2/L3 84.48/76.54/76.18%  T  403.6 s  min clearance 0.39 m  frontiers unreachable
-MAX_VISITS = 2 (default 3) 3d       levels 3/3  xi  71.73%  L1/L2/L3 84.43/76.29/76.16%  T  543.6 s  min clearance 0.48 m  no frontier left
-MAX_VISITS = 5 (default 3) 3d       levels 3/3  xi  71.96%  L1/L2/L3 84.62/76.45/76.29%  T  524.8 s  min clearance 0.48 m  frontiers unreachable
-MIN_FRONTIER = 4 (default 8) 3d       levels 3/3  xi  72.02%  L1/L2/L3 84.70/76.60/76.22%  T  474.1 s  min clearance 0.55 m  frontiers unreachable
-MIN_FRONTIER = 12 (default 8) 3d       levels 3/3  xi  71.65%  L1/L2/L3 84.47/76.54/76.26%  T  424.1 s  min clearance 0.51 m  no frontier left

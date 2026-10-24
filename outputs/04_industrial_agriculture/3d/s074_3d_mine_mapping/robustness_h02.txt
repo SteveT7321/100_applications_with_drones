@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h02 ===
+review: CARROT = 0.9               3d       levels 3/3  xi  97.34%  L1/L2/L3 96.72/99.50/99.42%  T  546.0 s  min clearance 0.394 m  traverses 2 (given up 0)  frontiers unreachable
+review: GOAL_CELLS = 3             3d       levels 3/3  xi  97.35%  L1/L2/L3 96.49/99.49/99.43%  T  779.9 s  min clearance 0.465 m  traverses 2 (given up 0)  no frontier left
+review: GUARD_DZ = 0.4             3d       levels 1/3  xi  50.51%  L1/L2/L3 96.47/ 0.15/ 0.00%  T  284.3 s  min clearance 0.547 m  traverses 1 (given up 1)  no frontier left
+review: SOFT_COST = 2              3d       levels 3/3  xi  97.81%  L1/L2/L3 97.05/99.49/99.43%  T  521.9 s  min clearance 0.352 m  traverses 2 (given up 0)  frontiers unreachable
+review: ALIGN_TOL = 0.25           3d       levels 3/3  xi  97.60%  L1/L2/L3 96.78/99.47/99.43%  T  513.2 s  min clearance 0.457 m  traverses 2 (given up 0)  frontiers unreachable

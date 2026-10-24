@@ -1,0 +1,6 @@
+=== S074 3D held-out robustness, part h11 ===
+VISIT_GAP = 10 (default 15)        3d       levels 3/3  xi  96.98%  L1/L2/L3 96.25/99.47/99.43%  T  391.2 s  min clearance 0.521 m  traverses 2 (given up 0)  frontiers unreachable
+VISIT_GAP = 25 (default 15)        3d       levels 3/3  xi  97.07%  L1/L2/L3 96.40/99.47/99.40%  T  490.4 s  min clearance 0.497 m  traverses 2 (given up 0)  frontiers unreachable
+CLR_VOX = 0 (default 1)            3d       levels 3/3  xi  97.14%  L1/L2/L3 96.40/99.47/99.43%  T  486.8 s  min clearance 0.410 m  traverses 2 (given up 0)  no frontier left
+CLR_VOX = 2 (default 1)            3d       levels 3/3  xi  96.63%  L1/L2/L3 96.08/99.46/99.44%  T  377.9 s  min clearance 0.592 m  traverses 2 (given up 0)  frontiers unreachable
+ALIGN_TOL = 0.1 (default 0.15)     3d       levels 3/3  xi  97.11%  L1/L2/L3 96.39/99.45/99.42%  T  438.9 s  min clearance 0.466 m  traverses 2 (given up 0)  no frontier left

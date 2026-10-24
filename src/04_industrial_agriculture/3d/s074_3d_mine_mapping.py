@@ -11,12 +11,15 @@ candidate is tested with the rangefinders from below (or above); a confirmed sha
 traversed as the card describes: align under the opening centre, then climb (descend) to
 the gallery beyond. Planning keeps traversable cells >= 0.4 m from every occupied voxel.
 Altitude is therefore a planned state. Dust attenuates beams by Beer-Lambert.
-Robustness (seeds, layouts, planner constants): s074_3d_mine_mapping_robustness.py.
+Held-out robustness set (seeds, layouts, planner constants): s074_3d_mine_mapping_robustness.py.
 
 Missions (seed 42), mapped and navigated with the true pose:
   3d        16-layer LiDAR + rangefinders, 3D frontiers, shaft traversal   (card)
   3d_fixed  16-layer LiDAR, altitude held at 1.5 m (no shaft traversal)    (ablation)
   2d        the 2D base: 180-beam planar LiDAR, altitude held at 1.5 m      (2D baseline)
+  3d without the rangefinder rays in the map                               (ablation)
+Ground truth: free = voxel cube fully inside the mine; wall = voxel containing the wall
+surface or sharing a face with it. Wall clearance is computed exactly (distance to the rock).
 Pose estimation (point-to-plane ICP on x, y, z, yaw with an odometry prior, degeneracy-
 aware, plus a rangefinder altitude reference) is evaluated by replays on the flown 3D
 trajectory (3 noise seeds, against dead reckoning), by rebuilding the map with the ICP
@@ -38,7 +41,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 from scipy.spatial import cKDTree
-from scipy.ndimage import binary_dilation, label, maximum_filter, find_objects
+from scipy.ndimage import label, maximum_filter, find_objects
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import dijkstra
 
@@ -156,9 +159,6 @@ DIRS3, AZ3, EL3 = lidar_dirs(N_AZ, EL)
 DIRS2, AZ2, EL2 = lidar_dirs(N_AZ_2D, np.array([0.0]))
 RF_DIRS = np.array([[0.0, 0.0, 1.0], [0.0, 0.0, -1.0]])
 DIRS_ALL = np.vstack([DIRS3, RF_DIRS])
-CLEAR_DIRS = np.array([(i, j, k) for i in (-1, 0, 1) for j in (-1, 0, 1) for k in (-1, 0, 1)
-                       if (i, j, k) != (0, 0, 0)], float)
-CLEAR_DIRS /= np.linalg.norm(CLEAR_DIRS, axis=1, keepdims=True)
 
 
 def rotz(th):
@@ -193,8 +193,30 @@ def cast3d(p, dirs):
     return t
 
 
+_OUT_CELLS = {}
+
+
+def outside_cells():
+    """The rock (complement of the union of boxes) as the cells of the grid spanned by all box
+    bounds that lie outside every box; cached per layout."""
+    key = BLO.tobytes() + BHI.tobytes()
+    if key not in _OUT_CELLS:
+        big = 1e3
+        e = [np.unique(np.r_[-big, BLO[:, d], BHI[:, d], big]) for d in range(3)]
+        c = np.stack(np.meshgrid(0.5 * (e[0][1:] + e[0][:-1]), 0.5 * (e[1][1:] + e[1][:-1]),
+                                 0.5 * (e[2][1:] + e[2][:-1]), indexing='ij'), -1).reshape(-1, 3)
+        lo = np.stack(np.meshgrid(e[0][:-1], e[1][:-1], e[2][:-1], indexing='ij'), -1).reshape(-1, 3)
+        hi = np.stack(np.meshgrid(e[0][1:], e[1][1:], e[2][1:], indexing='ij'), -1).reshape(-1, 3)
+        out = ~inside(c)
+        _OUT_CELLS[key] = (lo[out], hi[out])
+    return _OUT_CELLS[key]
+
+
 def clearance(p):
-    return float(cast3d(p, CLEAR_DIRS).min())
+    """Exact distance from p to the nearest wall: distance to the closest rock cell."""
+    lo, hi = outside_cells()
+    d = np.maximum(np.maximum(lo - p, p - hi), 0.0)
+    return float(np.sqrt((d * d).sum(1)).min())
 
 
 def dust_reach(z0, sin_el, mu):
@@ -264,22 +286,46 @@ def voxel_centres():
 
 
 def ground_truth():
+    """Voxel labels. free: the whole voxel cube lies inside the mine (all 8 corners, pulled in by
+    1e-6 m). wall: the cube contains the wall surface (some corners inside, some outside; walls
+    through voxel centres), or lies outside with a face on the surface (walls on voxel faces).
+    Voxels that are fully outside and do not touch the surface are rock and not scored."""
     ax = voxel_centres()
-    free = np.zeros(GSHAPE, bool)
+
+    def in_union(off):
+        m = np.zeros(GSHAPE, bool)
+        for lo, hi in zip(BLO, BHI):
+            ix = [(ax[i] + off[i] >= lo[i]) & (ax[i] + off[i] <= hi[i]) for i in range(3)]
+            m |= ix[0][:, None, None] & ix[1][None, :, None] & ix[2][None, None, :]
+        return m
+
+    h = VOX / 2 - 1e-6
+    n_in = np.zeros(GSHAPE, np.int8)
+    for sx in (-h, h):
+        for sy in (-h, h):
+            for sz in (-h, h):
+                n_in += in_union((sx, sy, sz))
+    free = n_in == 8
+    surface = (n_in > 0) & (n_in < 8)
+    face = np.zeros(GSHAPE, bool)
+    for d in range(3):
+        for s in (-1.0, 1.0):
+            off = np.zeros(3)
+            off[d] = s * (VOX / 2 + 1e-6)
+            face |= in_union(off)
+    face &= n_in == 0
+    wall = surface | face
     level = np.zeros(GSHAPE, np.int8)
     for (lo, hi), lv in zip(zip(BLO, BHI), LEVEL_OF_BOX):
-        ix = [(ax[i] >= lo[i]) & (ax[i] <= hi[i]) for i in range(3)]
-        m = ix[0][:, None, None] & ix[1][None, :, None] & ix[2][None, None, :]
-        free |= m
         if lv > 0:
-            level[m] = lv
+            ix = [(ax[i] >= lo[i]) & (ax[i] <= hi[i]) for i in range(3)]
+            level[ix[0][:, None, None] & ix[1][None, :, None] & ix[2][None, None, :]] = lv
     level[free & (level == 0)] = 4                   # shaft-only voxels
-    wall = binary_dilation(free, structure=np.ones((3, 3, 3))) & ~free
     z = ax[2][None, None, :] * np.ones(GSHAPE)
     dust = C0 * np.exp(-z / H_DUST) > 0.5
     return dict(free_idx=np.flatnonzero(free), wall_idx=np.flatnonzero(wall),
                 free_level=level.ravel()[np.flatnonzero(free)],
-                wall_z=np.broadcast_to(ax[2][None, None, :], GSHAPE).ravel()[np.flatnonzero(wall)],
+                n_surface=int(surface.sum()), n_face=int(face.sum()),
                 dust_idx=np.flatnonzero((free | wall) & dust),
                 plane_idx=np.flatnonzero(free & (np.abs(z - L1) < VOX / 2 + 1e-9)
                                          & (level == 1)))
@@ -408,18 +454,21 @@ AX_IDX = [a * N_EL for a in (0, 180, 90, 270)]   # beams toward +x, -x, +y, -y (
 
 def recentre(trav, p, r, ret, gal_half, levels):
     """Shaft axis from the steepest LiDAR layer: in each of +x/-x and +y/-y, if both beams hit a
-    wall beyond the current gallery's ceiling (climbing) or floor (descending), the axis lies
-    midway between the two hits."""
+    wall between the current gallery's ceiling and the target gallery's floor (climbing; floor and
+    target ceiling when descending), i.e. a shaft wall, the axis lies midway between the two hits.
+    Hits above the target gallery's floor are walls of that gallery, not of the shaft."""
     up = trav['zt'] > p[2]
     k = N_EL - 1 if up else 0
     lvl = min(levels, key=lambda z: abs(z - p[2]))
     edge = lvl + (gal_half if up else -gal_half)
+    far_edge = trav['zt'] - gal_half if up else trav['zt'] + gal_half
     s, c = np.sin(EL[k]), np.cos(EL[k])
     for ax, (i, j) in enumerate(((AX_IDX[0], AX_IDX[1]), (AX_IDX[2], AX_IDX[3]))):
         i, j = i + k, j + k
         if ret[i] and ret[j]:
             zi, zj = p[2] + r[i] * s, p[2] + r[j] * s
-            beyond = (zi > edge and zj > edge) if up else (zi < edge and zj < edge)
+            beyond = (edge < min(zi, zj) and max(zi, zj) < far_edge) if up else \
+                (far_edge < min(zi, zj) and max(zi, zj) < edge)
             if beyond:
                 trav['goal'][ax] = p[ax] + 0.5 * (r[i] - r[j]) * c
                 trav['centred'][ax] = True
@@ -577,10 +626,11 @@ def plan(vm, p_est, layer, ignored, keep_goal=None, levels=None, shaft_boxes=Non
 
 
 # ── Closed-loop mission ───────────────────────────────────────────────────────
-def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEOUT):
+def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEOUT, map_rf=True):
     """mode: '3d' (shafts allowed, up/down rangefinders), '3d_fixed' (16 layers, z held),
     '2d' (base sensor, z held). pose: 'true' maps and navigates with the true pose (the
-    estimators are evaluated by replay); 'est' closes the loop with the ICP estimate."""
+    estimators are evaluated by replay); 'est' closes the loop with the ICP estimate.
+    map_rf: the 3d mission also writes its up/down rangefinder rays into the map."""
     t_wall = time.time()
     rng = np.random.default_rng(seed)
     planar = mode == '2d'
@@ -609,7 +659,7 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
     gal_half = None
     traverse, n_traverse, n_trav_fail = None, 0, 0
     status, k, t = 'timeout', 0, 0.0
-    min_clear, vz_max_seen = np.inf, 0.0
+    min_clear, vz_max_seen, v_true_h, v_true_z = np.inf, 0.0, 0.0, 0.0
     r_meas, ok_ret = None, None
     while t < t_max - 1e-9:
         if k % SCAN_STEPS == 0:
@@ -672,9 +722,10 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
                             bx[4] = -1                # ceiling and floor right at the box centre
                 if traverse is not None and traverse['phase'] == 'climb':
                     recentre(traverse, p_est, r_meas, ret, gal_half, levels)
-                dw = np.vstack([dw, RF_DIRS])
-                L_free = np.concatenate([L_free, np.where(ret_rf, rm_rf, np.minimum(R_RF, reach_rf))])
-                hits = np.vstack([hits, p_est[None, :] + rm_rf[ret_rf, None] * RF_DIRS[ret_rf]])
+                if map_rf:
+                    dw = np.vstack([dw, RF_DIRS])
+                    L_free = np.concatenate([L_free, np.where(ret_rf, rm_rf, np.minimum(R_RF, reach_rf))])
+                    hits = np.vstack([hits, p_est[None, :] + rm_rf[ret_rf, None] * RF_DIRS[ret_rf]])
             vm.update(p_est, dw, L_free, hits, k)
             scan_k.append(k)
             if record and mode == '3d':
@@ -754,13 +805,12 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
                 v = V_NAV * d / np.linalg.norm(d)
                 if abs(v[2]) > VZ_MAX:
                     v *= VZ_MAX / abs(v[2])
-            vert = abs(d[2]) > np.linalg.norm(d[:2])
-            modes.append('shaft' if vert else 'cruise')
+            modes.append('cruise' if traverse is None else 'align')
         # reactive safety filter on raw returns (body frame) + vertical rangefinders
         vb = rotz(-th_est) @ v
         close = ok_ret & (r_meas < SAFE_R)
         us = list(zip(dirs[close], r_meas[close]))
-        if vertical:
+        if vertical:                                  # true (noise-free) vertical ranges every step
             for u in RF_DIRS:
                 rv = float(cast3d(p_true, u[None, :])[0])
                 if rv < SAFE_R:
@@ -783,6 +833,8 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
         g = rng.normal(0, SIGMA_GYRO)
         step = vb * DT + w                            # true yaw is 0: body = world
         p_true = p_true + step
+        v_true_h = max(v_true_h, float(np.linalg.norm(step[:2])) / DT)
+        v_true_z = max(v_true_z, abs(float(step[2])) / DT)
         disp_cmd = disp_cmd + rotz(th_est) @ vb * DT
         gyro_acc += g
         p_est = p_est + rotz(th_est) @ vb * DT        # dead reckoning until the next scan
@@ -817,7 +869,8 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
     return dict(mode=mode, vm=vm, tt=tt, te=te, modes=np.array(modes), scan_k=np.array(scan_k),
                 scans=scans, cov_log=cov_log, snaps=snaps, t=t, status=status,
                 icp_it=np.array(icp_it), tau_max=tau_max, lost_dust=lost_dust, n_beams=n_beams,
-                min_clear=min_clear, vz_max=vz_max_seen, wall=time.time() - t_wall,
+                min_clear=min_clear, vz_max=vz_max_seen, v_true_h=v_true_h, v_true_z=v_true_z,
+                wall=time.time() - t_wall,
                 ignored=ignored, visits=visits, levels=levels, shaft_boxes=shaft_boxes, n_anchor=n_anchor,
                 n_traverse=n_traverse, n_trav_fail=n_trav_fail)
 
@@ -942,6 +995,8 @@ def run_simulation():
     for mode in ('3d', '3d_fixed', '2d'):
         res['missions'][mode] = mission(mode, record=(mode == '3d'))
         print(f"  [{mode}] mission done in {res['missions'][mode]['wall']:.0f} s", file=sys.stderr)
+    res['no_rf_map'] = mission('3d', map_rf=False)
+    print(f"  [3d without rangefinder rays in the map] done in {res['no_rf_map']['wall']:.0f} s", file=sys.stderr)
     res['probe_est'] = mission('3d', pose='est', t_max=T_PROBE)
     print(f"  closed-loop estimate probe done in {res['probe_est']['wall']:.0f} s", file=sys.stderr)
     m3 = res['missions']['3d']
@@ -1047,7 +1102,7 @@ def plot_altitude(res, out_dir):
     ax.plot(t, m['tt'][:, 2], 'k-', lw=1.2, label='z true')
     ax.plot(ts, rp['icp']['est'][:, 2], 'r--', lw=1, label=f'z estimated, ICP + RF (replay seed {REPLAY_SEEDS[0]})')
     sh = np.array([mm == 'shaft' for mm in m['modes']])
-    ax.fill_between(t[1:], 0, 13, where=sh, color='gold', alpha=0.3, label='shaft-traverse mode')
+    ax.fill_between(t[1:], 0, 13, where=sh, color='gold', alpha=0.3, label='shaft traverse (vertical phase)')
     for z in Z_LEVELS:
         ax.axhline(z, color='grey', ls=':', lw=0.7)
     ax.set_ylabel('z (m)')
@@ -1160,7 +1215,7 @@ def save_animation(res, out_dir):
         mode = m['modes'][min(k, len(m['modes']) - 1)]
         dot.set_data([tt[k, 0]], [tt[k, 1]])
         dot.set_3d_properties([tt[k, 2]])
-        dot.set_color('gold' if mode == 'shaft' else 'tab:blue')
+        dot.set_color({'shaft': 'gold', 'align': 'tab:orange'}.get(mode, 'tab:blue'))
         ax.view_init(elev=25, azim=-60 + 40 * f / max(len(snaps) - 1, 1))
         ax.set_title(f't = {k * DT:5.1f} s | z = {tt[k, 2]:.1f} m | mode {mode}', fontsize=9)
         return [sc, line, dot]
@@ -1178,7 +1233,8 @@ def report(res):
     print('\n=== S074 3D Mine Mapping — Results ===')
     vol = sum(np.prod(hi - lo) for lo, hi in zip(BLO, BHI))
     print(f'  Mine: {len(BOXES)} boxes (box volume sum {vol:.0f} m^3), ground truth {len(gt["free_idx"])} free '
-          f'voxels, {len(gt["wall_idx"])} wall voxels; free voxels L1/L2/L3/shafts: '
+          f'voxels (cube fully inside), {len(gt["wall_idx"])} wall voxels ({gt["n_surface"]} containing the wall '
+          f'surface, {gt["n_face"]} outside with a face on it); free voxels L1/L2/L3/shafts: '
           + '/'.join(str(int((gt['free_level'] == k).sum())) for k in (1, 2, 3, 4)))
     print(f'  LiDAR geometry: from the tunnel centre (1.5 m above the floor) the lowest beam (-15 deg) reaches the '
           f'floor {HALF_W / np.tan(EL_MAX):.2f} m away; on a shaft wall 1 m away the highest beam is '
@@ -1192,8 +1248,10 @@ def report(res):
         c = m['cov_log'][-1][1]
         path_len = np.sum(np.linalg.norm(np.diff(m['tt'], axis=0), axis=1))
         n_sh = int((m['modes'] == 'shaft').sum())
+        n_al = int((m['modes'] == 'align').sum())
         print(f'  [{mode} mission, true pose] ended: {m["status"]} at T_exp = {m["t"]:.1f} s, path {path_len:.1f} m, '
-              f'shaft-traverse steps {n_sh} ({100 * n_sh / max(len(m["modes"]), 1):.1f}%), max altitude '
+              f'shaft traverse: vertical phase {n_sh} steps ({100 * n_sh / max(len(m["modes"]), 1):.1f}%), '
+              f'alignment phase {n_al} steps ({100 * n_al / max(len(m["modes"]), 1):.1f}%); max altitude '
               f'{m["tt"][:, 2].max():.2f} m')
         print(f'    volumetric coverage xi {100 * c["xi"]:.2f}% (free voxels mapped free {100 * c["free"]:.2f}%, '
               f'wall voxels mapped occupied {100 * c["wall"]:.2f}%)')
@@ -1201,22 +1259,38 @@ def report(res):
               f'L3 {100 * c["L3"]:.2f}%, shafts {100 * c["shafts"]:.2f}%; L1 scan plane (z = 1.5 m layer) '
               f'{100 * c["plane"]:.2f}%')
         print(f'    dust-zone voxels unknown {100 * c["dust_unknown"]:.2f}%; beams lost to dust {m["lost_dust"]} of '
-              f'{m["n_beams"]}; max one-way optical depth {m["tau_max"]:.3f}; min wall clearance '
-              f'{m["min_clear"]:.2f} m (asserted >= {R_DRONE}); max |v_z| {m["vz_max"]:.2f} m/s')
+              f'{m["n_beams"]}; max one-way optical depth {m["tau_max"]:.3f}; min wall clearance (exact) '
+              f'{m["min_clear"]:.3f} m (asserted >= {R_DRONE})')
+        print(f'    speed: commanded |v_xy| <= {V_NAV} and |v_z| <= {VZ_MAX} m/s (asserted; max commanded |v_z| '
+              f'{m["vz_max"]:.2f} m/s); true per-step speed including the odometry noise (sigma {SIGMA_ODO} m per '
+              f'{DT} s step and axis, 2D base model): horizontal max {m["v_true_h"]:.2f} m/s, vertical max '
+              f'{m["v_true_z"]:.2f} m/s')
         if mode == '3d':
             print(f'    galleries found at z = ' + ', '.join(f'{z:.2f}' for z in m['levels'])
                   + f' m; shaft traverses {m["n_traverse"]} (given up {m["n_trav_fail"]}); candidate shaft boxes: '
                   f'{sum(b[4] == 2 for b in m["shaft_boxes"])} traversed or leading to a known level, '
                   f'{sum(b[4] == -1 for b in m["shaft_boxes"])} rejected, {sum(b[4] == 0 for b in m["shaft_boxes"])} untested')
-        for thr in (0.25, 0.5):
+        for thr in (0.25, 0.5, 0.85):
             hit = [x[0] for x in m['cov_log'] if x[1]['xi'] >= thr]
             print(f'    xi reached {int(100 * thr)}% at ' + (f'{hit[0]:.0f} s' if hit else 'never'))
+        pl = {thr: [x[0] for x in m['cov_log'] if x[1]['plane'] >= thr] for thr in (0.95, 0.99)}
+        parts = [f'{int(100 * thr)}% ' + (f'at {pl[thr][0]:.0f} s' if pl[thr] else 'never') for thr in (0.95, 0.99)]
+        parts += [f"at {T} s {100 * [x[1]['plane'] for x in m['cov_log'] if x[0] <= T + 1e-9][-1]:.2f}%"
+                  for T in (100, 200) if m['t'] >= T]
+        parts.append(f"final {100 * m['cov_log'][-1][1]['plane']:.2f}% at {m['t']:.1f} s")
+        print('    L1 scan plane mapped free: ' + '; '.join(parts))
     c3, cf, c2 = (res['missions'][k]['cov_log'][-1][1] for k in ('3d', '3d_fixed', '2d'))
-    print(f'  Fair comparison (same 16-layer sensor): xi 3d_fixed {100 * cf["xi"]:.2f}% -> 3d {100 * c3["xi"]:.2f}% '
-          f'(+{100 * (c3["xi"] - cf["xi"]):.2f} pts from altitude control / shaft traversal)')
-    print(f'  2D baseline on its own plane (Level 1 layer at z = 1.5 m): {100 * c2["plane"]:.2f}% vs 3d '
-          f'{100 * c3["plane"]:.2f}% (its volumetric xi {100 * c2["xi"]:.2f}% is limited by construction to one '
-          f'{VOX} m layer)')
+    nr = res['no_rf_map']
+    cn = nr['cov_log'][-1][1]
+    print(f'  Same 16-layer LiDAR: xi 3d_fixed {100 * cf["xi"]:.2f}% -> 3d {100 * c3["xi"]:.2f}% '
+          f'(+{100 * (c3["xi"] - cf["xi"]):.2f} pts). The 3d mission also has the up/down rangefinders: they '
+          f'test shafts, enter the map and feed the safety filter (true ranges)')
+    print(f'    3d without the rangefinder rays in the map: xi {100 * cn["xi"]:.2f}% (L1/L2/L3 free {100 * cn["L1"]:.2f}/'
+          f'{100 * cn["L2"]:.2f}/{100 * cn["L3"]:.2f}%), T_exp {nr["t"]:.1f} s, {nr["status"]}; '
+          f'difference to 3d {100 * (cn["xi"] - c3["xi"]):+.2f} pts')
+    print(f'  2D baseline on its own plane (Level 1 layer at z = 1.5 m): final {100 * c2["plane"]:.2f}% vs 3d '
+          f'{100 * c3["plane"]:.2f}% (saturates: any mission that finishes Level 1 maps it); its volumetric xi '
+          f'{100 * c2["xi"]:.2f}% is limited by construction to one {VOX} m layer')
     t3, tf = res['missions']['3d']['t'], res['missions']['3d_fixed']['t']
     print(f'  T_exp: 3d {t3:.1f} s vs 3d_fixed {tf:.1f} s (+{t3 - tf:.1f} s); time above z = 4.25 m in the 3d mission '
           f'{100 * np.mean(res["missions"]["3d"]["tt"][:, 2] > 4.25):.1f}% of steps')
