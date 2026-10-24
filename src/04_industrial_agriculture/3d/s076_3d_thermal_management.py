@@ -72,9 +72,12 @@ Z_LOW = 1.0                      # low inspection pass
 Z_GRID = np.round(np.arange(Z_MIN, Z_MAX + 1e-9, 0.5), 3)   # MPC candidates
 W_PEAK = 10.0                    # s per degC above T_warn in the MPC cost
 W_SWEEP = [0.0, 10.0, 100.0, 1000.0]
-W_CASES = [(55.0, 2.0), (60.0, 3.0), (58.0, 4.0), (63.0, 3.0)]   # (T_surf, z_bl) for the weight sweep
+W_CASES = [(55.0, 2.0), (60.0, 3.0), (58.0, 4.0), (63.0, 3.0), (65.0, 4.0), (63.0, 2.0)]   # (T_surf, z_bl); last: throttling unavoidable
 T_SURF_SWEEP = np.arange(55.0, 65.01, 1.0)
 Z_BL_SWEEP = [2.0, 3.0, 4.0]
+T_BAT_WARN = 63.0                # degC, battery throttle starts here (motor rule: T_warn)
+T_BAT_WARN_SWEEP = [60.0, 63.0, 64.5]
+BAT_TOL = 0.5                    # degC, asserted overshoot of the battery limit (pause reaction)
 ANIM_DT = 30.0                   # s of mission per GIF frame
 
 T_BAT_MAX = T_BAT_NOM + (1 - Q_MIN_RATIO) / BETA_BAT        # 65 degC
@@ -107,6 +110,11 @@ def v_safe(z, env):
     return float(np.sqrt(max(0.0, (T_MAX - t_amb(z, *env)) / (R_TH * K_V) - P_HOVER / K_V)))
 
 
+def v_bat_safe(z, env):
+    """Speed whose steady-state battery temperature is T_bat,max at altitude z."""
+    return float(np.sqrt(max(0.0, ((T_BAT_MAX - t_amb(z, *env)) * ETA_ESC / R_BAT - P_HOVER) / K_V)))
+
+
 def heat(T, T_inf, h, tau):
     return T_inf + (T - T_inf) * np.exp(-h / tau)
 
@@ -126,20 +134,23 @@ def z_safe_lo(env, vh=V0):
 
 # ── Flight engine ─────────────────────────────────────────────────────────────
 class Flight:
-    def __init__(self, env, record=True):
+    def __init__(self, env, record=True, bat_cap=True):
         self.env = env
         self.record = record
+        self.bat_cap = bat_cap
+        self.t_stop = np.inf               # MPC look-ahead: stop once a candidate cannot win
         self.x, self.y, self.z = 0.0, 0.5 * STRIP_D, Z_2D
         self.tm = self.tb = t_amb(Z_2D, *env)
         self.clock = 0.0
-        self.st = dict(n_pause=0, t_over=0.0, t_bat_over=0.0, t_throttled=0.0, t_climb=0.0,
+        self.st = dict(n_pause=0, t_over=0.0, t_bat_over=0.0, t_throttled=0.0, t_bat_throttled=0.0, t_climb=0.0,
                        n_climb=0, climb_m=0.0, energy=0.0, peak_tm=self.tm, peak_tb=self.tb)
         self.log = dict(t=[0.0], x=[self.x], y=[self.y], z=[self.z], tm=[self.tm], tb=[self.tb],
                         v=[0.0], mode=['start'])
 
     def copy(self):
         f = Flight.__new__(Flight)
-        f.env, f.record = self.env, False
+        f.env, f.record, f.bat_cap = self.env, False, self.bat_cap
+        f.t_stop = np.inf
         f.x, f.y, f.z, f.tm, f.tb, f.clock = self.x, self.y, self.z, self.tm, self.tb, self.clock
         f.st = dict(self.st)
         f.log = None
@@ -206,18 +217,27 @@ class Flight:
         ux, uy = (x1 - x0) / L, (y1 - y0) / L
         done = 0.0
         while L - done > 1e-9:
-            if self.tm >= T_MAX:
+            if self.clock > self.t_stop:
+                return
+            if self.tm >= T_MAX or (self.bat_cap and self.tb >= T_BAT_MAX):
                 self.pause()
                 continue
             v = V0
             if self.tm >= T_WARN:
                 v = min(V0, max(V_MIN, v_safe(self.z, self.env)))
+            vm_ = v
+            if self.bat_cap and self.tb >= T_BAT_WARN:
+                # battery rule, same form as the motor rule: the speed whose battery steady
+                # state is T_bat,max (capacity floor) at the current ambient
+                v = min(v, max(V_MIN, v_bat_safe(self.z, self.env)))
             ds = min(v * DT, L - done)
             h = ds / v
             done += ds
             self.x, self.y = x0 + ux * done, y0 + uy * done
             if v < V0 - 1e-12:
                 self.st['t_throttled'] += h
+            if v < vm_ - 1e-12:
+                self.st['t_bat_throttled'] += h
             self._step(h, p_motor(v), self.z, 'cruise', v)
 
 
@@ -238,8 +258,8 @@ def fly_strip(f, i, z):
         f.turn()
 
 
-def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True, z_fix=None):
-    f = Flight(env, record)
+def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True, z_fix=None, bat_cap=True):
+    f = Flight(env, record, bat_cap)
     zs = []
     for i in range(N_STRIPS):
         if strategy == 'fixed_2m':
@@ -252,13 +272,19 @@ def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True, z_fix=Non
             z = z_star(env)
         else:
             best = None
-            for zc in Z_GRID:
+            # evaluation order only affects pruning: nearest to the current altitude first; the
+            # key (J, |dz|, z) is a total order, so the choice equals the full ascending scan
+            for zc in sorted(Z_GRID, key=lambda zc_: (abs(zc_ - f.z), zc_)):
                 g = f.copy()
                 t0, pk0 = g.clock, g.tm
                 g.st['peak_tm'] = g.tm
+                if best is not None:          # J >= strip time: a slower candidate cannot win
+                    g.t_stop = t0 + best[0][0] + 1.0
                 fly_strip(g, i, float(zc))
                 J = (g.clock - t0) + w_peak * max(0.0, g.st['peak_tm'] - T_WARN)
-                key = (round(J, 9), abs(zc - f.z))
+                if g.clock > g.t_stop:
+                    continue
+                key = (round(J, 9), abs(zc - f.z), float(zc))
                 if best is None or key < best[0]:
                     best = (key, float(zc))
             z = best[1]
@@ -266,6 +292,8 @@ def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True, z_fix=Non
         fly_strip(f, i, z)
     out = dict(f.st, mission=f.clock, z_plan=zs,
                q_min=1 - BETA_BAT * max(0.0, f.st['peak_tb'] - T_BAT_NOM))
+    if bat_cap:
+        assert f.st['peak_tb'] <= T_BAT_MAX + BAT_TOL, f'battery above its limit: {f.st["peak_tb"]:.2f} degC'
     if record:
         L = {k: np.array(v) for k, v in f.log.items()}
         assert np.all(np.diff(L['t']) > 0), 'time must advance'
@@ -287,8 +315,28 @@ def run_simulation():
     hot = (T_SURF_SWEEP[-3], Z_BL)
     res['hot_env'] = hot
     res['hot'] = {s: simulate(s, hot) for s in STRATS}
-    res['sweep'] = {(zb, float(ts)): {s: simulate(s, (float(ts), zb), record=False) for s in STRATS}
-                    for zb in Z_BL_SWEEP for ts in T_SURF_SWEEP}
+    # what the battery rule costs: the same hot case without it, and its warning threshold
+    res['hot_nocap'] = {s: simulate(s, hot, record=False, bat_cap=False) for s in STRATS}
+    saved = globals()['T_BAT_WARN']
+    res['warn_sweep'] = {}
+    for tw in T_BAT_WARN_SWEEP:
+        globals()['T_BAT_WARN'] = tw
+        res['warn_sweep'][tw] = {s: simulate(s, hot, record=False) for s in ('fixed_2m', 'mpc')}
+    globals()['T_BAT_WARN'] = saved
+    # fixed_1m and fixed_2m fly inside the hot layer for every z_bl >= 2 m, where the ambient
+    # does not depend on z_bl: they are computed once (asserted) and reused
+    res['sweep'] = {}
+    for zb in Z_BL_SWEEP:
+        for ts in T_SURF_SWEEP:
+            d = {}
+            for s in STRATS:
+                if s in ('fixed_1m', 'fixed_2m') and zb != Z_BL_SWEEP[0]:
+                    z = Z_LOW if s == 'fixed_1m' else Z_2D
+                    assert t_amb(z, float(ts), zb) == t_amb(z, float(ts), Z_BL_SWEEP[0])
+                    d[s] = res['sweep'][(Z_BL_SWEEP[0], float(ts))][s]
+                else:
+                    d[s] = simulate(s, (float(ts), zb), record=False)
+            res['sweep'][(zb, float(ts))] = d
     return res
 
 
@@ -334,6 +382,12 @@ def plot_time_series(res, out_dir):
         ts = T_SURF if case == 'card' else res['hot_env'][0]
         axes[0, c].set_title(f'{"Card case" if case == "card" else "Hot case"}: T_surf = {ts:.0f} °C, z_bl = {Z_BL:.0f} m')
         axes[2, c].set_xlabel('time (min)')
+        if case == 'hot':
+            t_win = max(res['hot'][s]['mission'] for s in STRATS if s != 'fixed_1m') / 60
+            axes[2, c].set_xlim(0, 1.05 * t_win)
+            r1 = res['hot']['fixed_1m']
+            axes[1, c].text(0.02, 0.04, f"fixed 1 m continues off-scale to {r1['mission'] / 60:.0f} min "
+                            f"({r1['n_pause']} battery/motor pauses)", transform=axes[1, c].transAxes, fontsize=8)
     axes[0, 0].set_ylabel('altitude (m)')
     axes[1, 0].set_ylabel('motor T (°C)')
     axes[2, 0].set_ylabel('battery T (°C)')
@@ -380,7 +434,8 @@ def plot_sweep(res, out_dir):
         ax.set_title(f'z_bl = {zb:.0f} m')
         ax.set_xlabel('surface temperature T_surf (°C)')
         ax.grid(alpha=0.3)
-    axes[0].set_ylabel('mission time (min)')
+    axes[0].set_ylabel('mission time (min, log scale)')
+    axes[0].set_yscale('log')
     axes[0].legend(fontsize=8)
     fig.suptitle('Mission time vs surface temperature and hot-layer depth (all strategies never exceed T_max)')
     plt.tight_layout()
@@ -400,6 +455,13 @@ def plot_metrics(res, out_dir):
         for ax, v in zip(axes, vals):
             ax.bar(x + off, v, 0.38, color=[COLORS[s] for s in STRATS], alpha=0.9 if c == 0 else 0.5,
                    edgecolor='k', label='card case' if c == 0 else 'hot case')
+    for a in (0, 1):
+        key = ('mission', 't_throttled')[a]
+        top = 1.35 * max(res[cs][s][key] / 60 for cs in ('card', 'hot') for s in STRATS if s != 'fixed_1m')
+        axes[a].set_ylim(0, top)
+        v1 = res['hot']['fixed_1m'][key] / 60
+        if v1 > top:
+            axes[a].text(1 + 0.19, 0.97 * top, f'{v1:.0f}\n(clipped)', ha='center', va='top', fontsize=7)
     for ax, t in zip(axes, ('mission time (min)', 'time throttled below v0 (min)', 'peak motor T (°C)',
                             'min Q_avail / Q_nom')):
         ax.set_title(t, fontsize=10)
@@ -418,7 +480,8 @@ def plot_metrics(res, out_dir):
 
 def save_animation(res, out_dir):
     logs = {s: res['hot'][s]['log'] for s in STRATS}
-    t_end = max(L['t'][-1] for L in logs.values())
+    # fixed_1m's hot mission is ~20x longer (battery pauses); the GIF ends with the other three
+    t_end = max(res['hot'][s]['mission'] for s in STRATS if s != 'fixed_1m')
     n_frames = int(np.ceil(t_end / ANIM_DT)) + 1
     fig = plt.figure(figsize=(8, 5.5))
     ax = fig.add_subplot(111, projection='3d')
@@ -452,7 +515,8 @@ def save_animation(res, out_dir):
     path = os.path.join(out_dir, 'animation.gif')
     anim.save(path, writer='pillow', fps=10, dpi=65)
     plt.close(fig)
-    print(f'Saved: {path} ({n_frames} frames)')
+    print(f'Saved: {path} ({n_frames} frames, ends at {t_end / 60:.2f} min; fixed_1m is still flying then, '
+          f'its mission ends at {res["hot"]["fixed_1m"]["mission"] / 60:.2f} min)')
 
 
 # ── Report ────────────────────────────────────────────────────────────────────
@@ -468,6 +532,10 @@ def report(res):
           f'{tb_inf(V0, 2, env):.2f} (2 m), {tb_inf(V0, 6, env):.3f} (6 m) degC; T_bat,max {T_BAT_MAX:.1f} degC')
     print(f'  z_safe,lo = {z_safe_lo(env):.2f} m; z* = {z_star(env):.2f} m; v_safe at 1 m {v_safe(1, env):.3f} m/s, '
           f'at 2 m {v_safe(2, env):.3f} m/s')
+    print(f'  Battery rule (all strategies): above T_bat {T_BAT_WARN} degC fly at most v_bat (steady state {T_BAT_MAX} degC), '
+          f'pause at {T_BAT_MAX} degC; v_bat at 2 m: card {v_bat_safe(2, env):.3f} m/s, hot case '
+          f'{v_bat_safe(2, res["hot_env"]):.3f} m/s; hovering at 2 m in the hot case settles at '
+          f'{t_amb(2, *res["hot_env"]) + R_BAT * P_HOVER / ETA_ESC:.2f} degC')
     print(f'  Climb 2 -> 6 m: T = 2 dz / v_max = {2 * 4 / VZ_MAX:.3f} s, peak power {p_motor(0, VZ_MAX):.0f} W '
           f'(card t_climb = dz / v_max = {4 / VZ_MAX:.3f} s would need a peak speed of {2 * VZ_MAX:.1f} m/s)')
     for case in ('card', 'hot'):
@@ -475,25 +543,36 @@ def report(res):
         print(f'  [{case} case: T_surf {e[0]:.0f} degC, z_bl {e[1]:.0f} m; T_amb(2 m) {t_amb(2, *e):.1f} degC; '
               f'z_safe,lo {z_safe_lo(e):.2f} m]')
         print('    strategy                     mission (s)   min     pauses  peak T_m   time>T_max  peak T_bat  '
-              'min Q/Qnom  throttled (s)  climbs (m)  energy (kJ)  strip altitudes')
+              'min Q/Qnom  throttled (s)  by battery (s)  climbs (m)  energy (kJ)  strip altitudes')
         for s in STRATS:
             r = res[case][s]
             zs = sorted(set(r['z_plan']))
             print(f"    {LABELS[s]:<28} {r['mission']:9.1f}  {r['mission'] / 60:6.2f}  {r['n_pause']:5d}   "
                   f"{r['peak_tm']:6.2f}     {r['t_over']:6.1f}     {r['peak_tb']:6.2f}      {r['q_min']:.4f}"
-                  f"      {r['t_throttled']:7.1f}      {r['climb_m']:6.2f}      {r['energy'] / 1000:7.2f}     "
+                  f"      {r['t_throttled']:7.1f}      {r['t_bat_throttled']:7.1f}        {r['climb_m']:6.2f}      {r['energy'] / 1000:7.2f}     "
                   + ', '.join(f'{z:.1f}' for z in zs))
         b = res[case]['fixed_2m']
         for s in ('fixed_1m', 'alt_opt', 'mpc'):
             r = res[case][s]
             print(f"    {s} vs 2D baseline: mission {r['mission'] - b['mission']:+.1f} s, peak T_m "
                   f"{r['peak_tm'] - b['peak_tm']:+.2f} degC, peak T_bat {r['peak_tb'] - b['peak_tb']:+.2f} degC")
+    print('  [Hot case without the battery rule (motor rule only)]')
+    for s in STRATS:
+        r, rc = res['hot_nocap'][s], res['hot'][s]
+        print(f"    {LABELS[s]:<28} mission {r['mission']:.1f} s, peak T_bat {r['peak_tb']:.2f} degC, min Q/Qnom "
+              f"{r['q_min']:.4f}; the battery rule costs {rc['mission'] - r['mission']:+.1f} s")
+    print('  [Battery warning threshold, hot case]')
+    for tw, d in res['warn_sweep'].items():
+        print(f'    T_bat,warn {tw:.1f} degC: ' + ', '.join(
+            f"{s} {d[s]['mission']:.1f} s (peak T_bat {d[s]['peak_tb']:.2f} degC)" for s in ('fixed_2m', 'mpc')))
     print(f'  [MPC weight sweep: mission, peak motor temperature and the strip altitudes chosen]')
     for c in W_CASES:
         for w in W_SWEEP:
             r = res['w_sweep'][(c, w)]
             print(f"    T_surf {c[0]:.0f} degC, z_bl {c[1]:.0f} m, w = {w:6.1f} s/degC: mission {r['mission']:.1f} s, "
-                  f"peak T_m {r['peak_tm']:.2f} degC, altitudes " + ', '.join(f'{z:.1f}' for z in sorted(set(r['z_plan']))))
+                  f"peak T_m {r['peak_tm']:.2f} degC, throttled {r['t_throttled']:.1f} s "
+                  f"(by battery {r['t_bat_throttled']:.1f} s), min Q/Qnom {r['q_min']:.4f}, altitudes "
+                  + ', '.join(f'{z:.1f}' for z in sorted(set(r['z_plan']))))
     print('  [Constant-altitude probe at T_surf 63 degC]')
     for (ts, zb), d in res['const_probe'].items():
         m = res['sweep'][(zb, ts)]['mpc']
@@ -509,13 +588,12 @@ def report(res):
         gain = [res['sweep'][(zb, float(ts))]['fixed_2m']['mission'] - min(
             res['sweep'][(zb, float(ts))][s]['mission'] for s in ('alt_opt', 'mpc')) for ts in T_SURF_SWEEP]
         print(f'      best 3D gain vs 2D baseline (s): ' + ' '.join(f'{g:6.1f}' for g in gain))
-        qb = [res['sweep'][(zb, float(ts))]['fixed_2m']['q_min'] for ts in T_SURF_SWEEP]
-        qa = [res['sweep'][(zb, float(ts))]['alt_opt']['q_min'] for ts in T_SURF_SWEEP]
-        print(f'      min Q/Qnom fixed 2 m:       ' + ' '.join(f'{q:6.3f}' for q in qb))
-        print(f'      min Q/Qnom alt-opt:         ' + ' '.join(f'{q:6.3f}' for q in qa))
-        nb = sum(q < Q_MIN_RATIO - 1e-12 for q in qb)
-        na = sum(q < Q_MIN_RATIO - 1e-12 for q in qa)
-        print(f'      battery-derating violations (Q < {Q_MIN_RATIO}): fixed 2 m {nb}/{len(qb)}, alt-opt {na}/{len(qa)}')
+        for s in ('fixed_2m', 'alt_opt', 'mpc'):
+            q = [res['sweep'][(zb, float(ts))][s]['q_min'] for ts in T_SURF_SWEEP]
+            print(f'      min Q/Qnom {s:<9}       ' + ' '.join(f'{v:6.3f}' for v in q))
+        for s in ('fixed_2m', 'alt_opt', 'mpc'):
+            tb_ = [res['sweep'][(zb, float(ts))][s]['t_bat_throttled'] for ts in T_SURF_SWEEP]
+            print(f'      battery-throttled (s) {s:<9}' + ' '.join(f'{v:6.1f}' for v in tb_))
     print(f'  Longest time above T_max in any sweep run: {t_over:.1f} s')
 
 
