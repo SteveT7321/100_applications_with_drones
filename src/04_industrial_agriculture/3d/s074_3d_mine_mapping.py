@@ -840,7 +840,7 @@ def mission(mode, seed=SEED, mu=MU_EXT, record=False, pose='true', t_max=T_TIMEO
         p_est = p_est + rotz(th_est) @ vb * DT        # dead reckoning until the next scan
         if pose == 'true':
             p_est = p_true.copy()
-        assert np.linalg.norm(vb[:2]) <= V_MAX + 1e-9 and abs(vb[2]) <= VZ_MAX + 1e-9, 'speed limit'
+        assert np.linalg.norm(vb[:2]) <= V_NAV + 1e-9 and abs(vb[2]) <= VZ_MAX + 1e-9, 'speed limit'
         assert inside(p_true)[0], 'drone left the mine'
         c = clearance(p_true)
         min_clear = min(min_clear, c)
