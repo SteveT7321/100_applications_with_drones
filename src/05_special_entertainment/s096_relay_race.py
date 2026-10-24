@@ -62,12 +62,16 @@ REPLAN_DT    = 0.1           # s  intercept replanning period
 L_ZONE       = 50.0          # m  handoff must finish within this distance past the relay point
 N_MC         = 30            # Monte Carlo seeds per configuration
 GRID_V       = np.arange(8.0, 20.0 + 1e-9, 2.0)   # speed grid for A and B
-DETECT_SWEEP = [5.0, 10.0, 15.0, 20.0, 30.0]      # naive detection ranges
+DETECT_SWEEP = [5.0, 10.0, 15.0, 17.5, 20.0, 30.0]  # naive detection ranges
+RP_TRIGGER   = 15.0          # m  card: KF approach trigger before the relay point
+A_SWEEP      = [3.0, 4.0, 5.0]          # launch peak-acceleration sensitivity
+L_SWEEP      = [40.0, 50.0, 55.0, 60.0]  # exchange-zone length sensitivity
 STATIONS     = [np.array([0.0, 0.0, Z_RACE]), np.array([100.0, 0.0, Z_RACE + 2.0]),
                 np.array([200.0, 0.0, Z_RACE + 2.0])]
 NAMES        = ['A', 'B', 'C']
 DRONE_COLORS = ['red', 'blue', 'green']
-STRAT_LABELS = {'naive': 'Naive (detect 5 m)', 'kf': 'KF + min-snap intercept'}
+STRAT_LABELS = {'naive': 'Naive (detect 5 m)', 'kf': 'KF + min-snap intercept',
+                'kf15': 'KF, card 15 m trigger'}
 
 OUTPUT_DIR = os.path.normpath(os.path.join(
     os.path.dirname(__file__), '..', '..',
@@ -181,8 +185,15 @@ def hold_cmd(p, v, target):
     return 2.0 * (target - p) - 2.0 * v
 
 
-def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, record=False):
-    """Simulate one race. Returns a result dict (and logs when record=True)."""
+def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, record=False,
+                   a_launch=A_LAUNCH):
+    """Simulate one race. Returns a result dict (and logs when record=True).
+
+    strategy 'kf15' is the KF strategy with the card's approach-zone trigger: the outgoing
+    drone may only launch once the incoming drone is within RP_TRIGGER of the relay point."""
+    trigger = RP_TRIGGER if strategy == 'kf15' else None
+    if strategy == 'kf15':
+        strategy = 'kf'
     rng_dist = np.random.default_rng([seed, 1])     # drone disturbances
     rng_obs = np.random.default_rng([seed, 2])      # KF measurements
     p = np.array([s.copy() for s in STATIONS])
@@ -222,8 +233,9 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
                     # peak acceleration is A_LAUNCH: it lasts T = 15/8 v / A_LAUNCH and covers
                     # v T / 2, so launch when the predicted along-track gap is v T / 2.
                     v_in = xin[3]
-                    if v_in > 1.0:
-                        tau = SNAP_PEAK * v_in / A_LAUNCH
+                    armed = trigger is None or RELAY_XS[out] - xin[0] <= trigger
+                    if v_in > 1.0 and armed:
+                        tau = SNAP_PEAK * v_in / a_launch
                         if po[0] - xin[0] <= v_in * tau / 2:
                             peak, vxmin = intercept_options(po, vo, xin, np.array([tau]))
                             plan = dict(t0=t, T=tau, t_star=t + tau, last=t,
@@ -301,6 +313,11 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
 
 def monte_carlo(strategy, v_cruise, n=N_MC, d_detect=D_DETECT):
     rows = [run_simulation(strategy, v_cruise, seed=s, d_detect=d_detect) for s in range(n)]
+    return mc_from_rows(rows)
+
+
+def mc_from_rows(rows):
+    n = len(rows)
     fin = np.array([r['finish'] if r['finish'] is not None else np.nan for r in rows])
     hx = np.full((n, 2), np.nan)
     ht = np.full((n, 2), np.nan)
@@ -312,17 +329,29 @@ def monte_carlo(strategy, v_cruise, n=N_MC, d_detect=D_DETECT):
                 zone_ok=np.array([r['zone_ok'] for r in rows]), hx=hx, ht=ht, rows=rows)
 
 
-def speed_grid():
-    """Seed-0 grid over (v_A, v_B) with v_C = V_CRUISE_MAX for the KF strategy."""
+def speed_grid(a_launch=A_LAUNCH):
+    """Seed-0 grid over (v_A, v_B) with v_C = V_CRUISE_MAX for the KF strategy.
+
+    Returns race times T, the zone flag Z for L_ZONE, and the farther of the two pass
+    offsets past their relay points (X) so other zone lengths can be checked afterwards."""
     T = np.full((len(GRID_V), len(GRID_V)), np.nan)
-    Z = np.zeros_like(T, dtype=bool)
+    X = np.full_like(T, np.nan)
     for i, va in enumerate(GRID_V):
         for j, vb in enumerate(GRID_V):
-            r = run_simulation('kf', [va, vb, V_CRUISE_MAX], seed=0)
+            r = run_simulation('kf', [va, vb, V_CRUISE_MAX], seed=0, a_launch=a_launch)
             if r['success']:
                 T[i, j] = r['finish']
-                Z[i, j] = r['zone_ok']
-    return T, Z
+                X[i, j] = max(h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs']))
+    Z = np.isfinite(T) & (np.nan_to_num(X, nan=np.inf) <= L_ZONE)
+    return T, Z, X
+
+
+def best_feasible(T, X, L):
+    feas = np.where(np.isfinite(T) & (np.nan_to_num(X, nan=np.inf) <= L), T, np.inf)
+    if not np.isfinite(feas).any():
+        return None
+    i, j = np.unravel_index(np.argmin(feas), feas.shape)
+    return GRID_V[i], GRID_V[j], T[i, j]
 
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
@@ -398,11 +427,11 @@ def plot_handoff_detail(rk, rn, relay, out_dir):
 def plot_monte_carlo(mc, sweep, out_dir):
     fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     ax = axes[0]
-    keys = [('naive', 'card'), ('kf', 'card'), ('kf', 'opt')]
-    labels = ['Naive\n12/14/16', 'KF\n12/14/16', 'KF\noptimised']
+    keys = [('naive', 'card'), ('kf15', 'card'), ('kf', 'card'), ('kf', 'opt')]
+    labels = ['Naive\n12/14/16', 'KF, 15 m trigger\n12/14/16', 'KF\n12/14/16', 'KF\noptimised']
     data = [mc[k]['finish'][np.isfinite(mc[k]['finish'])] for k in keys]
     bp = ax.boxplot(data, tick_labels=labels, patch_artist=True)
-    for patch, c in zip(bp['boxes'], ['#1f77b4', '#d62728', '#ff9896']):
+    for patch, c in zip(bp['boxes'], ['#1f77b4', '#9467bd', '#d62728', '#ff9896']):
         patch.set_facecolor(c)
     ax.set_ylabel('Race time (s)')
     ax.set_title(f'Race time over {N_MC} seeds (finished races)')
@@ -457,6 +486,25 @@ def plot_speed_grid(T, Z, best, out_dir):
     ax.set_title(f'Speed optimisation (KF strategy, $v_C$ = {V_CRUISE_MAX:.0f} m/s)')
     ax.legend(fontsize=7, loc='upper left')
     path = os.path.join(out_dir, 'speed_optimisation.png')
+    fig.savefig(path, dpi=130, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {path}')
+
+
+def plot_sensitivity(grids, out_dir):
+    """Fastest feasible race time against zone length for each launch acceleration."""
+    fig, ax = plt.subplots(figsize=(8, 5))
+    Ls = np.arange(30.0, 100.1, 2.5)
+    for al, c in zip(A_SWEEP, ['#1f77b4', '#d62728', '#2ca02c']):
+        Tg, _, Xg = grids[al]
+        ts = [best_feasible(Tg, Xg, L) for L in Ls]
+        ax.step(Ls, [b[2] if b else np.nan for b in ts], where='post', color=c,
+                label=f'a_launch = {al:.0f} m/s$^2$')
+    ax.axvline(L_ZONE, color='orange', ls='--', label=f'baseline zone {L_ZONE:.0f} m')
+    ax.set_xlabel('Exchange-zone length L (m)'); ax.set_ylabel('Fastest feasible race time (s)')
+    ax.set_title('Speed optimum vs zone length and launch acceleration (KF, seed 0, 2 m/s grid)')
+    ax.legend(fontsize=8)
+    path = os.path.join(out_dir, 'zone_sensitivity.png')
     fig.savefig(path, dpi=130, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {path}')
@@ -550,16 +598,29 @@ if __name__ == '__main__':
     for vin in (12.0, 14.0, 16.0, 20.0):
         T = SNAP_PEAK * vin / A_LAUNCH
         print(f'Min-snap rest -> {vin:.0f} m/s at peak {A_LAUNCH:.1f} m/s^2: {T:.2f} s, '
-              f'{vin * T / 2:.1f} m (+{vin * T_HANDOFF:.0f} m for the 1 s window)')
+              f'rendezvous {vin * T / 2:.1f} m past the relay point')
+    print('Pass position ~ rendezvous point = SNAP_PEAK v^2 / (2 a_launch); largest incoming '
+          'speed whose pass fits a zone L: v_lim = sqrt(2 a_launch L / SNAP_PEAK):')
+    for al in A_SWEEP:
+        print(f'  a_launch {al:.0f} m/s^2: ' + ', '.join(
+            f'L {L:.0f} m -> v_lim {math.sqrt(2 * al * L / SNAP_PEAK):.2f} m/s' for L in L_SWEEP))
 
     rk = run_simulation('kf', V_CRUISE, seed=0, record=True)
     rn = run_simulation('naive', V_CRUISE, seed=0, record=True)
     print('\nSeed 0, card speeds 12/14/16 m/s:')
     describe('KF + intercept', rk)
     describe('Naive', rn)
+    r15 = run_simulation('kf15', V_CRUISE, seed=0)
+    describe(f'KF, card {RP_TRIGGER:.0f} m trigger', r15)
+    for j, h in enumerate(rk['handoffs']):
+        v_in = V_CRUISE[j]
+        print(f'  KF RP{j + 1}: predicted pass offset SNAP_PEAK v^2/(2 a) = '
+              f'{SNAP_PEAK * v_in ** 2 / (2 * A_LAUNCH):.1f} m, simulated '
+              f'{h["x"] - RELAY_XS[j + 1]:.1f} m')
 
     print('\nSpeed grid (KF, seed 0, v_C = 20 m/s):')
-    T, Z = speed_grid()
+    grids = {al: speed_grid(al) for al in A_SWEEP}
+    T, Z, X = grids[A_LAUNCH]
     feas = np.where(Z, T, np.inf)
     i, j = np.unravel_index(np.argmin(feas), feas.shape)
     best = (GRID_V[i], GRID_V[j])
@@ -576,6 +637,15 @@ if __name__ == '__main__':
     print('  max feasible v_B for each v_A: ' + ', '.join(
         f'{GRID_V[a]:.0f}->{GRID_V[np.where(Z[a])[0]].max():.0f}' if Z[a].any() else
         f'{GRID_V[a]:.0f}->none' for a in range(len(GRID_V))))
+    print('  Sensitivity of the fastest feasible (v_A, v_B) -> time to a_launch and L_ZONE:')
+    for al in A_SWEEP:
+        Tg, _, Xg = grids[al]
+        cells = []
+        for L in L_SWEEP:
+            b = best_feasible(Tg, Xg, L)
+            cells.append(f'L {L:.0f}: ' + (f'({b[0]:.0f}, {b[1]:.0f}) {b[2]:.2f} s' if b
+                                           else 'none'))
+        print(f'    a_launch {al:.0f} m/s^2: ' + '; '.join(cells))
 
     v_opt = [best[0], best[1], V_CRUISE_MAX]
     print(f'\nMonte Carlo ({N_MC} seeds; same disturbance and sensor noise for every strategy):')
@@ -583,8 +653,13 @@ if __name__ == '__main__':
           ('kf', 'card'): monte_carlo('kf', V_CRUISE),
           ('naive', 'opt'): monte_carlo('naive', v_opt),
           ('kf', 'opt'): monte_carlo('kf', v_opt)}
+    mc[('kf15', 'card')] = monte_carlo('kf15', V_CRUISE)
     for (s, sp), m in mc.items():
         mc_line(f'{STRAT_LABELS[s]} @ {"12/14/16" if sp == "card" else "opt"}', m)
+    f15, fk = mc[('kf15', 'card')]['finish'], mc[('kf', 'card')]['finish']
+    print(f'  Card 15 m trigger vs free launch (KF, 12/14/16): mean race time difference '
+          f'{np.nanmean(f15 - fk):+.2f} s; launch gaps (seed 0) '
+          + ', '.join(f'{h["launch_gap"]:.1f} m' for h in r15['handoffs']))
     for sp in ('card', 'opt'):
         fk, fn = mc[('kf', sp)]['finish'], mc[('naive', sp)]['finish']
         fk2, fn2 = np.where(np.isfinite(fk), fk, np.inf), np.where(np.isfinite(fn), fn, np.inf)
@@ -603,7 +678,18 @@ if __name__ == '__main__':
     for d in DETECT_SWEEP:
         sweep[d] = mc[('naive', 'card')] if d == D_DETECT else monte_carlo('naive', V_CRUISE,
                                                                          d_detect=d)
-        mc_line(f'naive d_detect = {d:.0f} m', sweep[d])
+        mc_line(f'naive d_detect = {d:g} m', sweep[d])
+    print('  Both passes inside a zone of L (seeds out of 30) for naive d_detect / KF:')
+    for L in L_SWEEP:
+        cnt = [int(np.sum(np.nanmax(np.nan_to_num(sweep[d]['hx'], nan=np.inf), axis=1) <= L))
+               for d in DETECT_SWEEP]
+        kfc = int(np.sum(np.nanmax(np.nan_to_num(mc[('kf', 'card')]['hx'], nan=np.inf), axis=1)
+                         <= L))
+        print(f'    L {L:.0f} m: ' + ', '.join(f'd {d:g} -> {c}' for d, c in zip(DETECT_SWEEP, cnt))
+              + f'; KF -> {kfc}')
+    beyond = int(np.sum(sweep[D_DETECT]['hx'][:, 1] + RELAY_XS[2] > RELAY_XS[3]))
+    print(f'  Naive d_detect = {D_DETECT:.0f} m: second pass beyond the 300 m finish in {beyond}/'
+          f'{N_MC} seeds (the race then ends at the pass, so leg 3 is never flown)')
 
     print()
     plot_race_3d(rk, rn, OUTPUT_DIR)
@@ -611,4 +697,5 @@ if __name__ == '__main__':
     plot_handoff_detail(rk, rn, 1, OUTPUT_DIR)
     plot_monte_carlo(mc, sweep, OUTPUT_DIR)
     plot_speed_grid(T, Z, best, OUTPUT_DIR)
+    plot_sensitivity(grids, OUTPUT_DIR)
     save_animation(rk, OUTPUT_DIR)
