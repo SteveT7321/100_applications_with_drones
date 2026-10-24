@@ -174,7 +174,8 @@ def near_segments(p, margin=MAX_RANGE + DRONE_R + 0.05):
     out = []
     for sg in SEGS:
         a, q = _local(sg, p)
-        if sg['lo'] - margin <= a <= sg['hi'] + margin and                 q[0] ** 2 + q[1] ** 2 + q[2] ** 2 <= (PIPE_R + margin) ** 2:
+        if sg['lo'] - margin <= a <= sg['hi'] + margin and \
+                q[0] ** 2 + q[1] ** 2 + q[2] ** 2 <= (PIPE_R + margin) ** 2:
             out.append(sg)
     return out
 
@@ -381,8 +382,11 @@ def run_simulation():
     mc = {st: [simulate(st, s) for s in range(N_MC)] for st in STRATS}
     bias_sweep = [[simulate('B', s, bias=b) for s in range(N_SWEEP)] for b in BIAS_SWEEP]
     sig_sweep = {st: [[simulate(st, s, sigma_d=sg) for s in range(N_SWEEP)] for sg in SIGMA_SWEEP]
-                 for st in ('A', 'B', 'D')}
-    return single, mc, bias_sweep, sig_sweep
+                 for st in STRATS}
+    # clean case: no air flow and no speed bias (only the card's sensor and odometry noise)
+    clean = {st: [simulate(st, s, sigma_d=0.0, bias=0.0, keep=(s == SEED))
+                  for s in range(N_SWEEP)] for st in STRATS}
+    return single, mc, bias_sweep, sig_sweep, clean
 
 
 def summ(runs):
@@ -544,7 +548,7 @@ def plot_monte_carlo(sm, bias_sweep, sig_sweep, out_dir):
     a.set_xlabel('Odometry scale bias (%)'); a.set_title(f'Strategy B vs odometry bias ({N_SWEEP} seeds)')
     a.legend(fontsize=8); a.grid(alpha=0.3)
     a = axes[1, 1]
-    for st in ('A', 'B', 'D'):
+    for st in STRATS:
         ss = [summ(rs) for rs in sig_sweep[st]]
         a.plot(SIGMA_SWEEP, [100 * s['contact'] for s in ss], 'o-', color=COLORS[st],
                label=f'{LABELS[st]}: contact (%)')
@@ -610,7 +614,7 @@ def save_animation(single, out_dir):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    single, mc, bias_sweep, sig_sweep = run_simulation()
+    single, mc, bias_sweep, sig_sweep, clean = run_simulation()
     sm = {st: summ(mc[st]) for st in STRATS}
     print('=== S080 Underground Pipe CCTV Replacement — Results ===')
     p0 = SEGS[0]['A'] + np.array([3.0, 0, 0])
@@ -651,14 +655,27 @@ if __name__ == '__main__':
     for b, rs in zip(BIAS_SWEEP, bias_sweep):
         s = summ(rs)
         print(f'    {100 * b:+.0f}%: {100 * s["complete"]:.0f}%, {100 * s["contact"]:.2f}%')
-    print('  Disturbance sweep (sigma_d: contact % / RMS cm / complete % per strategy):')
-    for i, sg in enumerate(SIGMA_SWEEP):
+    print('  Disturbance sweep (sigma_d: contact % / RMS cm / complete % / false triggers per run '
+          '/ mean s reached, per strategy; bias ~ N(0, 2%)):')
+    for i, sg in enumerate(SIGMA_SWEEP + [SIGMA_D]):
         parts = []
-        for st in ('A', 'B', 'D'):
-            s = summ(sig_sweep[st][i])
+        for st in STRATS:
+            s = summ(sig_sweep[st][i]) if i < len(SIGMA_SWEEP) else summ(mc[st][:N_SWEEP])
             parts.append(f'{st} {100 * s["contact"]:.2f}% / {100 * s["rms"]:.2f} cm / '
-                         f'{100 * s["complete"]:.0f}%')
-        print(f'    {sg:.2f} m/s: ' + '; '.join(parts))
+                         f'{100 * s["complete"]:.0f}% / {s["false_trig"]:.3f} / {s["s_reached"]:.1f} m')
+        tag = ' (first 8 main MC seeds)' if i == len(SIGMA_SWEEP) else ''
+        print(f'    {sg:.2f} m/s{tag}: ' + '; '.join(parts))
+    print(f'  Clean case, no air flow and no bias ({N_SWEEP} seeds): ' + '; '.join(
+        f'{st} complete {100 * summ(clean[st])["complete"]:.0f}%, false triggers '
+        f'{summ(clean[st])["false_trig"]:.3f}/run, mean s reached {summ(clean[st])["s_reached"]:.2f} m'
+        for st in STRATS))
+    rc = clean['C'][SEED]
+    ev = [i for i, e in enumerate(rc['log']['event']) if e in ('detect', 'false')]
+    if ev:
+        s_det = rc['log']['s'][ev[0]]
+        print(f'  Clean case, C seed {SEED}: bend detected at s = {s_det:.2f} m '
+              f'({ELBOW_S[0] - s_det:.2f} m before the elbow centre), turns at once; '
+              f'{rc["status"]} at s = {rc["s_reached"]:.2f} m')
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)

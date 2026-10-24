@@ -116,10 +116,13 @@ $$\hat{\mathbf{h}}_{new} = \hat{\mathbf{n}}_{bend}$$
 > perpendicular to both vectors. For $\hat{\mathbf{h}} = +x$ and $\hat{\mathbf{n}}_{bend} = +z$ it gives
 > $(0, -1, 0)$, not the bend direction $+z$.
 >
-> **Correction (implementation)**: with $\sigma_{wall}$ = 5 mm and these PD gains, the drone drifts
-> 2–3 cm off-centre often enough that $|d_k - d_{opp}| > 6$ cm fires in the middle of straight
-> pipe. A turn triggered at the first asymmetry is also 0.25 m (one pipe radius) early. In 20
-> Monte Carlo runs this rule triggered 0.95 false bends per run and completed none. The
+> **Correction (implementation)**: a turn triggered at the first asymmetry is about one pipe radius
+> early. The asymmetry appears as soon as the opening comes into view, 0.23 m before the elbow
+> centre in the simulation. The drone then sticks against the side wall, even with no
+> disturbance (0 of 8 clean runs complete). Sensor noise alone (5 mm) does not cause false
+> triggers. With an air-flow disturbance pushing the drone 3 cm or more off-centre,
+> $|d_k - d_{opp}| > 6$ cm also fires in straight pipe: 0.95 false bends per run at
+> $\sigma_d$ = 0.03 m/s in 20 Monte Carlo runs. The
 > implementation's working variant detects a bend only when a reading is longer than any
 > straight pipe allows (> 0.42 m). It then advances one radius to the elbow centre before
 > turning.

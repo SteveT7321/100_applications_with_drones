@@ -74,7 +74,7 @@ The new heading is $\hat{\mathbf{h}}_{new} = \hat{\mathbf{n}}_{bend}$. The card'
 | Heading blend $t_{blend}$ | 0.5 s |
 | Odometry noise $\sigma_v$ | 0.002 m/s |
 | Speed-calibration bias $b$ (added) | $\mathcal{N}(0, 2\%)$ per seed; sweep −4, −2, 0, +2, +4 % |
-| Air-flow disturbance (added) | OU, $\sigma_d$ = 0.03 m/s, $\tau_d$ = 2 s; sweep 0, 0.01, 0.06 m/s |
+| Air-flow disturbance (added) | OU, $\sigma_d$ = 0.03 m/s, $\tau_d$ = 2 s; sweep 0, 0.01, 0.06 m/s (all four strategies); clean case with no air flow and no bias (8 seeds) |
 | Cracks | 10, $s \sim U(2, 48)$ m, intensity $U(20, 60)$, threshold 80, range 0.3 m |
 | Time step / time limit / stuck rule | 0.05 s / 400 s / < 5 cm progress in 10 s |
 | Monte Carlo | 20 seeds; sweeps 8 seeds per point. Each seed fixes the disturbance, sensor noise, odometry noise, bias and cracks for every strategy. |
@@ -93,7 +93,7 @@ conda activate drones
 python src/04_industrial_agriculture/s080_underground_pipe.py
 ```
 
-Runtime ≈ 3 min (170–182 s measured while other simulations shared the CPU).
+Runtime ≈ 3–4 min (165–244 s measured while other simulations shared the CPU).
 
 ---
 
@@ -121,10 +121,13 @@ Paired by seed, D and B both complete 12 runs, only D completes 8, and only B co
 
 **Key findings**:
 - **Only the gated, sensor-based bend rule (D) is reliable.** It completed all 20 runs with an RMS centring error of 2.02 cm, meeting the card's 3 cm target, and flagged every crack. It is not contact-free, though. Contact lasts 0.27 % of the flight time (0.8 events per run), mostly just after the second and third elbows, where the drone exits the turn up to 15 cm off-centre (seed 0 centring plot). So the card's "zero wall contacts" target is not met.
-- **The card's own bend rule (C) fails at once.** With 5 mm sensor noise and the card's PD gains, the drone often wanders 2–3 cm off-centre (seed 0 centring plot), and $|d_N - d_S| > 6$ cm fires in the straight pipe: 0.95 false triggers per run. The drone then turns into the wall and sticks, at a mean of 3.0 m. A real elbow would also be taken one radius (0.25 m) too early, because the asymmetry appears as soon as the opening comes into view.
+- **The card's own bend rule (C) fails for two separate reasons.**
+  - **It turns too early at a real elbow.** This happens even without any disturbance. In the clean case (no air flow, no bias, 8 seeds), C makes no false triggers but completes 0 runs and stops at a mean of 14.82 m. At seed 0 it detects the first elbow at s = 14.77 m, 0.23 m before the elbow centre, because the asymmetry appears as soon as the opening comes into view. It turns at once and sticks against the side wall.
+  - **The added air flow causes false triggers in straight pipe.** At σ_d = 0 and 0.01 m/s there are 0.000 false triggers per run. At 0.03 m/s (first 8 main seeds) there are 1.000 per run, and C stops at a mean of 2.9 m. At 0.06 m/s there are 2.000 per run, stopping at 0.7 m. The air flow pushes the drone 3 cm or more off-centre, so $|d_N - d_S| > 6$ cm fires. Sensor noise alone (5 mm) does not trigger it.
+  - In the main Monte Carlo, C averages 0.95 false triggers per run and stops at a mean of 3.0 m.
 - **Dead-reckoned turn timing (A, B) is the weak link without wall sensing.** Integrating the commanded speed ignores the air-flow disturbance and the speed bias. At seed 0, both A and B turned early at the third elbow (DR error 1.79 m at the end) and stuck at s ≈ 42.6 m. Centring (B) cuts contact time from 45.60 % to 6.51 % and the RMS error from 13.28 to 4.16 cm, but it cannot fix where the drone turns.
 - **Late turns are recoverable, early turns are not.** For B, completion is 88 % with a −4 % bias, 75 % at −2 %, 38 % at 0 % and +2 %, and 25 % at +4 %. A negative bias makes dead reckoning underestimate the distance, so the drone reaches the elbow's end wall first. It slides there until dead reckoning catches up, then turns into the new leg. An early turn sends it into the side wall of the old leg, where it sticks. Even with zero bias, only 38 % of B runs complete, because the air flow alone shifts the dead-reckoned elbow positions.
-- **Disturbance sweep.** With no air flow (σ_d = 0), A and B still fail 25 % of runs (75 % complete), only from the random speed bias. D completes 100 % at every disturbance level tested (0, 0.01, 0.06 m/s), with RMS 1.26, 1.32 and 3.19 cm and at most 0.90 % contact time. A's contact time rises from 3.06 % to 58.50 % as the air flow grows.
+- **Disturbance sweep and clean case.** With neither air flow nor speed bias, A, B and D all complete 100 % of runs; only C fails, because of its early turns. With no air flow but the random speed bias (σ_d = 0 in the sweep), A and B complete 75 %. D completes 100 % at every disturbance level tested (0, 0.01, 0.06 m/s), with RMS 1.26, 1.32 and 3.19 cm and at most 0.90 % contact time. A's contact time rises from 3.06 % to 58.50 % as the air flow grows. So the disturbance and bias are what separate the dead-reckoning strategies (A, B) from the sensor-based one (D).
 - **Crack detection is fixed by construction in the card's model.** Every crack the drone passes is flagged (intensity 20–60 < 80), so the crack count only measures how far the drone gets. It is not compared as a detection-quality metric.
 
 ### 3D Pipe Path (strategy D, seed 0)
@@ -166,12 +169,12 @@ Strategy D, seed 0, 3D view: the true path in red and dead reckoning in orange. 
 | Card | Implementation | Reason |
 |------|----------------|--------|
 | Single navigation method; the card's code feeds the controller constant readings (placeholder) | Readings ray-cast against the real pipe and elbows; four strategies A–D compared | The card's code never senses the pipe, so it cannot test centring or bend detection. Comparing strategies answers whether the card's method works. |
-| Bend rule $\lvert d_k - d_{opp}\rvert > 0.06$ m, turn at once (C, kept) | Added D: gate 0.42 m, 0.25 m delay, refractory 1 m | C false-triggers 0.95 times per run and completes 0 %. Card annotated. |
+| Bend rule $\lvert d_k - d_{opp}\rvert > 0.06$ m, turn at once (C, kept) | Added D: gate 0.42 m, 0.25 m delay, refractory 1 m | C completes 0 %. Even without disturbance it turns 0.23 m early (seed 0) and sticks. With the added air flow it also false-triggers (0.95 per run in the main Monte Carlo). Card annotated. |
 | $\hat{\mathbf{h}}_{new} = \hat{\mathbf{h}} \times \hat{\mathbf{n}}_{bend}$ | $\hat{\mathbf{h}}_{new} = \hat{\mathbf{n}}_{bend}$ | The cross product gives (0, −1, 0) for a +x→+z bend (printed by the script). Card corrected. |
 | $d_k^{true} = r_{clear} - \delta_k$ | Skin distance $R - r_{drone} - \delta_k$ (by ray casting) | The card's formula gives 0.25 m for a centred drone, contradicting its own 0.15 m. Card corrected. |
 | $\sigma_{DR} = \sigma_v\sqrt{t}$ = 0.032 m at 250 s | Noise-only error $\sigma_v\sqrt{\Delta t\,t}$ = 0.0071 m; the dominant DR error is commanded-vs-actual speed (bias, disturbance) | Dimensionally corrected; final DR errors of 0.69–1.88 m at seed 0. Card annotated. |
 | Planar DR $(\cos\hat\theta, \sin\hat\theta, 0)$ | DR along the 3D heading | The pipe has a vertical leg. |
-| No disturbance other than 0.002 m/s velocity noise | OU air flow ($\sigma_d$ = 0.03 m/s, $\tau_d$ = 2 s), speed bias $\mathcal{N}(0, 2\%)$; both swept | Without them, every strategy trivially succeeds. The sweeps show how the ranking depends on them (D is unaffected). |
+| No disturbance other than 0.002 m/s velocity noise | OU air flow ($\sigma_d$ = 0.03 m/s, $\tau_d$ = 2 s), speed bias $\mathcal{N}(0, 2\%)$; both swept, plus a clean case without either | Without them, A, B and D all complete every run (clean case), so the comparison could not separate dead reckoning from wall sensing; C fails either way. The sweeps show how the ranking depends on them (D is unaffected). |
 | Card code clamps the drone to the budget and keeps going | Same clamp (sliding along the wall), plus stuck detection | An early turn drives the drone into a side wall it cannot leave. |
 | Elbow planes ['xz', 'xy', 'xz'] | ['xz', 'yz', 'xy'] | Matches the card's own leg headings. Card corrected. |
 | Crack detection by frame intensity | Card model kept (always flagged when within 0.3 m) | Reported as "cracks passed", not as detection quality. |
