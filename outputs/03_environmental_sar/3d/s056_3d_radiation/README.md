@@ -69,7 +69,8 @@ Ties within 10⁻⁹ (relative) are broken by 3D distance and then by index (the
 | Altitude set $\mathcal{Z}$ | {3, 10, 20, 35, 60} m; 3125 candidate waypoints |
 | Fixed altitude (card 2, 2D baselines) | 15 m |
 | Ground-source 2D baselines | S056's 50 × 50 grid of 10 m cells; also this variant's 25 × 25 grid |
-| Bootstrap for RMS ratios (added) | 2000 paired resamples, seeds 5600 / 5700 + noise multiplier |
+| Bootstrap for RMS ratios (added) | 2000 paired resamples, seeds 5600 / 5700 + noise multiplier (5800–5812 for the 200-seed check) |
+| Larger-sample 3 m check (added) | 200 further seeds (50–249), σ0 = 0.04, 3D EIG / fixed altitude / 3D EIG without 3 m |
 | Speed / dwell | 8 m/s / 5 s |
 | Max readings / stop threshold | 80 / peak ≥ 0.90 |
 | Source strength $A$ | 2000 µSv·m²/h |
@@ -100,7 +101,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s056_3d_radiation.py
 ```
 
-The dose matrices [candidate waypoint × hypothesis] are computed once (3125 × 3125 for the 3D EIG), so each EIG map costs two matrix–vector products. Runtime ≈ 2–2.5 min on a loaded machine (146 s and 114 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 158 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The dose matrices [candidate waypoint × hypothesis] are computed once (3125 × 3125 for the 3D EIG), so each EIG map costs two matrix–vector products. Runtime ≈ 2–2.5 min including the 200-seed check (146 s and 134 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 111 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -284,8 +285,10 @@ Return home on the σ0 = 0.4 demo: straight 100 m / 39.62 nSv, corridor 105 m / 
 - **The residual errors come from an interaction between the altitude policy and the 20 m horizontal voxel mismatch (split probes).** No voxel estimate can beat the quantisation floor, which is 7.45 m RMS for these continuous sources. The probes separate the two kinds of mismatch:
   - *Vertical mismatch only* (x-y moved to the voxel centre): the 3D EIG beats the fixed altitude, 1.14 vs 3.10 m (ratio 0.37, CI [0.28, 0.61]) at σ0 = 0.04 and 1.58 vs 2.93 m ([0.36, 0.90]) at σ0 = 0.4. Readings at a second altitude do resolve the source height better.
   - *Horizontal mismatch only* (z moved): at σ0 = 0.04 the 3D EIG is worse, 18.32 vs 10.79 m (ratio 1.70, CI [1.01, 2.38]), with 3 gross errors against 0. At σ0 = 0.4 the two are level (10.87 vs 10.09 m).
-  - *Probed cause*: the same 3D EIG without the 3 m altitude gets 11.64 m and 0 gross errors under horizontal mismatch, and 11.52 m with 0 gross errors on continuous sources (17.46 m and 2 with 3 m allowed). So the 3 m readings, where the dose changes fastest, turn a 10 m horizontal model error into a confident wrong voxel.
-  - Without the 3 m altitude the 3D EIG matches the fixed altitude: 11.52 vs 12.30 m (CI [0.78, 1.11]) and 9.54 vs 10.31 m ([0.82, 1.02]). At σ0 = 0.4 it still needs fewer readings (ratio 0.74).
+  - *Probed cause*: in the 50 main trials the same 3D EIG without the 3 m altitude gets 11.64 m and 0 gross errors under horizontal mismatch, and 11.52 m with 0 gross errors on continuous sources (17.46 m and 2 with 3 m allowed). On its own this is thin evidence: the ratio CI is [0.46, 1.13] and the gap rests on 2 gross failures.
+  - A check on 200 further seeds (σ0 = 0.04) confirms it. With 3 m allowed the 3D EIG has 14 gross failures against 5 without 3 m, and the RMS ratio is 1.27 [1.16, 1.40] on continuous sources. Under horizontal mismatch only it has 15 vs 5 failures, ratio 1.22 [1.11, 1.35]. So the 3 m readings, where the dose changes fastest, turn a 10 m horizontal model error into a confident wrong voxel.
+  - On the same 200 seeds the full 3D EIG and the fixed altitude are still indistinguishable: 1.08 [0.96, 1.21]. The 3D EIG without 3 m beats the fixed altitude: 12.39 vs 14.54 m, 0.85 [0.76, 0.95]; under horizontal mismatch 0.88 [0.79, 0.98].
+  - On the 50 main trials, without the 3 m altitude the 3D EIG matches the fixed altitude: 11.52 vs 12.30 m (CI [0.78, 1.11]) and 9.54 vs 10.31 m ([0.82, 1.02]). At σ0 = 0.4 it still needs fewer readings (ratio 0.74). The 3 m effect is weaker at σ0 = 0.4: 3D EIG without 3 m vs with it, 0.84 [0.69, 0.99]. The 200-seed check was run at the card noise only.
   - With no mismatch at all, both find the exact voxel in 48–50 of 50 trials. The altitude freedom then saves readings (ratio 0.89 and 0.82).
 - **The mirror ambiguity of a single altitude is real but not the limiting factor.** Among trials with the correct horizontal voxel, the fixed-altitude EIG lands on the mirror side of 15 m in 9 (σ0 = 0.04) and 10 (σ0 = 0.4) trials, against 5 and 8 for the 3D EIG. Voxel centres (2, 6, 10, 14, 18 m) are not symmetric about 15 m, so on-grid sources are resolved exactly even at one altitude. With continuous source heights, however, the second altitude helps: in the vertical-mismatch-only probe the fixed altitude has 3.10 m RMS against 1.14 m for the 3D EIG.
 - **The $\lambda_0$ sweep changes the result by a few trials.** At σ0 = 0.04 the RMS 3D error is 19.8 / 17.5 / 14.0 m for $\lambda_0$ = 0 / 0.05 / 0.5. At σ0 = 0.4 it is 10.4 / 11.4 / 10.7 m. A larger $\lambda_0$ adds readings (19.5 vs 15.8 at σ0 = 0.4) and hardly moves the altitude mix (84.5–97.6 % at 3 m). The penalty does not change the conclusion: removing the 3 m altitude matters more than any $\lambda_0$.
@@ -349,7 +352,7 @@ Rotating view of the top-300 voxels (opacity ∝ posterior) and the 3D EIG path 
 | "Boustrophedon at each altitude level" | 4 × 4 lattice per layer, 60 → 3 m, 80 readings in total | Fits the 80-reading budget. The S056 8 × 10 lawnmower at 15 m was added as a control. |
 | Three strategies | Plus the S056 model on its own 50 × 50 grid (the X5 2D baseline), the same model on this variant's 25 × 25 grid, and the 15 m lawnmower | The 50 × 50 run is S056 as written. The 25 × 25 run isolates the posterior, because it uses the same candidate cells as the fixed-altitude EIG. The two give different effect sizes, so both are reported. |
 | — | $\lambda_0$ ablations (0, 0.5), a 3D EIG without the 3 m altitude, and on-grid / x-y-only / z-only source probes with bootstrap CIs | Sensitivity to the penalty, and direct probes of where the errors come from (C9). |
-| Dose budget $D_{acc} \le D_{max}$ | Also asserted per leg: the absorbed dose grows on every leg and dwell, and every waypoint is a candidate cell at an allowed altitude | Invariants that can fail (X4). |
+| Dose budget $D_{acc} \le D_{max}$ | Also asserted per leg: the absorbed dose grows on every leg and dwell; every waypoint lies on its model's horizontal lattice (20 m or 10 m cell centres) at an altitude from the independent constants $\mathcal Z$ or $h$ = 15 m | Invariants that can fail (X4). A test that moved the candidate altitudes to 1000 m, or shifted x by 3 m, triggers the assert. |
 | Corridor "re-routed through the 3D field" | Shortest lattice path that does not enter the estimated 1 µSv/h sphere, except to leave it | The drone almost always ends inside the sphere, so the corridor must allow an exit. |
 | Posterior slices at $k$ = 1, 10, 30, 60 | $k$ = 1, 10 and the final reading 13 | The demo mission stops after 13 readings. |
 | Dose budget keeps the drone within 2 mSv | Implemented; it never binds (max 0.168 % of the budget) | The card's numbers make the budget 3 orders of magnitude larger than any mission dose. |

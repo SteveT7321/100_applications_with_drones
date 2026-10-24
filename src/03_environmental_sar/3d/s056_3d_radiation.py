@@ -17,10 +17,16 @@ Strategies (same sources, same noise draws, same launch reading):
   2. eigfix  same EIG and posterior, altitude locked at 15 m          (card 2)
   3. lawn    altitude-sweeping lawnmower: a 4 x 4 boustrophedon at each of the
              five altitudes, 60 m down to 3 m (80 readings)          (card 3)
-  4. eig2d   2D baseline: the S056 model as written (ground source, 2D posterior
-             over the same 25 x 25 cells, h = 15 m) run on the 3D sources (X5)
-Ablations: eig3d with lambda0 = 0 and 0.5 (card 0.05).  Two detector noise levels
-(card sigma0 = 0.04 and the 10x level the S056 review added).
+  4. eig2d50 2D baseline (X5): the S056 model as written (ground source, 2D posterior
+             over S056's 50 x 50 grid of 10 m cells, h = 15 m) run on the 3D sources
+  5. eig2d   the same ground-source model on this variant's 25 x 25 cells (isolates
+             the posterior: same candidate cells as eigfix)
+  6. lawn15  the S056 8 x 10 lawnmower at 15 m with the 3D posterior (control)
+Ablations and probes: eig3d with lambda0 = 0 and 0.5 (card 0.05); eig3d_no3 (3D EIG
+without the 3 m altitude); split mismatch probes with the sources moved to their voxel
+centre fully, in x-y only or in z only; a 200-seed check of the 3 m effect at the card
+noise; paired bootstrap CIs of RMS ratios.  Two detector noise levels (card
+sigma0 = 0.04 and the 10x level the S056 review added).
 
 Usage:
     conda activate drones
@@ -84,6 +90,7 @@ LABELS = {'eig3d': '3D EIG', 'eigfix': 'Fixed-altitude EIG (15 m)',
 COLORS = {'eig3d': '#D62728', 'eigfix': '#1F77B4', 'lawn': '#7F7F7F', 'eig2d': '#C5B0D5', 'eig2d50': '#9467BD',
           'lawn15': '#BCBD22'}
 N_BOOT_RATIO = 2000                    # bootstrap resamples for RMS ratios (added)
+N_BIG = 200                            # further seeds (50-249) for the 3 m check at the card noise (added)
 
 XS = (np.arange(NXY) + 0.5) * VOX_XY
 ZS = (np.arange(NZ) + 0.5) * VOX_Z
@@ -222,7 +229,14 @@ def run_mission(strategy, src, noise, sigma0, lam0=LAMBDA_0, record=False):
     mname = {'eig3d': '3d', 'eigfix': 'fix', 'lawn': '3d', 'eig2d': '2d', 'lawn15': 'fix',
              'eig2d50': '2d50', 'eig3d_no3': '3d_no3'}[strategy]
     cand, hyp, D, D2 = model(mname)
-    z_ok = set(np.round(cand[:, 2], 6).tolist()) | {round(H_FIX, 6)}
+    # allowed waypoint altitudes and horizontal lattice, from independent constants (not from cand)
+    z_ok = {'3d': set(Z_SET.tolist()), '3d_no3': set(Z_SET[1:].tolist()), 'fix': {H_FIX},
+            '2d': {H_FIX}, '2d50': {H_FIX}}[mname]
+    cell = 10.0 if mname == '2d50' else VOX_XY
+
+    def on_lattice(v):
+        q = (v - cell / 2) / cell
+        return abs(q - round(q)) < 1e-9 and 0 <= round(q) < AREA_SIZE / cell
     pos = LAUNCH.copy()
     path = [pos.copy()]
     d_true = float(dose_rate(pos, src))
@@ -256,7 +270,8 @@ def run_mission(strategy, src, noise, sigma0, lam0=LAMBDA_0, record=False):
             if len(recent) > N_COOLDOWN:
                 recent.pop(0)
         new = cand[idx].copy()
-        assert 0 <= new[0] <= AREA_SIZE and 0 <= new[1] <= AREA_SIZE and round(float(new[2]), 6) in z_ok
+        assert on_lattice(new[0]) and on_lattice(new[1]) and \
+            any(abs(float(new[2]) - zz) < 1e-9 for zz in z_ok), 'waypoint off the allowed lattice / altitudes'
         d_before = dacc
         dl, L = leg_dose(pos, new, src)
         path_len += L
@@ -418,6 +433,10 @@ def run_simulation():
             for s in ('eig3d', 'eigfix', 'eig3d_no3'):
                 mc[(s + tag, m)] = [run_mission(s, src, nz, SIGMA_0 * m) for (src, nz) in gd]
     FLOORS['off'] = floor_rms(draws)
+    for mode, tag in ((False, '_big'), ('z', '_zon_big')):         # 200 further seeds, card noise
+        bd = [trial_draw(t, on_grid=mode) for t in range(N_TRIALS, N_TRIALS + N_BIG)]
+        for s in ('eig3d', 'eigfix', 'eig3d_no3'):
+            mc[(s + tag, 1.0)] = [run_mission(s, src, nz, SIGMA_0) for (src, nz) in bd]
     rth = {m: [rth_paths(r['path'][-1], r['est'], draws[t][0]) for t, r in enumerate(mc[('eig3d', m)])]
            for m in SIGMA_MULT}
     demo_noise = np.random.default_rng(42).standard_normal(N_MEAS_MAX + 1)
@@ -809,6 +828,18 @@ def report(draws, mc, rth, demo, demo_rth):
                 ci = f"eig3d/eigfix RMS ratio {rms(E['eig3d']) / rms(E['eigfix']):.2f} CI [{lo:.2f}, {hi:.2f}]"
             print(f"      {lab}: " + ' | '.join(parts) + f"; {ci}, eig3d lower error in {int(np.sum(E['eig3d'] < E['eigfix'] - 1e-9))}, "
                   f"higher in {int(np.sum(E['eig3d'] > E['eigfix'] + 1e-9))}")
+        if m == 1.0:
+            print(f'    LARGER-SAMPLE CHECK OF THE 3 m EFFECT ({N_BIG} further seeds, '
+                  f'{N_TRIALS}-{N_TRIALS + N_BIG - 1}, sigma0 = {SIGMA_0:g}):')
+            for tag, lab in (('_big', 'continuous sources'), ('_zon_big', 'z on the voxel centre (horizontal mismatch only)')):
+                E = {s: np.array([r['err3'] for r in mc[(s + tag, 1.0)]]) for s in ('eig3d', 'eigfix', 'eig3d_no3')}
+                parts = [f"{s} RMS {rms(E[s]):.2f} m, median {np.median(E[s]):.2f}, gross > 30 m {int(np.sum(E[s] > 30))}"
+                         for s in E]
+                cis = []
+                for a, b, sd in (('eig3d', 'eig3d_no3', 5800), ('eig3d', 'eigfix', 5801), ('eig3d_no3', 'eigfix', 5802)):
+                    lo, hi = boot_ratio(E[a], E[b], sd + (10 if tag == '_zon_big' else 0))
+                    cis.append(f"{a}/{b} {rms(E[a]) / rms(E[b]):.2f} [{lo:.2f}, {hi:.2f}]")
+                print(f"      {lab}: " + ' | '.join(parts) + '; RMS ratios ' + ', '.join(cis))
         Hs = {s: curve(mc[(s, m)], 'H') for s in ['eig3d', 'eigfix', 'lawn', 'lawn15']}
         for kk in (1, 2, 3, 5, 10):
             print(f'    mean voxel entropy after {kk} reading(s): ' + ', '.join(
