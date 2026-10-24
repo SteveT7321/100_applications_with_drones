@@ -93,7 +93,7 @@ conda activate drones
 python src/05_special_entertainment/s088_formation_morphing.py
 ```
 
-Runtime ≈ 35 s (33–36 s measured in three runs).
+Runtime ≈ 35 s on a quiet machine (78–107 s measured in the latest three runs while other jobs shared the CPU).
 
 ---
 
@@ -172,7 +172,7 @@ ORCA + Hungarian, seed 0, 3D view with 2 s trails, 201 frames at 20 fps (every 3
 | No acceleration limit | $\|\Delta\mathbf{v}\| \le a_{max}\Delta t$, $a_{max} = 5$ m/s², all conditions | Physical sanity (no instantaneous velocity jumps); the card asks for bounded acceleration changes. It binds in 57.5 ± 1.4 (ORCA + Hungarian) to 199.8 ± 14.7 (random, no ORCA) of the 12 000 agent-steps per run. |
 | Three conditions, single run | Added a fourth control (random assignment, no ORCA); 20-seed Monte Carlo with common random numbers | Hungarian without ORCA turned out collision-free, so the card's comparison could not show what ORCA prevents. |
 | Smoothness: card code takes the RMS over vector components | RMS of $\|\Delta\mathbf{v}\|$ as in the card's formula | The code value is $1/\sqrt{3}$ of the formula value. |
-| Shapes centred at the origin (drones would fly down to z ≈ −5.7 m) | Formation centre at 8.0 m altitude; $z \ge 0$ asserted | No flight below ground; the geometry and all separations are unchanged by the shift. |
+| Shapes centred at the origin (the flown minimum would be z = −5.81 m) | Formation centre at 8.0 m altitude; $z \ge 0$ asserted | No flight below ground; the geometry and all separations are unchanged by the shift. |
 | Output names `s088_3d_trajectories.png`, `s088_metrics_panel.png`, `s088_animation.gif` | `3d_trajectories.png`, `metrics_panel.png`, `animation.gif`, plus `shapes.png` and `monte_carlo.png` | Repository naming convention. |
 
 ---

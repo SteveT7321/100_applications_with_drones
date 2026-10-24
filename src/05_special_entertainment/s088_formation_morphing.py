@@ -690,6 +690,9 @@ if __name__ == '__main__':
     h = [x['coll_steps'] for x in mc['orca_hung']]
     rnd = [x['coll_steps'] for x in mc['orca_rand']]
     no = [x['coll_steps'] for x in mc['no_orca']]
+    z_lo = min(x['min_z'] for c in CONDITIONS for x in mc[c])
+    print(f'\n  Lowest altitude over all seeds and conditions: {z_lo:.2f} m; without the '
+          f'{Z_CENTRE:.1f} m centre offset the drones would reach z = {z_lo - Z_CENTRE:.2f} m')
     print('\n  Paired per-seed comparison of collision timesteps:')
     print(f'    ORCA+Hungarian < no ORCA in {sum(a < b for a, b in zip(h, no))}/{N_MC} seeds, '
           f'equal in {sum(a == b for a, b in zip(h, no))}')
