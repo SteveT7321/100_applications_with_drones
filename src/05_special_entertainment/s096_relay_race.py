@@ -249,7 +249,8 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
                                         launch_peak=float(peak[0]), tau=tau,
                                         launch_vxmin=float(vxmin[0]), launch_t=t,
                                         v_est=float(v_in), v_true=float(v[holder, 0]),
-                                        plan_dist=float(v_in * tau / 2))
+                                        plan_dist=float(v_in * tau / 2),
+                                        meet_off=float(xin[0] + tau * xin[3] - RELAY_XS[out]))
                             mode = 'intercept'
                 elif np.linalg.norm(xin[:3] - po) <= d_detect:
                     plan = dict(launch_gap=float(np.linalg.norm(xin[:3] - po)), t0=t)
@@ -299,7 +300,10 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
                                      launch_delay=(plan or {}).get('launch_t', np.nan) - leg_t,
                                      v_est=(plan or {}).get('v_est', np.nan),
                                      v_true=(plan or {}).get('v_true', np.nan),
-                                     plan_dist=(plan or {}).get('plan_dist', np.nan)))
+                                     plan_dist=(plan or {}).get('plan_dist', np.nan),
+                                     meet_off=(plan or {}).get('meet_off', np.nan),
+                                     tau=(plan or {}).get('tau', np.nan),
+                                     early=(plan or {}).get('t_star', np.nan) - (t + DT)))
                 done[holder] = True
                 holder = out
                 window = 0.0
@@ -671,7 +675,8 @@ if __name__ == '__main__':
                 f'{SNAP_PEAK * b[0] ** 2 / (2 * al):.1f} / {SNAP_PEAK * b[1] ** 2 / (2 * al):.1f} m, '
                 f'launch gaps {LGg[b[3], b[4], 0]:.1f} / {LGg[b[3], b[4], 1]:.1f} m'
                 if b else 'none'))
-            if b and max(b[0], b[1]) > vl:           # optimum exceeds the bound: show why
+            is_base = al == A_LAUNCH and L == L_ZONE
+            if b and (max(b[0], b[1]) > vl or is_base):  # exceptions, plus baseline to compare
                 for k, h in enumerate(HOg[b[3], b[4]]):
                     detail.append(
                         f'L {L:.0f} ({b[0]:.0f}, {b[1]:.0f}) pass {k + 1}: gap when the baton '
@@ -680,10 +685,13 @@ if __name__ == '__main__':
                         f'{h["v_est"]:.2f} m/s (true {h["v_true"]:.2f} m/s), planned launch '
                         f'distance {h["plan_dist"]:.1f} m, formula with the cruise speed '
                         f'{SNAP_PEAK * (b[0], b[1])[k] ** 2 / (2 * al):.1f} m, pass '
-                        f'+{XPg[b[3], b[4], k]:.1f} m')
+                        f'+{XPg[b[3], b[4], k]:.1f} m, planned meeting point '
+                        f'+{h["meet_off"]:.1f} m, intercept duration {h["tau"]:.2f} s, pass window '
+                        f'complete {h["early"]:.2f} s before the planned meeting time'
+                        + (' [baseline]' if is_base else ''))
         print(f'    a_launch {al:.0f} m/s^2:\n      ' + '\n      '.join(cells))
         for d in detail:
-            print(f'      exception detail: {d}')
+            print(f'      detail: {d}')
 
     v_opt = [best[0], best[1], V_CRUISE_MAX]
     print(f'\nMonte Carlo ({N_MC} seeds; same disturbance and sensor noise for every strategy):')

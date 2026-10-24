@@ -50,7 +50,7 @@ This is the latest launch for that acceleration, and therefore the earliest rend
 | 16 | 7.50 | 60.0 m |
 | 20 | 9.38 | 93.8 m |
 
-The 1 s pass window does **not** add $v \cdot 1$ s downstream. Distance and speed criteria are already met during the last second of the approach, so the window completes at about the rendezvous point: predicted 33.8 m and 45.9 m, simulated 34.5 m and 45.4 m (seed 0).
+The 1 s pass window does **not** add $v \cdot 1$ s downstream. Distance and speed criteria are already met during the last second of the approach, so at the card speeds and the baseline the window completes at about the rendezvous point: predicted 33.8 m and 45.9 m, simulated 34.5 m and 45.4 m (seed 0). At the baseline optimum, the printed pass-window completion is 0.10 s and 0.03 s before the planned meeting time. This does not hold for every setting. With the long $a_L$ = 3 m/s² intercept at L = 60 m, the windows complete 0.44 s and 1.45 s early, 7.1 m and 16.2 m before the planned meeting points (see the exception table below).
 
 The pass position is therefore $x_{pass} \approx 1.875\,v^2/(2a_L)$. The highest incoming speed whose pass fits a zone of length $L$ is
 
@@ -94,7 +94,7 @@ conda activate drones
 python src/05_special_entertainment/s096_relay_race.py
 ```
 
-Runtime: about 1.6 min (93–94 s over three runs; other simulations were running at the same time). The script asserts that the speed stays at or below 20 m/s, nothing moves more than $v_{max}\Delta t$ in one step, and every altitude stays above 0.
+Runtime: about 1.5 min (91–93 s over three runs; other simulations were running at the same time). The script asserts that the speed stays at or below 20 m/s, nothing moves more than $v_{max}\Delta t$ in one step, and every altitude stays above 0.
 
 ---
 
@@ -130,7 +130,7 @@ Each cell gives $v_{lim}$ and then the optimum:
 
 In 9 of the 12 cells, both optimal speeds are at or below $v_{lim}$, and the faster one is the largest grid speed at or below it. The three exceptions are marked †: L = 55 m with $a_L$ = 3 and 4 m/s², and L = 60 m with $a_L$ = 3 m/s². Bold marks the baseline.
 
-Each cell below gives the simulated pass positions (RP1 / RP2), then the formula $1.875\,v^2/(2a_L)$, then the outgoing drones' launch gaps (B / C), which the formula also predicts:
+Each cell below gives the simulated pass positions (RP1 / RP2), then the formula $1.875\,v^2/(2a_L)$, then the outgoing drones' launch gaps (B / C). The formula predicts the launch gaps in the unmarked cells, only roughly at $a_L$ = 4, L = 60 m (45.9 against 42.4 m for C), and not in the † cells:
 
 | $a_L$ | L = 40 m | L = 50 m | L = 55 m | L = 60 m |
 |---|---|---|---|---|
@@ -138,16 +138,19 @@ Each cell below gives the simulated pass positions (RP1 / RP2), then the formula
 | 4 m/s² | +34.5 / +34.3; 33.8 / 33.8; 33.7 / 33.7 | +44.9 / +45.6; 45.9 / 45.9; 45.9 / 45.7 | +44.9 / +53.1; 45.9 / 60.0; 45.9 / 49.9 † | +57.6 / +49.3; 60.0 / 45.9; 60.6 / 42.4 |
 | 5 m/s² | +39.0 / +39.5; 36.8 / 36.8; 36.7 / 36.4 | +49.9 / +48.1; 48.0 / 48.0; 48.1 / 46.3 | same as L = 50 | same as L = 50 |
 
-**Where the bound fails** (printed detail for C's launch at RP2 in the † cells):
+**Where the bound fails**. The table gives the printed detail for each pass in the † cells, with the baseline for comparison. "Early" is how long before the planned meeting time the 1 s pass window completed.
 
-| Cell | Gap when B gets the baton | Launch delay | Launch gap | KF speed estimate (true) at launch | Planned launch distance $1.875\,\hat v^2/(2a_L)$ | Formula with cruise speed | RP2 pass |
-|---|---:|---:|---:|---|---:|---:|---:|
-| $a_L$ = 3, L = 55, (12, 16) | 58.1 m | 0.52 s | 51.5 m | 12.87 (14.35) m/s | 51.8 m | 80.0 m | +54.9 m |
-| $a_L$ = 4, L = 55, (14, 16) | 55.2 m | 0.36 s | 49.9 m | 14.61 (15.54) m/s | 50.0 m | 60.0 m | +53.1 m |
-| $a_L$ = 3, L = 60, (14, 14) | 44.8 m | 0.00 s | 44.6 m | 13.48 (13.98) m/s | 56.8 m | 61.2 m | +52.9 m |
+| Cell, pass | Gap when the baton arrived | Launch delay | Launch gap | KF speed estimate (true) | Planned launch distance | Formula with cruise speed | Planned meeting point | Pass | Early |
+|---|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| $a_L$ = 3, L = 55, (12, 16), RP2 | 58.1 m | 0.52 s | 51.5 m | 12.87 (14.35) m/s | 51.8 m | 80.0 m | +52.2 m | +54.9 m | 1.39 s |
+| $a_L$ = 4, L = 55, (14, 16), RP2 | 55.2 m | 0.36 s | 49.9 m | 14.61 (15.54) m/s | 50.0 m | 60.0 m | +50.1 m | +53.1 m | 0.41 s |
+| $a_L$ = 3, L = 60, (14, 14), RP1 | 100.0 m | 4.10 s | 62.1 m | 14.11 (14.00) m/s | 62.2 m | 61.2 m | +62.3 m | +55.2 m | 0.44 s |
+| $a_L$ = 3, L = 60, (14, 14), RP2 | 44.8 m | 0.00 s | 44.6 m | 13.48 (13.98) m/s | 56.8 m | 61.2 m | +69.1 m | +52.9 m | 1.45 s |
+| baseline $a_L$ = 4, L = 50, (14, 14), RP1 | 100.0 m | 5.26 s | 45.9 m | 14.03 (14.00) m/s | 46.2 m | 45.9 m | +46.5 m | +44.9 m | 0.10 s |
+| baseline, RP2 | 55.2 m | 0.68 s | 45.7 m | 13.98 (14.00) m/s | 45.8 m | 45.9 m | +45.9 m | +45.6 m | 0.03 s |
 
-- **$v_B > v_A$ (L = 55 m, $a_L$ = 3 and 4).** C's launch rule uses the KF's *current* speed estimate of B, not B's 16 m/s cruise target. B takes the baton at the slower speed and is still accelerating. Its estimated speed lags (12.87 and 14.61 m/s against the true 14.35 and 15.54 m/s). C therefore launches when the gap has shrunk to the planned distance for that lower speed, 0.52 s and 0.36 s after the baton arrived, at gaps of 51.5 m and 49.9 m. The 80.0 m and 60.0 m launch distances for 16 m/s are never planned. The planned meeting point therefore sits near the launch gap, and the pass lands at +54.9 m and +53.1 m, inside the 55 m zone although $v_B$ = 16 m/s exceeds $v_{lim}$.
-- **$a_L$ = 3 m/s², L = 60 m (14, 14).** Here C really does launch at once (delay 0.00 s). When B gets the baton (RP1 pass at +55.2 m, already below the 61.2 m formula), the gap to C is only 44.8 m, below the 56.8 m planned distance for B's estimated 13.48 m/s. The RP2 pass then lands at +52.9 m. Both passes fit the 60 m zone although 14 m/s is marginally above $v_{lim}$ = 13.86 m/s.
+- **$v_B > v_A$ (L = 55 m, $a_L$ = 3 and 4).** C launches 0.52 s and 0.36 s after the baton arrived, when the gap (51.5 m and 49.9 m) matches the launch distance planned from the KF speed estimate of B (51.8 m and 50.0 m). That estimate, 12.87 and 14.61 m/s, is below both B's true speed (14.35 and 15.54 m/s) and its 16 m/s cruise speed, for which the formula gives 80.0 m and 60.0 m. The planned meeting points are +52.2 m and +50.1 m, and the passes land at +54.9 m and +53.1 m, inside the 55 m zone, although $v_B$ = 16 m/s exceeds $v_{lim}$.
+- **$a_L$ = 3 m/s², L = 60 m (14, 14).** Both planned meeting points lie outside the 60 m zone (+62.3 m and +69.1 m), but both passes land inside it (+55.2 m and +52.9 m). The pass windows complete 0.44 s and 1.45 s before the planned meeting times, against 0.10 s and 0.03 s at the baseline. That is why this cell fits although 14 m/s is marginally above $v_{lim}$ = 13.86 m/s. C launches at once (delay 0.00 s), because the gap when it gets the baton (44.8 m) is already below its planned launch distance (56.8 m). This moves C's planned meeting point further out (+69.1 m); it is not what makes the cell fit.
 
 Over this range the "optimal" race time moves from 28.00 to 19.78 s.
 
@@ -188,7 +191,7 @@ At the card's speeds, KF was faster than naive in **30/30** seeds, by a mean of 
 - **The card's expectations hold for the KF strategy**: both passes succeed, the pass errors are far inside the tolerances (≤ 0.071 m, ≤ 0.230 m/s), and the race takes 23.81 s against the ≤ 60 s target. The naive strategy also completes its passes, but at about +92 and +117 m past the relay points, well outside any reasonable exchange zone.
 - **The gain comes from timing, not from the KF alone.** Both strategies use the same KF. The difference is *when* the outgoing drone leaves. A tuned "check mark" (naive with $d_{detect}$ = 17.5 m) gets within 0.21 s of the KF time (24.02 vs 23.81 s). The KF rule sets the launch point automatically from the predicted speed: 33.7 m at RP1, 45.7 m at RP2. Launching that early is essential: with the card's 15 m trigger, the same KF strategy is 2.18 s slower.
 - **The zone verdict (KF 30/30, naive 0/30) depends on the chosen 50 m zone.** The best naive mark misses it by about 8 m (RP2 at +58.4 m). With a 60 m zone, naive at 17.5–20 m keeps both passes inside in 30/30 seeds and is only 0.21–0.31 s slower. With a 40 m zone, neither strategy fits at these speeds.
-- **The "optimal" speeds mostly just track the zone bound.** The pass lands at about $1.875\,v^2/(2a_L)$ past the relay point, so the feasible speed is about $\sqrt{2a_L L/1.875}$: 14.61 m/s for the baseline $a_L$ = 4 m/s² and L = 50 m. The bound tracks the optimum in 9 of 12 sensitivity cells. It fails in three cells. At L = 55 m with $a_L$ = 3 and 4 m/s², B is still accelerating when it takes the baton, so C plans its launch from B's lagged KF speed estimate rather than its 16 m/s cruise speed. At $a_L$ = 3 m/s², L = 60 m, the gap is already inside C's launch distance when B gets the baton, so C launches at once (details above). This gives (14, 14, 20) → 21.84 ± 0.01 s, 2.0 s faster than the card's speeds. Other choices of the two added parameters move the optimum between (10, 10) at 28.00 s and (16, 16) at 19.78 s (table above), so the optimum is a property of those assumptions, not a universal result.
+- **The "optimal" speeds mostly just track the zone bound.** The pass lands at about $1.875\,v^2/(2a_L)$ past the relay point, so the feasible speed is about $\sqrt{2a_L L/1.875}$: 14.61 m/s for the baseline $a_L$ = 4 m/s² and L = 50 m. The bound tracks the optimum in 9 of 12 sensitivity cells. It fails in three cells. At L = 55 m with $a_L$ = 3 and 4 m/s², B is still accelerating when it takes the baton, so C plans its launch from B's lagged KF speed estimate rather than its 16 m/s cruise speed. At $a_L$ = 3 m/s², L = 60 m, both planned meeting points lie outside the zone, but the pass windows complete well before them (0.44 s and 1.45 s early), so the passes land inside it (details above). The baseline optimum (14, 14, 20) at $a_L$ = 4 m/s² and L = 50 m gives 21.84 ± 0.01 s over 30 seeds, 2.0 s faster than the card's speeds. Other choices of the two added parameters move the optimum between (10, 10) at 28.00 s and (16, 16) at 19.78 s (table above), so the optimum is a property of those assumptions, not a universal result.
 - **The results barely change with the noise** (race-time std ≤ 0.03 s for every configuration that finished): with σ = 0.1 m/s² disturbances and 5 cm sensing, the outcome is set by geometry and timing.
 
 ### 3D Trajectories
