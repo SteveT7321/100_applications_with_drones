@@ -1,6 +1,6 @@
 # S077 Precision Pollination Flight Pattern
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: TSP Ordering + Minimum-Snap Approach Trajectory | **Dimension**: 3D
 
 ---
@@ -57,8 +57,11 @@ For each flower $i$ at position $\mathbf{p}_i^{flower}$, the approach must arriv
 making a $30°$ elevation angle above the horizontal. Let $\varphi_i$ be the horizontal bearing from
 the drone's transit position to the flower. The required unit approach vector is:
 
-$$\hat{\mathbf{d}}_i = \begin{pmatrix} \sin 30° \cos\varphi_i \\ \sin 30° \sin\varphi_i \\ \cos 30° \end{pmatrix}
-= \begin{pmatrix} 0.5\cos\varphi_i \\ 0.5\sin\varphi_i \\ \tfrac{\sqrt{3}}{2} \end{pmatrix}$$
+$$\hat{\mathbf{d}}_i = \begin{pmatrix} \cos 30° \cos\varphi_i \\ \cos 30° \sin\varphi_i \\ \sin 30° \end{pmatrix}
+= \begin{pmatrix} \tfrac{\sqrt{3}}{2}\cos\varphi_i \\ \tfrac{\sqrt{3}}{2}\sin\varphi_i \\ 0.5 \end{pmatrix}$$
+
+> **Correction (implementation)**: the original vector $(0.5\cos\varphi_i, 0.5\sin\varphi_i, \sqrt{3}/2)$
+> has an elevation of $\arcsin(\sqrt{3}/2) = 60°$, not 30°. The vector above gives 30°.
 
 The approach start point is offset from the flower by a standoff distance $d_{standoff} = 0.8$ m
 along the reversed approach direction:
@@ -114,6 +117,12 @@ $T_{dwell} = 1.5$ s. GPS noise is added each timestep:
 
 $$\mathbf{p}_{drone}(t) = \mathbf{p}_i^{flower} + \boldsymbol{\eta}(t), \quad
 \boldsymbol{\eta}(t) \sim \mathcal{N}(\mathbf{0},\, \sigma_{GPS}^2\,\mathbf{I}_3)$$
+
+> **Correction (implementation)**: with this model the docking error is the GPS noise itself,
+> identical for both approach methods ($E\|\boldsymbol{\eta}\| = 0.160$ m, $P_t = 0.203$), so it cannot
+> separate them. The implementation flies a point mass with a first-order velocity response
+> ($\tau_v = 0.3$ s) that tracks the reference from GPS measurements, and uses the **true**
+> distance to the flower during the dwell.
 
 The docking error is the mean position deviation over the dwell period:
 
@@ -200,9 +209,9 @@ def approach_direction(flower_pos, transit_pos):
     bearing = np.arctan2(delta_xy[1], delta_xy[0])
     elev_rad = np.deg2rad(ELEV_ANGLE)
     d_hat = np.array([
-        np.sin(elev_rad) * np.cos(bearing),
-        np.sin(elev_rad) * np.sin(bearing),
-        np.cos(elev_rad),
+        np.cos(elev_rad) * np.cos(bearing),
+        np.cos(elev_rad) * np.sin(bearing),
+        np.sin(elev_rad),
     ])
     return d_hat
 
@@ -606,6 +615,12 @@ if __name__ == '__main__':
 
 > **Note**: absolute values depend on the GPS noise realisation; the key result is that min-snap
 > consistently outperforms straight-line by reducing velocity overshoot at the docking point.
+>
+> **Correction (implementation, 100 seeds)**: min-snap 0.036 m / 70.3 % / 17.58; straight-line
+> 0.062 m / 54.3 % / 13.57, with acceleration feedforward in the tracking loop. The straight-line
+> targets (0.15–0.25 m, < 25 %, < 7) are not reproduced. Without acceleration feedforward
+> min-snap is slightly *worse* (12.79 vs 13.15). Both methods take the same approach time
+> ($T_{seg} = d_{standoff}/v_{approach}$), so straight-line is not faster per visit.
 
 ---
 
