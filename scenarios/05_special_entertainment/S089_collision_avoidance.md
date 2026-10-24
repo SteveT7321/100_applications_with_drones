@@ -1,6 +1,6 @@
 # S089 Large-Scale Swarm Collision Avoidance Test
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: ORCA — Optimal Reciprocal Collision Avoidance | **Dimension**: 3D
 
 ---
@@ -52,9 +52,9 @@ $$\mathrm{VO}_{A|B}^{\tau}(\mathbf{v}_B) = \left\{ \mathbf{v}_A \;\middle|\; \ex
 \bigl\|\bigl(\mathbf{p}_A - \mathbf{p}_B\bigr) + \bigl(\mathbf{v}_A - \mathbf{v}_B\bigr)t\bigr\| < 2r \right\}$$
 
 Geometrically, $\mathrm{VO}_{A|B}^{\tau}(\mathbf{v}_B)$ is a truncated cone in velocity space: apex at
-$\mathbf{v}_B + (\mathbf{p}_A - \mathbf{p}_B)/\tau$, half-angle
-$\theta_{VO} = \arcsin\!\bigl(2r/\|\mathbf{p}_A - \mathbf{p}_B\|\bigr)$, truncated at sphere of radius
-$2r/\tau$.
+$\mathbf{v}_B$, axis pointing along $\mathbf{p}_B - \mathbf{p}_A$, half-angle
+$\theta_{VO} = \arcsin\!\bigl(2r/\|\mathbf{p}_A - \mathbf{p}_B\|\bigr)$, truncated by the sphere of
+radius $2r/\tau$ centred at $\mathbf{v}_B + (\mathbf{p}_B - \mathbf{p}_A)/\tau$.
 
 ### Reciprocal Velocity Obstacle (RVO)
 
@@ -165,8 +165,8 @@ $$\bar{a} = \frac{1}{N \cdot T_{steps}} \sum_{i=1}^{N} \sum_{k=1}^{T_{steps}}
 
 $$\delta_i^{(k)} = \mathbf{1}\bigl[\mathbf{v}_i^{*(k)} \neq \mathbf{v}_i^{pref\,(k)}\bigr]$$
 
-**Collision count**: total number of (ordered pair, timestep) triples where
-$\|\mathbf{p}_A - \mathbf{p}_B\| < 2r$.
+**Collision count**: total number of (unordered pair, timestep) combinations where
+$\|\mathbf{p}_A - \mathbf{p}_B\| < 2r$ (each pair counted once per timestep, as in the code).
 
 ---
 
@@ -731,6 +731,13 @@ if __name__ == "__main__":
 *No-avoidance drones arrive quickly if they happen not to collide head-on, but most become
 entangled and stop progressing. Mission time reflects the last arrival only among those that do
 reach the goal.
+
+Note (verified in the implementation): a straight flight of $2R_{sphere} = 40$ m at
+$v_{pref} = 2$ m/s takes at least 20 s, so "~10 s" is not reachable for any strategy. In a
+kinematic simulation where colliding drones are not removed, every no-avoidance drone still
+reaches its goal; the meaningful figure is the share that arrives without any prior contact.
+The implementation's results (20 placements) are in
+`outputs/05_special_entertainment/s089_collision_avoidance/README.md`.
 
 ---
 
