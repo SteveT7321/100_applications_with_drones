@@ -173,11 +173,11 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S093 | [Earthquake Rubble Search and Rescue](outputs/05_special_entertainment/s093_rubble_sar/README.md) | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
 | S094 | [Aerial Ball Catching](outputs/05_special_entertainment/s094_ball_catching/README.md) | [card](scenarios/05_special_entertainment/S094_ball_catching.md) |  |
 | S095 | [Water Surface Landing Simulation](outputs/05_special_entertainment/s095_water_landing/README.md) | [card](scenarios/05_special_entertainment/S095_water_landing.md) |  |
-| S096 | [Drone Relay Race](outputs/05_special_entertainment/s096_relay_race/README.md) | [card](scenarios/05_special_entertainment/S096_relay_race.md) |  |
-| S097 | [Aerial Puzzle Assembly](outputs/05_special_entertainment/s097_aerial_puzzle/README.md) | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) |  |
-| S098 | [Swarm Synchronized Dance](outputs/05_special_entertainment/s098_synchronized_dance/README.md) | [card](scenarios/05_special_entertainment/S098_synchronized_dance.md) |  |
+| S096 | [Drone Relay Race](outputs/05_special_entertainment/s096_relay_race/README.md) | [card](scenarios/05_special_entertainment/S096_relay_race.md) | [3D](outputs/05_special_entertainment/3d/s096_3d_relay_race/README.md) |
+| S097 | [Aerial Puzzle Assembly](outputs/05_special_entertainment/s097_aerial_puzzle/README.md) | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) | [3D](outputs/05_special_entertainment/3d/s097_3d_aerial_puzzle/README.md) |
+| S098 | [Swarm Synchronized Dance](outputs/05_special_entertainment/s098_synchronized_dance/README.md) | [card](scenarios/05_special_entertainment/S098_synchronized_dance.md) | [3D](outputs/05_special_entertainment/3d/s098_3d_synchronized_dance/README.md) |
 | S099 | [Cross-Obstacle Relay Pass](outputs/05_special_entertainment/s099_obstacle_relay/README.md) | [card](scenarios/05_special_entertainment/S099_obstacle_relay.md) |  |
-| S100 | [Ultimate Grand Challenge — Multi-Domain Integration](outputs/05_special_entertainment/s100_grand_challenge/README.md) | [card](scenarios/05_special_entertainment/S100_grand_challenge.md) |  |
+| S100 | [Ultimate Grand Challenge — Multi-Domain Integration](outputs/05_special_entertainment/s100_grand_challenge/README.md) | [card](scenarios/05_special_entertainment/S100_grand_challenge.md) | [3D](outputs/05_special_entertainment/3d/s100_3d_grand_challenge/README.md) |
 
 </details>
 
@@ -245,7 +245,7 @@ drones/
 | Special Ops & Entertainment | 20 | 20 |
 | **Total** | **100** | **100** |
 
-> **3D Upgrades**: 60 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 14 in Environmental & SAR (S041–S052, S054, S055), 4 in Industrial & Agriculture (S064, S067, S068, S070) and 4 in Special Ops & Entertainment (S081, S083, S086, S092). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
+> **3D Upgrades**: 64 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 14 in Environmental & SAR (S041–S052, S054, S055), 4 in Industrial & Agriculture (S064, S067, S068, S070) and 8 in Special Ops & Entertainment (S081, S083, S086, S092, S096–S098, S100). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
