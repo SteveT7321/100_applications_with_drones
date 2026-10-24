@@ -120,6 +120,10 @@ def altitude_profile(xk, k, terrain, mode, val):
     """Drone altitude at every along-track cell of strip k (odd strips fly -y)."""
     if mode == 'tf35':        # added ablation: same lag, command h + 3.5 m (linear: offset)
         return altitude_profile(xk, k, terrain, 'tf', val) + (Z_FIX_HI - Z_AGL)
+    if mode == 'tf35same':    # added probe: as tf35 but every strip flown in +y (same lag direction)
+        return altitude_profile(xk, 0, terrain, 'tf', val) + (Z_FIX_HI - Z_AGL)
+    if mode == 'tfsame':      # added probe: 2 m AGL, every strip flown in +y
+        return altitude_profile(xk, 0, terrain, 'tf', val)
     if mode == 'fixed':
         return np.full(Y.size, float(val))
     zc_cells = h_fun(xk, Y, terrain) + Z_AGL
@@ -207,12 +211,18 @@ def stats(dose, terrain):
 
 
 def path_metrics(xs, zs, terrain):
-    L = 0.0
+    """3D path length, horizontal path length (the drone holds a 3 m/s ground speed, the speed the
+    dose and the altitude lag also use) and the highest 3D airspeed this requires."""
+    L = Lh = 0.0
+    slope = 0.0
     for zp in zs:
         L += np.sum(np.hypot(np.diff(zp), Y_RES)) + Y_RES        # along-track incl. z
+        Lh += FIELD_L
+        slope = max(slope, float(np.max(np.abs(np.diff(zp)) / Y_RES)))
     L += np.sum(np.abs(np.diff(xs)))
+    Lh += np.sum(np.abs(np.diff(xs)))
     agl = np.array([zp - h_fun(xk, Y, terrain) for xk, zp in zip(xs, zs)])
-    return L, agl
+    return L, Lh, V * math.sqrt(1 + slope ** 2), agl
 
 
 def evaluate(cfg, d, eps, model='jacobian'):
@@ -221,8 +231,8 @@ def evaluate(cfg, d, eps, model='jacobian'):
     cv, red, under, mu = stats(dose, terrain)
     Dh = dose[:, :, INT] / cos_phi(terrain)[None][:, :, INT]      # mass per horizontal area
     cv_h = Dh.std(axis=(1, 2)) / Dh.mean(axis=(1, 2))
-    L, agl = path_metrics(xs, zs, terrain)
-    return dict(cv=cv, red=red, under=under, mu=mu, n=len(xs), L=L, agl=agl, xs=xs,
+    L, Lh, v3, agl = path_metrics(xs, zs, terrain)
+    return dict(cv=cv, red=red, under=under, mu=mu, n=len(xs), L=L, Lh=Lh, v3=v3, agl=agl, xs=xs,
                 spacing=np.diff(xs), cv_h=cv_h)
 
 
@@ -265,6 +275,9 @@ def run_simulation(workers=6, chunk=25):
             add(('main', cfg, d), _cfg(cfg), d, eps)
             add(('nf', cfg, d), _cfg(cfg), d, zero)
     add(('nf', 'tf35inf', D_DESIGN), ('', True, 'tf35', np.inf, False), D_DESIGN, zero)
+    add(('nf', 'tf35same', D_DESIGN), ('', True, 'tf35same', OMEGA_NOM, False), D_DESIGN, zero)
+    add(('main', 'tf35same', D_DESIGN), ('', True, 'tf35same', OMEGA_NOM, False), D_DESIGN, eps)
+    add(('nf', 'tfsame', D_DESIGN), ('', True, 'tfsame', OMEGA_NOM, False), D_DESIGN, zero)
     for cfg in CURVE_KEYS:
         for d in D_CURVE:
             add(('cmean', cfg, d), _cfg(cfg), d, eps[:N_CURVE])
@@ -366,7 +379,7 @@ def plot_cv_heatmap(out, out_dir):
         ax.set_ylabel('terrain-following bandwidth ω (s⁻¹)')
         ax.set_title(ttl)
         fig.colorbar(im, ax=ax, label='CV (%)')
-    fig.suptitle('S067 3D — CV over (d, ω): it falls monotonically in both directions; '
+    fig.suptitle('S067 3D — CV over (d, ω): it rises with d and falls with ω; '
                  'cyan = 10 % contour')
     plt.tight_layout()
     path = os.path.join(out_dir, 'cv_heatmap.png')
@@ -560,14 +573,14 @@ def report(out):
           ' (2D S067: 0.01 / 10.00 / 30.72 %)')
     for d in D_POINTS:
         print(f'  --- d = {d} m ({N_MC} GPS trials, common random numbers) ---')
-        print('    config                                  N   path 3D   time    CV nf    CV mean ± std'
+        print('    config                                  N   path 3D   time (3 m/s ground)   CV nf    CV mean ± std'
               '     P95    CV<=10%  >1.5mu  <0.5mu   AGL min-max   mean|eps_AGL|')
         for cfg in list(CONFIGS) + ['tf35']:
             if (cfg, d) not in out['main']:
                 continue
             r, rn = out['main'][(cfg, d)], out['nf'][(cfg, d)]
             eps_agl = np.abs(r['agl'] - Z_AGL).mean()
-            print(f"    {_cfg(cfg)[0][:38]:38s} {r['n']:3d} {r['L']:8.1f} m {r['L'] / V:6.1f} s "
+            print(f"    {_cfg(cfg)[0][:38]:38s} {r['n']:3d} {r['L']:8.1f} m {r['Lh'] / V:6.1f} s "
                   f"{100 * rn['cv'][0]:6.2f} % {100 * r['cv'].mean():6.2f} ± {100 * r['cv'].std():5.2f} % "
                   f"{100 * np.percentile(r['cv'], 95):6.2f} % {100 * np.mean(r['cv'] <= CV_TARGET):5.1f} % "
                   f"{100 * r['red'].mean():6.2f} % {100 * r['under'].mean():6.2f} % "
@@ -589,10 +602,21 @@ def report(out):
           f"{int(np.sum(r35['cv'] < out['main'][('fixed35', D_DESIGN)]['cv']))}/{N_MC}; noise-free "
           f"{100 * out['nf'][('tf35', D_DESIGN)]['cv'][0]:.2f} % with the lag vs "
           f"{100 * out['nf'][('tf35inf', D_DESIGN)]['cv'][0]:.2f} % with perfect following at 3.5 m AGL")
+    rs = out['main'][('tf35same', D_DESIGN)]
+    print(f"  Probe of the lag-ripple hypothesis (TF, omega 2, 3.5 m AGL, every strip flown in +y so that "
+          f"neighbouring strips share the lag): noise-free {100 * out['nf'][('tf35same', D_DESIGN)]['cv'][0]:.2f} % "
+          f"(alternating {100 * out['nf'][('tf35', D_DESIGN)]['cv'][0]:.2f} %, perfect "
+          f"{100 * out['nf'][('tf35inf', D_DESIGN)]['cv'][0]:.2f} %); MC mean {100 * rs['cv'].mean():.2f} %, "
+          f"lower than alternating in {int(np.sum(rs['cv'] < r35['cv']))}/{N_MC}, lower than fixed 3.5 m in "
+          f"{int(np.sum(rs['cv'] < out['main'][('fixed35', D_DESIGN)]['cv']))}/{N_MC}; at 2 m AGL: "
+          f"same direction {100 * out['nf'][('tfsame', D_DESIGN)]['cv'][0]:.2f} % vs alternating "
+          f"{100 * out['nf'][('tf', D_DESIGN)]['cv'][0]:.2f} % (noise-free)")
     flat_path = out['main'][('flat', D_DESIGN)]['L']
     tf_path = out['main'][('tf', D_DESIGN)]['L']
     terr = np.mean([np.sum(np.hypot(np.diff(h_fun(xk, Y)), Y_RES)) + Y_RES
                     for xk in out['main'][('tf', D_DESIGN)]['xs']])
+    print(f"  Speed model: 3 m/s ground speed everywhere (dose, lag and mission time); terrain following at "
+          f"d = {D_DESIGN} needs up to {out['main'][('tf', D_DESIGN)]['v3']:.3f} m/s of 3D airspeed")
     print(f'  Path length at d = {D_DESIGN}: flat {flat_path:.1f} m, terrain following {tf_path:.1f} m '
           f'(+{100 * (tf_path / flat_path - 1):.2f} %); card terrain-profile strip length '
           f'{terr:.2f} m per 50 m strip (+{100 * (terr / FIELD_L - 1):.2f} %)')
@@ -615,11 +639,13 @@ def report(out):
               ', '.join(f'{D_CURVE[i]:.1f}: {100 * hdat["mean"][i]:.2f} %' for i in idx) +
               f"; AGL error at d = {hdat['d_agl']:.1f}: max |eps| {np.abs(eps_agl).max():.3f} m, "
               f'min AGL {hdat["agl"].min():.3f} m')
-    mono_d = all(np.all(np.diff(out['heat'][om]['nf']) > -1e-4) for om in OMEGAS)
-    mono_w = all(np.all(np.diff([out['heat'][om]['mean'][i] for om in OMEGAS]) < 1e-4)
+    for key, lab in (('nf', 'noise-free CV'), ('mean', f'MC mean CV ({N_CURVE} trials)')):
+        md = all(np.all(np.diff(out['heat'][om][key]) > -1e-4) for om in OMEGAS)
+        mw = all(np.all(np.diff([out['heat'][om][key][i] for om in OMEGAS]) < 1e-4)
                  for i in range(len(D_CURVE)))
-    print(f'  Noise-free CV non-decreasing in d for every omega: {mono_d}; '
-          f'MC mean CV non-increasing in omega at every d: {mono_w}')
+        print(f'  {lab}: non-decreasing in d for every omega: {md}; non-increasing in omega at every d: '
+              f'{mw} (grid d = {D_CURVE[0]:.1f}-{D_CURVE[-1]:.1f} m in 0.2 m steps, omega 0.5/1/2/3/5/inf; '
+              f'tolerance 1e-4)')
     print(f'  Dose-model ablation at d = {D_DESIGN} (card formula Q0/cos(phi) exp(-dx^2/2sigma^2), '
           f'unnormalised): noise-free / MC mean CV')
     for cfg, (nfv, mcv) in out['model'].items():

@@ -41,7 +41,7 @@ $$q_h(x, y) = \frac{1}{v}\,p\!\left(\frac{\Delta x}{H(x)}\right)\frac{H(x) + \De
 
 **Uniformity**: the CV over the interior $x \in [1, 49]$ m is weighted by surface area ($1/\cos\phi$), as the card asks. Redundant cells have $D > 1.5\mu$ and under-dosed cells $D < 0.5\mu$, both area-weighted.
 
-**Path length**: the 3D strip lengths, including the drone's climb and descent, plus the turns.
+**Speed and path length**: the drone holds a 3 m/s ground speed everywhere. The dose per metre flown, the altitude lag and the mission time all use this speed; terrain following then needs up to 3.129 m/s of 3D airspeed on the steepest climbs (d = 1.365 m). The path length is reported in 3D (strip lengths including the climbs and descents, plus the turns), and the mission time is the horizontal path / 3 m/s.
 
 **Invariants (asserted)**: AGL ≥ 0.5 m at every nadir sample, GPS offsets inside the kernel window, and no shadowing.
 
@@ -93,10 +93,10 @@ Runtime ≈ 4 min (6 worker processes; each job is deterministic and the results
 | Flat field (2D base) | 38 | 1950.5 m / 650.2 s | 9.99 % | 15.21 ± 1.20 % (16.94 %) | 0 % | 0.00 / 0.12 % | 2.00 m | 0.000 m |
 | Fixed z = 2.0 m | 38 | 1950.5 m / 650.2 s | 41.59 % | 42.64 ± 0.35 % (43.25 %) | 0 % | 6.50 / 9.16 % | 0.52–3.48 m | 0.605 m |
 | Fixed z = 3.5 m | 38 | 1950.5 m / 650.2 s | 2.27 % | **6.50 ± 0.73 %** (7.61 %) | **100 %** | 0.00 / 0.00 % | 2.02–4.98 m | 1.514 m |
-| **Terrain following ω = 2** | 38 | 1969.4 m / 656.5 s | 15.76 % | **19.44 ± 0.92 %** (20.74 %) | 0 % | 0.39 / 0.24 % | 1.55–2.45 m | 0.171 m |
-| TF + adaptive spacing (card) | 38 | 1968.8 m / 656.3 s | 21.14 % | 23.50 ± 1.50 % (25.72 %) | 0 % | 1.55 / 1.77 % | 1.55–2.45 m | 0.172 m |
+| **Terrain following ω = 2** | 38 | 1969.4 m / 650.2 s | 15.76 % | **19.44 ± 0.92 %** (20.74 %) | 0 % | 0.39 / 0.24 % | 1.55–2.45 m | 0.171 m |
+| TF + adaptive spacing (card) | 38 | 1968.8 m / 650.0 s | 21.14 % | 23.50 ± 1.50 % (25.72 %) | 0 % | 1.55 / 1.77 % | 1.55–2.45 m | 0.172 m |
 | Fixed z = 2.0 m + adaptive | 43 | 2200.0 m / 733.3 s | 42.36 % | 43.75 ± 0.48 % (44.66 %) | 0 % | 6.64 / 10.04 % | 0.50–3.50 m | 0.634 m |
-| TF at 3.5 m AGL (ablation) | 38 | 1969.4 m / 656.5 s | 4.75 % | 7.09 ± 0.47 % (7.97 %) | 100 % | 0.00 / 0.00 % | 3.05–3.95 m | 1.502 m |
+| TF at 3.5 m AGL (ablation) | 38 | 1969.4 m / 650.2 s | 4.75 % | 7.09 ± 0.47 % (7.97 %) | 100 % | 0.00 / 0.00 % | 3.05–3.95 m | 1.502 m |
 
 **Per trial, common random numbers** (d = 1.365 m):
 
@@ -105,6 +105,7 @@ Runtime ≈ 4 min (6 worker processes; each job is deterministic and the results
 - Terrain following costs +4.23 ± 0.28 percentage points of CV against the flat field.
 - The adaptive spacings range over 1.063–1.663 m (TF) and 0.853–1.871 m (fixed 2.0 m).
 - TF at 3.5 m AGL beats fixed z = 3.5 m in 9/100 trials. Noise-free, its CV is 4.75 % with the ω = 2 lag and 1.41 % with perfect following at 3.5 m AGL.
+- **Probe of the lag ripple**: TF at 3.5 m AGL with every strip flown in +y, so that neighbouring strips share the same lag, gives 1.42 % noise-free (alternating 4.75 %, perfect 1.41 %). Its MC mean is 5.50 %, lower than the alternating TF in 100/100 trials and lower than fixed z = 3.5 m in 100/100. At 2 m AGL the same change gives 13.38 % against 15.76 % (noise-free).
 
 ### Other spacings (100 GPS trials, CV mean ± std)
 
@@ -138,7 +139,7 @@ Per trial at d = 0.662 m, TF beats fixed z = 2.0 m in 100/100 trials, and TF + a
 | CV at d = 1.4 m | 34.19 % | 25.84 % | 20.33 % | 18.65 % | 17.61 % | 16.91 % | 16.22 % |
 | Max AGL error / min AGL (d = 1.4 m) | 1.312 / 0.688 m | 0.818 / 1.182 m | 0.457 / 1.543 m | 0.315 / 1.685 m | 0.195 / 1.805 m | 0 / 2.000 m | — |
 
-Over the whole grid, the noise-free CV never decreases with d (True) and the MC mean CV never increases with ω (True).
+On the whole grid (d = 0.4–2.6 m in 0.2 m steps, ω = 0.5 / 1 / 2 / 3 / 5 / ∞; tolerance 1e-4), the noise-free CV and the MC mean CV (30 trials) both never decrease with d and never increase with ω (all four checks True).
 
 ### Dose-model ablation (d = 1.365 m; card formula vs this model, noise-free / MC mean of 30 trials)
 
@@ -160,7 +161,7 @@ Over the whole grid, the noise-free CV never decreases with d (True) and the MC 
 - **Terrain following clearly beats a fixed altitude at the same mean height.** At fixed z = 2.0 m the hill tops are only 0.5 m below the nozzle. There the footprint is a quarter of its nominal width, the strips show through, and the over- and under-dosed bands sit exactly on the hill tops (`redundancy_maps.png`). The CV is 42.64 % against 19.44 % with terrain following, and TF wins in 100/100 trials at every spacing tested.
 - **Lag matters, and no bandwidth fully recovers the flat field.** CV falls monotonically with ω. At ω = 0.5 s⁻¹ the AGL error reaches 1.312 m and the widest 10 % spacing collapses to 0.406 m; at ω = 5 s⁻¹ it is 0.794 m. Even perfect following (ω = ∞) stays below the flat field: 1.329 vs 1.359 m noise-free, 0.895 vs 0.918 m MC mean. The slope still reshapes the footprint (the Jacobian term), and the surface-dose conversion adds a 1.15 % floor. **There is no joint optimum $(d^*, \omega^*)$**: as in 2D, smaller $d$ and larger ω are always better.
 - **The card's adaptive spacing makes things worse.** With terrain following it is worse than constant spacing in 98–100 of 100 trials at all three spacings (23.50 vs 19.44 % at 1.365 m). With fixed z = 2.0 m the mean CV is higher at 0.662 m (30.53 vs 17.29 %) and at 1.365 m (43.75 vs 42.64 %), and lower only at 1.8 m (56.47 vs 59.55 %), where both are far from usable. The rule picks one AGL per strip at y = 25 m, but the AGL varies along the strip. A likely mechanism: with a fixed nozzle flow, the local application rate is proportional to 1/spacing, so spacings ranging over 1.063–1.663 m create bands of different mean dose. This is a hypothesis; it was not isolated by a separate run.
-- **The 2D plan flown higher is the most uniform plan here, and this rests on the dose model.** Fixed z = 3.5 m (AGL 2–5 m) gives 6.50 % at d = 1.365 m (100 % of trials ≤ 10 %), and its widest 10 % spacing is 1.775 m. In a mass-conserving model a wider footprint simply smooths more, so what limits uniformity is the lowest AGL relative to $d$. The ablation agrees: terrain following at the same 3.5 m AGL is not better (7.09 %, better in only 9/100 trials). Its noise-free CV falls from 4.75 % with the ω = 2 lag to 1.41 % with perfect following, so the lag-induced AGL ripple, which differs between neighbouring strips flown in opposite directions, is what costs uniformity at that height. **Caveats**: with the card's dose formula the ranking flips (fixed 3.5 m: 20.22 % vs TF 11.61 %), because a constant peak deposits more mass wherever the drone is higher. The model has no wind drift, which grows with release height and is the usual reason to spray low. Under the card's own model and at the card's 2 m height, terrain following is the right choice; whether to fly higher is a drift question this scenario cannot answer.
+- **Flying higher gives the most uniform dose here, and this rests on the dose model.** Fixed z = 3.5 m (AGL 2–5 m) gives 6.50 % at d = 1.365 m (100 % of trials ≤ 10 %), and its widest 10 % spacing is 1.775 m. In a mass-conserving model a wider footprint smooths more, so flying higher helps. Height alone does not decide the ranking, though: terrain following at 3.5 m AGL keeps a higher minimum AGL (3.05 m) than the fixed 3.5 m plan (2.02 m) yet is worse (7.09 %, better in only 9/100 trials). The probe identifies the cause. The ω = 2 lag error depends on the flight direction, so neighbouring strips flown in opposite directions have different heights above the same ground, and adjacent footprints differ in width. With every strip flown in +y the noise-free CV falls from 4.75 % to 1.42 %, almost the 1.41 % of perfect following. The MC mean becomes 5.50 %, which now beats fixed 3.5 m in 100/100 trials. Same-direction strips would need a return leg between strips, whose time is not modelled. **Caveats**: with the card's dose formula the ranking flips (fixed 3.5 m: 20.22 % vs TF 11.61 %), because a constant peak deposits more mass wherever the drone is higher. The model has no wind drift, which grows with release height and is the usual reason to spray low. Under the card's own model and at the card's 2 m height, terrain following is the right choice; whether to fly higher is a drift question this scenario cannot answer.
 - **Card checks**: the card's 1.8 m nominal gives 34.93 % CV with terrain following and 30.72 % noise-free on the flat field. Use ≤ 0.654 m (TF, ω = 2, MC mean) to reach 10 %. The path overhead is 0.97–1.11 %, consistent with the card's 1–3 %.
 
 ### Figures
@@ -195,7 +196,7 @@ Over the whole grid, the noise-free CV never decreases with d (True) and the MC 
 |------|----------------|--------|
 | $q_k = Q_0/\cos\phi\cdot\exp(-\Delta x^2/2\sigma_s^2)$ | Mass-conserving droplet cone with the exact slope Jacobian; surface dose $= q_h\cos\phi$. The card formula runs as an ablation | Vertical spray on a slope spreads the same mass over more surface, so the factor is $\cos\phi$, not $1/\cos\phi$. A fixed peak $Q_0$ adds mass when the footprint widens. Card corrected. |
 | Nominal $d^*$ = 1.80 m | 1.365 m (the 2D S067 design); 0.662 and 1.8 m also run | The 2D S067 showed 1.8 m gives CV 30.7 % on the flat field. Card corrected. |
-| Joint optimum $(d^*, k_{tf}^*)$ from the heat map | Widest d with CV ≤ 10 % per ω; monotonicity checked | CV is monotone in both d and ω, so the argmin is degenerate (as in 2D). Card corrected. |
+| Joint optimum $(d^*, k_{tf}^*)$ from the heat map | Widest d with CV ≤ 10 % per ω; monotonicity in d and ω checked for both the noise-free and the MC mean CV | CV is monotone in both d and ω, so the argmin is degenerate (as in 2D). Card corrected. |
 | Adaptive spacing $d\cos\phi + \alpha\lvert\nabla h\rvert^{-1}d$ | Not used; the card's second (AGL-ratio) formula is implemented | Singular where $\nabla h = 0$. Card corrected. |
 | "Footprint compressed horizontally by $\cos\phi$ on a cross-slope" | Not used | A vertical spray is stretched downhill and shortened uphill (the Jacobian), not compressed. Card corrected. |
 | $z_{drone} \in [1.0, 8.0]$ m | AGL ≥ 0.5 m asserted | The terrain-following command reaches 0.5 m in the valleys. Card corrected. |
@@ -205,6 +206,7 @@ Over the whole grid, the noise-free CV never decreases with d (True) and the MC 
 | Sweep $d$ ∈ [0.5, 4] m | 0.4–2.6 m in 0.2 m steps (30 trials) plus three 100-trial design points | Runtime. Every widest-10 % spacing found lies inside this range. |
 | Redundancy threshold only | Under-dose (< 0.5 μ) area added | Shows the gaps on the hill tops. |
 | Animation shows dose accumulating | As specified; 4 fps, 39 frames | — |
+| Speed not specified as ground or air speed | 3 m/s ground speed for dose, lag and mission time (3D airspeed up to 3.129 m/s) | One consistent speed model: the dose and the lag already used the ground speed. |
 | Plot list | `dose_surfaces.png`, `cv_heatmap.png`, `altitude_strip.png`, `profiles_cv_curves.png`, `redundancy_maps.png`, `animation.gif` | The CV-vs-spacing curves and the cross-track profiles share one figure. |
 
 ---
@@ -214,7 +216,7 @@ Over the whole grid, the noise-free CV never decreases with d (True) and the MC 
 1. **Spray drift**: add a crosswind and droplet fall time proportional to release height; this is the missing cost of flying higher, which would decide between the 3.5 m fixed plan and 2 m terrain following.
 2. **Feed-forward terrain following** (card extension 1): a look-ahead command removes most of the lag, which is what keeps TF short of the flat field.
 3. **Flow-rate control** (card extension 4): vary the flow with the local footprint instead of the spacing, so the application rate does not change.
-4. **Direction-consistent strips**: fly all strips in the same direction so that neighbouring lag errors match, and test whether this removes the lag ripple seen at 3.5 m AGL.
+4. **Direction-consistent strips**: the probe shows that flying every strip in +y removes the lag ripple. The next step is to add the cost of the return legs (or a spray-off ferry) and compare the mission time with a feed-forward altitude command, which removes the ripple without them.
 
 ---
 

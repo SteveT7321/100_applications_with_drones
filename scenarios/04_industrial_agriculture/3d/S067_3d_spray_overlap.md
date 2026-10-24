@@ -158,7 +158,7 @@ A practical sweep over $d \in [0.5\,\text{m},\; 4.0\,\text{m}]$ and
 $k_{tf} \in [0.5\,\text{s}^{-1},\; 5.0\,\text{s}^{-1}]$ (bandwidth grid) yields a 2D CV heat
 map $\text{CV}_{3D}(d, k_{tf})$ from which the joint optimum is read off.
 
-> **Correction (3D implementation).** As in the 2D S067, CV has no interior optimum: it rises monotonically with $d$ and falls monotonically with $\omega_{tf}$ (checked on the whole grid). The design quantity is the widest $d$ with CV $\le 10\,\%$ for a given $\omega_{tf}$. Perfect tracking does not quite recover the flat-field value either (noise-free 1.329 m vs 1.359 m): the slope geometry and the $\cos\phi$ conversion remain.
+> **Correction (3D implementation).** As in the 2D S067, CV has no interior optimum: it rises monotonically with $d$ and falls monotonically with $\omega_{tf}$ (checked for both the noise-free and the 30-trial mean CV on the grid $d$ = 0.4–2.6 m in 0.2 m steps, $\omega_{tf}$ = 0.5, 1, 2, 3, 5 s$^{-1}$ and perfect tracking). The design quantity is the widest $d$ with CV $\le 10\,\%$ for a given $\omega_{tf}$. Perfect tracking does not quite recover the flat-field value either (noise-free 1.329 m vs 1.359 m): the slope geometry and the $\cos\phi$ conversion remain.
 
 ### Strip Count and Mission Path Length on Undulating Terrain
 
