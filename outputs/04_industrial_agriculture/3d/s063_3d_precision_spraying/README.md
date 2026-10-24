@@ -39,7 +39,7 @@ The main rule treats the drone as a **point with zero clearance**: a contact is 
 
 ## Mathematical Model
 
-**Vertical loop**: $a_z = K_p^{(z)}e_z + K_i^{(z)}\!\int e_z + K_d^{(z)}(0 - \dot z)$, with $K^{(z)} = 1.5\,K^{(xy)}$ and Euler integration at 50 Hz. The altitude bounds $z \in [0.3, 6]$ m are enforced by the controller, not by clamping the state. A braking barrier raises the vertical command whenever the descent speed exceeds what full braking can stop before $z_{min}$ + 5 mm. The plan uses a braking rate of 2.60 m/s² = $A_{max}$ − worst-case downwash (0.15 + 4 × 0.05) − 0.05 margin, with the exact discrete-time stopping distance; the same applies towards the 6 m ceiling. The barrier uses the true altitude and vertical speed, an ideal state estimate, while the PID uses the noisy altimeter or lidar.
+**Vertical loop**: $a_z = K_p^{(z)}e_z + K_i^{(z)}\!\int e_z + K_d^{(z)}(0 - \dot z)$, with $K^{(z)} = 1.5\,K^{(xy)}$ and Euler integration at 50 Hz. The altitude bounds $z \in [0.3, 6]$ m are enforced by the controller, not by clamping the state. A braking barrier raises the vertical command whenever the descent speed exceeds what full braking can stop before $z_{min}$ + 5 mm. The plan uses a braking rate of 2.60 m/s² = $A_{max}$ − worst-case downwash (0.15 + 4 × 0.05) − 0.05 margin, with the exact discrete-time stopping distance; the same applies towards the 6 m ceiling. The barrier uses the true altitude and vertical speed, an ideal state estimate, while the PID uses the noisy altimeter or lidar. A barrier fed by the noisy measurement would presumably need an extra altitude margin; that was *not probed*.
 
 **Asserts**:
 - At every step, $z \ge$ 0.3 m and $z$ > 0.
@@ -97,7 +97,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s063_3d_precision_spraying.py
 ```
 
-The script imports the S063 module for the layout, tour, gains and noise streams. Runtime ≈ 3 min, including the crown-radius sweep (all four strategies) and the damping probe (203 s and 177 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 172 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the S063 module for the layout, tour, gains and noise streams. Runtime ≈ 3 min, including the crown-radius sweep (all four strategies), the low-spread check and the damping probe (174 s and 174 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 172 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -132,7 +132,7 @@ The script imports the S063 module for the layout, tour, gains and noise streams
 | Per-plant adaptive | **0.871 ± 0.004** | 7/20 | **0.305** | 10.6 / 10.3 cm | **1.8 cm** | 24.7 cm | 0.75 (0.30 / 0.45) | 0.00 | 275.0 s | 0.98 % | 0.1 | 0.350–2.79 m |
 | Lidar terrain following | 0.838 ± 0.016 | **0/20** | 0.000 | 12.3 / 10.5 cm | 3.7 cm | 25.5 cm | 17.45 (16.65 / 0.80) | 0.00 | 289.3 s | 9.73 % | 423.1 | 0.305–3.61 m |
 
-Mean $C_{eff}^{3D}$ of the collision-free missions only: fixed 1.5 m 0.5110 / 0.5405, clears-all 0.1705 / 0.1652, adaptive 0.7585 / 0.8703 (Tuned / Tight). Plants receiving a dose > 0.9: at most 4.0 % (adaptive, Tight).
+Mean $C_{eff}^{3D}$ of the collision-free missions only: fixed 1.5 m 0.5110 / 0.5405, clears-all 0.1705 / 0.1652, adaptive 0.7585 / 0.8703 (Tuned / Tight).
 
 **Clearance sweep** (main runs, $\sigma_h$ = 0.3 m, 20 seeds; collision-free missions, safe $C_{eff}^{3D}$ for drone radius / vertical margin 0 / 0, 0.1 / 0.05, 0.2 / 0.1 m):
 
@@ -145,13 +145,14 @@ Mean $C_{eff}^{3D}$ of the collision-free missions only: fixed 1.5 m 0.5110 / 0.
 
 Plants receiving a dose > 0.9: at most 4.0 % (adaptive, Tight). Settle time-outs per mission: Tuned 19.9–20.0 of 20 for every strategy; Tight 4.3 / 4.3 / 5.2 / 7.2. Vertical travel per mission: Tuned 6.5 / 6.5 / 24.9 / 151.2 m; Tight 6.9 / 6.9 / 20.8 / 73.2 m.
 
-**Floor barrier over every job group** (main runs, $\sigma_h$ sweep, crown-radius sweep and damping probe). 14 of 42 groups ever use the barrier. All are terrain following, plus adaptive at Tuned $\sigma_h$ ≥ 0.3 and Tight $\sigma_h$ = 0.3. No step needed more than $A_{max}$, and the lowest altitude is 0.3050 m:
+**Floor barrier over every job group** (main runs, $\sigma_h$ sweep, the Tight runs at $\sigma_h$ 0.15, crown-radius sweep and damping probe). 15 of 46 groups ever use the barrier. All are terrain following, plus adaptive at Tuned $\sigma_h$ ≥ 0.3 and Tight $\sigma_h$ = 0.3. No step needed more than $A_{max}$, and the lowest altitude is 0.3050 m:
 
 | Job group | Barrier steps per mission | Missions using it | Lowest altitude | Longest stretch | Largest share of steps |
 |---|---:|:---:|---:|---:|---:|
 | TF, Tuned, $\sigma_h$ 0.0 / 0.15 / 0.3 / 0.45 / 0.6 | 339.4 / 350.5 / 379.6 / 438.9 / 480.9 | all | 0.3050 m | 0.80 / 0.88 / 0.96 / 1.30 / 2.14 s | 2.29 / 2.41 / 2.89 / 3.21 / 3.59 % |
 | TF, Tuned, 0.3, $R_{crown}$ 0.25 / 1.0 m | 233.7 / 257.6 | all | 0.3050 m | 1.36 / 0.98 s | 2.46 / 1.96 % |
 | TF, Tight, 0.3, $R_{crown}$ 0.25 / 0.5 / 1.0 m | 494.9 / 423.1 / 356.3 | all | 0.3050 m | 0.94 / 1.20 / 1.02 s | 3.64 / 3.65 / 2.91 % |
+| TF, Tight, $\sigma_h$ 0.15 | 426.7 | all | 0.3050 m | 0.88 s | 3.12 % |
 | Adaptive, Tuned, $\sigma_h$ 0.3 / 0.45 / 0.6 | 1.5 / 17.0 / 28.5 | 1/20, 7/10, 9/10 | 0.3051 / 0.3051 / 0.3050 m | 0.32 / 0.78 / 0.92 s | 0.18 / 0.23 / 0.28 % |
 | Adaptive, Tight, 0.3 | 0.1 | 1/20 | 0.3501 m | 0.04 s | 0.02 % |
 
@@ -221,6 +222,17 @@ By dose alone the ranking is adaptive > terrain following > fixed 1.5 m > clears
 | 0.45 | 0.315 ± 0.055, 0/10, 0.000 | 0.097 ± 0.035, 10/10, 0.097 | 0.760 ± 0.012, 0/10, 0.000 | 0.459 ± 0.063, 0/10, 0.000 |
 | 0.60 | 0.271 ± 0.051, 0/10, 0.000 | 0.081 ± 0.025, 10/10, 0.081 | 0.760 ± 0.012, 0/10, 0.000 | 0.453 ± 0.064, 0/10, 0.000 |
 
+**Low height spread, $\sigma_h$ = 0.15 m, per seed and per clearance** (10 seeds, both gain sets). Each cell gives collision-free missions and safe $C_{eff}^{3D}$; the last two columns give per-seed safe $C_{eff}^{3D}$ higher / equal / lower. Terrain following is 0/10 (0.000) in every row:
+
+| Gains | Clearance $r_d$ / $m_z$ | Fixed 1.5 m | Fixed clears-all | Adaptive | Adaptive vs fixed 1.5 m | Adaptive vs clears-all |
+|---|---|---|---|---|:---:|:---:|
+| Tuned | 0 / 0 m | 10/10, 0.593 | 10/10, 0.367 | 6/10, 0.454 | 6 / 0 / 4 | 6 / 0 / 4 |
+| Tuned | 0.1 / 0.05 m | 9/10, 0.537 | 10/10, 0.367 | 5/10, 0.376 | 5 / 0 / 5 | 5 / 0 / 5 |
+| Tuned | 0.2 / 0.1 m | 7/10, 0.426 | 10/10, 0.367 | 5/10, 0.376 | 5 / 1 / 4 | 5 / 0 / 5 |
+| Tight | 0 / 0 m | 10/10, 0.677 | 10/10, 0.347 | 8/10, 0.698 | 8 / 0 / 2 | 8 / 0 / 2 |
+| Tight | 0.1 / 0.05 m | 10/10, 0.677 | 10/10, 0.347 | 5/10, 0.436 | 5 / 0 / 5 | 5 / 0 / 5 |
+| Tight | 0.2 / 0.1 m | 9/10, 0.612 | 10/10, 0.347 | 5/10, 0.436 | 5 / 0 / 5 | 5 / 0 / 5 |
+
 **What changed with the physics fix** (main runs, $\sigma_h$ = 0.3 m, 20 seeds). The *Before* column is taken from the output of the previous version, commit 1c61058; the current script does not print it:
 
 | Quantity | Before (commit 1c61058, state clamp) | After (braking barrier) |
@@ -245,9 +257,14 @@ By dose alone the ranking is adaptive > terrain following > fixed 1.5 m > clears
   - With the point-drone rule and 0.5 m crowns, adaptive's mean safe $C_{eff}^{3D}$ (0.190 / 0.305) is above clears-all (0.170 / 0.165). That is only because its few collision-free missions score high: 0.7585 / 0.8703 on average.
   - With 1.0 m crowns (Tuned) adaptive drops to 0.075 against 0.152 for clears-all on the same 10 seeds.
   - With a 0.1 m drone radius and 0.05 m vertical margin, Tuned adaptive is collision-free in 0/20 missions (safe 0.000); Tight adaptive stays 7/20 (0.305). With 0.2 m and 0.1 m it is 0/20 and 2/20 (0.000 / 0.087).
-  - Clears-all stays 20/20 (0.170 / 0.165) under every clearance and crown radius, because it flies at the tallest crown top + 0.5 m.
+  - Clears-all flies at the tallest crown top + 0.5 m, so neither sweep affects it. In the clearance sweep (20 main seeds) it is 20/20 at every clearance, with safe C_eff 0.170 / 0.165. In the crown-radius sweep (10 seeds) it is 10/10 at every radius, with 0.152 / 0.144.
   - Fixed 1.5 m reaches 0/20 at a 0.2 m radius with either gain set.
-- **At low height spread the card's 2D baseline is the best safe choice.** At $\sigma_h$ = 0.15 m (Tuned, 10 seeds) fixed 1.5 m is collision-free in 10/10 missions with safe $C_{eff}^{3D}$ 0.593. Adaptive gets 0.454 (6/10 collision-free) and clears-all 0.367. At $\sigma_h$ = 0 the three planned strategies coincide (0.757).
+- **At low height spread no strategy is a clear safe winner.** At $\sigma_h$ = 0.15 m (10 seeds), under the point-drone rule, fixed 1.5 m is collision-free in 10/10 missions.
+  - With Tuned gains it has the highest *mean* safe $C_{eff}^{3D}$: 0.593, against 0.454 for adaptive and 0.367 for clears-all. Per seed, however, adaptive is better in 6 seeds and worse in 4, because its collision-free missions score higher.
+  - With Tight gains adaptive leads on both measures: 0.698 vs 0.677, better in 8 of 10 seeds.
+  - With drone clearance the comparison splits evenly. At 0.1 / 0.05 m and 0.2 / 0.1 m the per-seed counts are 5 / 0 / 5 or 5 / 1 / 4, and the fixed altitude keeps the higher mean (Tuned 0.537 / 0.426 vs 0.376; Tight 0.677 / 0.612 vs 0.436).
+  - Fixed 1.5 m stays collision-free in 9 of 10 and 7 of 10 missions (Tuned) and 10 and 9 of 10 (Tight). Adaptive drops to 5 of 10.
+  - At $\sigma_h$ = 0 the three planned strategies coincide (0.757).
 - **By dose quality alone, per-plant adaptive altitude is the clear winner, as the card expects.** At $\sigma_h$ = 0.3 m it holds the standoff within 4.5 cm (Tuned) and 1.8 cm (Tight) of 0.5 m. It reaches $C_{eff}^{3D}$ = 0.760 / 0.871 and beats both fixed altitudes in 20/20 seeds (+0.332 to +0.706).
   - Its $C_{eff}^{3D}$ is flat across $\sigma_h$ (0.757–0.760), but its safety is not: collision-free missions fall from 10/10 at $\sigma_h$ = 0 to 6/10, 4/10 and then 0/10 at $\sigma_h$ ≥ 0.45, so its safe $C_{eff}^{3D}$ falls from 0.757 to 0.
   - Fixed 1.5 m falls from 0.757 to 0.271 in $C_{eff}^{3D}$. In the 10 sweep seeds it collides in every mission from $\sigma_h$ = 0.3 m; in the 20 main-run seeds at 0.3 m it has 2/20 (Tuned) and 3/20 (Tight) collision-free missions. The clears-all altitude stays collision-free but falls to 0.081.
@@ -311,7 +328,7 @@ Lidar terrain following, Tuned PID, seed 0. The drone (red) dives between plants
 | Plants as points | Crowns of radius 0.5 m (swept 0.25–1.0 m); contacts counted; dose 0 when the nozzle is inside the crown | Needed for the lidar surface and for physical sanity (X4). The terrain-following vs fixed-altitude result depends on the radius, so it is swept. |
 | Adaptive: "climbs to $z_{cmd,i}$ before hovering" | Leg reference at the higher of the two plant altitudes, then descent over the plant | Climb first; a linear ramp would approach tall plants below their top. |
 | Altitude bounds enforced | Enforced by an acceleration-limited braking barrier in the controller (no state clamp, no velocity reset). Asserts check $z \ge$ 0.3 m, $z$ > 0, and thrust acceleration ≤ $A_{max}$ from the logged trajectory | The previous state clamp stopped the drone within one 0.02 s step at up to 2.78 m/s, far beyond the 3 m/s² limit. The asserts can fail (X4): with the barrier disabled the altitude assert fires, and a reinserted velocity reset trips the acceleration assert. Card clarified. |
-| Barrier state | The barrier uses the true altitude and vertical speed; the PID uses the noisy altimeter or lidar | An ideal height estimate for the safety layer. With the 0.05 m sensor noise it would need an extra altitude margin of a few centimetres. |
+| Barrier state | The barrier uses the true altitude and vertical speed; the PID uses the noisy altimeter or lidar | An ideal height estimate for the safety layer. A barrier on the noisy 0.05 m measurement would presumably need an extra altitude margin (*not probed*). |
 | Broken loop undetected | Assert: barrier active in ≤ 50 % of a mission's steps | Nominal runs reach at most 3.65 %; a sign-flipped vertical loop reaches 99.5 % (separate test, not printed) and trips the assert. |
 | Point drone | Main rule: point drone, zero clearance; clearance sweep (0.1 / 0.2 m radius) reported | The ranking of mean safe scores depends on it; only clears-all is unaffected. |
 | Collisions not scored (card) | Any crown contact makes the mission a collision; safe $C_{eff}^{3D}$ = 0 for that mission, shown beside $C_{eff}^{3D}$ everywhere | A collision is a failed mission, not just a lower dose (X4). |

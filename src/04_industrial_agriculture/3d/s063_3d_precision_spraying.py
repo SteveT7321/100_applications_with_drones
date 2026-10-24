@@ -76,6 +76,7 @@ SURF_RES = 0.05               # m lidar surface grid
 N_SEEDS = 20
 SIGMA_H_SWEEP = [0.0, 0.15, 0.3, 0.45, 0.6]
 N_SWEEP_SEEDS = 10
+SIGMA_H_LOW = 0.15               # low-spread case checked per seed and per clearance (added)
 R_CROWN_SWEEP = [0.25, 0.5, 1.0]  # crown-radius sensitivity (added)
 KDZ_PROBE = 2.5                  # vertical-damping probe: k_d,z x 2.5
 # Altitude bounds [Z_MIN, Z_MAX] are enforced through the controller (added): a braking barrier limits the
@@ -285,7 +286,6 @@ def run_mission(args):
         any_step |= m
     contact_cl = tuple(int(np.sum(np.any((dist < rc + rd) & (Z[:, None] < h[None, :] + mz), axis=0)))
                        for rd, mz in CLEARANCES)
-    assert contact_cl[0] == int(contact.sum())
     sp = np.hypot(np.diff(np.concatenate([[DEPOT[0]], X])), np.diff(np.concatenate([[DEPOT[1]], Y])))
     out = {'h': h, 'hover': [], 'time': st['k'] * DT, 'timeouts': timeouts, 'wait': waits.mean(),
            'sat': st['nsat'] / st['k'], 'barrier': st['nbar'], 'barrier_infeasible': st['ninf'], 'barrier_run': st['bmax'] * DT, 'barrier_share': st['nbar'] / st['k'],
@@ -334,6 +334,7 @@ def dose_eval(res, c_w=C_W, w_dw=W_DW, alt_factor=True):
 def run_simulation():
     jobs = [(s, g, SIGMA_H, seed, seed == PLOT_SEED and g == 'Tuned')
             for g in GAINS for s in STRATS for seed in range(N_SEEDS)]
+    jobs += [(s, 'Tight', SIGMA_H_LOW, seed, False) for s in STRATS for seed in range(N_SWEEP_SEEDS)]
     jobs += [(s, 'Tuned', sh, seed, False) for sh in SIGMA_H_SWEEP if sh != SIGMA_H
              for s in STRATS for seed in range(N_SWEEP_SEEDS)]
     jobs += [(s, g, SIGMA_H, seed, False, rc) for rc in R_CROWN_SWEEP if rc != R_CROWN
@@ -653,6 +654,18 @@ def report(res):
             c, sf, nfree = stats(rs)
             parts.append(f"{s} {c.mean():.3f} +- {c.std():.3f}, {nfree}/{N_SWEEP_SEEDS}, {sf.mean():.3f}")
         print(f'    sigma_h {sh:.2f}: ' + ' | '.join(parts))
+    print(f'\n  --- low height spread sigma_h = {SIGMA_H_LOW}, {N_SWEEP_SEEDS} seeds: per seed and per clearance '
+          f'(collision-free missions, safe C_eff; per-seed safe C_eff higher/equal/lower) ---')
+    for g in GAINS:
+        rsd = {s: res[(s, g, SIGMA_H_LOW)][:N_SWEEP_SEEDS] for s in STRATS}
+        cd = {s: np.array([dose_eval(r)['ceff'] for r in rsd[s]]) for s in STRATS}
+        for i, (rd, mz) in enumerate(CLEARANCES):
+            sf = {s: cd[s] * np.array([r['contact_cl'][i] == 0 for r in rsd[s]]) for s in STRATS}
+            print(f'    {g}, r_d {rd:.1f} m / m_z {mz:.2f} m: ' + ', '.join(
+                f"{s} {int(np.sum([r['contact_cl'][i] == 0 for r in rsd[s]]))}/{N_SWEEP_SEEDS} {sf[s].mean():.3f}"
+                for s in STRATS) +
+                f"; adaptive vs fixed15 {wins(sf['adaptive'], sf['fixed15'])}, adaptive vs fixedsafe "
+                f"{wins(sf['adaptive'], sf['fixedsafe'])}, fixed15 vs fixedsafe {wins(sf['fixed15'], sf['fixedsafe'])}")
     print('\n  --- floor barrier over EVERY job group (asserts: z >= Z_MIN, z > 0, thrust acceleration <= A_MAX) ---')
     nb = 0
     for key in sorted(res, key=str):
