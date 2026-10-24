@@ -57,6 +57,7 @@ DECK_RADIUS = 1.0    # m  deck footprint: below z_p - r_land inside it = deck st
 THRUST_MAX  = 2.0    # x m g, total thrust range [0, 2 m g]
 PID_KP, PID_KI, PID_KD = 22.36, 2.0, 11.17   # outer loop (kp, kd = LQR z-loop gains)
 ATT_KP, ATT_KD = 400.0, 40.0                  # inner attitude PD (1/s^2, 1/s): 20 rad/s, zeta 1
+GLIDE_SWEEP = [0.0, 0.25, 0.5, 1.0, 2.0, 4.0]   # glide-slope sweep (m per m)
 T_AVAIL0    = 15.0   # s  start of the landing-availability measurement (track-only runs)
 TAU_SWEEP   = [0.0, 0.05, 0.1, 0.2, 0.3, 0.5]
 N_SWEEP     = 100
@@ -231,8 +232,10 @@ def run_simulation():
     track = {c: simulate(c, seeds, land=False) for c in CTRL}
     track_single = {c: simulate(c, [SEED], land=False, keep=True) for c in CTRL}
     sweep = [simulate('lqr_look', list(range(N_SWEEP)), tau=tau) for tau in TAU_SWEEP]
-    noglide = {c: simulate(c, seeds, glide=0.0) for c in CTRL}     # ablation: no glide slope
-    return single, mc, sweep, track, track_single, noglide
+    # glide-slope sweep (the main runs use GLIDE = 1.0)
+    glide_sweep = {g: (mc if g == GLIDE else {c: simulate(c, seeds, glide=g) for c in CTRL})
+                   for g in GLIDE_SWEEP}
+    return single, mc, sweep, track, track_single, glide_sweep
 
 
 def steady_state_errors(K):
@@ -415,7 +418,7 @@ def save_animation(single, out_dir):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    single, mc, sweep, track, track_single, noglide = run_simulation()
+    single, mc, sweep, track, track_single, glide_sweep = run_simulation()
     Ad, Bd, Kc, Kd, rho = gains()
     ss = steady_state_errors(Kd)
     print('=== S079 Offshore Wind Farm Installation Assistance — Results ===')
@@ -465,9 +468,12 @@ if __name__ == '__main__':
     print(f'  Paired first-window outcome, acceleration FF vs LQR: both {int(np.sum(a & b))}, '
           f'only acc-FF {int(np.sum(a & ~b))}, only LQR {int(np.sum(~a & b))}, neither '
           f'{int(np.sum(~a & ~b))}')
-    print(f'  Ablation without the glide slope ({N_TRIALS} trials): ' + '; '.join(
-        f'{LABELS[c]}: first window {100 * noglide[c]["first"].mean():.1f}%, deck strike '
-        f'{100 * noglide[c]["crashed"].mean():.1f}%' for c in CTRL))
+    print(f'  Glide-slope sweep ({N_TRIALS} trials; first-window landing % / deck strike %):')
+    for g in GLIDE_SWEEP:
+        r = glide_sweep[g]
+        print(f'    glide {g:4.2f}: ' + '; '.join(
+            f'{c} {100 * r[c]["first"].mean():.1f} / {100 * r[c]["crashed"].mean():.1f}'
+            for c in CTRL))
     print(f'  Look-ahead sweep ({N_SWEEP} trials): ' + ', '.join(
         f'{t:.2f} s -> first {100 * r["first"].mean():.0f}% / strike {100 * r["crashed"].mean():.0f}%'
         for t, r in zip(TAU_SWEEP, sweep)))

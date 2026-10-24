@@ -71,7 +71,7 @@ The loop has almost no lag to cancel, so a 0.5 s look-ahead makes the drone **le
 | Time step / horizon | 0.02 s / 40 s |
 | Monte Carlo | 200 gust realisations (seeds 0–199), shared by all controllers; look-ahead sweep 100 |
 | PID (added) | outer $k_p$ = 22.36, $k_i$ = 2.0 (integrator clamp ±0.5 m·s), $k_d$ = 11.17 on velocity; inner attitude PD 400 s⁻², 40 s⁻¹ |
-| Glide slope / arming radius / deck radius (added) | 1.0 m per m / 1.0 m / 1.0 m |
+| Glide slope / arming radius / deck radius (added) | 1.0 m per m (sweep 0, 0.25, 0.5, 1, 2, 4) / 1.0 m / 1.0 m |
 | Landing-availability window (added) | track-only runs, $t \ge 15$ s |
 
 ---
@@ -87,7 +87,7 @@ conda activate drones
 python src/04_industrial_agriculture/s079_offshore_wind.py
 ```
 
-Runtime ≈ 15–50 s (14–50 s measured, depending on how many other simulations shared the CPU). All trials of one controller run in a single vectorised loop.
+Runtime ≈ 15–50 s (13–50 s measured, depending on how many other simulations shared the CPU). All trials of one controller run in a single vectorised loop.
 
 ---
 
@@ -117,8 +117,21 @@ Acceleration FF beats plain LQR in 192 of 200 paired trials, ties in 1 and loses
 - **The card's expectation is reversed.** The card expects LQR + look-ahead to land in ≥ 90 % of trials and plain LQR in ≤ 60 %. The simulation gives 0 % for LQR + look-ahead (100 % deck strikes) and 100 % for plain LQR. The look-ahead shifts the reference 0.5 s into the future, but the LQR loop tracks the deck's position and velocity with almost no lag. The drone then rises and sinks about 0.5 s ahead of the deck (0.406 m error amplitude), and the deck meets it from below.
 - **Look-ahead sweep**: landing in the first window drops from 100 % at τ = 0 and 0.05 s to 99 % at 0.1 s, 58 % at 0.2 s, 9 % at 0.3 s and 0 % at 0.5 s. Deck strikes start at 0.3 s (42 %) and reach 100 % at 0.5 s. This matches the analytic error amplitudes, which cross $r_{land}$ = 0.15 m at about τ = 0.2 s.
 - **Feedforward of the swell rate is what matters.** Plain LQR already has velocity feedforward ($\dot z_p$ in the reference). Adding acceleration feedforward $m\ddot z_p$ raises the time with landing conditions met from 76.6 % to 82.7 %. The rest is limited by the horizontal gusts, which feedforward cannot predict.
-- **PID without deck knowledge fails often.** Its $z$ error amplitude is 0.402 m. It lands only when it happens to cross the deck gently near a crest (42.5 %) and strikes the deck in 57.5 % of trials. In track-only runs it never meets the landing conditions after 15 s. Its 42.5 % depends on the added glide slope: without it, PID lands in 0.0 % of trials and strikes the deck in 100.0 % (ablation below).
+- **PID without deck knowledge fails often.** Its $z$ error amplitude is 0.402 m. It lands only when it happens to cross the deck gently near a crest (42.5 %) and strikes the deck in 57.5 % of trials. In track-only runs it never meets the landing conditions after 15 s. Its 42.5 % depends on the added glide slope: without it, PID lands in 0.0 % of trials and strikes the deck in 100.0 % (glide-slope sweep below).
 - **Card code issues, verified numerically**: the card's thrust law lacks gravity compensation (steady sag $mg/k_z$ = 0.439 m), and its continuous LQR gain is unstable at 50 Hz on the exact plant (spectral radius 1.1772). Both are fixed and the card is annotated.
+
+### Glide-slope sweep (200 trials, first-window landing % / deck strike %)
+
+| Glide slope (m per m) | PID | LQR | LQR + 0.5 s look-ahead | LQR + acceleration FF |
+|---|---|---|---|---|
+| 0 | 0.0 / 100.0 | 100.0 / 0.0 | 0.0 / 100.0 | 99.5 / 0.0 |
+| 0.25 | 2.5 / 89.5 | 99.5 / 0.0 | 6.0 / 94.0 | 99.5 / 0.0 |
+| 0.5 | 48.5 / 51.5 | 100.0 / 0.0 | 4.0 / 96.0 | 100.0 / 0.0 |
+| **1.0 (main)** | 42.5 / 57.5 | 100.0 / 0.0 | 0.0 / 100.0 | 100.0 / 0.0 |
+| 2.0 | 23.5 / 76.5 | 81.5 / 1.5 | 5.0 / 91.0 | 90.0 / 1.0 |
+| 4.0 | 0.0 / 100.0 | 0.0 / 100.0 | 0.0 / 100.0 | 0.0 / 100.0 |
+
+The ranking — LQR and LQR + acceleration FF far ahead of PID and the 0.5 s look-ahead — holds for glide slopes from 0.25 to 2.0. Without a glide slope it holds for the LQR variants, but PID drops from 42.5 % to 0.0 %. At 2.0 the LQR variants start to miss (81.5 % and 90.0 %). At 4.0 the approach is so steep that every controller strikes the deck, so that setting cannot rank them.
 
 ### 3D Approach Trajectories (gust seed 0)
 
@@ -154,7 +167,7 @@ Side-on 3D view, gust seed 0. The green deck heaves; each controller's drone app
 | `az = u[0]/MASS - G` (no hover thrust) | $u_0$ is the thrust deviation from $mg$ | Otherwise the drone sags 0.439 m. Card annotated. |
 | Two controllers in the card's code (LQR+FF, LQR); PID listed but not specified | Four: PID (specified here), LQR, LQR + look-ahead, LQR + acceleration FF | The card lists PID. Acceleration FF is the standard model-based feedforward and shows what feedforward can achieve here. |
 | Window opens at the first $\lvert\Delta\dot z\rvert \le v_{land}$ anywhere | Armed within 1 m of the target | Otherwise a window can open and be "missed" while the drone is still in transit. |
-| Reference = deck point from the start | Glide slope $z_p + 1.0\,d_{xy}$ | Without it, the drone descends to deck height while still several metres from the mast and approaches the deck sideways. Printed ablation without the glide slope (200 trials), first-window landing / deck strike: PID 0.0 % / 100.0 % (vs 42.5 % / 57.5 % with it), LQR 100.0 % / 0.0 %, LQR + look-ahead 0.0 % / 100.0 %, LQR + acceleration FF 99.5 % / 0.0 %. The three LQR variants barely change; PID's partial success needs the glide slope. |
+| Reference = deck point from the start | Glide slope $z_p + 1.0\,d_{xy}$ | Without it, the drone descends to deck height while still several metres from the mast and approaches the deck sideways. The printed glide-slope sweep is in the Results section: the controller ranking holds from 0.25 to 2.0; PID's partial success needs a glide slope; at 4.0 every controller fails. |
 | No deck collision | Deck strike if more than $r_{land}$ below the deck within 1 m horizontally | A drone below the moving deck has hit it. |
 | Expected MC success ≥ 90 % (LQR+FF), ≤ 60 % (LQR) | 0.0 % and 100.0 % | Reported as is (X6); verified analytically and with a look-ahead sweep (X7). Card annotated. |
 | Card targets for seed 0 (LQR+FF lands, 0 misses, peak $\lvert\Delta\dot z\rvert$ < 0.5 m/s) | LQR+FF strikes the deck at seed 0 | Follows from the look-ahead error above. |
