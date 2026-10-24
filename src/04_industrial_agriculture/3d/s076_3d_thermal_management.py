@@ -8,8 +8,11 @@ surface layer (55 degC at the ground, -5 degC/m up to z_bl = 2 m) and a weak lap
 extra motor power k_z v_z^2, and the motor and battery temperatures follow first-order
 models driven by T_amb(z(t)).
 
-Every strategy uses the 2D base's fastest safe speed law (above T_warn, throttle to the
-speed whose steady state is T_max at the current ambient; cooling pause at T_max), so the
+Every strategy uses the same speed rules: the 2D base's fastest safe motor law (above
+T_warn, throttle to the speed whose steady state is T_max at the current ambient; cooling
+pause at T_max) and a battery derating rule of the same form for the card's 80 % capacity
+floor (above T_bat,warn = 63 degC, throttle to the speed whose battery steady state is
+T_bat,max = 65 degC; cooling pause at 65 degC). A pause is a landed, unpowered stop. So the
 strategies differ only in their altitude plan:
   fixed_2m   fly at 2.0 m (the 2D baseline)
   fixed_1m   fly at 1.0 m (low inspection pass, inside the hot layer)       (added)
