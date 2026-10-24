@@ -1,6 +1,6 @@
 # S051 3D Upgrade — Post-Disaster Comm Network
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S051 original](../S051_post_disaster_comm.md)
 
 ---
@@ -13,9 +13,11 @@ $z = 50$ m and evaluates coverage only by ground-projected 2D distance
 link-budget and obstruction geometry into the horizontal plane and ignores three
 critical real-world factors:
 
-1. **Altitude-optimised relay placement** — hovering higher extends the ground
-   footprint of each drone antenna (slant-range coverage grows with altitude), but
-   also increases path loss and battery drain. The optimal altitude per drone is a
+1. **Altitude-optimised relay placement** — under a slant-range link budget, hovering
+   higher *shrinks* the ground footprint ($\sqrt{d_{cov}^2 - z^2}$: 449.6 m at 20 m,
+   433.7 m at 120 m) and increases battery drain, but it lifts the drone-to-survivor
+   rays over the debris (correction 2026-10-24: the earlier text said the footprint grows
+   with altitude). The optimal altitude per drone is a
    function of its population-density neighbourhood and its position in the relay
    chain.
 2. **Debris-field 3D obstruction map** — collapsed buildings create irregular
@@ -125,9 +127,11 @@ $$\exists\,\tau^* : \mathbf{r}^{xy}(\tau^*) \in \text{footprint}(v)
 \;\text{and}\; r_z(\tau^*) \leq h_v$$
 
 In discrete form, sample the ray at $N_{ray} = 50$ points and flag any sample
-within a debris column:
+within a debris column. The survivor end ($n = N_{ray}$, at ground level) and the
+survivor's own cell are excluded, otherwise every ray would be blocked (correction
+2026-10-24):
 
-$$\text{LOS}(k, u) = \text{clear} \iff \forall\, n \in \{0,\ldots,N_{ray}\}:\; r_z\!\left(\tfrac{n}{N_{ray}}\right) > h\!\left(\mathbf{r}^{xy}\!\left(\tfrac{n}{N_{ray}}\right)\right)$$
+$$\text{LOS}(k, u) = \text{clear} \iff \forall\, n \in \{0,\ldots,N_{ray}-1\}:\; r_z\!\left(\tfrac{n}{N_{ray}}\right) > h\!\left(\mathbf{r}^{xy}\!\left(\tfrac{n}{N_{ray}}\right)\right)$$
 
 ### 3D Connectivity via Link Budget
 
@@ -237,8 +241,8 @@ $$M^* = \arg\min_{M \in \{0,\ldots,K-1\}} \text{coverage loss}(M) \;\text{s.t.}\
 | Transmit power $P_{tx}$ | 1 W |
 | Antenna gains $G_{tx} = G_{rx}$ | 3 dBi each |
 | Receiver sensitivity $P_{min}$ | -100 dBm |
-| Max coverage slant range $d_{cov}$ | ~450 m (derived) |
-| Relay link max range $d_{relay}$ | ~900 m (derived) |
+| Max coverage slant range $d_{cov}$ | 450 m (design value; with the values above the formula gives 167.3 km, so 450 m corresponds to an effective threshold of −48.6 dBm) |
+| Relay link max range $d_{relay}$ | 900 m (design value; effective relay threshold −54.6 dBm) |
 | Debris height range $h_u$ | 0 – 30 m |
 | Dense-debris threshold | $h_u \geq 10$ m |
 | LOS ray samples $N_{ray}$ | 50 |
