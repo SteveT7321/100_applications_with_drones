@@ -578,6 +578,15 @@ def run_simulation():
         noon_spot.append((H, y_any - ROW_YC[5], bool(hit[0])))
     alt_band = {'card': [min_spec_angle_alt(H, card_sun) for H in H_SWEEP],
                 'noon': [min_spec_angle_alt(H, noon_sun) for H in H_SWEEP]}
+    plan_spot = None
+    if ga_noon is not None:                      # where the reflection lands for the actual plan
+        D = np.array([[40.0, ROW_YC[5] + ga_noon[1], ga_noon[0]]])
+        hit, ys, _, _ = glare_spot(D, gnoon)
+        y_any = ys[0] if hit[0] else D[0, 1] + ga_noon[0] / (-gnoon[2]) * gnoon[1]
+        plan_spot = (ga_noon[0], float(y_any - ROW_YC[5]), bool(hit[0]))
+    # card rule with the card's tilt-normal gimbal instead of the nadir camera
+    r_low = (H_SCAN_CARD - H_EDGE / 2) / N_HAT[2]
+    geo_low_gimbal = dict(coverage(make_plan('3d_gimbal', H=r_low)), R=r_low)
     # Ablation: keep the 2D altitude (5 m) and only move the strips cross-track
     offs = np.round(np.arange(-3.0, 3.0 + 1e-9, 0.02), 3)
     D5 = np.stack([np.full(len(offs), 40.0), ROW_YC[5] + offs, np.full(len(offs), ALT_2D)], 1)
@@ -595,6 +604,7 @@ def run_simulation():
                 hsweep=hsweep, msweep=msweep, tod=tod, noon_sun=noon_sun, ga_noon=ga_noon,
                 noon_plans=noon_plans, noon=noon, noon_geo=noon_geo, noon_ga_decl=noon_ga_decl,
                 noon_spot=noon_spot, alt_band=alt_band, off5=off5, win_sun=win_sun, winter=winter,
+                plan_spot=plan_spot, geo_low_gimbal=geo_low_gimbal,
                 winter_shadow=winter_shadow, runtime=time.time() - t0)
 
 
@@ -734,10 +744,12 @@ def plot_glare_band(res, out_dir):
     ax.plot(H[hit], off[hit], '.', color='gold', ms=3, label='glare spot on a panel (frame lost)')
     ax.plot(H[~hit], off[~hit], '.', color='k', ms=3, label='glare spot in a row gap (frame clean)')
     ax.axvline(h_star(), color='tab:red', ls='--', label=f'H* = {h_star():.2f} m (coverage)')
-    if res['ga_noon'] is not None:
-        ax.axvline(res['ga_noon'][0], color='tab:brown', ls='-',
-                   label=f'glare-aware H = {res["ga_noon"][0]:.2f} m')
-    ax.set_xlabel('altitude H (m), offset at the window midpoint')
+    if res['plan_spot'] is not None:
+        hp, op, hitp = res['plan_spot']
+        ax.plot(hp, op, '*', color='tab:brown', ms=14, mec='k',
+                label=f'glare-aware plan: H = {hp:.2f} m, offset {res["ga_noon"][1]:+.2f} m '
+                      f'({"on a panel" if hitp else "in a gap"})')
+    ax.set_xlabel('altitude H (m); dots: offset at the window midpoint')
     ax.set_ylabel('glare spot y relative to row centre (m)')
     ax.set_title('Solar noon: where the sun reflection lands (blue bands = rows)')
     ax.legend(fontsize=7, loc='lower left')
@@ -1009,6 +1021,16 @@ def report(res):
           f"({100 * (1 - t['3d_row'] / t['2d_card']):.1f}%); vs 2d_row {t['2d_row']:.1f} s: "
           f"{t['3d_row'] - t['2d_row']:+.1f} s; 3d_gimbal {t['3d_gimbal']:.1f} s; card_low {t['card_low']:.1f} s "
           f"({t['card_low'] / t['2d_card']:.2f} x 2d_card)")
+    gg = res['geo_low_gimbal']
+    print(f"  Card rule with the tilt-normal gimbal at z = {H_SCAN_CARD:.3f} m (stand-off R = {gg['R']:.3f} m): "
+          f"imaged unblurred {100 * gg['frac']:.2f}%, v_max abeam {gg['v_max']:.3f} m/s, blur abeam at 1 m/s "
+          f"{V_NOM * T_EXP / (gg['R'] * IFOV):.2f} px (limit {BLUR_MAX})")
+    if res['plan_spot'] is not None:
+        print(f"  Glare-aware noon plan (H {res['plan_spot'][0]:.2f} m, offset {res['ga_noon'][1]:+.2f} m): reflection "
+              f"{res['plan_spot'][1]:+.2f} m from the row centre, " + ('on a panel' if res['plan_spot'][2] else 'in a gap'))
+    print(f'  Detection ceiling: the weakest hot spot reads ({DT_HOT_MIN} x {ATTEN:.4f} - {DT_THRESH}) / {T_NOISE_STD} = '
+          f'{(DT_HOT_MIN * ATTEN - DT_THRESH) / T_NOISE_STD:.2f} sigma above the threshold in every frame, so an imaged, '
+          f'unblurred hot spot is always detected')
     mu, sd, n8 = _stats(res['mc_low_slow'])
     print(f"  Card rule at its blur-limited speed 0.9 v_max = {res['v_low']:.3f} m/s: imaged "
           f"{100 * res['geo_low_slow']['frac']:.2f}%, detection (anywhere) {100 * mu:.1f} ± {100 * sd:.1f}%, "

@@ -85,7 +85,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s073_3d_solar_thermal.py
 ```
 
-Runtime ≈ 2–3 min (measured while other simulations shared the machine). Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
+Runtime 55–56 s over three runs. Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
 
 ---
 
@@ -167,11 +167,12 @@ Paired (frame rule): the glare-aware plan beats `3d_row` at H*, `2d_row` and `2d
 
 **Key findings**
 
-- **Tilt makes the 2D altitude too low for row-aligned passes.** A 5 m pass over the row centre images 85.26 % of the tilted panel surface and misses 28 of 400 hot spots placed anywhere on the panels. Raising the pass to the planned H* = 6.244 m and shifting it 0.386 m north images 100 % and finds every hot spot on 50/50 seeds, in the same 854.0 s. The altitude sweep shows the threshold: full coverage from 5.76 m.
+- **Tilt makes the 2D altitude too low for row-aligned passes.** A 5 m pass over the row centre images 85.26 % of the tilted panel surface and misses 28 of 400 hot spots placed anywhere on the panels. Raising the pass to the planned H* = 6.244 m and shifting it 0.386 m north images 100 % and finds every hot spot on 50/50 seeds, in the same 854.0 s. The altitude sweep shows the threshold: full coverage from 5.76 m. The 3D plans fly **one constant altitude** for the whole mission: the gain is a different fixed altitude plus an offset derived from the tilt geometry, not altitude variation in flight (the vertical moves are the card rule's transits only).
+- **Detection follows coverage here.** The weakest hot spot reads 3.38 σ above the threshold in every frame, so any imaged, unblurred hot spot is detected; detection is a ceiling effect of coverage. It separates the 3D plans from the 2D plans, but it cannot separate plans that both image 100 %.
 - **The 3D plan also beats the 2D card lawnmower**, which images only 94.67 % of the tilted surface (its footprint is narrower at panel height) and takes 45.9 % longer.
 - **The card's altitude rule fails.** At the card sun no altitude is glare-limited, so "lowest glare-free altitude" means 2.865 m, 1 m over the top edges. There the image moves 1/ρ times faster: v_max is 0.306 m/s, every frame at 1.0 m/s is blurred, and the card rule detects 1.0 %; flown slowly enough it needs 16.4 × the mission time.
-- **The tilt-normal gimbal changes the resolution, not the detection.** It images the same 100 % with a more uniform GSD (mean 2.44, max 2.66 cm, against mean 2.58, max 3.84 cm for the nadir pass) and a higher blur limit (1.761 vs 1.414 m/s); detection is tied on all 50 seeds.
-- **Glare and shadow are time-of-day effects.** At 35° N they do not occur at the card's 09:00 sun. Near noon the reflection enters the FOV of both camera modes; there, the glare-aware altitude of 6.90 m with a +0.66 m offset puts it into the row gap and restores 100 % detection, while every fixed-altitude plan drops to 0.5–20.0 %. Winter shadows (65 of 400 hot spots at 09:00) cannot be removed by any flight plan.
+- **The tilt-normal gimbal gives a more uniform resolution.** It images the same 100 % with a more uniform GSD (mean 2.44, max 2.66 cm, against mean 2.58, max 3.84 cm for the nadir pass) and a higher blur limit (1.761 vs 1.414 m/s). Detection is tied on all 50 seeds, but that tie is the coverage ceiling above (both plans image 100 %), not evidence that the gimbal does not matter for detection.
+- **Glare and shadow are time-of-day effects.** At 35° N they do not occur at the card's 09:00 sun. Near noon the reflection enters the FOV of both camera modes. **If a frame with the sun's reflection on a panel is lost (the frame-wise rule)**, the glare-aware altitude of 6.90 m with a +0.66 m offset puts the reflection into the row gap (+2.50 m from the row centre) and keeps 100 % detection, while every fixed-altitude plan drops to 0.5–20.0 %. Under the card's per-point glare rule the same fixed plans keep 93.0–100 %, so this result depends on how glare spoils a thermal frame. Winter shadows (65 of 400 hot spots at 09:00) cannot be removed by any flight plan.
 
 ### Figures
 
@@ -187,7 +188,7 @@ Paired (frame rule): the glare-aware plan beats `3d_row` at H*, `2d_row` and `2d
 
 ![Altitude profile](./altitude_profile.png)
 
-**Glare band**: left, the smallest angle between any viewing direction and the specular direction against altitude (card sun: about 23°, never below 5°; noon: 0°); right, where the noon reflection lands for the `3d_row` pass at the window-midpoint offset (yellow = on a panel, black = in a gap):
+**Glare band**: left, the smallest angle between any viewing direction and the specular direction against altitude (card sun: about 23°, never below 5°; noon: 0°); right, where the noon reflection lands for the `3d_row` pass at the window-midpoint offset (dots; yellow = on a panel, black = in a gap) and, as a star, for the glare-aware plan at its actual offset (+0.66 m, reflection in a gap):
 
 ![Glare band](./glare_band.png)
 
@@ -223,6 +224,7 @@ Paired (frame rule): the glare-aware plan beats `3d_row` at H*, `2d_row` and `2d
 | Per-strip glare-free altitude band at the card sun | implemented (0.1 m search); it returns 2.865 m for every strip | at the card sun the specular direction is ≥ 23° outside the FOV at every altitude; the band is unbounded below |
 | Glare per panel point (card) | frame-wise rule as the primary model; the card's point rule run as an ablation | a sun reflection in a thermal frame spoils the frame; the conclusion at noon depends on this choice and both are printed |
 | Gimbal pitch and footprint formulas ($\beta_{cam}$, $b_{foot} = a_{foot}\cos\alpha$) | tilt-normal pointing = boresight $-\hat{\mathbf n}$ from a point on the normal through the row centre; footprint by ray tracing | with the boresight on the normal the footprint on the panel is square, not foreshortened |
+| Card rule with the tilt-normal gimbal | card rule flown with a nadir camera | with the gimbal at the same 2.865 m (stand-off 2.132 m from the panel) the blur abeam at 1 m/s is 3.87 px (limit 2.5) and the imaged unblurred surface is 0.00 % (printed), so the rule fails with either camera |
 | Strip spacing $d = 2b_{foot}(1-\rho)$ | card rule: spacing 0.8 × footprint at mid-panel height; 3D plans: one strip per row with altitude from the coverage condition | the row gaps need no imaging; one pass per row is enough once the altitude is right |
 | Fixed sun, "mission planner schedules the inspection time" | sun from solar geometry at 35° N (09:00 equinox = 119.8°/35.4° ≈ card sun), three dates | needed for the shadow time series; latitude and dates are added parameters |
 | Hot spot at the panel centre | centre (card) and anywhere on the panel (2D base's second model) | the centre model cannot discriminate between plans |
