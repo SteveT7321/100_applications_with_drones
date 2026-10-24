@@ -373,6 +373,9 @@ def run_simulation():
             th_est = th_est + th_d
         prev_pts, prev_cache = pts, normals(pts)
         grid.update(p_est, body, ok, th_est)
+        if k == 0:                                   # t = 0 animation frame (first scan)
+            fr, oc = grid.classes()
+            snaps.append((0, (fr.astype(np.int8) - oc.astype(np.int8))))
         # ── frontier planning ────────────────────────────────────────────────
         reached = path is not None and np.linalg.norm(path[-1] - p_est) < STOP_DIST
         if reached:
@@ -442,6 +445,8 @@ def run_simulation():
     # final scan bookkeeping
     fr, oc = grid.classes()
     cov_log.append((t, (fr & gt_free).sum() / gt_free.sum(), ((fr | oc) & gt_free).sum() / gt_free.sum()))
+    if snaps[-1][0] == k:                             # no duplicated last frame
+        snaps.pop()
     snaps.append((k, (fr.astype(np.int8) - oc.astype(np.int8))))
     traj_true, traj_est = np.array(traj_true), np.array(traj_est)
     return dict(grid=grid, traj_true=traj_true, traj_est=traj_est, th=np.array(th_log),
@@ -748,7 +753,8 @@ if __name__ == '__main__':
     print(f"  Minimum true wall clearance {m['min_clear']:.2f} m (asserted >= {R_DRONE} m)")
     n = len(err) - 1
     print(f'  Card drift model sigma_ICP sqrt(n) at n = {n}: {SIGMA_ICP * np.sqrt(n):.2f} m '
-          f'(2D: {SIGMA_ICP * np.sqrt(2 * n):.2f} m)')
+          f'per axis, {SIGMA_ICP * np.sqrt(2 * n):.2f} m as the rms of the 2D error norm; '
+          f'closed-loop final 2D error {err[-1]:.3f} m (single run)')
     print(f'  [Replays on the flown trajectory, seeds {REPLAY_SEEDS}]')
     rep = {}
     keys = ['dr', 'p2p'] + [('p2l', k) for k in K_SWEEP]

@@ -110,7 +110,7 @@ Runtime ≈ 2.5–4 min (measured while other simulations shared the machine).
 | Final heading error | +0.60° | — |
 | ICP iterations per scan | mean 4.18, max 20 | — |
 | Minimum true wall clearance | 0.65 m (asserted ≥ 0.25 m) | — |
-| Card drift model at n = 2218 | $\sigma_{ICP}\sqrt n$ = 0.94 m per axis (1.33 m in 2D) | — |
+| Card drift model at n = 2218 | $\sigma_{ICP}\sqrt n$ = 0.94 m per axis; 1.33 m rms of the 2D error norm | — |
 
 90 % coverage (mapped free) was never reached; 81.6 % at the end. 858 cells near reached goals were set to "ignore". Of the 15 024 updated cells, 77.8 % sit at the −10 clamp and 11.0 % at the +10 clamp.
 
@@ -137,8 +137,8 @@ Paired RMSE: point-to-line (K = 20) beats dead reckoning in 5/6 seeds and point-
 "Walls found" is the share of true wall cells (rock cells touching the tunnel) classified occupied; "outside" is the share of cells mapped free that lie outside the tunnels.
 
 **Key findings**:
-- **The card's point-to-point ICP fails in mine corridors.** In a straight tunnel the scan looks the same wherever the drone is along the axis, and point-to-point matching of the beam pattern pulls the estimated forward motion to zero. Its RMSE is 25.732 m against 1.045 m for dead reckoning, worse in all 6 seeds. This is the well-known LiDAR degeneracy of tunnels; it is why the closed-loop mission uses point-to-line ICP fused with the odometry prior.
-- **Point-to-line ICP with the prior beats dead reckoning, modestly**: RMSE 0.714 vs 1.045 m, lower in 5 of 6 seeds. Walls fix the lateral position and heading, but along a corridor only junctions and end walls fix the forward position, so the along-axis error still grows like the card's $\sigma_{ICP}\sqrt n$ model (pose-drift plot). The closed-loop final error (1.020 m) is close to the model's 0.94 m per axis.
+- **The card's point-to-point ICP fails in mine corridors.** Two effects combine. (1) A straight corridor gives a scan no information about the position along its axis, for any matching method; this is the general along-axis blind spot of LiDAR in tunnels. (2) Point-to-point matching does worse than "no information": the beams leave at fixed angles, so in a straight corridor the returns form the same pattern relative to the drone at every position, and point-to-point correspondences lock that pattern onto itself, which means zero forward motion. The estimate therefore stops instead of following the prior. Its RMSE is 25.732 m against 1.045 m for dead reckoning, worse in all 6 seeds. Point-to-line matching has only effect (1): with the prior it keeps the commanded forward motion where the walls give no information. This is why the closed-loop mission uses point-to-line ICP fused with the odometry prior.
+- **Point-to-line ICP with the prior beats dead reckoning, modestly**: RMSE 0.714 vs 1.045 m, lower in 5 of 6 seeds. Walls fix the lateral position and heading, but along a corridor only junctions and end walls fix the forward position, so the along-axis error still grows like the card's $\sigma_{ICP}\sqrt n$ model (pose-drift plot). The closed-loop final 2D error (1.020 m, a single run) lies between the model's per-axis value (0.94 m) and its 2D value (1.33 m, the rms of the error norm for a 2D random walk), consistent with ICP removing most of the lateral component.
 - **ICP iterations matter little beyond 5**: K = 1 gives 0.762 m, K = 5 and K = 20 both 0.714 m; the solver converges in about 4 iterations (mean 4.30 with a cap of 20). The card's expected diminishing returns hold, but they set in at K ≈ 5, not 15.
 - **The grid resolution does not affect the pose at all** here, because scan-to-scan ICP never uses the map. It affects the map: with true poses, coverage falls from 94.0 % (0.1 m) to 76.2 % (0.4 m) because coarse cells straddle the walls. With estimated poses, drift lowers coverage at 0.1 m (87.1 vs 94.0 %) and 0.2 m (81.7 vs 87.3 %) and puts 6.1–9.8 % of the cells mapped free outside the true tunnels (the map is shifted).
 - **Card expectations that did not hold**: coverage 81.6 % instead of ≥ 90 % (93.6 % of the free cells are classified, but drift shifts part of the map out of place); exploration took 221.8 s instead of 450–600 s (the LiDAR sees up to 10 m ahead, so the drone turns back well before the end of each dead end); the log-odds histogram has its peaks at the clamps (−10 and +10), not at −3 and +8, because cells are observed in many scans; the mission did not end with zero frontiers but with one cluster that the drifted map made unreachable. The pose RMSE (0.521 m) is just below the card's 0.55–0.70 m range.
@@ -180,7 +180,7 @@ Left: pose RMSE per estimator (6 seeds, log scale). Right: coverage vs grid reso
 
 ### Animation
 
-Top-down map growing during the mission (89 frames, one every 2.5 s), with the true (blue) and estimated (magenta) paths and the current position error:
+Top-down map growing during the mission (90 frames: t = 0 after the first scan, then one every 2.5 s, and the final map), with the true (blue) and estimated (magenta) paths and the current position error:
 
 ![Animation](./animation.gif)
 
@@ -191,7 +191,7 @@ Top-down map growing during the mission (89 frames, one every 2.5 s), with the t
 | Total tunnel length 150 m | 175 m | Sum of the branch lengths in the card's own code (80 + 35 + 35 + 25). Card corrected. |
 | 3D voxel map, 26-connected frontiers | 2D grid of the scan plane, 8-connected frontiers | A horizontal 2D LiDAR at constant height never observes other layers; a 3D grid would stay unknown above and below the plane. |
 | 6-DoF ICP | SE(2) ICP (x, y, yaw) | Planar scans constrain only these three; height is held constant. |
-| Point-to-point ICP, no prior | Point-to-line ICP fused with an odometry/gyro prior in the mission; the card's point-to-point ICP evaluated in replay | Point-to-point ICP collapses the forward motion in corridors (RMSE 25.732 m). |
+| Point-to-point ICP, no prior | Point-to-line ICP fused with an odometry/gyro prior in the mission; the card's point-to-point ICP (started from the odometry guess, no prior term in its cost) evaluated in replay | Point-to-point ICP locks the fixed beam pattern onto itself in straight corridors and estimates almost no forward motion (RMSE 25.732 m). |
 | ICP drift injected as $\mathcal N(0, \sigma_{ICP}^2)$ added to the estimate | $\sigma_{ICP}$ used as motion (process) noise; the prior is the commanded displacement | Same random-walk statistics for dead reckoning, and ICP can correct it where the walls allow. |
 | Gyro not specified | Gyro yaw-increment noise 10⁻⁴ rad per step (added) | With a perfect heading prior the yaw estimate would be trivial. A ten times noisier gyro made the heading drift by several degrees and the map break up in a development run (not reproduced by the final script). |
 | Max-range beams marked occupied at 10 m (card code) | No-return beams update free cells only | A beam that hits nothing is not evidence of a wall. |
