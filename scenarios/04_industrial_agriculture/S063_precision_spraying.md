@@ -1,6 +1,6 @@
 # S063 Single-Plant Precision Spraying
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐ | **Status**: `[x]` Complete
 **Algorithm**: TSP Nearest-Neighbour + PID Hover | **Dimension**: 2D
 
 ---
@@ -32,9 +32,18 @@ a Gaussian dose model converts RMS position error into an effective coverage fra
 
 **Comparison configurations** (PID gain sets):
 
-1. **Loose** — $K_p = 0.5$, $K_i = 0.05$, $K_d = 0.1$ (under-damped, high steady-state error).
-2. **Tuned** — $K_p = 2.0$, $K_i = 0.2$, $K_d = 0.5$ (critically damped, good disturbance rejection).
-3. **Tight** — $K_p = 5.0$, $K_i = 0.5$, $K_d = 1.0$ (aggressive, risk of actuator saturation).
+1. **Loose** — $K_p = 0.5$, $K_i = 0.05$, $K_d = 0.1$ (marginally stable: $K_p K_d = K_i$).
+2. **Tuned** — $K_p = 2.0$, $K_i = 0.2$, $K_d = 0.5$ (lightly damped, $\zeta \approx 0.18$).
+3. **Tight** — $K_p = 5.0$, $K_i = 0.5$, $K_d = 1.0$ (stiffest, $\zeta \approx 0.22$; risk of actuator saturation).
+
+> **Correction (verified in the implementation)**: on the double integrator
+> $\ddot e = -K_p e - K_i\!\int e - K_d \dot e$ the characteristic polynomial is
+> $s^3 + K_d s^2 + K_p s + K_i$, which is stable only if $K_d K_p > K_i$ (Routh). The Loose set
+> sits exactly on the boundary ($0.1 \times 0.5 = 0.05$), so its oscillations never decay; in the
+> simulation the hover error grows from plant to plant, with or without actuator limits. The Tuned set has $\zeta = K_d / (2\sqrt{K_p}) = 0.18$,
+> not critical damping, and its natural frequency (1.41 rad/s) is close to the gust frequency
+> $2\pi/T_w = 1.57$ rad/s, so it amplifies the gust (32.8 cm amplitude against 10.1 cm for Tight).
+> The original labels "under-damped" and "critically damped" have been replaced.
 
 ---
 
