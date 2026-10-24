@@ -89,7 +89,7 @@ conda activate drones
 python src/04_industrial_agriculture/s076_thermal_management.py
 ```
 
-Runtime ≈ 1.5–2 min (96–119 s measured while other simulations shared the CPU).
+Runtime ≈ 1.5–2 min (84–119 s measured while other simulations shared the CPU).
 
 ---
 
@@ -113,14 +113,15 @@ Runtime ≈ 1.5–2 min (96–119 s measured while other simulations shared the 
 | **Reactive (throttle to $T_{max}$)** | **2466.8 s (41.11 min)** | 84.97 °C | 0 | 0.0 s | +314.8 s |
 | Predictive pauses | 3322.0 s (55.37 min) | 80.00 °C | 39 | 0.0 s | +1170.0 s |
 
-The managed strategies' peak temperatures are set **by design**: about 80 °C for hold-$T_{warn}$ and predictive, just below 85 °C for throttle-to-$T_{max}$. Peak temperature therefore does not rank them; mission time does. The 85.0 label in the metrics chart is 84.97 °C rounded.
+The managed strategies' peak temperatures are set **by design**: about 80 °C for hold-$T_{warn}$ and predictive, just below 85 °C for throttle-to-$T_{max}$. Peak temperature therefore does not rank them; mission time does. The 85.0 label in the metrics chart is 84.97 °C rounded to one decimal; the temperature-trace legend shows two decimals. The script asserts that the throttle-to-$T_{max}$ variant never exceeds $T_{max}$.
 
 **Key findings**:
 - **The card's expected result does not hold at 45 °C.** With the card's parameters, $T_{m,\infty}(v_0) = 81.0$ °C, below $T_{max}$. Unmanaged flight peaks at 80.93 °C and never breaches $T_{max}$. The card's "> 85 °C (violation)" for no management, "3–6 pauses" for reactive and "4–7 pauses" for predictive are not reproduced (0 and 14 pauses). The card's $v_{safe} \approx 0.91$ m/s is also wrong: the correct value is 1.155 m/s. The 0.91 matches the square of the $T_{warn}$ speed (0.917), so a square root was probably dropped. The card has been corrected.
 - **At 45 °C, the best reactive throttle does nothing.** $v_{safe}$ = 1.155 m/s is above $v_0$, so throttling to $T_{max}$ never slows the drone and matches unmanaged flight (35.87 min, peak 80.93 °C). Holding 80 °C costs 67.6 s: the drone flies 1521.2 m below $v_0$, taking 1588.8 s. The predictive schedule costs 420.0 s (14 pauses × 30 s), because it cools all the way to 52.8 °C every time and then reheats.
-- **Throttling to $T_{max}$ is the fastest safe strategy at every ambient temperature tested.** At 52 °C, where unmanaged flight spends 2047.8 s above $T_{max}$, it takes 41.11 min with a peak of 84.97 °C. Predictive takes 55.37 min and hold-$T_{warn}$ 60.29 min. Over the whole 40–55 °C sweep it never exceeds $T_{max}$ (maximum peak 84.99 °C, 0.0 s above), never pauses, and predictive is never faster than it. At 55 °C it needs 50.00 min against 61.37 min for predictive.
+- **Throttling to $T_{max}$ is the fastest safe strategy at every ambient temperature tested (tied with no management up to 49 °C, where no management is still safe).** At 52 °C, where unmanaged flight spends 2047.8 s above $T_{max}$, it takes 41.11 min with a peak of 84.97 °C. Predictive takes 55.37 min and hold-$T_{warn}$ 60.29 min. Over the whole 40–55 °C sweep it never exceeds $T_{max}$ (maximum peak 84.99 °C, 0.0 s above), never pauses, and predictive is never faster than it. At 55 °C it needs 50.00 min against 61.37 min for predictive.
 - **Predictive beats only the conservative reactive variant.** Predictive is faster than hold-$T_{warn}$ from 51 to 55 °C (e.g. 55.37 vs 60.29 min at 52 °C). That crossover is a property of the hold-at-80 °C law, not of reactive control in general. Holding 80 °C at 52 °C forces 0.577 m/s, because even hovering heats the motor toward 76 °C. Holding it at 55 °C takes 118.95 min, because $v_{hold}$ approaches zero as $T_{amb} + R_{th}P_{hover}$ approaches $T_{warn}$ (56 °C). Below 45 °C, none of the strategies needs to act, and all take 35.87 min.
 - **What the predictive schedule buys**: it keeps the motor at or below 80 °C, i.e. a 5 °C margin below the limit, at a cost in mission time: 42.87 vs 35.87 min at 45 °C and 55.37 vs 41.11 min at 52 °C against throttling to $T_{max}$.
+- **Fairness check**: letting the predictive schedule also use the 85 °C limit (pause when $T_m$ would reach $T_{max}$) at 52 °C gives 46.87 min with 22 pauses (peak 85.00 °C). That is still slower than throttling to $T_{max}$ (41.11 min), so the ranking does not come from the two strategies using different thresholds.
 - **The card's literal reactive formula chatters.** $v_{safe}(T_m) = \sqrt{\max(0, (T_{max} - T_m)/(R_{th}k_v) - P_{hover}/k_v)}$ is zero for every $T_m \ge 61$ °C, so in the warning zone it always commands the 0.05 m/s floor. Run literally at 45 °C, it makes 2804 speed switches between 1.0 and 0.05 m/s and takes 2285.2 s (38.09 min), 65.6 s longer than the corrected $v_{hold}$ law. It slows down too much because $P(v)$ is convex in $v$: alternating fast and slow heats the motor more than a steady speed with the same average.
 - **Caveat on the pause model**: the card treats a shaded pause as cooling toward $T_{amb}$, i.e. little or no motor heat while paused. If the drone kept hovering during the pause, it would cool only toward $T_{amb} + R_{th}P_{hover}$, and the predictive schedule would lose much of its advantage in the hot case.
 
@@ -129,12 +130,12 @@ The managed strategies' peak temperatures are set **by design**: about 80 °C fo
 | No management (min) | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 |
 | No-management peak (°C) | 75.9–79.9 | 80.9 | 81.9 | 82.9 | 83.9 | 84.9 | **85.9** | **86.9** | **87.9** | **88.9** | **89.9** | **90.9** |
 | Reactive, hold $T_{warn}$ (min) | 35.87 | 36.99 | 38.64 | 40.62 | 43.00 | 45.86 | 49.43 | 54.05 | 60.29 | 69.42 | 84.70 | 118.95 |
-| Reactive, throttle to $T_{max}$ (min) | **35.87** | **35.87** | **35.87** | **35.87** | **35.87** | **35.87** | **37.37** | **39.09** | **41.11** | **43.51** | **46.40** | **50.00** |
+| Reactive, throttle to $T_{max}$ (min) | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | 35.87 | **37.37** | **39.09** | **41.11** | **43.51** | **46.40** | **50.00** |
 | Reactive, throttle to $T_{max}$, peak (°C) | 75.93–79.93 | 80.93 | 81.93 | 82.93 | 83.93 | 84.93 | 84.95 | 84.96 | 84.97 | 84.98 | 84.98 | 84.99 |
 | Predictive (min) | 35.87 | 42.87 | 45.37 | 46.87 | 48.87 | 50.37 | 51.87 | 53.87 | 55.37 | 57.37 | 59.37 | 61.37 |
 | Predictive pauses | 0 | 14 | 19 | 22 | 26 | 29 | 32 | 36 | 39 | 43 | 47 | 51 |
 
-Bold peaks are breaches of $T_{max}$. Bold mission times mark the fastest strategy that never exceeds $T_{max}$. Both reactive variants pause 0 times at every ambient temperature.
+Bold peaks are breaches of $T_{max}$. Bold mission times mark the single fastest strategy that never exceeds $T_{max}$. At 40–44 °C all four strategies tie at 35.87 min. At 45–49 °C no management and throttle-to-$T_{max}$ tie at 35.87 min (both stay below $T_{max}$), so nothing is bolded there. Both reactive variants pause 0 times at every ambient temperature.
 
 ### Motor Temperature
 

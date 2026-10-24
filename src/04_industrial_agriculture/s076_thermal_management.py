@@ -3,10 +3,13 @@ S076 Extreme Heat Cooling Strategy
 ==================================
 A single inspection drone flies a boustrophedon (lawnmower) path over a 100 x 100 m field
 at 45 degC ambient. Motor temperature follows a first-order thermal model driven by the
-speed-dependent motor power P(v) = P_hover + k_v v^2. Three strategies are compared:
+speed-dependent motor power P(v) = P_hover + k_v v^2. Four strategies are compared:
   1. No thermal management (constant v0 = 1 m/s)
-  2. Reactive throttle (slow down above T_warn, cooling pause at T_max)
-  3. Predictive scheduled pauses (closed-form plan that never enters the warning zone)
+  2. Reactive throttle, hold T_warn (above T_warn fly at the speed that holds the current
+     temperature; cooling pause at T_max)
+  3. Reactive throttle to T_max (above T_warn fly at the speed whose steady state is T_max;
+     cooling pause at T_max)
+  4. Predictive scheduled pauses (closed-form plan that never enters the warning zone)
 The card's parameter set (T_amb = 45 degC) is run first; an ambient-temperature sweep
 (40-55 degC) and a detailed hot case (52 degC) show where the strategies actually differ.
 
@@ -110,11 +113,11 @@ def build_path():
 
 # ── Predictive planner (closed form, before flight) ───────────────────────────
 
-def plan_pauses(t_amb, v=V0):
+def plan_pauses(t_amb, v=V0, thresh=T_WARN):
     """Path distances at which T_m would reach T_warn; a pause is inserted there."""
     elems, _ = build_path()
     t_inf, t_inf_turn = t_ss(v, t_amb), t_amb + R_TH * P_TURN
-    assert t_inf_turn < T_WARN, 'hovering alone would enter the warning zone'
+    assert t_inf_turn < thresh, 'hovering alone would enter the warning zone'
     tm, s, pauses = t_amb, 0.0, []
     for e in elems:
         if e[0] == 'turn':
@@ -122,8 +125,8 @@ def plan_pauses(t_amb, v=V0):
             continue
         rem = float(np.linalg.norm(e[2] - e[1]))
         while rem > 1e-12:
-            if t_inf > T_WARN:
-                t_w = TAU * np.log((t_inf - tm) / (t_inf - T_WARN)) if tm < T_WARN else 0.0
+            if t_inf > thresh:
+                t_w = TAU * np.log((t_inf - tm) / (t_inf - thresh)) if tm < thresh else 0.0
             else:
                 t_w = np.inf
             if v * t_w >= rem:
@@ -134,18 +137,18 @@ def plan_pauses(t_amb, v=V0):
                 s += v * t_w
                 rem -= v * t_w
                 pauses.append(s)
-                tm = t_amb + (T_WARN - t_amb) * np.exp(-T_PAUSE / TAU_COOL)
+                tm = t_amb + (thresh - t_amb) * np.exp(-T_PAUSE / TAU_COOL)
     return pauses
 
 
 # ── Simulation engine ─────────────────────────────────────────────────────────
 
-def simulate(strategy, t_amb=T_AMB, reactive_law='hold'):
+def simulate(strategy, t_amb=T_AMB, reactive_law='hold', pred_thresh=T_WARN):
     """Fly the full lawnmower path under one strategy; returns a log dict and an outcome."""
     elems, n_strips = build_path()
     if strategy == 'reactive_max':
         strategy, reactive_law = 'reactive', 'tmax'
-    plan = plan_pauses(t_amb) if strategy == 'predictive' else []
+    plan = plan_pauses(t_amb, thresh=pred_thresh) if strategy == 'predictive' else []
     pi = 0
     tm, clock, s = t_amb, 0.0, 0.0
     pos = elems[0][1].copy()
@@ -235,7 +238,9 @@ def simulate(strategy, t_amb=T_AMB, reactive_law='hold'):
                   (L['y'] >= -1e-9) & (L['y'] <= FIELD_W + 1e-9)), 'left the field'
     assert np.all(L['T'] >= t_amb - 1e-9), 'motor below ambient'
     if strategy == 'predictive':
-        assert L['T'].max() <= T_WARN + 1e-6, 'predictive plan entered the warning zone'
+        assert L['T'].max() <= pred_thresh + 1e-6, 'predictive plan exceeded its threshold'
+    if strategy == 'reactive' and reactive_law == 'tmax':
+        assert L['T'].max() <= T_MAX, 'throttle-to-T_max variant exceeded T_max'
     out = dict(strategy=strategy, t_amb=t_amb, mission_s=clock, peak_T=float(L['T'].max()),
                path_m=s, n_strips=n_strips, **stats)
     return L, out
@@ -247,6 +252,8 @@ def run_simulation():
     for case, ta in (('card', T_AMB), ('hot', T_AMB_HOT)):
         res[case] = {st: simulate(st, ta) for st in STRATEGIES}
     res['card_literal'] = simulate('reactive', T_AMB, reactive_law='card')
+    # fairness check: predictive schedule allowed to use the same 85 degC limit
+    res['pred85_hot'] = simulate('predictive', T_AMB_HOT, pred_thresh=T_MAX)
     sweep = {st: [] for st in STRATEGIES}
     for ta in T_AMB_SWEEP:
         for st in STRATEGIES:
@@ -269,7 +276,7 @@ def plot_temperature_traces(res, out_dir):
         for st in STRATEGIES:
             L, o = res[case][st]
             ax.plot(L['t'] / 60, L['T'], color=COLORS[st], lw=1.2,
-                    label=f"{LABELS[st]} (peak {o['peak_T']:.1f} °C)")
+                    label=f"{LABELS[st]} (peak {o['peak_T']:.2f} °C)")
         ax.axhline(T_MAX, color='k', ls='--', lw=1, label=f'$T_{{max}}$ = {T_MAX:.0f} °C')
         ax.axhline(T_WARN, color='orange', ls=':', lw=1.4, label=f'$T_{{warn}}$ = {T_WARN:.0f} °C')
         ta = T_AMB if case == 'card' else T_AMB_HOT
@@ -572,6 +579,11 @@ if __name__ == '__main__':
         print(f'    {ta:4.0f}: ' + ' / '.join(f'{oo["mission_s"] / 60:6.2f}' for oo in o) +
               f'   peaks {o[0]["peak_T"]:.1f} / {o[1]["peak_T"]:.2f} / {o[2]["peak_T"]:.2f}'
               f'   pauses {o[1]["n_pauses"]} / {o[2]["n_pauses"]} / {o[3]["n_pauses"]}')
+    p85 = res['pred85_hot'][1]
+    print(f'  Fairness check at {T_AMB_HOT:.0f} degC: predictive pauses at T_max instead of T_warn: '
+          f'mission {p85["mission_s"] / 60:.2f} min, {p85["n_pauses"]} pauses, peak '
+          f'{p85["peak_T"]:.2f} degC (throttle to T_max: '
+          f'{res["hot"]["reactive_max"][1]["mission_s"] / 60:.2f} min)')
     for st in ('reactive', 'reactive_max'):
         rx = [res['sweep'][st][i]['mission_s'] - res['sweep']['predictive'][i]['mission_s']
               for i in range(len(T_AMB_SWEEP))]

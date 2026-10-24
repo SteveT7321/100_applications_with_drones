@@ -90,8 +90,8 @@ $$v_{safe}(T_m) = \sqrt{\max\!\left(0,\; \frac{T_{max} - T_m}{R_{th} \cdot k_v} 
 > $$v_{hold}(T_m) = \sqrt{\max\!\left(0,\; \frac{(T_m - T_{amb})/R_{th} - P_{hover}}{k_v}\right)}$$
 >
 > and, as a second variant that uses the 80–85 °C band, the static $v_{safe}$ above (steady
-> state at $T_{max}$). The second variant is the faster one at every ambient temperature from
-> 40 to 55 °C and never exceeds $T_{max}$.
+> state at $T_{max}$). The second variant is at least as fast as every other strategy at every ambient temperature
+> from 40 to 55 °C (all tie at 40–44 °C) and never exceeds $T_{max}$.
 
 ### Cooling Pause Temperature Decay
 
