@@ -75,11 +75,13 @@ E_Z = np.array([0.0, 0.0, 1.0])
 #   <mass value="0.027"/> <inertia ixx="1.4e-5" iyy="1.4e-5" izz="2.17e-5"/>
 # gym-pybullet-drones applies kf, km to rotor speeds in RPM (BaseAviary._dynamics:
 # forces = rpm**2 * KF), so they are converted here to rad/s: k[rad/s] = k[RPM] / (2 pi / 60)^2.
-# Its drag model (BaseAviary._drag) is F_body = -drag_coeff (elementwise) * sum(rotor speed in
-# rad/s) * (R^T v_world), i.e. a per-axis coefficient applied in the body frame to the world
-# velocity rotated into the body frame. This model uses the same form, F_world = -R diag(c) R^T
-# (v - v_wind), with c evaluated once at the hover rotor speed (constant linear drag, N per m/s);
-# the rotor-speed dependence is dropped.
+# Its drag model (BaseAviary._drag, lines 773-774) is F_link = R^T (drag_coeff (elementwise) *
+# v_world) * (-sum(rotor speed in rad/s)), applied in the link (body) frame: the per-axis
+# coefficients act along the WORLD axes and the result is then rotated into the body frame.
+# This model instead applies them along the BODY axes, F_world = -R diag(c) R^T (v - v_wind),
+# with c evaluated once at the hover rotor speed (constant linear drag, N per m/s; the
+# rotor-speed dependence is dropped). The two forms differ only because c_z is 12 % larger than
+# c_xy, i.e. only when the drone is tilted.
 # Not in the URDF (estimates, labelled as such): motor time constant, minimum rotor speed,
 # motor efficiency. Caveat: the URDF km is a yaw-torque coefficient; used as shaft power
 # k_m w^3 it gives ~10 W at hover (figure of merit ~0.11), so Crazyflie energy numbers from this
