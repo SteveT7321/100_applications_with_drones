@@ -191,14 +191,12 @@ def fly_mission(h, v, overlap=0.0, record=False):
         m = max(1, int(np.ceil(d / (V_TRANSIT * 2.0))))
         for q in range(1, m + 1):
             p = a + (b - a) * q / m
-            if record:
-                traj.append((t + d / V_TRANSIT * q / m, p[0], p[1], 1, -1))
+            traj.append((t + d / V_TRANSIT * q / m, p[0], p[1], 1, -1))
         return t + d / V_TRANSIT, batt - d / V_TRANSIT, d / V_TRANSIT
 
     t, batt, dt_ = transit(HOME, pts[0], t, batt)
     t_transit += dt_
-    if record:
-        traj.insert(0, (0.0, HOME[0], HOME[1], 1, -1))
+    traj.insert(0, (0.0, HOME[0], HOME[1], 1, -1))
     for i in range(len(pts) - 1):
         seg = np.linalg.norm(pts[i + 1] - pts[i])
         dt_seg = seg / v
@@ -208,8 +206,7 @@ def fly_mission(h, v, overlap=0.0, record=False):
             t_transit += dt_
             assert batt >= T_RESERVE - 1e-6, 'landed below the battery reserve'
             t += T_SWAP
-            if record:
-                traj.append((t, HOME[0], HOME[1], 2, -1))
+            traj.append((t, HOME[0], HOME[1], 2, -1))
             batt = E_BATT
             sorties += 1
             t, batt, dt_ = transit(HOME, pts[i], t, batt)
@@ -218,15 +215,25 @@ def fly_mission(h, v, overlap=0.0, record=False):
         t_survey += dt_seg
         batt -= dt_seg
         assert batt >= 0.0, 'flying on an empty battery'
-        assert seg / dt_seg <= max(v, V_TRANSIT) + 1e-9, 'speed limit exceeded'
-        if record:
-            traj.append((t, pts[i + 1][0], pts[i + 1][1], 0, strip_of[i]))
+        traj.append((t, pts[i + 1][0], pts[i + 1][1], 0, strip_of[i]))
     t, batt, dt_ = transit(pts[-1], HOME, t, batt)
     t_transit += dt_
     assert batt >= T_RESERVE - 1e-6, 'landed below the battery reserve'
+    # kinematic check on the integrated trajectory: no teleporting, no speeding
+    tr = np.array(traj)
+    dts = np.diff(tr[:, 0])
+    dps = np.linalg.norm(np.diff(tr[:, 1:3], axis=0), axis=1)
+    assert np.all(dts >= 0.0), 'time ran backwards'
+    assert np.all(dps[dts == 0.0] == 0.0), 'position jump without elapsed time'
+    spd = dps[dts > 0] / dts[dts > 0]
+    assert np.all(spd <= V_TRANSIT + 1e-6), 'speed above the transit speed'
+    surv = (tr[1:, 3] == 0) & (tr[:-1, 3] == 0) & (dts > 0)
+    assert np.all(dps[surv] / dts[surv] <= v + 1e-6), 'survey leg above the survey speed'
+    assert np.isclose(tr[-1, 0], t) and np.allclose(tr[-1, 1:3], HOME), 'did not end at home'
     return {
         't_total': t, 't_survey': t_survey, 't_transit': t_transit,
-        'sorties': sorties, 'traj': np.array(traj) if record else None,
+        'sorties': sorties, 'traj': tr if record else None,
+        'max_speed': float(spd.max()),
     }
 
 
@@ -565,7 +572,8 @@ if __name__ == '__main__':
               f"T_mission (card) {r['T_card']:.0f} s = {r['T_card'] / 60:.1f} min")
         print(f"    with battery: {r['mission']['sorties']} sortie(s), total "
               f"{r['mission']['t_total']:.0f} s = {r['mission']['t_total'] / 3600:.2f} h "
-              f"(survey {r['mission']['t_survey']:.0f} s, transit {r['mission']['t_transit']:.0f} s)")
+              f"(survey {r['mission']['t_survey']:.0f} s, transit {r['mission']['t_transit']:.0f} s; max speed on the "
+              f"integrated path {r['mission']['max_speed']:.2f} m/s)")
         print(f"    mean P_d {r['pd_mean']:.4f}; card overlap delta = {r['delta_card']:.3f}")
         print(f"    raw count {r['raw_mean']:.1f} +/- {r['raw_std']:.1f}; corrected "
               f"{r['corr_mean']:.1f} +/- {r['corr_std']:.1f} (model expectation {r['e_corr']:.1f}), "

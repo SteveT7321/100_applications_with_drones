@@ -44,7 +44,7 @@ Its expectation is $\sum_g n_g (1 - c_g) / (1 - \bar c)$. This equals $N^*$ only
 
 ### Battery (added)
 
-The drone launches from the reserve corner (0, 0). Before every 2 m path step it checks that it can still fly home at 12 m/s and land with a 180 s reserve. Otherwise it returns, swaps the battery (300 s) and flies back to where it left off. Assertions check that the battery never runs empty, that it never lands below the reserve and that no step exceeds the speed limit.
+The drone launches from the reserve corner (0, 0). Before every 2 m path step it checks that it can still fly home at 12 m/s and land with a 180 s reserve. Otherwise it returns, swaps the battery (300 s) and flies back to where it left off. Assertions check that the battery never runs empty and never lands below the reserve. After each mission the integrated trajectory (time-stamped positions) is checked as well: time never runs backwards, the drone never moves without elapsed time, no step is faster than the 12 m/s transit speed, survey legs are no faster than the survey speed, and the drone ends at the launch point. The fastest step is 12.00 m/s for all three strategies (printed by the script).
 
 ### Side-overlap sensitivity (added)
 
@@ -87,7 +87,7 @@ conda activate drones
 python src/03_environmental_sar/s057_wildlife.py
 ```
 
-Runtime ≈ 20 s.
+Runtime ≈ 20–55 s (20 s on an idle machine, 35–53 s measured under load).
 
 ---
 
