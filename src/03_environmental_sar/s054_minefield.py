@@ -24,6 +24,7 @@ Usage:
 
 import os
 import heapq
+from concurrent.futures import ProcessPoolExecutor
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
@@ -65,6 +66,7 @@ J_MAX_FACTOR  = 3.0         # J_max = 3 x risk-free cost from the farthest corne
 EVAL_EVERY    = 5.0         # s — escape-path risk sampling interval
 REWEIGHT_EVERY = 10.0       # s — refresh risk weights of active sources
 N_MC          = 15
+MC_WORKERS    = 4             # worker processes for the Monte Carlo
 SEAM_WIDTHS   = [6.8, 6.4]    # m — narrower fixed-strip widths tested against the seams
 MAIN_SEED     = 42
 ANIM_FRAMES   = 90
@@ -230,6 +232,7 @@ class Mission:
         self.strategy = strategy
         self.mines = field['mines']
         self.cum_pd = np.zeros(len(self.mines))
+        self.min_r = np.full(len(self.mines), np.inf)   # closest horizontal approach
         self.alarmed = np.zeros(len(self.mines), dtype=bool)
         self.confirmed = np.zeros(len(self.mines), dtype=bool)
         self.cov = np.zeros((N_CELLS, N_CELLS))            # [y, x]
@@ -278,6 +281,7 @@ class Mission:
         self.n_scanned += int(np.sum((win > SCAN_PD) & ~before))
         # real mines
         rm = np.hypot(self.mines[:, 0] - px, self.mines[:, 1] - py)
+        np.minimum(self.min_r, rm, out=self.min_r)
         pd = gpr_detect_prob(rm)
         self.cum_pd = 1.0 - (1.0 - self.cum_pd) * (1.0 - pd)
         new_al = (~self.alarmed) & (pd > THETA_ALARM)
@@ -287,8 +291,13 @@ class Mission:
         self.alarmed |= new_al
         self.confirmed |= new_cf
         # false alarms: one Bernoulli(P_FA) draw each time the footprint enters a block centre
-        db = np.hypot(self.block_xy[:, 0] - px, self.block_xy[:, 1] - py)
-        inside = db <= R_GPR_MAX
+        nb = self.f['nb']
+        bi = np.clip(np.arange(int(px // FA_BLOCK) - 1, int(px // FA_BLOCK) + 2), 0, nb - 1)
+        bj = np.clip(np.arange(int(py // FA_BLOCK) - 1, int(py // FA_BLOCK) + 2), 0, nb - 1)
+        near = np.unique((bj[:, None] * nb + bi[None, :]).ravel())
+        db = np.hypot(self.block_xy[near, 0] - px, self.block_xy[near, 1] - py)
+        inside = np.zeros(nb * nb, dtype=bool)
+        inside[near] = db <= R_GPR_MAX
         entering = np.where(inside & ~self.in_block)[0]
         for b in entering:
             k = self.block_pass[b]
@@ -569,6 +578,8 @@ class Mission:
             'coverage': self.cov_survey, 'n_mines': len(self.mines),
             'detected': int(detected.sum()), 'confirmed': int(self.confirmed.sum()),
             'missed': int((~detected).sum()),
+            'miss_seam': int(np.sum(~detected & (self.min_r <= R_GPR_MAX))),
+            'miss_far': int(np.sum(~detected & (self.min_r > R_GPR_MAX))),
             'fa_raised': len(self.fa_xy), 'fa_unresolved': int(self.fa_active.sum()),
             'esc_mean': float(el[:, 1].mean()), 'esc_mean_max': float(el[:, 1].max()),
             'esc_max_max': float(el[:, 2].max()),
@@ -593,14 +604,22 @@ def run_simulation():
     start = cell_of(np.array([150.0, 150.0]))
     d_dij = float(mr.esc_d[start])
     d_ast = float(astar_cost(mr.risk, start, cell_of(ENTRY_POINT)))
+    # Monte Carlo fields run in worker processes; results are collected in seed order, so the
+    # output does not depend on the number of workers (each field is fully seeded)
     mc = {s: [] for s in STRATS}
-    for seed in range(N_MC):
-        fld = make_field(seed)
-        for s in STRATS:
-            mc[s].append(Mission(fld, s).run())
-        for w in SEAM_WIDTHS:
-            mc.setdefault(('fixed', w), []).append(Mission(fld, 'fixed', strip_width=w).run())
+    with ProcessPoolExecutor(max_workers=MC_WORKERS) as ex:
+        for res in ex.map(mc_field, range(N_MC)):
+            for key, r in res:
+                mc.setdefault(key, []).append(r)
     return field, main, missions, mc, (d_dij, d_ast)
+
+
+def mc_field(seed):
+    """All Monte Carlo missions on one field (same field and false-alarm draws for each)."""
+    fld = make_field(seed)
+    out = [(s, Mission(fld, s).run()) for s in STRATS]
+    out += [(('fixed', w), Mission(fld, 'fixed', strip_width=w).run()) for w in SEAM_WIDTHS]
+    return out
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -919,6 +938,14 @@ if __name__ == '__main__':
               f"coverage {100 * a['coverage'].mean():.2f}%, missed {a['missed'].mean():.2f} +- {a['missed'].std():.2f} "
               f"(8 m strips: {miss8.mean():.2f}); fewer than 8 m in {int(np.sum(a['missed'] < miss8))}, "
               f"equal {int(np.sum(a['missed'] == miss8))}, more {int(np.sum(a['missed'] > miss8))} of {N_MC}")
+    for key, lab in (('fixed', '8.0'),) + tuple((('fixed', w), f'{w:.1f}') for w in SEAM_WIDTHS):
+        runs = mc[key]
+        tot = sum(r['missed'] for r in runs)
+        seam = sum(r['miss_seam'] for r in runs)
+        far = sum(r['miss_far'] for r in runs)
+        print(f"  Missed mines with {lab} m strips over {N_MC} fields: {tot}; closest approach "
+              f"{R_GPR / np.sqrt(2 * np.log(2)):.2f}-{R_GPR_MAX:.0f} m (seam, seen but never alarmed) {seam}, "
+              f"> {R_GPR_MAX:.0f} m (never in GPR range, left unflown by the 95 % stop) {far}")
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
