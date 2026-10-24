@@ -154,7 +154,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-5"></a>
-<details open><summary><b>5 · Special Ops & Entertainment</b> — 6/20 done</summary>
+<details open><summary><b>5 · Special Ops & Entertainment</b> — 10/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -165,12 +165,12 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S085 | [Drone Light Matrix Positioning](outputs/05_special_entertainment/s085_light_matrix/README.md) | [card](scenarios/05_special_entertainment/S085_light_matrix.md) |  |
 | S086 | [Cooperative Multi-Angle Filming](outputs/05_special_entertainment/s086_multi_angle_cinema/README.md) | [card](scenarios/05_special_entertainment/S086_multi_angle_cinema.md) |  |
 | S087 | [Aerial Light Show Text Display](outputs/05_special_entertainment/s087_led_text/README.md) | [card](scenarios/05_special_entertainment/S087_led_text.md) |  |
-| S088 | Formation Geometric Shape Morphing *(planned)* | [card](scenarios/05_special_entertainment/S088_formation_morphing.md) |  |
-| S089 | Large-Scale Swarm Collision Avoidance Test *(planned)* | [card](scenarios/05_special_entertainment/S089_collision_avoidance.md) |  |
+| S088 | [Formation Geometric Shape Morphing](outputs/05_special_entertainment/s088_formation_morphing/README.md) | [card](scenarios/05_special_entertainment/S088_formation_morphing.md) |  |
+| S089 | [Large-Scale Swarm Collision Avoidance Test](outputs/05_special_entertainment/s089_collision_avoidance/README.md) | [card](scenarios/05_special_entertainment/S089_collision_avoidance.md) |  |
 | S090 | Racing Drone Optimal Path *(planned)* | [card](scenarios/05_special_entertainment/S090_racing_optimal.md) |  |
 | S091 | Aerial Acrobatic Maneuvers *(planned)* | [card](scenarios/05_special_entertainment/S091_acrobatics.md) |  |
-| S092 | Movie Car Chase Scene *(planned)* | [card](scenarios/05_special_entertainment/S092_movie_chase.md) |  |
-| S093 | Earthquake Rubble Search and Rescue *(planned)* | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
+| S092 | [Movie Car Chase Scene](outputs/05_special_entertainment/s092_movie_chase/README.md) | [card](scenarios/05_special_entertainment/S092_movie_chase.md) |  |
+| S093 | [Earthquake Rubble Search and Rescue](outputs/05_special_entertainment/s093_rubble_sar/README.md) | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
 | S094 | [Aerial Ball Catching](outputs/05_special_entertainment/s094_ball_catching/README.md) | [card](scenarios/05_special_entertainment/S094_ball_catching.md) |  |
 | S095 | Water Surface Landing Simulation *(planned)* | [card](scenarios/05_special_entertainment/S095_water_landing.md) |  |
 | S096 | Drone Relay Race *(planned)* | [card](scenarios/05_special_entertainment/S096_relay_race.md) |  |
@@ -241,8 +241,8 @@ drones/
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 20 | 20 |
 | Industrial & Agriculture | 20 | 20 |
-| Special Ops & Entertainment | 6 | 20 |
-| **Total** | **86** | **100** |
+| Special Ops & Entertainment | 10 | 20 |
+| **Total** | **90** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
