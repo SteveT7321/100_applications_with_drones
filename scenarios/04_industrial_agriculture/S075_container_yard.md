@@ -1,6 +1,6 @@
 # S075 Port Container Yard Inventory
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: RRT* Path Planning + Scan Dwell Scheduling | **Dimension**: 3D
 
 ---
@@ -10,7 +10,8 @@
 **Setup**: A single drone performs a full inventory audit of a $100 \times 80\ \text{m}$ container
 yard. Fifty ISO-standard shipping containers (each $6 \times 2.5 \times 2.5\ \text{m}$) are
 arranged in six rows; individual stacks reach 1, 2, or 3 containers high (maximum stack height
-$7.5\ \text{m}$). Containers are separated by $3\ \text{m}$-wide aisles in the $y$-direction and
+$7.5\ \text{m}$). Containers are separated by $7.5$–$9.5\ \text{m}$-wide aisles in the $y$-direction (row origins
+below; earlier versions of this card said 3 m) and
 $4\ \text{m}$ gaps in the $x$-direction. The drone must visit one barcode scan position per
 container face, for a total of $N_{scan} = 50$ scan waypoints, each centred $0.8\ \text{m}$ in
 front of the target face at the midpoint of the container's long axis and at the height of the
@@ -28,7 +29,8 @@ dwell timer starts, adding a stabilisation overhead of up to $T_{stab} = 0.8\ \t
 - **Drone**: single UAV executing an RRT*-planned trajectory at $v_{scan} = 1.0\ \text{m/s}$
   with a double-integrator dynamics model and GPS noise.
 - **Containers**: 50 static box obstacles, each an axis-aligned rectangular prism in the
-  workspace $\mathcal{W} = [0, 100] \times [0, 80] \times [0, 7.5]\ \text{m}$.
+  workspace $\mathcal{W} = [0, 100] \times [0, 80] \times [0, 10]\ \text{m}$ (`YARD_Z = 10`; with a
+  7.5 m ceiling the drone could not pass over a 3-tier stack).
 - **Scan positions**: 50 waypoints (one per container face), derived offline from the known yard
   layout and ordered by a nearest-neighbour scan schedule.
 
@@ -119,7 +121,7 @@ $\alpha = 0.3$ along the incoming and outgoing edge directions.
 
 ### A* on 3D Grid (Comparison Baseline)
 
-The workspace is discretised into a $200 \times 160 \times 15$ grid at $\Delta_{grid} = 0.5\ \text{m}$
+The workspace is discretised into a $200 \times 160 \times 20$ grid at $\Delta_{grid} = 0.5\ \text{m}$
 resolution. A* searches a 26-connected graph with:
 
 $$f(n) = g(n) + h(n)$$
@@ -611,7 +613,10 @@ def run_simulation():
   10 fps, saved as
   `outputs/04_industrial_agriculture/s075_container_yard/s075_container_yard.gif`.
 
-Terminal metrics printed at completion:
+Terminal metrics printed at completion (illustrative values from the original card; **not
+reproducible**: the straight-line tour through the 50 scan points in this order is already
+567.0 m, so no collision-free path can be 312.4 m long. See the outputs README for the
+simulated values):
 
 ```
 Metric                              RRT*           A*
