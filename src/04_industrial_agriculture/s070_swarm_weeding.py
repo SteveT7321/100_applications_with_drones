@@ -82,16 +82,18 @@ def path_length(p):
     return float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
 
 
-def detect(weeds, rng, layout='formula'):
+def detect(weeds, eta, u, layout='formula'):
     """One Bernoulli(P_DETECT) draw per (pass, weed) encounter. An encounter happens
-    when the GPS-noisy lateral distance of the pass to the weed is <= r_s."""
+    when the GPS-noisy lateral distance of the pass to the weed is <= r_s.
+    eta, u: (N_DRONES, MAX_PASSES, W) shared N(0,1) / U(0,1) draws; pass j of drone i uses
+    eta[i, j], u[i, j] in every layout (common random numbers)."""
     det = np.zeros(len(weeds), dtype=bool)
     n_enc = np.zeros(len(weeds), dtype=int)
     for i in range(N_DRONES):
-        for y in pass_positions(i, layout):
-            lat = np.abs(weeds[:, 1] - (y + SIGMA_GPS * rng.standard_normal(len(weeds))))
+        for j, y in enumerate(pass_positions(i, layout)):
+            lat = np.abs(weeds[:, 1] - (y + SIGMA_GPS * eta[i, j]))
             enc = lat <= R_SENSE
-            hit = enc & (rng.random(len(weeds)) < P_DETECT)
+            hit = enc & (u[i, j] < P_DETECT)
             n_enc += enc
             det |= hit
     return det, n_enc
@@ -159,10 +161,12 @@ def route_cost(ends, w, assign):
 
 # ── Hover ────────────────────────────────────────────────────────────────────
 
-def pid_hover(z0, zn, kd):
-    """Vectorised card PID (velocity command, pos += u dt) for many hovers.
-    z0: (H,2) N(0,1) start offsets; zn: (H,S,2) N(0,1) GPS noise. Returns RMS and traj."""
-    pos = START_SD * z0
+def pid_hover(z0, zn, kd, start_sd=START_SD):
+    """Vectorised card PID (velocity command, pos += u dt) for many hovers. The velocity
+    command is saturated at the cruise speed V. z0: (H,2) N(0,1) start offsets;
+    zn: (H,S,2) N(0,1) GPS noise. Returns RMS, trajectory and the fraction of saturated steps."""
+    pos = start_sd * z0
+    n_sat = 0
     integ = np.zeros_like(pos)
     prev = -pos
     traj = [pos.copy()]
@@ -170,12 +174,18 @@ def pid_hover(z0, zn, kd):
         e = -(pos + SIGMA_GPS * zn[:, k])
         integ += e * DT
         u = KP * e + KI * integ + kd * (e - prev) / DT
+        un = np.linalg.norm(u, axis=1, keepdims=True)
+        sat = un > V
+        n_sat += int(sat.sum())
+        u = np.where(sat, u * V / np.maximum(un, 1e-12), u)
+        assert np.all(np.linalg.norm(u, axis=1) <= V + 1e-9), 'hover speed above limit'
         pos = pos + u * DT
+        assert np.all(np.isfinite(pos)) and np.all(np.abs(pos) < 2.0), 'hover diverged'
         prev = e
         traj.append(pos.copy())
     traj = np.stack(traj, axis=1)
     rms = np.sqrt(np.mean(np.sum(traj ** 2, axis=2), axis=1))
-    return rms, traj
+    return rms, traj, n_sat / max(1, zn.shape[0] * zn.shape[1])
 
 
 # ── Simulation ───────────────────────────────────────────────────────────────
@@ -183,8 +193,11 @@ def pid_hover(z0, zn, kd):
 def run_trial(seed):
     rng = np.random.default_rng(seed)
     weeds = rng.uniform(0, FIELD, size=(N_WEEDS, 2))
-    det, n_enc = detect(weeds, rng)
-    det_card, _ = detect(weeds, np.random.default_rng(seed + 10_000), layout='card')
+    max_passes = max(len(pass_positions(0, l)) for l in ('formula', 'card'))
+    eta = rng.standard_normal((N_DRONES, max_passes, N_WEEDS))
+    u = rng.random((N_DRONES, max_passes, N_WEEDS))
+    det, n_enc = detect(weeds, eta, u)
+    det_card, _ = detect(weeds, eta, u, layout='card')     # same draws (CRN)
     ends = np.array([sweep_path(i)[-1] for i in range(N_DRONES)])
     idx = np.where(det)[0]
     w = weeds[idx]
@@ -204,8 +217,14 @@ def run_trial(seed):
     n_steps = int(round(T_TREAT / DT))
     z0 = rng.standard_normal((len(idx), 2))
     zn = rng.standard_normal((len(idx), n_steps, 2))
-    out['rms_pid'], out['traj_pid'] = pid_hover(z0, zn, KD)
-    out['rms_pi'], _ = pid_hover(z0, zn, 0.0)
+    out['rms_pid'], out['traj_pid'], out['sat_pid'] = pid_hover(z0, zn, KD)
+    out['rms_pi'], _, out['sat_pi'] = pid_hover(z0, zn, 0.0)
+    out['rms_pid0'], _, _ = pid_hover(z0, zn, KD, start_sd=0.0)    # no arrival offset
+    out['rms_pi0'], _, _ = pid_hover(z0, zn, 0.0, start_sd=0.0)
+    # physical invariants of the routes (X4): positions inside the field, legs flown at V
+    for s in STRATS:
+        assert out[s]['dist'].min() >= 0 and np.all(np.isfinite(out[s]['times']))
+    assert np.all((weeds >= 0) & (weeds <= FIELD)) and np.all((ends >= 0) & (ends <= FIELD))
     return out
 
 
@@ -432,14 +451,28 @@ if __name__ == '__main__':
     print(f'Detected weeds (per-pass Bernoulli, formula layout): {_ms(det)} / {N_WEEDS} '
           f'({100 * det.mean() / N_WEEDS:.2f} %); weeds with >= 2 encounters {100 * enc2:.2f} %, '
           f'with none {100 * enc0:.2f} %')
-    print(f'Detected weeds with the card code pass layout (3 m arange): {_ms(detc)} / {N_WEEDS} '
-          f'({100 * detc.mean() / N_WEEDS:.2f} %)')
+    print(f'Weeds missed in Phase 1: {100 * (1 - det.mean() / N_WEEDS):.2f} %')
+    print(f'Detected weeds with the card code pass layout (3 m arange; same draws as above, '
+          f'CRN): {_ms(detc)} / {N_WEEDS} ({100 * detc.mean() / N_WEEDS:.2f} %); fewer than the '
+          f'formula layout in {int(np.sum(detc < det))}/{N_TRIALS} trials, more in '
+          f'{int(np.sum(detc > det))}')
     print(f'Card code per-step Bernoulli (every {DT} s in range): mean detection probability '
           f'{per_step_detection_prob():.4f}')
     rp = np.concatenate([t['rms_pid'] for t in trials])
     ri = np.concatenate([t['rms_pi'] for t in trials])
     tail = np.concatenate([np.sqrt(np.mean(np.sum(t['traj_pid'][:, 21:] ** 2, axis=2), axis=1))
                            for t in trials])
+    sat_pid = np.mean([t['sat_pid'] for t in trials])
+    sat_pi = np.mean([t['sat_pi'] for t in trials])
+    print(f'Hover velocity command saturated at {V} m/s in {100 * sat_pid:.2f} % of PID steps, '
+          f'{100 * sat_pi:.2f} % of PI steps')
+    rp0 = np.concatenate([t['rms_pid0'] for t in trials])
+    ri0 = np.concatenate([t['rms_pi0'] for t in trials])
+    print(f'Ablation without the 0.3 m arrival offset: card PID RMS {rp0.mean():.4f} m '
+          f'(<= 0.15 m: {100 * np.mean(rp0 <= EPS_POS):.2f} %), PI {ri0.mean():.4f} m '
+          f'(<= 0.15 m: {100 * np.mean(ri0 <= EPS_POS):.2f} %)')
+    print(f'Card sigma_hover formula sigma / sqrt(1 + 2 Kp / Kd) = '
+          f'{SIGMA_GPS / np.sqrt(1 + 2 * KP / KD):.4f} m (card states 0.06 m)')
     print(f'Hover RMS over 2 s ({len(rp)} hovers): card PID {rp.mean():.4f} m '
           f'(<= 0.15 m: {100 * np.mean(rp <= EPS_POS):.2f} %), PI Kd=0 {ri.mean():.4f} m '
           f'(<= 0.15 m: {100 * np.mean(ri <= EPS_POS):.2f} %); card PID over the last 1 s '

@@ -126,26 +126,33 @@ Expected number of weeds treated: $\mathbb{E}[W_{treated}] = W \cdot P_{success}
 
 > **Corrected (2026-10, implementation review; 200-trial Monte Carlo).**
 > (1) $1 - \exp(-0.15^2 / (2 \cdot 0.06^2)) = 0.956$, not 0.997.
-> (2) The stated $\sigma_{hover}$ formula does not hold for the given loop. With the card's code
-> (velocity command $\mathbf p \mathrel{+}= \mathbf u\,\Delta t$, derivative of the noisy error,
-> 0.3 m arrival offset), the RMS over the 2 s dwell is 0.191 m (0.110 m over the last second).
-> Only 33.3 % of hovers meet 0.15 m; dropping the derivative term gives 0.137 m and 61.5 %.
-> The simulated number of weeds treated is 8.6 per trial, not 25.4.
+> (2) The stated formula $\sigma_{hover} = \sigma_{GPS}/\sqrt{1 + 2K_p/K_d}$ gives 0.0333 m, not
+> 0.06 m. The card's code adds a 0.3 m arrival offset. The implementation simulates that code
+> (velocity command $\mathbf p \mathrel{+}= \mathbf u\,\Delta t$, derivative of the noisy error) and
+> adds a 1 m/s velocity limit. Results:
+> - With the offset, the RMS over the 2 s dwell is 0.236 m and only 25.9 % of hovers meet 0.15 m.
+>   Without the derivative term (PI) it is 0.141 m and 61.2 %.
+> - Without the offset, both controllers meet 0.15 m in 100 % of hovers (PID 0.057 m, PI 0.030 m).
+> - So the failures come from the arrival transient inside the 2 s window. The derivative term
+>   adds noise and saturates the velocity command, which slows that transient.
+> - The simulated number of weeds treated is 6.7 per trial (PID) or 15.7 (PI), not 25.4.
+>
 > (3) The card's code places passes with `arange(y_min + 1.5, y_max, 3.0)`, which gives 4 passes and
 > leaves a 1.33 m unswept band (10 % of each strip). The formula
 > $\lceil L_{strip}/\delta_s \rceil = 5$ passes, evenly spaced at 2.67 m, covers the strip.
+>
 > (4) The card's code draws a Bernoulli trial every 0.05 s while a weed is in range, which makes the
 > detection probability about 1.0; the per-pass model in the text (one draw per encounter) gives
-> 86.1 %.
+> 85.7 %.
 
 ### Phase 2 Travel Cost Comparison
 
 > **Note (2026-10 review).** The Hungarian cost uses only the distance from each drone's
 > end-of-sweep position, while the travel is a sequential route. It therefore does not minimise the
-> route length: the greedy baseline is 12 % shorter on average ($\rho = 0.877$; $\rho \ge 1$ in only
-> 8 of 200 trials). Because of its $K_{max}$ load cap, Hungarian does give a much shorter makespan
-> (90.6 s against 136.5 s). Visiting the weeds in the solver's output order, as the card's code
-> does, doubles the distance.
+> route length: greedy is shorter on average ($\rho = 0.878$; $\rho \ge 1$ in only 7 of 200 trials).
+> Because of its $K_{max}$ load cap, Hungarian does give a much shorter makespan (90.2 s against
+> 142.0 s). Visiting the weeds in the solver's output order, as the card's code does, more than
+> doubles the distance.
 
 Define the total Phase 2 travel distance for assignment strategy $s$:
 
