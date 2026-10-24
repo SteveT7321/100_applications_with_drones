@@ -1,6 +1,6 @@
 # S054 3D Upgrade — Minefield Detection
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S054 original](../S054_minefield.md)
 
 ---
@@ -66,7 +66,8 @@ mission has two operational phases:
   entry/exit waypoint at $(100, 0, h_{terrain}(100, 0) + z_{AGL}^{cmd})$.
 
 **Comparison strategies**:
-1. **Fixed altitude 2D baseline** — constant world-frame $z = 3$ m (same as S054 original);
+1. **Fixed altitude 2D baseline** — constant world-frame $z$, 3 m above the highest ground
+   (the S054 altitude; $z = 3$ m above the datum would hit terrain up to 5 m high);
    flat GPR model; no terrain following.
 2. **Constant AGL, survey altitude** — terrain-following at $z_{AGL}^* $; altitude-sensitive
    GPR; single-pass survey only (no confirmation pass).
@@ -98,7 +99,8 @@ $$r_{gpr}(z_{AGL}) = r_0 \cdot \exp\!\left(-\frac{z_{AGL}}{H_{ref}}\right)$$
 
 where $r_0 = 5.0$ m is the reference radius at ground level and $H_{ref} = 4.0$ m is the
 altitude decay constant (approximately one antenna footprint width). At the nominal survey
-altitude $z_{AGL}^{*}$ this gives $r_{gpr}(z_{AGL}^{*}) \approx 4$ m, matching the 2D model.
+altitude $z_{AGL}^{*} = 1.0$ m this gives $r_{gpr} = 3.89$ m; the 2D value of 4 m is reached at
+$z_{AGL} = H_{ref}\ln(r_0/4) = 0.89$ m (correction 2026-10-24).
 
 The instantaneous single-step detection probability:
 
@@ -132,8 +134,11 @@ The optimal scan altitude is:
 $$z_{AGL}^{*} = \arg\max_{z_{AGL} \in [z_{min},\, z_{max}]} \eta(z_{AGL})$$
 
 with $z_{min} = 1.0$ m and $z_{max} = 6.0$ m. In practice $z_{AGL}^{*}$ is found by
-numerical line-search (golden-section or scipy `minimize_scalar`); typical value is
-$z_{AGL}^{*} \approx 2.5$ m.
+numerical line-search (golden-section or scipy `minimize_scalar`). Every factor of the
+integrand decreases with altitude, so $\eta$ is monotonically decreasing and the optimum is the
+lower bound, $z_{AGL}^{*} = z_{min} = 1.0$ m ($\eta$ = 29.2 m² against 5.83 m² at 2.5 m). The
+earlier value "≈ 2.5 m" was wrong: above 2.19 m AGL the single-step $P_d$ directly below the
+drone is below $\theta_{alarm}$, so no alarm can ever be raised (correction 2026-10-24).
 
 ### Terrain-Following Controller
 
@@ -192,7 +197,8 @@ $$\Delta t_{detour} = \frac{\|\mathbf{p}_{detour} - \mathbf{p}_{current}\|_{xy}}
   + \frac{|z_{AGL}^{lo} - z_{AGL}^{cmd}|}{\dot{z}_{max}} + t_{hover}$$
 
 At $z_{AGL}^{lo} = 1.5$ m the peak single-step detection probability rises to:
-$G(1.5) \approx 0.84$ and $r_{gpr}(1.5) \approx 4.7$ m, so $P_d^{cum}$ reaches
+$G(1.5) = 0.932$ and $r_{gpr}(1.5) = 3.44$ m (corrected from 0.84 and 4.7 m), single-step $P_d$ directly
+below = 0.865, so $P_d^{cum}$ reaches
 $\theta_{confirm} = 0.95$ within $\lceil 2\,r_{gpr}^{lo} / (v_{xy}\,\Delta t) \rceil$ steps.
 
 ### Risk Map and A* Replanning
@@ -211,7 +217,7 @@ A* escape path cost and replanning triggers are identical to S054.
 ## Key 3D Additions
 
 - **Altitude-sensitive GPR model**: $P_d(\rho, z_{AGL}) = \bigl(1 - e^{-r_{gpr}(z_{AGL})^2 / 2\rho^2}\bigr) \cdot G(z_{AGL})$; both footprint radius and gain decay with altitude.
-- **Optimal scan altitude search**: numerical maximisation of $\eta(z_{AGL}) = \pi r_{gpr}^2 \cdot \bar{P}_d$ over $z_{AGL} \in [1, 6]$ m; result $z_{AGL}^* \approx 2.5$ m.
+- **Optimal scan altitude search**: numerical maximisation of $\eta(z_{AGL}) = \pi r_{gpr}^2 \cdot \bar{P}_d$ over $z_{AGL} \in [1, 6]$ m; result $z_{AGL}^* = 1.0$ m (the lower bound; corrected from ≈ 2.5 m).
 - **Terrain-following controller**: rate-saturated first-order tracker on $z_{cmd}(x,y) = h_{terrain}(x,y) + z_{AGL}^{cmd}$; bounds AGL error to $< 0.78$ m for slopes $\leq 15°$.
 - **Multi-pass confirmation detour**: low-altitude ($z_{AGL}^{lo} = 1.5$ m) confirmation pass inserted on first alarm; resumes boustrophedon strip after confirmation or timeout.
 - **Full 3D trajectory**: $(x, y, z)$ state with 3D path visualisation and per-step AGL altitude logging.
@@ -230,7 +236,7 @@ A* escape path cost and replanning triggers are identical to S054.
 | AGL altitude range $[z_{min}, z_{max}]$ | 1.0 – 6.0 m |
 | Reference GPR radius $r_0$ | 5.0 m |
 | Altitude decay constant $H_{ref}$ | 4.0 m |
-| Optimal scan altitude $z_{AGL}^*$ | $\approx$ 2.5 m (computed) |
+| Optimal scan altitude $z_{AGL}^*$ | 1.0 m (computed; the lower bound — corrected from ≈ 2.5 m) |
 | Confirmation altitude $z_{AGL}^{lo}$ | 1.5 m |
 | Hover time at confirmation point $t_{hover}$ | 2 s |
 | Alarm threshold $\theta_{alarm}$ | 0.50 |
@@ -240,7 +246,7 @@ A* escape path cost and replanning triggers are identical to S054.
 | Risk caution threshold $R_{caution}$ | 0.40 |
 | A* risk penalty weight $\alpha$ | 50 |
 | Number of mines $N_{mine}$ | $\mathcal{U}\{8, 20\}$, default 15 |
-| Strip width | 8 m (based on $r_{gpr}(z_{AGL}^*)$) |
+| Strip width | 8 m (card); seam-free width at $z^*$ = 2 × alarm radius = 6.15 m |
 | Grid resolution | 1 × 1 m |
 | Safe zone entry point | (100, 0) m |
 
