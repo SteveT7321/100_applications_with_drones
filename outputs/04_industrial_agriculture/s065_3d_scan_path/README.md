@@ -20,7 +20,7 @@
    - a **structured ring** pattern: one lap around the building per strip altitude, then a roof boustrophedon;
    - **NN + 2-opt**.
 
-   Metrics: flown length, mission time and the number of legs that would cut through the building.
+   Metrics: flown length, mission time and the number of legs that enter a 1 m safety margin around the building.
 2. **GPS robustness.** The plan puts the overlaps exactly at, or just above, the required 60 % / 30 %. How often does GPS error at the capture points (σ = 0.05–0.5 m) push them below the requirement, and how much does the GSD move?
 
 ---
@@ -51,7 +51,7 @@ $$B_x = w(1 - p_x) = 1.386\text{ m},\qquad \Delta z = h(1 - p_z) = 1.740\text{ m
 
 ### Collision test and flight time (added)
 
-Every leg is tested against the building inflated by 1 m, using the slab method. A leg that would pass through it is flown as a detour instead: climb to 14 m, cross over, descend. Detours are counted.
+Every leg is tested against the building inflated by 1 m, using the slab method. A leg that would enter this margin is flown as a detour instead: climb to 14 m, cross over, descend. Detours are counted, and for each flagged leg the script prints its zones and its minimum distance to the real (un-inflated) building.
 
 Mission time is computed two ways:
 
@@ -107,7 +107,7 @@ Runtime ≈ 30 s (measured with other simulations running in parallel).
 
 ## Results
 
-| Ordering | Straight-line length | Legs through building | Flown length | Time, card formula | Time, 1 m/s² accel | Longest segment | Total climb |
+| Ordering | Straight-line length | Legs inside the 1 m margin | Flown length | Time, card formula | Time, 1 m/s² accel | Longest segment | Total climb |
 |---|---:|:-:|---:|---:|---:|---:|---:|
 | Structured rings | 698.8 m | 0 | 698.8 m | 1394.8 s (23.2 min) | 1857.8 s (31.0 min) | 4.6 m | 12.0 m |
 | NN-TSP (card) | 670.0 m | **2** | 679.4 m | 1375.4 s (22.9 min) | 1842.4 s (30.7 min) | 13.7 m | 36.4 m |
@@ -119,22 +119,27 @@ GPS Monte Carlo (facade captures, 200 draws per σ):
 
 | σ_GPS | Pairs with forward overlap < 60 % | < 50 % | Min forward overlap | Pairs with side overlap < 30 % | Min side overlap | Max GSD |
 |---|---:|---:|---:|---:|---:|---:|
-| 0.05 m | 29.6 % | 0.00 % | 50.0 % | 49.9 % | 17.9 % | 0.882 mm |
-| 0.10 m | 39.5 % | 0.47 % | 43.6 % | 50.0 % | 1.8 % | 0.938 mm |
-| 0.20 m | 44.5 % | 9.54 % | 18.1 % | 49.9 % | −20.3 % | 1.066 mm |
-| 0.50 m | 47.9 % | 30.15 % | −78.3 % | 50.2 % | −163.1 % | 1.379 mm |
+| 0.05 m | 29.6 % | 1 of 62400 (0.002 %) | 49.955 % | 49.9 % | 17.9 % | 0.882 mm |
+| 0.10 m | 39.5 % | 291 of 62400 (0.466 %) | 43.580 % | 50.0 % | 1.8 % | 0.938 mm |
+| 0.20 m | 44.5 % | 5954 of 62400 (9.542 %) | 18.114 % | 49.9 % | −20.3 % | 1.066 mm |
+| 0.50 m | 47.9 % | 18816 of 62400 (30.154 %) | −78.342 % | 50.2 % | −163.1 % | 1.379 mm |
 
 **Key findings**:
 
-- **The card's NN tour is not flyable as planned.** Twice it jumps from a facade strip straight to a roof capture on the far side (West → Roof and North → Roof), cutting through the building. With the two up-over-down detours, its flown length is 679.4 m. 2-opt removes both crossings and gives the shortest safe tour: 659.7 m, 5.6 % shorter than the rings.
+- **The card's NN tour violates the safety margin twice.** Twice it jumps from a facade strip straight up to a roof capture.
+  - Leg 167, West → Roof, climbs from the West facade at z = 4.48 m to the adjacent roof edge and passes 0.996 m from the building.
+  - Leg 415, North → Roof, runs from the top North strip, at z = 9.70 m, to a roof capture near the middle of the roof and clears the roof edge by only 0.409 m.
+  - Neither leg crosses the building itself, but both enter the 1 m safety margin.
+  - With the two up-over-down detours, the NN flown length is 679.4 m.
+  - 2-opt removes both legs and gives the shortest tour that respects the margin: 659.7 m, 5.6 % shorter than the rings.
 - **The ordering matters little for mission time.** Every plan includes the same 464 × 1.5 s of hovering. Once each leg also starts and stops with a 1 m/s² acceleration, the three plans all take about 31 min, from 1818.7 s (2-opt) to 1857.8 s (rings). The structured rings are the slowest, but only slightly, and need no TSP solver. They also climb only 12.0 m in total, against 32.7–36.4 m for the TSP tours, which fly up and down between strips. For battery planning the simpler pattern is nearly as good.
-- **The planned overlaps leave no margin for GPS error.** Side overlap is planned at exactly 30.0 %, so about half of the strip pairs (49.9–50.2 %) fall below 30 % at any noise level. At the card's σ_GPS = 0.1 m, 39.5 % of neighbouring captures fall below 60 % forward overlap, and 0.47 % below 50 %. The card's extension asks for the largest σ that never drops below 50 % forward overlap: in these draws that is σ = 0.05 m (minimum 50.0 %). Planning with a margin (for example 70 % / 40 %) or RTK positioning is needed.
+- **The planned overlaps leave no margin for GPS error.** Side overlap is planned at exactly 30.0 %, so about half of the strip pairs (49.9–50.2 %) fall below 30 % at any noise level. At the card's σ_GPS = 0.1 m, 39.5 % of neighbouring captures fall below 60 % forward overlap, and 0.47 % below 50 %. The card's extension asks for the largest σ that never drops below 50 % forward overlap: none of the tested values satisfies this on these draws. Even at σ = 0.05 m one of 62,400 pairs reaches 49.955 %, so the answer lies at or just below 0.05 m and depends on the random draw. Planning with a margin (for example 70 % / 40 %) or RTK positioning is needed.
 - **GSD is never the binding constraint.** The worst GSD is 1.379 mm even at σ = 0.5 m, far below 2 cm.
 - **Card numbers corrected**: GSD is 0.083 cm, not 0.83 cm (the card's arithmetic was off by a factor of 10). There are 464 waypoints, not 312. The NN tour is 670.0 m (card formula time 1366.0 s), not 487.3 m / 955.3 s.
 
 ### Waypoints and Flown Paths
 
-The 464 captures coloured by zone, with the flown path of each ordering. The NN panel shows its two detours climbing over the building:
+The 464 captures coloured by zone, with the flown path of each ordering. The NN panel shows its two detours climbing over the building's safety margin:
 
 ![Waypoints and paths](./waypoints_paths.png)
 
@@ -146,7 +151,7 @@ Capture centres and their 3.46 × 2.49 m footprints on each facade (grey); the d
 
 ### Ordering Comparison
 
-Flown length, acceleration-limited mission time, legs through the building, and straight-line leg length grouped by the zone each leg starts from:
+Flown length, acceleration-limited mission time, legs inside the 1 m safety margin, and straight-line leg length grouped by the zone each leg starts from:
 
 ![Ordering comparison](./ordering_comparison.png)
 
@@ -169,7 +174,7 @@ The NN + 2-opt tour (the shortest without detours), with four captures per frame
 | GSD = 0.0083 m ≈ 0.83 cm | 0.825 mm = 0.083 cm | Arithmetic error in the card (verified: 0.0528 / 64 = 0.000825 m). Card corrected. |
 | Expected 312 waypoints, 487.3 m, 955.3 s | 464 waypoints; NN 670.0 m, 1366.0 s (card formula, straight legs) | The card's own generation code gives 4 × 6 × (16 or 12) + 8 × 16 = 464. Card corrected. |
 | Single ordering (NN-TSP); no comparison | Comparison of structured rings, NN-TSP and NN + 2-opt, plus a GPS Monte Carlo | The card had no comparison question; one was added to the card (ordering and GPS robustness, the latter from extension 4). |
-| Legs may pass through the building | Legs through the building inflated by 1 m are replaced by up-over-down detours at 14 m and counted | X4: no flying through the building. |
+| No clearance rule for legs | Legs that enter a 1 m margin around the building are replaced by up-over-down detours at 14 m and counted; the minimum clearance of each flagged leg is printed | X4: keep a safety distance from the structure. The two NN legs come within 0.996 m and 0.409 m without touching it. |
 | $T = L/v + N t_{cap}$ | Reported, plus a 1 m/s² acceleration-limited time | Rest-to-rest legs of 1.3 m cannot be flown at 1 m/s from the start. |
 | Path length: tour legs only | Same (launch and return legs not included) | Card definition. |
 | Algorithm index lists cascade PID for S061–S065 | Planning scenario; flight time from a kinematic trapezoidal profile, no closed-loop flight | The card defines no controller or dynamics. |

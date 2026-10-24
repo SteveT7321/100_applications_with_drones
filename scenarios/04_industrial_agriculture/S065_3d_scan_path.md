@@ -44,8 +44,8 @@ achieved GSD.
 1. **Ordering**: for the same capture set, is the card's pooled nearest-neighbour TSP tour
    shorter and safer than a **structured ring pattern** (one lap around the building per strip
    altitude, then a roof boustrophedon), and how much does a **2-opt** pass on the NN tour add?
-   Metrics: flown path length (legs that would cut through the building, inflated by a 1 m
-   margin, are replaced by an up-over-down detour at 14 m and counted), mission time with the
+   Metrics: flown path length (legs that would enter a 1 m safety margin around the building are
+   replaced by an up-over-down detour at 14 m and counted), mission time with the
    card formula and with a 1 m/s$^2$ acceleration limit per leg, and total climb.
 2. **GPS robustness**: the card plans overlaps exactly at or just above the 60 % / 30 % limits.
    With capture positions perturbed by $\mathcal{N}(0, \sigma_{GPS}^2)$ per axis
@@ -587,7 +587,7 @@ def plot_path_length_breakdown(facade_wps, roof_wps, all_wps, tour_idx):
   Total waypoints     : 464      (corrected: 4 x 6 strips = 336 facade + 8 x 16 = 128 roof)
   Total path length   : 670.0 m  (NN tour as specified; implementation result)
   Mission time        : 1366 s   (670.0 m / 1 m/s + 464 x 1.5 s; 1375.4 s once the two
-                                  NN legs through the building are replaced by detours)
+                                  NN legs inside the 1 m margin are replaced by detours)
 ============================================
 ```
 
@@ -601,7 +601,7 @@ def plot_path_length_breakdown(facade_wps, roof_wps, all_wps, tour_idx):
    walls to reduce waypoint count; re-plan with the heterogeneous standoff distances.
 2. **2-opt TSP improvement**: after the nearest-neighbour tour, apply the 2-opt swap algorithm
    iteratively to remove path crossings; compare total path length and mission time before and
-   after 2-opt; for $N_{WP} \approx 300$ waypoints, 2-opt typically reduces length by 5–15%.
+   after 2-opt; for $N_{WP} = 464$ waypoints, 2-opt typically reduces length by 5–15%.
 3. **Oblique roof scanning**: add off-nadir tilted viewpoints around the roof perimeter to capture
    the facade-roof junction at grazing angles, which is frequently missed by a pure nadir roof
    grid; compute the additional viewpoints from $h_{roof}$ using a circular orbit at tilt angle

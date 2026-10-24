@@ -10,7 +10,7 @@ grid over the roof at 13 m. The same 464 capture waypoints are ordered three way
   NN-TSP     : nearest-neighbour tour over the pooled waypoints (card)
   NN + 2-opt : NN tour improved by 2-opt
 
-Every leg that would cut through the building (plus a 1 m margin) is replaced by an
+Every leg that would enter the 1 m safety margin around the building is replaced by an
 up-over-down detour at 14 m, and is counted. A GPS Monte Carlo then checks whether the
 planned overlaps survive position noise at the capture points.
 
@@ -154,14 +154,31 @@ def leg_time(L):
     return 2 * math.sqrt(L / A_MAX)
 
 
-def evaluate(wps, order):
+BLDG_LO = np.array([-BLDG_L / 2, -BLDG_W / 2, 0.0])
+BLDG_HI = np.array([BLDG_L / 2, BLDG_W / 2, BLDG_H])
+
+
+def seg_box_clearance(p, q, n=4001):
+    """Minimum distance between segment p-q and the (un-inflated) building box."""
+    t = np.linspace(0.0, 1.0, n)[:, None]
+    pts = p + t * (q - p)
+    d = np.maximum(np.maximum(BLDG_LO - pts, 0.0), pts - BLDG_HI)
+    return float(np.min(np.linalg.norm(d, axis=1)))
+
+
+def evaluate(wps, order, zone):
     seq = wps[order]
+    zz = zone[order]
     L_straight, L_flown, n_det, t_acc, max_leg, climb = 0.0, 0.0, 0, 0.0, 0.0, 0.0
+    flagged = []
     flown = [seq[0]]
-    for p, q in zip(seq[:-1], seq[1:]):
+    for i, (p, q) in enumerate(zip(seq[:-1], seq[1:])):
         L_straight += float(np.linalg.norm(q - p))
         poly, det = leg_path(p, q)
         n_det += det
+        if det:
+            flagged.append((i, ZONES[zz[i]], ZONES[zz[i + 1]], p.copy(), q.copy(),
+                            seg_box_clearance(p, q), seg_hits_box(p, q, BLDG_LO, BLDG_HI)))
         for a, b in zip(poly[:-1], poly[1:]):
             seg = float(np.linalg.norm(b - a))
             L_flown += seg
@@ -174,7 +191,7 @@ def evaluate(wps, order):
     return {
         'L_straight': L_straight, 'L': L_flown, 'detours': n_det,
         'T_card': L_flown / V_INSP + N * T_CAP, 'T_acc': t_acc + N * T_CAP,
-        'max_leg': max_leg, 'climb': climb, 'flown': np.array(flown),
+        'max_leg': max_leg, 'climb': climb, 'flown': np.array(flown), 'flagged': flagged,
     }
 
 
@@ -290,7 +307,7 @@ def run_simulation():
     orders['nn2opt'], passes = two_opt(wps, orders['nn'])
     for o in orders.values():
         assert sorted(o.tolist()) == list(range(len(wps)))
-    ev = {k: evaluate(wps, v) for k, v in orders.items()}
+    ev = {k: evaluate(wps, v, zone) for k, v in orders.items()}
     rng = np.random.default_rng(MC_SEED)
     mc = {}
     for sg in GPS_LEVELS:
@@ -391,7 +408,7 @@ def plot_ordering_comparison(wps, zone, orders, ev, out_dir):
     cols = [ORDER_COLORS[k] for k in ORDERS]
     for ax, (f, lab, scale) in zip(axes[:3], [('L', 'flown path length (m)', 1),
                                               ('T_acc', 'mission time incl. accel. (min)', 1 / 60),
-                                              ('detours', 'legs through the building', 1)]):
+                                              ('detours', 'legs inside the 1 m safety margin', 1)]):
         vals = [ev[k][f] * scale for k in ORDERS]
         b = ax.bar(range(3), vals, color=cols, edgecolor='k')
         ax.bar_label(b, fmt='%.1f' if f != 'detours' else '%d', fontsize=9)
@@ -507,7 +524,11 @@ if __name__ == '__main__':
         print(f'  [{ORDER_LABELS[k]}]')
         print(f"    Straight-line tour length   : {e['L_straight']:.1f} m "
               f"(card formula time {e['L_straight'] / V_INSP + len(wps) * T_CAP:.1f} s)")
-        print(f"    Legs through the building   : {e['detours']}")
+        print(f"    Legs inside the 1 m margin  : {e['detours']}")
+        for i, z0, z1, p, q, clr, hit in e['flagged']:
+            print(f"      leg {i}: {z0} -> {z1}, ({p[0]:.2f}, {p[1]:.2f}, {p[2]:.2f}) -> "
+                  f"({q[0]:.2f}, {q[1]:.2f}, {q[2]:.2f}); min clearance to the building "
+                  f"{clr:.3f} m; crosses the building box: {hit}")
         print(f"    Flown length (with detours) : {e['L']:.1f} m")
         print(f"    Mission time, card formula  : {e['T_card']:.1f} s ({e['T_card'] / 60:.1f} min)")
         print(f"    Mission time, 1 m/s^2 accel : {e['T_acc']:.1f} s ({e['T_acc'] / 60:.1f} min)")
@@ -518,8 +539,10 @@ if __name__ == '__main__':
     print(f'  GPS Monte Carlo ({N_MC} draws, facade captures):')
     for sg in GPS_LEVELS:
         f, sd, g = mc[sg]
+        print(f'    sigma {sg:.2f} m: forward pairs below 50 %: {int(np.sum(f < 0.5))} of {f.size} '
+              f'(min {100 * f.min():.3f} %)')
         print(f'    sigma {sg:.2f} m: forward overlap < 60 %: {100 * np.mean(f < P_X):.1f} % of pairs '
-              f'(< 50 %: {100 * np.mean(f < 0.5):.2f} %, min {100 * f.min():.1f} %); '
+              f'(< 50 %: {100 * np.mean(f < 0.5):.3f} %); '
               f'side overlap < 30 %: {100 * np.mean(sd < P_Z):.1f} % (min {100 * sd.min():.1f} %); '
               f'GSD max {1000 * g.max():.3f} mm')
     best = min(ORDERS, key=lambda k: (ev[k]['detours'] > 0, ev[k]['T_acc']))
