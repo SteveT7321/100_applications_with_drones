@@ -1,6 +1,6 @@
 # S056 3D Upgrade — Radiation Hotspot Detection
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S056 original](../S056_radiation.md)
 
 ---
@@ -53,7 +53,7 @@ $$\frac{\partial D_{3D}}{\partial z_d} = -A\,(z_d - z_s)\,
   \frac{(2 + \mu\, r_{3D})}{r_{3D}^4}
   \exp\!\bigl(-\mu\, r_{3D}\bigr)$$
 
-This gradient is maximised when $z_d \approx z_s$, showing that flying at the source altitude yields the sharpest spatial gradient — the key motivation for altitude-variable survey.
+Because of the factor $(z_d - z_s)$ this gradient is **zero** at $z_d = z_s$; at a fixed horizontal offset $\rho$ its magnitude peaks near $|z_d - z_s| = \rho/\sqrt{3}$ (11.5 m for $\rho$ = 20 m, neglecting the small $\mu$ term). Altitude changes therefore carry the most vertical information when the drone is somewhat above or below the source, not level with it. (Corrected: an earlier version said the gradient is maximised at $z_d \approx z_s$.) A single fixed altitude $h$ also leaves a mirror ambiguity: $z_s$ and $2h - z_s$ give identical readings everywhere, which a second altitude breaks.
 
 ### Volumetric Measurement Model
 
@@ -63,7 +63,9 @@ $$z_k = D_{3D}(\mathbf{p}_{drone,k},\, \mathbf{p}_s^*,\, A^*) + \varepsilon_k,
   \qquad \varepsilon_k \sim \mathcal{N}\bigl(0,\, \sigma_{rad}^2(\mathbf{p}_{drone,k})\bigr)$$
 
 $$\sigma_{rad}(\mathbf{p}_{drone,k}) = \sigma_0
-  \sqrt{D_{3D}(\mathbf{p}_{drone,k},\, \mathbf{p}_s^*,\, A^*) + D_{bg}}$$
+  \sqrt{D_{3D}(\mathbf{p}_{drone,k},\, \mathbf{p}_s^*,\, A^*)}$$
+
+($D_{3D}$ already contains $D_{bg}$, so the background is not added a second time; corrected from $\sigma_0\sqrt{D_{3D} + D_{bg}}$, as in S056.)
 
 with $\sigma_0 = 0.04$ µSv$^{0.5}$·h$^{0.5}$.
 
@@ -83,7 +85,7 @@ $$P(z_k \mid v_j) = \frac{1}{\sqrt{2\pi}\,\hat{\sigma}_j}
   \exp\!\left(-\frac{\bigl(z_k - D_{3D}(\mathbf{p}_{drone,k},\, \mathbf{c}_j,\, A)\bigr)^2}
   {2\,\hat{\sigma}_j^2}\right)$$
 
-where $\hat{\sigma}_j = \sigma_0\sqrt{D_{3D}(\mathbf{p}_{drone,k}, \mathbf{c}_j, A) + D_{bg}}$.
+where $\hat{\sigma}_j = \sigma_0\sqrt{D_{3D}(\mathbf{p}_{drone,k}, \mathbf{c}_j, A)}$.
 
 **Sequential Bayesian update** after measurement $k$:
 
@@ -126,7 +128,7 @@ $$\text{EIG}(\mathbf{w}) = \frac{1}{2}\log\!\left(1 +
   {\bar{\sigma}_{rad}^2(\mathbf{w})}\right)$$
 
 where $\bar{\sigma}_{rad}^2(\mathbf{w}) = \sigma_0^2
-\sum_j P_k(v_j)\bigl[D_{3D}(\mathbf{w},\mathbf{c}_j,A) + D_{bg}\bigr]$ is the expected noise variance.
+\sum_j P_k(v_j)\,D_{3D}(\mathbf{w},\mathbf{c}_j,A)$ is the expected noise variance.
 
 **Dose-aware next waypoint** selection penalises candidate positions with high local dose rate to protect the drone within the remaining dose budget $D_{rem,k}$:
 
