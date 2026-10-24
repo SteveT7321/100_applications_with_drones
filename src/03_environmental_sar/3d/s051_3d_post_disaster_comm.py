@@ -516,6 +516,8 @@ def _run_seed(seed):
     xf, cf, hf, _ = simulated_annealing(w, SA_SEED_BASE + seed, N_SA_STEPS, free_z=False)
     xa, ca, ha, fr = simulated_annealing(w, SA_SEED_BASE + seed, N_SA_STEPS, free_z=True, n_frames=nf)
     out['fixed'], out['alt'] = evaluate(w, xf), evaluate(w, xa)
+    x120, _, _, _ = simulated_annealing(w, SA_SEED_BASE + seed, N_SA_STEPS, free_z=False, z_fix=Z_MAX)
+    out['fixed120'] = _slim(evaluate(w, x120))      # 2D strategy at the ceiling, same budget and seed
     # incremental SA coverage must equal direct ray marching (catches table / drift bugs)
     assert abs(out['fixed']['cov'] - cf) < 1e-9 and abs(out['alt']['cov'] - ca) < 1e-9
     out['conn_iter'] = {'fixed': connected_from(hf), 'alt': connected_from(ha)}
@@ -701,6 +703,14 @@ def report(res):
           f'{d_ff.min():+.2f} to {d_ff.max():+.2f} pp')
     fe = [o for o in P if o['daisy']['feasible']]
     d_da = _pct([o['alt']['cov'] - o['daisy']['cov'] for o in fe])
+    v120 = _pct([o['fixed120']['cov'] for o in P])
+    d120 = _pct([o['alt']['cov'] - o['fixed120']['cov'] for o in P])
+    print(f'  fixed-z SA at {Z_MAX:.0f} m ({N_SA_STEPS} it., main SA seeds): per seed '
+          + ', '.join(f'{v:.2f}' for v in v120) + f'; mean {v120.mean():.2f}%, feasible '
+          f'{sum(o["fixed120"]["feasible"] for o in P)}/{len(P)}')
+    print(f'  altitude SA - fixed-z SA at {Z_MAX:.0f} m ({N_SA_STEPS} it.): mean {d120.mean():+.2f} pp, range '
+          f'{d120.min():+.2f} to {d120.max():+.2f}; alt better in {int(np.sum(d120 > 0))}/{len(P)}, '
+          f'worse {int(np.sum(d120 < 0))}, tie {int(np.sum(d120 == 0))}')
     print(f'  altitude SA - daisy-chain (feasible seeds only, {len(fe)}): mean {d_da.mean():+.2f} pp, '
           f'range {d_da.min():+.2f} to {d_da.max():+.2f} pp; alt better in {int(np.sum(d_da > 0))}/{len(fe)}')
 
@@ -938,11 +948,14 @@ def plot_altitudes(res, out):
 
 def plot_coverage_bar(res, out):
     P = res['per_seed']
-    fig, ax = plt.subplots(figsize=(9, 5))
-    for i, s_ in enumerate(STRATS):
+    fig, ax = plt.subplots(figsize=(10.5, 5))
+    bars = ['flat', 'fixed', 'fixed120', 'alt', 'daisy']
+    labels = dict(LABELS, fixed120=f'Fixed-z SA at {Z_MAX:.0f} m (2D strategy at the ceiling)')
+    colors = dict(COLORS, fixed120='#8C564B')
+    for i, s_ in enumerate(bars):
         v = _pct([o[s_]['cov'] for o in P])
         feas = np.array([o[s_]['feasible'] for o in P])
-        ax.bar(i, v.mean(), color=COLORS[s_], edgecolor='k', alpha=0.8)
+        ax.bar(i, v.mean(), color=colors[s_], edgecolor='k', alpha=0.8)
         jit = np.linspace(-0.25, 0.25, len(v))
         ax.scatter(i + jit[feas], v[feas], color='k', s=18, zorder=3)
         ax.scatter(i + jit[~feas], v[~feas], color='red', marker='x', s=40, zorder=3)
@@ -950,10 +963,10 @@ def plot_coverage_bar(res, out):
                 bbox=dict(boxstyle='round', fc='white', alpha=0.85))
     ax.axhline(100 * res['sa2d_cov2d'], color='k', ls=':', lw=1,
                label=f'2D S051 SA in the 2D model: {100 * res["sa2d_cov2d"]:.1f}%')
-    ax.set_xticks(range(len(STRATS)), [LABELS[s_].replace(' (', '\n(') for s_ in STRATS], fontsize=9)
+    ax.set_xticks(range(len(bars)), [labels[s_].replace(' (', '\n(') for s_ in bars], fontsize=8)
     ax.set_ylabel('covered population (%)'); ax.set_ylim(0, 100)
-    ax.set_title(f'S051 3D coverage by strategy - bars = mean, dots = {len(P)} seeds '
-                 '(red x = not connected)')
+    ax.set_title(f'S051 3D coverage by strategy, {N_SA_STEPS:,} SA iterations - bars = mean, dots = {len(P)} maps '
+                 '(red x = not connected)', fontsize=10)
     ax.legend(fontsize=8, loc='upper left'); ax.grid(axis='y', alpha=0.3)
     p = os.path.join(out, 'coverage_bar.png')
     plt.savefig(p, dpi=130, bbox_inches='tight'); plt.close(fig)
@@ -971,9 +984,7 @@ def plot_altitude_sweep(res, out):
             for z in zs]
     ax.plot(zs, mean, 'o-', color=COLORS['fixed'], lw=2, label='fixed-z SA, uniform altitude (mean; thin = seeds)')
     va = np.mean(_pct([o['dsweep'][1.0]['alt']['cov'] for o in P]))
-    vh = np.mean(_pct([o['alt_high']['cov'] for o in P]))
     ax.axhline(va, color=COLORS['alt'], ls='--', label=f'altitude SA, z <= {Z_MAX:.0f} m: {va:.1f}%')
-    ax.axhline(vh, color=COLORS['alt'], ls=':', label=f'altitude SA, z <= {Z_MAX_PROBE:.0f} m (probe): {vh:.1f}%')
     ax.axvspan(Z_MAX, Z_MAX_PROBE + 10, color='gray', alpha=0.12, label=f'above the card ceiling {Z_MAX:.0f} m')
     ax.set_xlabel('uniform hover altitude z (m)'); ax.set_ylabel('covered population (%)')
     ax.set_title(f'Coverage vs uniform altitude ({SWEEP_STEPS:,} SA iterations, {len(P)} seeds)')

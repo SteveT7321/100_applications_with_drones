@@ -80,7 +80,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s051_3d_post_disaster_comm.py
 ```
 
-The maps run in a pool of up to 6 worker processes, and the results are collected in map order. Runtime ≈ 255 s standalone with 6 workers; up to about 490 s when three other multi-process simulations share the CPU. Runs with default threading and with `OMP_NUM_THREADS=1` printed byte-identical output and wrote byte-identical files.
+The maps run in a pool of up to 6 worker processes, and the results are collected in map order. Runtime ≈ 355 s run on its own with 6 workers (including the 80 000-iteration fixed-120 m runs); up to about 490 s when other multi-process simulations share the CPU. Runs with default threading and with `OMP_NUM_THREADS=1` printed byte-identical output and wrote byte-identical files.
 
 ---
 
@@ -90,15 +90,15 @@ The maps run in a pool of up to 6 worker processes, and the results are collecte
 
 Main runs: 80 000 iterations, SA seed 500 + map (decoupled from the debris seed), the same SA seed for every strategy on a map.
 
-| Seed | Flat 3D | Fixed-z SA 50 m | Altitude SA | Daisy-chain ($M^*$) | Altitude SA − fixed 50 m |
-|---|---:|---:|---:|---:|---:|
-| 0 | 41.39 | 53.95 | 69.39 | 70.21* (0) | +15.45 pp |
-| 1 | 37.92 | 47.66 | 66.84 | 63.75 (0) | +19.18 pp |
-| 2 | 31.05 | 42.68 | 65.67 | 63.25 (0) | +22.99 pp |
-| 3 | 39.01 | 50.89 | 69.99 | 68.68 (0) | +19.10 pp |
-| 4 | 39.95 | 45.92 | 66.20 | 62.28 (0) | +20.28 pp |
-| 5 | 29.42 | 39.51 | 64.44 | 63.82 (0) | +24.93 pp |
-| **Mean** | **36.45** | **46.77** | **67.09** | 65.33 (64.36 over the 5 connected seeds) | **+20.32 pp** |
+| Seed | Flat 3D | Fixed-z SA 50 m | Fixed-z SA 120 m | Altitude SA | Daisy-chain ($M^*$) | Altitude SA − fixed 50 m |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 | 41.39 | 53.95 | 70.91 | 69.39 | 70.21* (0) | +15.45 pp |
+| 1 | 37.92 | 47.66 | 67.49 | 66.84 | 63.75 (0) | +19.18 pp |
+| 2 | 31.05 | 42.68 | 65.67 | 65.67 | 63.25 (0) | +22.99 pp |
+| 3 | 39.01 | 50.89 | 71.62 | 69.99 | 68.68 (0) | +19.10 pp |
+| 4 | 39.95 | 45.92 | 67.08 | 66.20 | 62.28 (0) | +20.28 pp |
+| 5 | 29.42 | 39.51 | 63.27 | 64.44 | 63.82 (0) | +24.93 pp |
+| **Mean** | **36.45** | **46.77** | **67.67** | **67.09** | 65.33 (64.36 over the 5 connected seeds) | **+20.32 pp** |
 
 ### Optimiser spread (4 independent SA seeds per map, 20 000 iterations)
 
@@ -118,12 +118,12 @@ Paired over the 24 runs: altitude SA − fixed 50 m = +19.95 pp (+11.54 to +25.9
 
 **Key findings**
 
-- **Flying higher is what pays, not per-drone altitude optimisation.** Against the 2D baseline at 50 m, altitude SA gains +20.32 pp (6/6 maps, +15.45 to +24.93) and +19.95 pp over the 24 replicate runs (24/24). But the SA puts every drone at or near the 120 m ceiling (29/30 drones within 5 m of it, mean 119.3 m, minimum 114.1 m), and the plain 2D strategy flown at a fixed 120 m gets the same gain or more: fixed 120 m − fixed 50 m = +21.11 pp (24/24), and altitude SA − fixed 120 m = −1.16 pp (worse in 17/24). Adding $z$ to the SA state makes the optimiser noisier (within-map SD 1.66 pp vs 0.64 pp) and slightly worse. A single 120 m main-run comparison (altitude SA at 20 000 iterations − uniform 120 m: −0.29 pp, better in 1/6) agrees.
+- **Flying higher is what pays, not per-drone altitude optimisation.** Against the 2D baseline at 50 m, altitude SA gains +20.32 pp (6/6 maps, +15.45 to +24.93) and +19.95 pp over the 24 replicate runs (24/24). But the SA puts every drone at or near the 120 m ceiling (29/30 drones within 5 m of it, mean 119.3 m, minimum 114.1 m), and the plain 2D strategy flown at a fixed 120 m gets the same gain or more: fixed 120 m − fixed 50 m = +21.11 pp (24/24), and altitude SA − fixed 120 m = −1.16 pp (worse in 17/24). Adding $z$ to the SA state makes the optimiser noisier (within-map SD 1.66 pp vs 0.64 pp) and slightly worse. The same holds at the main 80 000-iteration budget on the main SA seeds: fixed 120 m reaches 67.67 % against 67.09 % for altitude SA, so altitude SA − fixed 120 m = −0.59 pp (−1.64 to +1.17; better in 1/6, worse in 4/6, 1 tie). The 20 000-iteration sweep runs on the main SA seeds agree (altitude SA − uniform 120 m: −0.29 pp, better in 1/6).
 - **The 2D solution itself does not transfer**: it covers 62.97 % in its own 2D model but only 36.45 % once debris shadow is applied; re-optimising at 50 m with the debris in view gives +10.31 pp on average (+5.98 to +12.56).
 - **The mechanism is debris shadow, and it is measured directly.** Averaged over seeds, 82.36 % of the population lies within slant range of the fixed-50 m layout, but 35.59 % of it is debris-shadowed. For the altitude SA the in-range share is 86.76 %, of which only 19.67 % is shadowed (flat 3D: 48.61 % shadowed). In the LOS map (`los_shadow_map.png`, seed 0) on average 0.38 of the 5 drones see a cell at 50 m, against 0.60 for the altitude-SA layout.
 - **Ablation (debris height scale)**: with no debris (scale 0) altitude SA and fixed 50 m tie (93.84 % vs 93.99 %, mean −0.15 pp), and the SA leaves the drones at a mean 51.0 m (40.5–60.1 m), since the footprint radius barely changes between 20 m and 50 m (449.6 m vs 447.2 m). With half-height debris the gain over 50 m is +5.73 pp at a mean altitude of 92.2 m (70.2–111.0 m, i.e. below the ceiling), with full debris +20.30 pp at 117.0 m, and with 1.5 × debris +14.94 pp at 117.1 m (6/6 seeds at every scale above 0). The altitude rises because of the debris, not because of the bound.
 - **Uniform-altitude sweep**: coverage rises steadily up to the ceiling: 36.25 % at 20 m, 45.95 % at 50 m, 66.54 % at 120 m. The card's expectation that the optimiser "lifts high-load relay drones higher" does not appear.
-- **Probe with the ceiling lifted to 300 m** (beyond the card bounds, for insight only): uniform-altitude coverage peaks at 200 m (83.27 %) and falls to 74.85 % at 300 m, where the footprint has shrunk to 335.4 m. Altitude SA with $z \le 300$ m reaches 84.46 % in the main runs, but over the 24 replicate runs it is level with a fixed 200 m (−0.08 pp, 12/24 better, 12/24 worse). The spread of the five altitudes within a layout (27.6–151.1 m) therefore buys nothing measurable; there is no evidence of a per-drone altitude advantage above the ceiling either.
+- **Probe with the ceiling lifted to 300 m** (beyond the card bounds, for insight only): uniform-altitude coverage peaks at 200 m (83.27 %) and falls to 74.85 % at 300 m, where the footprint has shrunk to 335.4 m. Altitude SA with $z \le 300$ m reaches 84.46 % in the 20 000-iteration sweep runs on the main SA seeds, but over the 24 replicate runs it is level with a fixed 200 m (−0.08 pp, 12/24 better, 12/24 worse). The spread of the five altitudes within a layout (27.6–151.1 m) therefore buys nothing measurable; there is no evidence of a per-drone altitude advantage above the ceiling either.
 - **Sensitivity to the added debris generator**: with a correlation length of 0.5 cells the gain over 50 m is +32.40 pp, and with 3 cells +15.61 pp (6/6 seeds each).
 - **The vertical daisy-chain never helps.** $M^* = 0$ in every seed: coverage falls with each added relay-only drone (seed 0: 70.21, 62.69, 53.07, 40.27 and 27.08 % for $M$ = 0–4), and no relay link needs a vertical bridge. In the final flat, fixed-z and altitude-SA layouts, no link within 900 m is debris-blocked (0 in all seeds; the uniform-20 m SA layouts have 5). For random drone pairs, links are blocked only at 20 m (1137/7352 pairs, 15.47 %), never at 50 m (0/8659). The card's premise that debris breaks drone-to-drone LOS holds only for drones flying below about 50 m. With $M = 0$ the heuristic is a 3D greedy placement, which always picks the 120 m level; altitude SA beats it by +2.27 pp over the 5 connected seeds (+0.62 to +3.92, 5/5), and in seed 0 the greedy layout is disconnected (70.21 %*).
 - **Constraints**: energy never binds inside the bounds. The maximum transit distance is 2241 m at 20 m and 2196 m at 120 m, against at most 2150 m to the farthest corner. Hover power barely changes over the altitude range (80.064 W at 20 m, 80.384 W at 120 m). Both SA variants are connected and energy-feasible by iteration 158 at the latest.
@@ -146,11 +146,11 @@ Paired over the 24 runs: altitude SA − fixed 50 m = +19.95 pp (+11.54 to +25.9
 
 ![Altitudes](./altitude_bars.png)
 
-**Coverage by strategy**: bars = mean over all 6 seeds, dots = seeds, red × = not connected. Dotted line = the 2D S051 SA in its own 2D model:
+**Coverage by strategy** (main runs, 80 000 iterations): bars = mean over all 6 maps, dots = maps, red × = not connected. The fixed-z SA at 120 m (the 2D strategy at the ceiling) has a slightly higher mean than altitude SA (67.67 vs 67.09 %). Dotted line = the 2D S051 SA in its own 2D model:
 
 ![Coverage bar](./coverage_bar.png)
 
-**Coverage vs uniform altitude** (fixed-z SA, thin lines = seeds), with the two altitude-SA results. The grey band is above the card ceiling:
+**Coverage vs uniform altitude** (fixed-z SA, 20 000 iterations, thin lines = maps), with the altitude-SA result for $z \le 120$ m. The lifted-ceiling altitude SA is not drawn: over the 24 replicate runs it is level with a fixed 200 m. The grey band is above the card ceiling:
 
 ![Altitude sweep](./altitude_sweep.png)
 
