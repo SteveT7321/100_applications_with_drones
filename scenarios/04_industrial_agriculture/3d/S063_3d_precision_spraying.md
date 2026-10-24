@@ -65,7 +65,10 @@ the nozzle.
 1. **Fixed altitude** — $z_{cmd} = 1.5$ m for all plants (S063 baseline behaviour in 3D).
 2. **Per-plant adaptive** — $z_{cmd,i} = h_i + \Delta z_{nom}$ (nominal standoff maintained).
 3. **Terrain-following PID** — continuous altitude feedback tracking the canopy surface
-   estimated by a lidar sensor model with noise $\sigma_{lidar} = 0.05$ m.
+   estimated by a lidar sensor model with noise $\sigma_{lidar} = 0.05$ m. (Note: without
+   look-ahead, the lidar sees a crown only once the drone is over it. Between plants the drone
+   descends towards the ground and then meets each crown from the side. In the implementation
+   every terrain-following mission collides with crowns, so this variant is not safe as specified.)
 
 ---
 
@@ -134,6 +137,12 @@ $$\dot{\mathbf{q}}(t+\Delta t) = \dot{\mathbf{q}}(t) + \bigl[\mathbf{a}^{PID}(t)
 $$\mathbf{q}(t+\Delta t) = \mathbf{q}(t) + \dot{\mathbf{q}}(t)\,\Delta t$$
 
 with altitude bounds enforced: $z(t) \in [z_{min}, z_{max}] = [0.3,\, 6.0]$ m.
+
+The bounds must be enforced through the controller, not by clamping the state. An
+acceleration-limited braking barrier caps the vertical speed towards a bound so that full
+braking with $A_{max} - f_{dw}$ stops inside it. (Clarified: clamping $z$ and zeroing
+$\dot z$ in one step is an instant stop that the thrust cannot produce. From 0.3 m, any descent
+faster than $\sqrt{2(A_{max} - f_{dw})\cdot 0.3} \approx 1.31$ m/s would reach the ground.)
 
 ### 3D Droplet Drift Model
 

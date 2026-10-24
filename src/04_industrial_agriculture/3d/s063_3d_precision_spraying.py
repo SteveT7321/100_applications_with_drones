@@ -6,7 +6,11 @@ The S063 mission (20 plants in a 20 x 20 m field, nearest-neighbour tour from th
 acceleration limit, sinusoidal gust + turbulence, integrator reset per spray window) is
 flown in 3D over plants with canopy heights h_i ~ TN(1.0, 0.3^2; 0.3, 2.5) m and crowns of
 radius 0.5 m.  A vertical PID loop (gains 1.5 x the horizontal set) holds altitude against
-a rotor-downwash disturbance -0.15 m/s^2 + N(0, 0.05^2).
+a rotor-downwash disturbance -0.15 m/s^2 + N(0, 0.05^2).  The card's altitude bounds
+z in [0.3, 6] m are enforced through the controller: an acceleration-limited braking barrier
+caps the vertical speed towards a bound so that full braking stops inside it (no state clamp,
+no velocity reset); asserts check z >= 0.3 m, z > 0 and thrust acceleration <= A_MAX.
+A mission with any crown contact is scored as a collision (safe C_eff 0).
 
 Altitude strategies (same plants, heights, wind, GPS and altimeter noise per seed, CRN):
   fixed15   card: z = 1.5 m everywhere (S063 behaviour, the 2D baseline)
@@ -74,8 +78,12 @@ SIGMA_H_SWEEP = [0.0, 0.15, 0.3, 0.45, 0.6]
 N_SWEEP_SEEDS = 10
 R_CROWN_SWEEP = [0.25, 0.5, 1.0]  # crown-radius sensitivity (added)
 KDZ_PROBE = 2.5                  # vertical-damping probe: k_d,z x 2.5
-BOUND_CONTACT_MAX = T_SPRAY      # s: on the bound longer than one spray window = landed (assert, added)
-HARD_TOUCHDOWN = 1.0             # m/s: floor contact faster than this is counted as a hard touchdown (added)
+# Altitude bounds [Z_MIN, Z_MAX] are enforced through the controller (added): a braking barrier limits the
+# vertical speed towards a bound to what full braking can stop within the remaining distance.
+DW_WORST = F_DW + 4 * SIGMA_DW   # m/s^2 worst-case downward downwash assumed by the barrier (4 sigma)
+A_BRAKE = A_MAX - DW_WORST - 0.05  # m/s^2 braking deceleration the barrier plans with (0.05 margin)
+Z_BUF = 0.005                    # m: the barrier stops this far inside the bound
+BARRIER = True                   # set False only to show that the altitude asserts can fail
 T_MAX = 700.0
 PLOT_SEED = 0
 ANIM_STEP = 100
@@ -132,8 +140,8 @@ def run_mission(args):
     st = {'px': float(DEPOT[0]), 'py': float(DEPOT[1]),
           'pz': zc[TOUR[0]] if strategy != 'tf' else DZ_NOM,
           'vx': 0.0, 'vy': 0.0, 'vz': 0.0, 'ix': 0.0, 'iy': 0.0, 'iz': 0.0, 'k': 0,
-          'nsat': 0, 'nclamp': 0, 'crun': 0, 'cmax': 0, 'vimp': 0.0, 'nhard': 0}
-    X, Y, Z, CUR = [], [], [], []
+          'nsat': 0, 'nbar': 0, 'ninf': 0}
+    X, Y, Z, CUR, VZ, DWL = [], [], [], [], [], []
     w_g = 2 * math.pi / T_WIND
 
     def surf(x, y):
@@ -163,28 +171,40 @@ def run_mission(args):
         ax = min(max(ax, -A_MAX), A_MAX)
         ay = min(max(ay, -A_MAX), A_MAX)
         az = min(max(az, -A_MAX), A_MAX)
+        if BARRIER:                                             # acceleration-limited braking barrier
+            vz = st['vz']
+            for d, sgn, dw_bad in ((pz - Z_MIN - Z_BUF, -1.0, -DW_WORST),          # floor
+                                   (Z_MAX - Z_BUF - pz, 1.0, -F_DW + 4 * SIGMA_DW)):  # ceiling
+                d = max(d, 0.0)
+                # exact discrete stopping speed: after this step's velocity v, braking by q = A_BRAKE DT per
+                # step covers DT * sum_k max(v - k q, 0); v_ok is the largest v with that distance <= d
+                q = A_BRAKE * DT
+                n = int((-1.0 + math.sqrt(1.0 + 8.0 * d / (DT * q))) / 2.0)
+                v_ok = (d / DT + q * n * (n + 1) / 2.0) / (n + 1)
+                if sgn < 0:                                     # need vz_next >= -v_ok
+                    a_req = (-v_ok - vz) / DT - dw_bad
+                    if az < a_req:
+                        st['nbar'] += 1
+                        st['ninf'] += int(a_req > A_MAX)
+                        az = min(a_req, A_MAX)
+                else:                                           # need vz_next <= v_ok
+                    a_req = (v_ok - vz) / DT - dw_bad
+                    if az > a_req:
+                        st['nbar'] += 1
+                        st['ninf'] += int(a_req < -A_MAX)
+                        az = max(a_req, -A_MAX)
+        assert abs(az) <= A_MAX + 1e-12
         st['vx'] += (ax + A_WIND * math.sin(w_g * t + ph[0]) + tx[k]) * DT
         st['vy'] += (ay + A_WIND * math.sin(w_g * t + ph[1]) + ty[k]) * DT
         st['vz'] += (az + dw[k]) * DT
         st['px'] = px + st['vx'] * DT
         st['py'] = py + st['vy'] * DT
         nz = pz + st['vz'] * DT
-        if nz < Z_MIN or nz > Z_MAX:                            # card altitude bounds
-            st['nclamp'] += 1
-            if st['crun'] == 0 and nz < Z_MIN:                  # touchdown on the floor: record impact speed
-                st['vimp'] = max(st['vimp'], -st['vz'])
-                st['nhard'] += int(-st['vz'] > HARD_TOUCHDOWN)
-            st['crun'] += 1
-            nz = min(max(nz, Z_MIN), Z_MAX)
-            st['vz'] = 0.0
-        else:
-            st['crun'] = 0
-        st['cmax'] = max(st['cmax'], st['crun'])
-        # touching the bound, even hard, is counted as a result; staying on it for longer than a whole
-        # spray window means the drone has landed or is stuck, which ends the run
-        assert st['crun'] * DT <= BOUND_CONTACT_MAX, 'drone resting on the altitude bound (landed or stuck)'
+        assert nz > 0.0, 'drone hit the ground'
+        assert Z_MIN <= nz <= Z_MAX, 'altitude bound violated'
         st['pz'] = nz
         X.append(st['px']); Y.append(st['py']); Z.append(nz); CUR.append(st['cur'])
+        VZ.append(st['vz']); DWL.append(dw[k])
         st['k'] = k + 1
 
     hover = []
@@ -232,6 +252,9 @@ def run_mission(args):
         prev = PLANTS[pi].copy()
         z_prev = z_t
     X, Y, Z = np.array(X), np.array(Y), np.array(Z)
+    # vertical acceleration from the logged trajectory: thrust part within A_MAX (no velocity resets)
+    acc = np.diff(np.concatenate([[0.0], VZ])) / DT - np.array(DWL)
+    assert np.max(np.abs(acc)) <= A_MAX + 1e-6, 'vertical thrust acceleration above A_MAX'
     # canopy contact: drone inside any crown cylinder below its top
     CUR = np.array(CUR)
     contact = np.zeros(N_PLANTS, dtype=bool)
@@ -244,7 +267,7 @@ def run_mission(args):
         n_contact += int(m.sum())
     sp = np.hypot(np.diff(np.concatenate([[DEPOT[0]], X])), np.diff(np.concatenate([[DEPOT[1]], Y])))
     out = {'h': h, 'hover': [], 'time': st['k'] * DT, 'timeouts': timeouts, 'wait': waits.mean(),
-           'sat': st['nsat'] / st['k'], 'clamp': st['nclamp'], 'clamp_run': st['cmax'] * DT, 'v_impact': st['vimp'], 'n_hard': st['nhard'], 'contact_plants': int(contact.sum()),
+           'sat': st['nsat'] / st['k'], 'barrier': st['nbar'], 'barrier_infeasible': st['ninf'], 'contact_plants': int(contact.sum()),
            'contact_own': int(own.sum()), 'contact_other': int((contact & ~own).sum()),
            'contact_own_climb': int((own & climb_leg).sum()), 'contact_own_descent': int((own & ~climb_leg).sum()),
            'contact_steps': n_contact, 'z_safe': z_safe, 'max_step': float(sp.max()),
@@ -393,20 +416,24 @@ def plot_impacts(res, out_dir):
 
 
 def plot_sweep(res, out_dir):
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
     for s in STRATS:
-        m, sd = [], []
+        m, sd, sm = [], [], []
         for sh in SIGMA_H_SWEEP:
             rs = res[(s, 'Tuned', sh)][:N_SWEEP_SEEDS]
-            c = [dose_eval(r)['ceff'] for r in rs]
-            m.append(np.mean(c)); sd.append(np.std(c))
-        ax.errorbar(SIGMA_H_SWEEP, m, yerr=sd, marker='o', capsize=3, color=COLORS[s], label=LABELS[s])
-    ax.set_xlabel('canopy height std σ_h (m)')
-    ax.set_ylabel(f'C_eff 3D (mean ± std, {N_SWEEP_SEEDS} seeds)')
-    ax.set_ylim(0, 1)
-    ax.grid(alpha=0.3)
-    ax.legend(fontsize=8)
-    ax.set_title('S063 3D Coverage vs canopy-height variability (Tuned PID)', fontsize=10)
+            c = np.array([dose_eval(r)['ceff'] for r in rs])
+            free = np.array([r['contact_plants'] == 0 for r in rs])
+            m.append(c.mean()); sd.append(c.std()); sm.append((c * free).mean())
+        axes[0].errorbar(SIGMA_H_SWEEP, m, yerr=sd, marker='o', capsize=3, color=COLORS[s], label=LABELS[s])
+        axes[1].plot(SIGMA_H_SWEEP, sm, marker='o', color=COLORS[s], label=LABELS[s])
+    axes[0].set_ylabel(f'C_eff 3D, dose only (mean ± std, {N_SWEEP_SEEDS} seeds)')
+    axes[1].set_ylabel('safe C_eff 3D (collision missions scored 0)')
+    for ax in axes:
+        ax.set_xlabel('canopy height std σ_h (m)')
+        ax.set_ylim(0, 1)
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=8)
+    fig.suptitle('S063 3D Coverage vs canopy-height variability (Tuned PID)', fontsize=11)
     _save(fig, out_dir, 'ceff_vs_sigma_h.png')
 
 
@@ -468,34 +495,47 @@ def report(res):
         print(f'  Vertical loop {g} x{ALPHA_Z} ({kp:.2f}, {ki:.2f}, {kd:.3f}): poles ' +
               ', '.join(f'{p.real:.3f}{p.imag:+.3f}j' for p in sorted(poles, key=lambda p: (p.real, p.imag))) +
               f'; damping of the complex pair {-cp.real / abs(cp):.3f}')
+    print(f'  Floor barrier: plans with {A_BRAKE:.2f} m/s^2 braking (A_MAX {A_MAX:.1f} - worst downwash {DW_WORST:.2f} - 0.05); '
+          f'highest speed that full braking can stop from z = {Z_MIN:.1f} m before z = 0: '
+          f'{math.sqrt(2 * (A_MAX - F_DW) * Z_MIN):.2f} m/s')
+    print('  Scoring rule: a mission with any crown contact is a collision; its safe C_eff is 0. '
+          'C_eff (dose only) is reported beside it.')
+
+    def stats(rs):
+        c = np.array([dose_eval(r)['ceff'] for r in rs])
+        free = np.array([r['contact_plants'] == 0 for r in rs])
+        return c, c * free, int(free.sum())
+
     for g in GAINS:
         print(f'\n  --- {g} PID (horizontal {GAINS[g]}, vertical x{ALPHA_Z}), sigma_h = {SIGMA_H}, {N_SEEDS} seeds ---')
-        ce = {}
+        ce, sa = {}, {}
         for s in STRATS:
             rs = res[(s, g, SIGMA_H)]
             ev = [dose_eval(r) for r in rs]
-            c = np.array([e['ceff'] for e in ev])
-            ce[s] = c
+            c, sf, nfree = stats(rs)
+            ce[s], sa[s] = c, sf
             a = lambda k: np.mean([e[k].mean() for e in ev])
-            print(f"    {LABELS[s]:26s} C_eff {c.mean():.3f} +- {c.std():.3f} | hover RMS 3D {100 * a('rms3'):.1f} cm, "
+            print(f"    {LABELS[s]:26s} C_eff {c.mean():.3f} +- {c.std():.3f} | collision-free missions {nfree}/{len(rs)}, "
+                  f"safe C_eff {sf.mean():.3f} | hover RMS 3D {100 * a('rms3'):.1f} cm, "
                   f"horiz {100 * a('rmsh'):.1f} cm | standoff dev {100 * a('sdev'):.1f} cm | drift offset d "
                   f"{100 * a('drift'):.1f} cm | plants with dose > 0.9 {100 * np.mean([np.mean(e['dose'] > 0.9) for e in ev]):.1f} % | "
                   f"canopy contact: plants {np.mean([r['contact_plants'] for r in rs]):.2f}/mission "
                   f"(target plant {np.mean([r['contact_own'] for r in rs]):.2f} = on a climb leg "
                   f"{np.mean([r['contact_own_climb'] for r in rs]):.2f} + on a descent/level leg "
                   f"{np.mean([r['contact_own_descent'] for r in rs]):.2f}, other plants "
-                  f"{np.mean([r['contact_other'] for r in rs]):.2f}) "
-                  f"(missions with any {sum(r['contact_plants'] > 0 for r in rs)}/{N_SEEDS}), "
+                  f"{np.mean([r['contact_other'] for r in rs]):.2f}), "
                   f"plants sprayed from inside the crown {np.mean([np.sum(e['dz'] <= 0) for e in ev]):.2f} | "
                   f"time {np.mean([r['time'] for r in rs]):.1f} s, time-outs {np.mean([r['timeouts'] for r in rs]):.1f}/20, "
-                  f"saturated {100 * np.mean([r['sat'] for r in rs]):.2f} %, altitude clamps {np.mean([r['clamp'] for r in rs]):.1f} (longest continuous contact {max(r['clamp_run'] for r in rs):.2f} s), "
-                  f"vertical travel {np.mean([r['climb'] for r in rs]):.1f} m, z range {min(r['zmin'] for r in rs):.2f}-"
+                  f"saturated {100 * np.mean([r['sat'] for r in rs]):.2f} %, floor-barrier steps {np.mean([r['barrier'] for r in rs]):.1f}/mission, "
+                  f"vertical travel {np.mean([r['climb'] for r in rs]):.1f} m, z range {min(r['zmin'] for r in rs):.3f}-"
                   f"{max(r['zmax'] for r in rs):.2f} m, max step {max(r['max_step'] for r in rs):.4f} m")
-        for a_, b_ in [('adaptive', 'fixed15'), ('adaptive', 'fixedsafe'), ('adaptive', 'tf'), ('tf', 'fixed15')]:
-            w = wins(ce[a_], ce[b_])
-            print(f'    {LABELS[a_]} vs {LABELS[b_]}: higher C_eff in {w[0]} / equal {w[1]} / lower {w[2]} seeds; '
-                  f'mean difference {ce[a_].mean() - ce[b_].mean():+.3f}')
-    print(f'\n  --- sensitivity of mean C_eff to the added drift parameters (Tuned, sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
+        for a_, b_ in [('adaptive', 'fixed15'), ('adaptive', 'fixedsafe'), ('adaptive', 'tf'), ('tf', 'fixed15'),
+                       ('fixedsafe', 'fixed15')]:
+            w, ws = wins(ce[a_], ce[b_]), wins(sa[a_], sa[b_])
+            print(f'    {LABELS[a_]} vs {LABELS[b_]}: C_eff higher / equal / lower {w[0]} / {w[1]} / {w[2]}, mean difference '
+                  f'{ce[a_].mean() - ce[b_].mean():+.3f}; safe C_eff {ws[0]} / {ws[1]} / {ws[2]}, '
+                  f'mean difference {sa[a_].mean() - sa[b_].mean():+.3f}')
+    print(f'\n  --- sensitivity of mean C_eff (dose only) to the added drift parameters (Tuned, sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
     for cw in C_W_SWEEP:
         for wd in W_DW_SWEEP:
             vals = {s: np.mean([dose_eval(r, cw, wd)['ceff'] for r in res[(s, 'Tuned', SIGMA_H)]]) for s in STRATS}
@@ -503,18 +543,21 @@ def report(res):
             order = sorted(STRATS, key=lambda s: -vals[s])
             print(f'    c_w {cw:.2f} 1/s (wind amplitude {A_WIND / cw:.1f} m/s), w_dw {wd:.0f} m/s: ' +
                   ', '.join(f'{s} {vals[s]:.3f} (d {100 * drift[s]:.1f} cm)' for s in STRATS) + f' | ranking {" > ".join(order)}')
-    print(f'\n  --- crown-radius sweep (sigma_h = {SIGMA_H}, {N_SWEEP_SEEDS} seeds; C_eff mean, crown contacts per mission) ---')
+    print(f'\n  --- crown-radius sweep (sigma_h = {SIGMA_H}, {N_SWEEP_SEEDS} seeds; C_eff / collision-free missions / safe C_eff / contacts per mission) ---')
     for rc in R_CROWN_SWEEP:
         for g in GAINS:
             out = {}
             for s in ('fixed15', 'adaptive', 'tf'):
                 key = (s, g, SIGMA_H) if rc == R_CROWN else (s, g, SIGMA_H, rc)
                 rs = res[key][:N_SWEEP_SEEDS]
-                out[s] = (np.array([dose_eval(r)['ceff'] for r in rs]), np.mean([r['contact_plants'] for r in rs]))
+                c, sf, nfree = stats(rs)
+                out[s] = (c, sf, nfree, np.mean([r['contact_plants'] for r in rs]))
             print(f'    R_crown {rc:.2f} m, {g}: ' + ', '.join(
-                f'{s} {out[s][0].mean():.3f} ({out[s][1]:.2f} contacts)' for s in out) +
-                f"; tf > fixed15 in {wins(out['tf'][0], out['fixed15'][0])[0]}/{N_SWEEP_SEEDS}, "
-                f"adaptive > tf in {wins(out['adaptive'][0], out['tf'][0])[0]}/{N_SWEEP_SEEDS}")
+                f'{s} {out[s][0].mean():.3f} / {out[s][2]}/{N_SWEEP_SEEDS} / {out[s][1].mean():.3f} / {out[s][3]:.2f}' for s in out) +
+                f"; C_eff: tf > fixed15 in {wins(out['tf'][0], out['fixed15'][0])[0]}/{N_SWEEP_SEEDS}, "
+                f"adaptive > tf in {wins(out['adaptive'][0], out['tf'][0])[0]}/{N_SWEEP_SEEDS}; safe C_eff: tf > fixed15 in "
+                f"{wins(out['tf'][1], out['fixed15'][1])[0]}/{N_SWEEP_SEEDS}, adaptive > tf in "
+                f"{wins(out['adaptive'][1], out['tf'][1])[0]}/{N_SWEEP_SEEDS}")
     print(f'\n  --- vertical-damping probe: adaptive with k_d,z x {KDZ_PROBE} (sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
     for g in GAINS:
         kp, ki, kd = (ALPHA_Z * GAINS[g][k] for k in ('kp', 'ki', 'kd'))
@@ -522,55 +565,37 @@ def report(res):
             poles = np.roots([1, sc * kd, kp, ki])
             cp = poles[np.argmax(np.abs(poles.imag))]
             rs = res[key]
+            c, sf, nfree = stats(rs)
             print(f'    {g}, k_d,z x {sc:g} (damping {-cp.real / abs(cp):.3f}): target-plant contacts '
                   f"{np.mean([r['contact_own'] for r in rs]):.2f}/mission (climb leg {np.mean([r['contact_own_climb'] for r in rs]):.2f}, "
                   f"descent/level leg {np.mean([r['contact_own_descent'] for r in rs]):.2f}), other plants "
                   f"{np.mean([r['contact_other'] for r in rs]):.2f}, z min {min(r['zmin'] for r in rs):.2f} m, "
-                  f"C_eff {np.mean([dose_eval(r)['ceff'] for r in rs]):.3f}")
+                  f"C_eff {c.mean():.3f}, collision-free {nfree}/{len(rs)}, safe C_eff {sf.mean():.3f}")
     print(f'\n  --- probe: dose without the standoff factor (drift and hover error only), sigma_h = {SIGMA_H}, {N_SEEDS} seeds ---')
     for g in GAINS:
         vals = {s: np.array([dose_eval(r, alt_factor=False)['ceff'] for r in res[(s, g, SIGMA_H)]]) for s in STRATS}
         print(f'    {g}: ' + ', '.join(f'{s} {vals[s].mean():.3f} +- {vals[s].std():.3f}' for s in STRATS) +
               f"; adaptive vs fixed15 higher/equal/lower {wins(vals['adaptive'], vals['fixed15'])}, "
               f"adaptive vs fixedsafe {wins(vals['adaptive'], vals['fixedsafe'])}")
-    print(f'\n  --- C_eff vs sigma_h (Tuned, {N_SWEEP_SEEDS} seeds) ---')
+    print(f'\n  --- C_eff vs sigma_h (Tuned, {N_SWEEP_SEEDS} seeds; C_eff, collision-free missions, safe C_eff) ---')
     for sh in SIGMA_H_SWEEP:
         parts = []
         for s in STRATS:
             rs = res[(s, 'Tuned', sh)][:N_SWEEP_SEEDS]
-            c = [dose_eval(r)['ceff'] for r in rs]
-            parts.append(f"{s} {np.mean(c):.3f} +- {np.std(c):.3f} (contact plants {np.mean([r['contact_plants'] for r in rs]):.2f})")
+            c, sf, nfree = stats(rs)
+            parts.append(f"{s} {c.mean():.3f} +- {c.std():.3f}, {nfree}/{N_SWEEP_SEEDS}, {sf.mean():.3f}")
         print(f'    sigma_h {sh:.2f}: ' + ' | '.join(parts))
-    print(f'\n  --- altitude-bound contacts over EVERY job group (assert: no contact longer than '
-          f'{BOUND_CONTACT_MAX:.1f} s = one spray window; hard touchdown = floor contact faster than {HARD_TOUCHDOWN:.1f} m/s) ---')
-    rows = []
+    print('\n  --- floor barrier over EVERY job group (asserts: z >= Z_MIN, z > 0, thrust acceleration <= A_MAX) ---')
+    nb = 0
     for key in sorted(res, key=str):
         rs = res[key]
-        worst = int(np.argmax([r['clamp_run'] for r in rs]))
-        rows.append((max(r['clamp_run'] for r in rs), key, rs, worst))
-    for cmax, key, rs, worst in sorted(rows, key=lambda x: (-round(x[0], 6), str(x[1]))):
-        if cmax <= 0:
+        if max(r['barrier'] for r in rs) == 0:
             continue
-        print(f"    {str(key):42s} longest contact {cmax:.2f} s (seed {worst}), floor clamps {np.mean([r['clamp'] for r in rs]):.1f}/mission, "
-              f"max touchdown speed {max(r['v_impact'] for r in rs):.2f} m/s, hard touchdowns "
-              f"{sum(r['n_hard'] for r in rs)} in {len(rs)} missions")
-    allmax = max(x[0] for x in rows)
-    cmax, key, rs, worst = sorted(rows, key=lambda x: (-round(x[0], 6), str(x[1])))[0]
-    tr = run_mission((key[0], key[1], key[2], worst, True) + tuple(key[3:]))['traj']    # replay the worst run
-    on = np.isclose(tr[:, 2], Z_MIN)
-    best_n, best_end, cur = 0, 0, 0
-    for i, o in enumerate(on):
-        cur = cur + 1 if o else 0
-        if cur > best_n:
-            best_n, best_end = cur, i
-    i0 = best_end - best_n + 1
-    pre = tr[max(0, i0 - int(2.0 / DT)):i0, 2]
-    print(f'    replay of the worst run {key} seed {worst}: on the floor from t = {(i0 + 1) * DT:.2f} s for {best_n * DT:.2f} s; '
-          f'highest altitude in the 2 s before {pre.max():.2f} m; distance to the nearest plant centre at touchdown '
-          f'{np.min(np.hypot(tr[i0, 0] - PLANTS[:, 0], tr[i0, 1] - PLANTS[:, 1])):.2f} m')
-    print(f'    worst job group: {allmax:.2f} s; margin to the assert {BOUND_CONTACT_MAX / allmax:.1f}x; '
-          f'groups with no bound contact: {sum(1 for x in rows if x[0] <= 0)} of {len(rows)}')
-
+        nb += 1
+        print(f"    {str(key):42s} barrier active {np.mean([r['barrier'] for r in rs]):.1f} steps/mission in "
+              f"{sum(r['barrier'] > 0 for r in rs)}/{len(rs)} missions, infeasible {sum(r['barrier_infeasible'] for r in rs)}, "
+              f"lowest altitude {min(r['zmin'] for r in rs):.4f} m")
+    print(f'    job groups with any barrier activity: {nb} of {len(res)}')
 
 if __name__ == '__main__':
     import sys
