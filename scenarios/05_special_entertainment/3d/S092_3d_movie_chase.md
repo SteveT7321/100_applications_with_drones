@@ -1,6 +1,6 @@
 # S092 3D Upgrade — Movie Chase Scene
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Based on**: [S092 original](../S092_movie_chase.md)
 
 ---
@@ -42,7 +42,9 @@ the full 3D obstacle field. A 6-state Kalman Filter predicts the car's position 
 
 **Roles**:
 - **Car (target)**: follows a pre-scripted sinusoidal road that includes one altitude ramp
-  (rises 2 m over 20 m, holds for 20 m, descends 2 m over 20 m); speed v = 8 m/s.
+  (rises 2 m over 20 m, holds for 20 m, descends 2 m over 20 m); speed v = 8 m/s along $x$ (as in
+  S092, the along-road speed is 8.00–12.36 m/s). The ramp position is not specified; the
+  implementation centres the rise at $s_1$ = 60 m and the descent at $s_2$ = 100 m.
 - **Camera drone**: executes KF-predicted 3D MPC trajectory to maintain the 3D desired offset
   and avoid all obstacles in 3D; carries a 2-axis gimbal (pitch + yaw) whose angular rate is
   jointly penalised in the MPC cost.
@@ -110,7 +112,17 @@ keep the camera gimbal within its safe pitch envelope. Let $\mathbf{d}_{offset}$
 nominal offset in the car's Frenet frame:
 
 $$\mathbf{p}_{d}(t) = \mathbf{p}_{car}(t) + R_{car}(t)\, \mathbf{d}_{offset}, \qquad
-\mathbf{d}_{offset} = \begin{pmatrix} 0 \\ -8 \\ 5 \end{pmatrix}\ \text{m}$$
+\mathbf{d}_{offset} = \begin{pmatrix} -8 \\ 0 \\ 5 \end{pmatrix}\ \text{m}$$
+
+> **Corrections (implementation, 2026-10-24):** (1) $(0, -8, 5)$ puts the drone 8 m to the side,
+> not behind; S092 corrected it to $(-8, 0, 5)$. (2) The Frenet frame is not usable here: on the
+> sine-shaped road the principal normal $\hat{\mathbf n}$ flips sign at every inflection point, so
+> $\hat{\mathbf b} = \hat{\mathbf t} \times \hat{\mathbf n}$ (the "up" axis of the offset) flips
+> between up and down. The implementation uses the yaw-only body frame of S092 (behind in the
+> horizontal plane, above along world $z$). (3) The nominal offset itself violates the gimbal
+> envelope stated below: 5 m above at 8 m behind is a pitch of $\arctan(5/8) = 32.0°$, outside
+> $\pm 30°$. Applying the card's own adjustment gives $8\tan 30° = 4.62$ m above the car, which the
+> implementation uses as the desired height.
 
 The **gimbal pitch angle** from drone to car is:
 
@@ -157,6 +169,12 @@ climb over the obstacle:
 
 $$p_{i,z} \geq H_{pil} + z_{clearance}, \qquad z_{clearance} = 0.5\ \text{m}$$
 
+> **Correction (implementation):** a box $[0, z_{deck}]$ reaches the ground, so the car could not
+> drive beneath it. The implementation treats the deck as a slab 3 m thick with its underside at
+> $z_{deck}$ = 3 m (z from 3 to 6 m); the car (1.5 m tall) passes below. The pillars are 4 m tall,
+> which is **below** the nominal 4.62 m camera height, so with the card's value the drone clears
+> them without climbing; pillar heights of 6 and 8 m are also run.
+
 For the bridge deck box obstacle (axis-aligned, defined by bounds $[x_a, x_b] \times [y_a, y_b]
 \times [0, z_{deck}]$), the linearised constraint in the approach direction is:
 
@@ -174,6 +192,13 @@ $$|v_{i,z}| \leq v_{z,max} = 4.0\ \text{m/s}, \qquad |u_{i,z}| \leq a_{z,max} = 
 $$\|\mathbf{v}_i^{xy}\|_\infty \leq v_{xy,max} = 12.0\ \text{m/s}, \qquad \|\mathbf{u}_i^{xy}\|_\infty \leq a_{xy,max} = 6.0\ \text{m/s}^2$$
 
 ### Camera Framing Metric in 3D
+
+> **Correction (implementation):** the S092 band of 20–40 % is unreachable at the nominal
+> distance (S092 uses 10–20 %), and the $\cos\phi$ factor below divides where it should multiply:
+> a vertical object of height $h$ seen from elevation $\phi$ at distance $d$ subtends about
+> $h\cos\phi/d$, so foreshortening makes it **smaller**. The implementation uses
+> $f_{height} = \theta_{frame}\cos\phi_{gimbal}/\theta_{FoV}$ with the 10–20 % band, and counts a
+> frame only when the line of sight to the car is not blocked by the deck or a pillar.
 
 The 3D distance replaces the original 2D separation:
 
@@ -227,7 +252,7 @@ where $\mathrm{dist}_{3D}$ is the signed minimum Euclidean distance to the obsta
 | Road wavelength (L_wave) | 80.0 m |
 | Ramp height (h_ramp) | 2.0 m |
 | Ramp slope width (w_ramp) | 3.0 m |
-| Desired offset (behind / above) | 8.0 m / 5.0 m |
+| Desired offset (behind / above) | 8.0 m / 5.0 m (4.62 m after the card's ±30° gimbal rule) |
 | Number of cylindrical pillars | 5 |
 | Pillar height (H_pil) | 4.0 m |
 | Pillar physical radius | 0.6 m |
@@ -251,7 +276,7 @@ where $\mathrm{dist}_{3D}$ is the signed minimum Euclidean distance to the obsta
 | Gimbal safe pitch envelope | [-30°, +30°] |
 | Gimbal max pitch rate | 30 deg/s |
 | Camera vertical FoV | 60 deg |
-| Target framing zone (f_height) | 20–40 % of frame |
+| Target framing zone (f_height) | 20–40 % of frame (unreachable; 10–20 % used, as in S092) |
 | Car height for framing model | 1.5 m |
 
 ---
