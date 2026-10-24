@@ -9,9 +9,11 @@
 **Setup**: A 1 kg validation quadrotor flies 100 m along $x$ at 1 m/s and a height of 10 m. A crosswind blows in $+y$: a 12 m/s mean plus Dryden turbulence (σ 4 m/s lateral, 2 m/s vertical). The wind pushes the drone through quadratic drag $\mathbf{F}_w = \tfrac12\rho C_D A\,(\mathbf{V}_w - \mathbf{v})\odot|\mathbf{V}_w - \mathbf{v}|$. The mission **fails** at the first instant that $|y| > 5$ m or that roll or pitch exceeds 40°. It succeeds when $x \ge 100$ m within 120 s.
 
 **Controllers compared** (same wind realisation per seed, common random numbers):
-1. **PID only**: the cascaded controller of the base model (position P, velocity PI, attitude P, body-rate PI), tilt limited to $\theta_{lim}$ = 30°, no wind knowledge.
+1. **PID only**: the cascaded controller of the base model (position P, velocity PI, attitude P, body-rate PI), no wind knowledge.
 2. **LQR**: the card's LQR on a 10-state linearisation about hover. It commands thrust and roll/pitch torques directly; there is no wind estimate.
 3. **LQR + RLS** (proposed): the same LQR, linearised around an equilibrium shifted by the RLS estimate $\hat{\mathbf{w}}$ of the wind acceleration. The shift supplies a feed-forward tilt and thrust that cancel $-m\hat{\mathbf{w}}$.
+
+**Common flight envelope**: as the card specifies, every controller is hard-clamped to the same commanded tilt, $\theta_{lim}$ = 30°. A sensitivity run repeats all 60 missions with a common limit of 35° and of 39°; the fail limit stays at 40°.
 
 **Plant**: the 6-DOF rigid body in [`src/base/rigid_body_drone.py`](../../../src/base/rigid_body_drone.py) (quaternion attitude, motor lag, mixer). It uses the `fpv_5inch` rotors with the card's mass of 1.0 kg and roll/pitch inertia of 0.01 kg m². The quadratic wind drag is applied as an external force. The headline run is seed 42; a 20-seed Monte Carlo (seeds 42–61) gives the statistics.
 
@@ -39,9 +41,9 @@ $$\hat{\mathbf{w}}_{k+1} = \hat{\mathbf{w}}_k + \Gamma\bigl(\mathbf{a}_{meas,k} 
 
 Here $\mathbf{a}_{meas} = \Delta\mathbf{v}/\Delta t$ plus accelerometer noise of 0.1 m/s², and $\mathbf{a}_{model} = R\mathbf{e}_3 T/m - g\mathbf{e}_3$ uses the actual rotor thrust. The feed-forward is $\mathbf{f}_{ff} = m(g\mathbf{e}_3 - \hat{\mathbf{w}})$. It gives the reference attitude $\phi_{ff} = \arcsin(-f_y/\|\mathbf{f}\|)$ and $\theta_{ff} = \operatorname{atan2}(f_x, f_z)$, clipped to ±30°, and the thrust $\|\mathbf{f}_{ff}\|$.
 
-### Attitude protection
+### Hard tilt clamp (same for all controllers)
 
-PID: the commanded thrust vector is tilt-limited to 30°. LQR: if $|\phi| > 30°$ and the roll torque pushes $|\phi|$ further out, that torque is scaled by $30°/|\phi|$. Pitch is handled the same way.
+PID: the commanded thrust vector is tilt-limited to $\theta_{lim}$. LQR: the roll row of $u = -K(\mathbf{x} - \mathbf{x}_{ref})$ is written as $\tau_\phi = -K_{\phi}(\phi - \phi_{cmd}) - K_{\dot\phi}\dot\phi$, where $\phi_{cmd} = \phi_{ref} - (\text{all other terms of the row})/K_\phi$. Then $\phi_{cmd}$ is clipped to $\pm\theta_{lim}$. This is exactly the LQR law while $|\phi_{cmd}| < \theta_{lim}$, and a hard limit on the commanded roll otherwise. Pitch is handled the same way. The RLS feed-forward attitude is clipped to the same limit.
 
 ### Metrics
 
@@ -62,7 +64,7 @@ PID: the commanded thrust vector is tilt-limited to 30°. LQR: if $|\phi| > 30°
 | $\rho$ / $C_D$ / $A_{ref}$ | 1.225 kg/m³ / 0.6 / 0.04 m² (card) |
 | Reference | $x = t$ (1 m/s) to 100 m, $y$ = 0, $z$ = 10 m |
 | Fail limits | $|y| > 5$ m, $\max(|\phi|, |\theta|) > 40°$ |
-| Attitude clamp $\theta_{lim}$ | 30° |
+| Common hard tilt limit $\theta_{lim}$ | 30° (card; headline and Monte Carlo); sensitivity at 35° and 39° |
 | LQR $Q$ / $R$ | diag(1, 20, 20, 0.5, 4, 4, 8, 8, 1, 1) / diag(0.1, 1, 1) (card) |
 | RLS gain Γ / update rate | 0.05 / 50 Hz (card Δt = 0.02 s) |
 | Accelerometer noise | 0.1 m/s² (added) |
@@ -85,7 +87,7 @@ conda activate drones
 python src/05_special_entertainment/s084_wind_endurance.py
 ```
 
-Runtime ≈ 50–180 s, depending on machine load (measured while about 10 other simulations shared the 12-thread machine).
+Runtime ≈ 90–180 s with about 10 other simulations sharing the 12-thread machine (measured 90–177 s here for the 180-mission batch that includes the tilt-limit sensitivity).
 
 ---
 
@@ -93,39 +95,54 @@ Runtime ≈ 50–180 s, depending on machine load (measured while about 10 other
 
 **Dryden check**: over a 2000 s sample, the card's gain $\sigma\sqrt{2V/(\pi L)}$ gives a gust standard deviation of only 0.184 m/s (theory 0.191 m/s). The corrected gain $\sigma\sqrt{\tau}$ gives 3.842 m/s for σ = 4 m/s (card corrected). The 100 s missions are short compared with the 16.7 s correlation time, so individual realisations vary widely: the per-seed standard deviation of $W_y$ is 2.53–5.22 m/s. Seed 42 is the harshest one (mean 11.73, std 5.22, maximum 28.76 m/s).
 
-**Headline seed 42:**
+**Headline seed 42 (common 30° limit):**
 
 | Controller | Result | End | RMS $\|y\|$ | Peak $\|y\|$ | Peak attitude | Mean attitude | RMS $z$ error | Shaft energy | RLS convergence | RLS RMS error |
 |------------|--------|----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
 | PID only | FAIL: $\|y\|$ = 5.01 m | 90.50 s | 0.521 m | 5.007 m | 30.00° | 10.62° | 0.005 m | 13700 J | — | — |
-| LQR | FAIL: attitude 40.0° | 88.80 s | 0.423 m | 1.270 m | 40.01° | 10.30° | 0.008 m | 13403 J | — | — |
-| LQR + RLS | FAIL: attitude 40.0° | 88.85 s | **0.045 m** | **0.220 m** | 40.01° | 10.34° | 0.028 m | 13423 J | 1.82 s | 0.260 m/s² |
+| LQR | FAIL: $\|y\|$ = 5.01 m | 90.11 s | 0.661 m | 5.007 m | 30.00° | 10.48° | 0.008 m | 13616 J | — | — |
+| LQR + RLS | FAIL: $\|y\|$ = 5.01 m | 90.66 s | 0.502 m | 5.009 m | 30.00° | 10.62° | 0.032 m | 13725 J | 1.90 s | 0.268 m/s² |
 
-**Monte Carlo, 20 seeds:**
+**Monte Carlo, 20 seeds, common 30° limit:**
 
 | Controller | Success | RMS $\|y\|$ | Peak $\|y\|$ | Peak attitude | Energy (successful missions) |
 |------------|:-------:|-----:|-----:|-----:|-----:|
 | PID only | 15/20 | 0.428 ± 0.334 m | 2.338 ± 2.052 m | 28.82 ± 2.10° | 15274 J |
-| LQR | 18/20 | 0.494 ± 0.089 m | 1.073 ± 0.194 m | 33.04 ± 5.63° | 15310 J |
-| **LQR + RLS** | **18/20** | **0.047 ± 0.007 m** | **0.196 ± 0.065 m** | 33.37 ± 5.30° | 15315 J |
+| LQR | 14/20 | 0.744 ± 0.500 m | 2.701 ± 1.891 m | 28.70 ± 2.36° | 15263 J |
+| **LQR + RLS** | **16/20** | **0.350 ± 0.373 m** | **2.077 ± 2.119 m** | 28.85 ± 2.11° | 15280 J |
 
-Failures:
-- **PID only**: seeds 42, 51, 52, 55 and 58, all lateral ($|y|$ > 5 m at 90.5, 39.5, 74.3, 45.6 and 39.2 s).
-- **LQR** and **LQR + RLS**: seeds 42 and 58, both on attitude (> 40° at 88.8/88.9 s and 38.5 s).
+All failures are lateral ($|y|$ > 5 m); no run exceeds 40°:
+- **PID only**: seeds 42, 51, 52, 55, 58 (at 90.5, 39.5, 74.3, 45.6, 39.2 s).
+- **LQR**: seeds 42, 49, 51, 52, 55, 58 (at 90.1, 6.9, 38.8, 73.7, 44.8, 38.9 s).
+- **LQR + RLS**: seeds 42, 51, 55, 58 (at 90.7, 40.0, 46.1, 39.3 s).
 
-Head-to-head on the same seeds: LQR + RLS has the lower RMS $|y|$ on 20/20 seeds against LQR and on 20/20 against PID. LQR beats PID on only 8/20.
+Head-to-head on the same seeds: LQR + RLS has the lower RMS $|y|$ on 19/20 seeds against LQR and on 18/20 against PID. LQR beats PID on 0/20.
 
-Peak attitude over successful missions: PID 28.42 ± 2.29° (max 30.00°), LQR 32.27 ± 5.40° (max 39.65°), LQR + RLS 32.64 ± 5.08° (max 39.36°). Only 2/15, 2/18 and 2/18 of these runs stay below 25°.
+Peak attitude over successful missions: PID 28.42 ± 2.29°, LQR 28.14 ± 2.64°, LQR + RLS 28.56 ± 2.27° (max 30.00° for all three). Only 2/15, 2/14 and 2/16 of these runs stay below 25°.
 
-RLS: first within 0.5 m/s² of the mean-wind acceleration after 3.27 ± 6.04 s (max 25.70 s; never on 0 seeds). RMS error against the true instantaneous wind acceleration: 0.268 ± 0.031 m/s².
+RLS: first within 0.5 m/s² of the mean-wind acceleration after 2.99 ± 5.94 s (max 25.78 s; never on 0 seeds). RMS error against the true instantaneous wind acceleration: 0.268 ± 0.031 m/s².
+
+**Tilt-limit sensitivity** (same limit for all three controllers, 20 seeds each, fail limits unchanged):
+
+| Limit | Controller | Success | RMS $\|y\|$ | Mean peak $\|y\|$ | Mean peak attitude | Failed seeds |
+|------:|------------|:-------:|-----:|-----:|-----:|------|
+| 30° | PID only | 15/20 | 0.428 ± 0.334 m | 2.338 m | 28.82° | 42, 51, 52, 55, 58 |
+| 30° | LQR | 14/20 | 0.744 ± 0.500 m | 2.701 m | 28.70° | 42, 49, 51, 52, 55, 58 |
+| 30° | LQR + RLS | 16/20 | 0.350 ± 0.373 m | 2.077 m | 28.85° | 42, 51, 55, 58 |
+| 35° | PID only | 20/20 | 0.237 ± 0.161 m | 1.004 m | 31.67° | — |
+| 35° | LQR | 20/20 | 0.551 ± 0.181 m | 1.534 m | 31.54° | — |
+| 35° | LQR + RLS | 20/20 | 0.103 ± 0.143 m | 0.621 m | 31.97° | — |
+| 39° | PID only | 20/20 | 0.186 ± 0.084 m | 0.633 m | 32.99° | — |
+| 39° | LQR | 20/20 | 0.513 ± 0.108 m | 1.158 m | 32.89° | — |
+| 39° | **LQR + RLS** | **20/20** | **0.048 ± 0.011 m** | **0.239 m** | 33.48° | — |
 
 **Key findings**:
-- **RLS feed-forward cuts the lateral error by a factor of 10.** It reduces RMS $|y|$ from 0.494 m (LQR) to 0.047 m and peak $|y|$ from 1.073 to 0.196 m, on 20/20 seeds. The estimator follows the gusts themselves, not only the mean: its RMS error against the instantaneous wind acceleration is 0.268 m/s², with a 0.40 s time constant against a 16.7 s gust correlation time. The card's targets for LQR + RLS (RMS < 0.5 m, peak < 1 m, convergence < 15 s on average) hold.
-- **The PID does not drift as the card expects.** The base model's velocity loop has integral action, which removes the steady wind offset. The PID's RMS $|y|$ (0.428 m) is about the same as the LQR's (0.494 m), and it beats LQR on 8/20 seeds. It fails on 5/20 seeds, never on attitude. When a gust needs more than the 30° tilt clamp, the PID holds the clamp and is blown out past 5 m, as on seed 42: $|y|$ goes from about 0.1 m to 5 m within about 6 s at the end of the run (read from the figure). The card's "PID: RMS > 5 m, FAIL" holds only on those 5 seeds.
-- **The LQR's offset is the one the linear model predicts.** The linear model predicts 0.436 m under the mean wind, and the flown RMS is 0.494 m. The card's expected 1–3 m RMS and 2–4 m peak do not appear.
-- **Two seeds cannot be flown by any controller.** On seeds 42 and 58 the gusts need more tilt than the airframe may use. A 20 m/s gust already needs 30.9°, and seed 42 reaches 28.76 m/s. The PID gives up position (it is tilt-limited) and fails on $|y|$. Both LQR variants keep position and exceed 40° instead. The "attitude protection" only scales torques that push past 30°, so the position loop still drives the tilt up. This trade-off is set by the fail limits, not by the estimator.
-- **Peak attitude does not go down with RLS** (33.37 ± 5.30° against 33.04 ± 5.63°). The feed-forward produces the same tilt that the wind demands; it just produces it earlier. The card's "< 25°" target holds on only 2/18 successful runs, because the gusts themselves need 25–40° (the mean wind alone needs 12.2°).
-- **Energy is the same for all three** (15274–15315 J per successful mission of about 100 s, i.e. roughly 150 W). The thrust needed to hold against the wind dominates; how well the drone tracks hardly matters. The values are estimates: see the Sim2Real notes.
+- **The card's 30° clamp, not the control law, decides most failures.** With the same hard 30° limit on all three controllers, every failure is lateral. A 20 m/s gust already needs 30.9° of tilt, and seed 42 reaches 28.76 m/s. When the clamp binds, every controller is blown out past 5 m, and the 4–6 failed seeds (42, 51, 55, 58 for all three) are largely the same. Raising the common limit to 35° gives 20/20 successes for all three controllers, and so does 39°. The fail rule stays at 40°, and no run exceeds it.
+- **Within the same envelope, RLS feed-forward is the best controller.** At 30° it has the most successes (16/20, against 15 for PID and 14 for LQR) and the lowest RMS $|y|$ (0.350 m; lower than LQR on 19/20 seeds and than PID on 18/20). At 39°, where nothing fails, it cuts RMS $|y|$ to 0.048 m, against 0.186 m for PID and 0.513 m for LQR. The estimator follows the gusts themselves, not only the mean: RMS error 0.268 m/s² against the instantaneous wind acceleration, with a 0.40 s time constant against a 16.7 s gust correlation time.
+- **Pure LQR is the weakest**, because it has no integral action. Its offset matches the linear model's prediction (0.436 m under the mean wind; flown RMS 0.513 m at 39°). It has a higher RMS $|y|$ than the PID on every seed at 30° (0/20 wins) and a higher mean RMS at every limit. It is the only controller that fails seed 49, at 6.9 s, early in the run.
+- **The PID does not drift as the card expects.** The base model's velocity loop has integral action, which removes the steady wind offset. At 35° and 39° it succeeds on 20/20 seeds with RMS $|y|$ of 0.237 m and 0.186 m. The card's "PID: RMS > 5 m, FAIL" holds only on the 5 seeds where the 30° clamp binds.
+- **Card targets for LQR + RLS** (RMS < 0.5 m, peak < 1 m, success): at the card's 30° limit the mean RMS (0.350 m) meets the target, but the mean peak (2.077 m) and the success rate (16/20) do not. At 35° and 39° all three targets hold. Convergence (2.99 s mean, < 15 s) holds. The "< 25° peak attitude" target holds on only 2/16 successful runs at 30°, because the gusts themselves need 25–30°.
+- **Energy is the same for all three** (15263–15280 J per successful mission of about 100 s, i.e. roughly 150 W). The thrust needed to hold against the wind dominates; how well the drone tracks hardly matters. The values are estimates: see the Sim2Real notes.
 
 ### 3D Trajectory
 
@@ -135,7 +152,7 @@ The three paths on seed 42 (reference = green dotted line, grey dashes = the 5 m
 
 ### Lateral Deviation and Roll
 
-Top: $y(t)$ with the ±5 m fail limits. Bottom: roll angle with the 30° clamp (dotted) and the 40° fail limit (dashed). The final gust (from about 82 s) drives the PID out sideways and both LQR variants past 40°:
+Top: $y(t)$ with the ±5 m fail limits. Bottom: roll angle with the 30° clamp (dotted) and the 40° fail limit (dashed). The final gust (from about 82 s) pushes all three controllers onto the 30° clamp, and all three are then blown out past 5 m:
 
 ![Lateral deviation and attitude](./lateral_and_attitude.png)
 
@@ -159,9 +176,15 @@ Bars: mean ± std over 20 seeds; triangles: seed 42. Right: success counts and m
 
 ### 3D Path Coloured by Deviation
 
-LQR + RLS on seed 42, coloured by $|y|$, with the wind $(W_y, W_z)$ drawn every 5 s at 1/6 scale:
+LQR + RLS on seed 42, coloured by $|y|$, with the wind $(W_y, W_z)$ drawn every 5 s at 1/6 scale. The path ends where the final gust blows it past $|y|$ = 5 m:
 
 ![Path deviation 3D](./path_deviation_3d.png)
+
+### Tilt-Limit Sensitivity
+
+Success count and mean RMS $|y|$ (log scale) against the common hard tilt limit:
+
+![Envelope sensitivity](./envelope_sensitivity.png)
 
 ### Animation
 
@@ -177,10 +200,10 @@ Top-down view of all three controllers on seed 42. The side bar shows the latera
 | Dryden gain $\sigma\sqrt{2V/(\pi L)}$ | $\sigma\sqrt{L/V}$ (card corrected) | The card's gain gives a std of 0.184 m/s instead of 4 m/s (printed check). |
 | Vertical gust "same filter with scale $L_w$" (text) | σ = 2 m/s, $L$ = 100 m (card code) | The card's text and code disagree; the code values are more realistic near the ground. |
 | LQR thrust command $u_0 = -K e$ used as total thrust (card code) | $T = (mg + \delta T)/(\cos\phi\cos\theta)$ | The card code leaves out the hover thrust, so the drone would start by falling. |
-| PID maps acceleration to "pseudo torques" (×5) | Base-model cascaded PID (position P, velocity PI, attitude, rate PI) with a 30° tilt limit | A standard, reasonable PID baseline (X2). The card's map has no physical meaning. |
+| PID maps acceleration to "pseudo torques" (×5) | Base-model cascaded PID (position P, velocity PI, attitude, rate PI) | A standard, reasonable PID baseline (X2). The card's map has no physical meaning. |
 | Feed-forward $u_{ff} = -m\hat{w}$ mapped to torques (×5) | LQR linearised around the equilibrium tilt and thrust that cancel $-m\hat{\mathbf{w}}$ | A torque does not cancel a force; the equilibrium shift does. |
 | $a_{meas}$ = model + true force (card code) | Finite-difference velocity plus 0.1 m/s² noise, against a model using the actual rotor thrust | The card code hands the estimator the exact answer. |
-| Attitude clamp scales the torque whenever $\|\phi\| > 30°$ | Scales only a torque that pushes $\|\phi\|$ further out | Scaling a restoring torque would slow the recovery. |
+| "Hard-clamped to 30°", implemented in the card code as torque scaling whenever $\|\phi\| > 30°$ | A true hard clamp of the commanded roll and pitch, with the same 30° limit as the PID's tilt limit; sensitivity at 35° and 39° for all controllers | Torque scaling is not a hard clamp: an earlier version of this scenario used a soft variant and let the LQR position loop push the tilt past 40°, while the PID was hard-limited. That compared different flight envelopes, not control laws (X2). |
 | One run, Δt = 0.02 s | 20-seed Monte Carlo with common wind, control at 5 ms, RLS at the card's 0.02 s | X2; the rigid-body inner loops need a faster step. |
 | RLS convergence "within 0.5 m/s of the mean wind" | Within 0.5 m/s² of the mean-wind acceleration (the card's metric table) | $\hat w$ is an acceleration. |
 | Peaks taken from the sampled log | Peaks at the 200 Hz control rate | The 50 Hz log can miss the failing sample. |
@@ -199,10 +222,10 @@ Top-down view of all three controllers on seed 42. The side bar shows the latera
 - **Accelerometer noise and vibration spectrum** in hover. This sets how far Γ can be raised before $\hat w$ becomes noisy.
 
 **Path to PX4 / Betaflight SITL.**
-1. **PX4** already contains the PID baseline (its multicopter position controller) and an integrator that plays the RLS role. The fair test is PX4 SITL with Gazebo's wind plugin, configured with the Dryden parameters above (σ 4 m/s, $L$ 200 m). Fly the same 100 m mission through MAVLink and compare `vehicle_local_position` against this model.
+1. **PX4** already contains the PID baseline (its multicopter position controller) and an integrator that plays the RLS role. The fair test is PX4 SITL in Gazebo. Gazebo-classic's wind plugin only provides a mean wind plus simple gusts, not Dryden turbulence, so drive the wind from the Dryden time series generated here (for example a small custom plugin or a ROS 2 node that publishes the wind velocity). Fly the same 100 m mission through MAVLink and compare `vehicle_local_position` against this model.
 2. Add the LQR + RLS as a custom module that publishes `VehicleAttitudeSetpoint` and thrust, with the estimator fed by `vehicle_acceleration`. PX4's rate controller then replaces the torque-level LQR inner loop, so re-design the LQR on the rate-loop closed dynamics.
 3. **Betaflight** is not a natural target: it has no position loop. Run the outer loops on a companion computer and send angle-mode commands through MSP.
-4. Set the fail limits as PX4 failsafes (`MPC_TILTMAX_AIR` = 30°, geofence 5 m) and confirm that the gust levels at which this model fails match flight logs (seed 42 peaks at 28.76 m/s).
+4. Set the tilt limit and fail limits as in PX4 (`MPC_TILTMAX_AIR` = 30°, geofence 5 m) and check against flight logs whether the gust level at which the 30° clamp starts to bind (above about 20 m/s here) matches. The sensitivity table predicts that `MPC_TILTMAX_AIR` = 35° removes all failures on these 20 wind realisations.
 
 ---
 
@@ -210,7 +233,7 @@ Top-down view of all three controllers on seed 42. The side bar shows the latera
 
 1. **Variable-gain RLS** (card extension 1): raise Γ when the innovation is large. The current Γ = 0.05 already tracks gusts with an RMS error of 0.268 m/s².
 2. **Joint state and wind EKF** with GPS-rate position updates and IMU-rate prediction.
-3. **Tilt-limit trade study**: allow up to 35–40° in gusts, and compare mission success with the fail rule kept at 40°.
+3. **Gust-scheduled tilt limit**: use 30° in calm air and open the limit toward 39° only while $\hat w$ is large. The sensitivity table shows 35° is already enough for 20/20 seeds.
 4. **Rotor-drag model**: add $-k_d\,\omega\,\mathbf{v}_{rel,\perp}$ per rotor and check whether the RLS absorbs it.
 5. **Larger Monte Carlo** (card extension 4: 500 seeds) for a certification-style success rate.
 

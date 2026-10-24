@@ -7,11 +7,14 @@ through quadratic aerodynamic drag. Three controllers are compared on identical 
 realisations (common random numbers):
 
   1. PID only   - cascaded position P / velocity PI / attitude / body-rate PI controller of
-                  src/base/rigid_body_drone.py, tilt limited to 30 deg, no wind knowledge.
+                  src/base/rigid_body_drone.py, no wind knowledge.
   2. LQR        - LQR on the card's 10-state hover linearisation, outputs thrust + roll/pitch
                   torques directly, no wind estimate.
   3. LQR + RLS  - the same LQR around an equilibrium shifted by a recursive estimate of the wind
                   acceleration (feed-forward tilt and thrust).
+
+All three are hard-clamped to the same commanded tilt (card: 30 deg); a sensitivity run repeats
+everything at 35 and 39 deg.
 
 The plant is the 6-DOF rigid-body model (quaternion attitude, motor lag, mixer), fpv_5inch motors
 with the card's mass 1.0 kg and inertia 0.01 kg m^2. The headline run is seed 42; a 20-seed
@@ -69,6 +72,8 @@ LOG_EVERY   = EST_EVERY      # log at 50 Hz
 ACC_NOISE   = 0.1            # m/s^2 accelerometer noise std (RLS input)
 YAW_KP, YAW_KD = 16.0, 8.0   # yaw hold for the LQR controllers (1/s^2, 1/s)
 MC_SEEDS    = list(range(42, 62))
+TILT_LIMITS = np.array([THETA_LIM, np.radians(35.0), np.radians(39.0)])  # common hard limit;
+                                               # 30 deg = card (headline), others = sensitivity
 HEAD_SEED   = 42
 W_EFF_MEAN  = 0.5 * RHO_AIR * C_D * A_REF * MEAN_WIND_Y ** 2 / MASS   # m/s^2
 
@@ -154,17 +159,21 @@ def euler_rates(eul, w):
 
 
 # ── Simulation ────────────────────────────────────────────────────────────────
-def run_simulation(seeds=MC_SEEDS):
+def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
+    """All controllers x all tilt limits x all seeds in one batch.
+    Drone index b = (l * C + c) * S + s; limit index 0 (the card's 30 deg) is logged in full."""
     K, x_ss, eig = lqr_gain()
-    S, C = len(seeds), len(CTRLS)
-    B = S * C                                    # drone b = c * S + s
-    ctrl_of = np.repeat(np.arange(C), S)
-    seed_of = np.tile(np.arange(S), C)
+    S, C, NL = len(seeds), len(CTRLS), len(limits)
+    B = NL * C * S
+    H = C * S                                    # fully logged headline group (limit 0)
+    lim_of = np.repeat(np.asarray(limits, dtype=float), C * S)
+    ctrl_of = np.tile(np.repeat(np.arange(C), S), NL)
+    seed_of = np.tile(np.arange(S), NL * C)
     n_max = int(round(T_MAX / DT))
     winds = np.stack([wind_series(sd, n_max + 1) for sd in seeds])      # (S, n, 3)
     params = make_params('fpv_5inch', mass=MASS, inertia=np.array([I_XX, I_YY, I_ZZ]),
                          drag=np.zeros(3))
-    gains = default_gains('fpv_5inch', max_tilt=THETA_LIM)
+    gains = default_gains('fpv_5inch', max_tilt=lim_of)      # PID: hard limit on commanded tilt
     start = np.tile([0.0, 0.0, Z_REF], (B, 1))
     drone = RigidBodyDrone(start, preset='fpv_5inch', params=params, gains=gains, dt=DT,
                            drag_ff=False, record=False)
@@ -182,7 +191,11 @@ def run_simulation(seeds=MC_SEEDS):
     energy_end = np.full(B, np.nan)
     peak_y = np.zeros(B)                 # running maxima at the full control rate
     peak_att = np.zeros(B)
+    acc = {k: np.zeros(B) for k in ('n', 'y2', 'att', 'dz2')}   # 50 Hz running sums
     logs = {k: [] for k in ('t', 'pos', 'eul', 'w_hat', 'w_true', 'thrust', 'wind', 'tilt')}
+    # LQR roll / pitch rows: tau = -K_a (angle - angle_cmd) - K_r rate, with the commanded
+    # angle angle_cmd = angle_ref - (other terms) / K_a hard-clipped to the tilt limit
+    rows = [(1, 6, 8), (2, 7, 9)]
     t = 0.0
     for k in range(n_max):
         wind = winds[seed_of, k]
@@ -203,7 +216,7 @@ def run_simulation(seeds=MC_SEEDS):
             fn = np.linalg.norm(f, axis=1)
             att_ff = np.column_stack([np.arcsin(np.clip(-f[:, 1] / fn, -1, 1)),
                                       np.arctan2(f[:, 0], f[:, 2])])
-            att_ff = np.clip(att_ff, -THETA_LIM, THETA_LIM)
+            att_ff = np.clip(att_ff, -lim_of[:, None], lim_of[:, None])
             thrust_ff = fn
         # ── PID (cascade of the base model) ──
         v_sp = v_ref + gains['kp_pos'] * (p_ref - drone.pos)
@@ -215,15 +228,15 @@ def run_simulation(seeds=MC_SEEDS):
         x = np.column_stack([drone.pos, drone.vel, eul[:, :2], phd, thd])
         xr = np.column_stack([p_ref, v_ref, np.where(is_rls[:, None], att_ff, 0.0),
                               np.zeros((B, 2))])
-        u = -(x - xr) @ K.T
+        e = x - xr
+        u = -e @ K.T
         T_lqr = np.where(is_rls, thrust_ff, MASS * G) + u[:, 0]
         T_lqr = T_lqr / np.maximum(np.cos(eul[:, 0]) * np.cos(eul[:, 1]), 0.5)
-        tau_rp = u[:, 1:3]
-        # attitude protection: scale a torque that pushes |angle| further beyond THETA_LIM
-        for j in range(2):
-            out = (np.abs(eul[:, j]) > THETA_LIM) & (tau_rp[:, j] * eul[:, j] > 0)
-            scale = THETA_LIM / np.maximum(np.abs(eul[:, j]), 1e-9)
-            tau_rp[:, j] = np.where(out, tau_rp[:, j] * scale, tau_rp[:, j])
+        tau_rp = np.zeros((B, 2))
+        for j, (r, ia, ir) in enumerate(rows):
+            other = e @ K[r] - K[r, ia] * e[:, ia] - K[r, ir] * e[:, ir]
+            ang_cmd = np.clip(xr[:, ia] - other / K[r, ia], -lim_of, lim_of)
+            tau_rp[:, j] = -K[r, ia] * (x[:, ia] - ang_cmd) - K[r, ir] * e[:, ir]
         tau_z = I_ZZ * (-YAW_KP * eul[:, 2] - YAW_KD * drone.omega[:, 2])
         tau_lqr = np.column_stack([tau_rp, tau_z])
         T = np.where(is_pid, T_pid, np.clip(T_lqr, 0.0, params.thrust_max))
@@ -239,6 +252,11 @@ def run_simulation(seeds=MC_SEEDS):
         flying = alive & ~done
         peak_y = np.where(flying, np.maximum(peak_y, lat), peak_y)
         peak_att = np.where(flying, np.maximum(peak_att, att), peak_att)
+        if (k + 1) % LOG_EVERY == 0:
+            acc['n'] += flying
+            acc['y2'] += flying * lat ** 2
+            acc['att'] += flying * att
+            acc['dz2'] += flying * (drone.pos[:, 2] - Z_REF) ** 2
         newly_fail = flying & ((lat > E_Y_FAIL) | (att > THETA_FAIL))
         for b in np.where(newly_fail)[0]:
             fail_reason[b] = (f'|y| = {lat[b]:.2f} m > {E_Y_FAIL:.0f} m' if lat[b] > E_Y_FAIL
@@ -253,13 +271,13 @@ def run_simulation(seeds=MC_SEEDS):
         assert np.all(drone.pos[alive & ~done, 2] > 0.0), 'below ground'
         if (k + 1) % LOG_EVERY == 0:
             logs['t'].append(t)
-            logs['pos'].append(drone.pos.copy())
-            logs['eul'].append(eul.copy())
-            logs['w_hat'].append(w_hat.copy())
-            logs['w_true'].append(f_aero / MASS)
-            logs['thrust'].append(drone.thrust_total())
-            logs['wind'].append(wind.copy())
-            logs['tilt'].append(tilt_angle(drone.quat))
+            logs['pos'].append(drone.pos[:H].copy())
+            logs['eul'].append(eul[:H].copy())
+            logs['w_hat'].append(w_hat[:H].copy())
+            logs['w_true'].append(f_aero[:H] / MASS)
+            logs['thrust'].append(drone.thrust_total()[:H])
+            logs['wind'].append(wind[:H].copy())
+            logs['tilt'].append(tilt_angle(drone.quat[:H]))
         if not np.any(alive & ~done):
             break
     logs = {k: np.array(v) for k, v in logs.items()}
@@ -268,26 +286,25 @@ def run_simulation(seeds=MC_SEEDS):
     tl = logs['t']
     for b in range(B):
         te = t_end[b] if np.isfinite(t_end[b]) else tl[-1]
-        sel = tl <= te + 1e-9
-        y = logs['pos'][sel, b, 1]
-        att = np.max(np.abs(logs['eul'][sel, b, :2]), axis=1)
-        wy_hat = logs['w_hat'][sel, b, 1]
-        conv = np.where(np.abs(wy_hat - W_EFF_MEAN) < 0.5)[0]
-        after = sel & (tl > 2.0)
-        res[b] = dict(
-            ctrl=CTRLS[ctrl_of[b]], seed=seeds[seed_of[b]], success=bool(done[b]),
-            fail=fail_reason[b], t_end=te, rms_y=float(np.sqrt(np.mean(y ** 2))),
-            peak_y=float(peak_y[b]), peak_att=float(np.degrees(peak_att[b])),
-            mean_att=float(np.degrees(att.mean())),
-            t_conv=float(tl[sel][conv[0]]) if len(conv) else np.nan,
-            est_rms=float(np.sqrt(np.mean((logs['w_hat'][after, b, 1]
-                                           - logs['w_true'][after, b, 1]) ** 2))),
-            energy=float(energy_end[b]) if np.isfinite(energy_end[b]) else np.nan,
-            x_end=float(logs['pos'][sel, b, 0][-1]),
-            z_rms=float(np.sqrt(np.mean((logs['pos'][sel, b, 2] - Z_REF) ** 2))),
-        )
-    meta = dict(K=K, x_ss=x_ss, eig=eig, S=S, seeds=seeds, ctrl_of=ctrl_of, seed_of=seed_of,
-                params=params)
+        r = dict(ctrl=CTRLS[ctrl_of[b]], seed=seeds[seed_of[b]], lim=float(np.degrees(lim_of[b])),
+                 success=bool(done[b]), fail=fail_reason[b], t_end=te,
+                 rms_y=float(np.sqrt(acc['y2'][b] / acc['n'][b])),
+                 peak_y=float(peak_y[b]), peak_att=float(np.degrees(peak_att[b])),
+                 mean_att=float(np.degrees(acc['att'][b] / acc['n'][b])),
+                 z_rms=float(np.sqrt(acc['dz2'][b] / acc['n'][b])),
+                 energy=float(energy_end[b]) if np.isfinite(energy_end[b]) else np.nan,
+                 t_conv=np.nan, est_rms=np.nan)
+        if b < H:
+            sel = tl <= te + 1e-9
+            wy_hat = logs['w_hat'][sel, b, 1]
+            conv = np.where(np.abs(wy_hat - W_EFF_MEAN) < 0.5)[0]
+            after = sel & (tl > 2.0)
+            r['t_conv'] = float(tl[sel][conv[0]]) if len(conv) else np.nan
+            r['est_rms'] = float(np.sqrt(np.mean((logs['w_hat'][after, b, 1]
+                                                  - logs['w_true'][after, b, 1]) ** 2)))
+        res[b] = r
+    meta = dict(K=K, x_ss=x_ss, eig=eig, S=S, C=C, seeds=seeds, limits=list(limits),
+                ctrl_of=ctrl_of, seed_of=seed_of, params=params)
     return logs, res, meta, winds
 
 
@@ -463,7 +480,7 @@ def plot_path_deviation_3d(logs, res, meta, out_dir):
                   color='tab:blue', lw=1, arrow_length_ratio=0.3)
     ax.plot([0, X_GOAL], [0, 0], [Z_REF, Z_REF], ':', color='green', lw=1.5)
     ax.set_xlim(0, X_GOAL)
-    ax.set_ylim(-1.5, 3.5)
+    ax.set_ylim(-1.5, max(3.5, P[:, 1].max() + 0.5))
     ax.set_zlim(Z_REF - 1, Z_REF + 3)
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
@@ -473,6 +490,35 @@ def plot_path_deviation_3d(logs, res, meta, out_dir):
                  f'(y, z) every 5 s, length / 6')
     ax.view_init(elev=30, azim=-75)
     path = os.path.join(out_dir, 'path_deviation_3d.png')
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {path}')
+
+
+def plot_envelope(res, meta, out_dir):
+    S, C, lims = meta['S'], meta['C'], np.degrees(meta['limits'])
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    for ci, c in enumerate(CTRLS):
+        succ, rms = [], []
+        for li in range(len(lims)):
+            R_ = [res[(li * C + ci) * S + s] for s in range(S)]
+            succ.append(sum(r['success'] for r in R_))
+            rms.append(np.mean([r['rms_y'] for r in R_]))
+        axes[0].plot(lims, succ, 'o-', color=COLOR[c], label=LABEL[c])
+        axes[1].plot(lims, rms, 'o-', color=COLOR[c], label=LABEL[c])
+    axes[0].set_ylabel(f'missions completed (of {S})')
+    axes[0].set_ylim(0, S + 1)
+    axes[1].set_ylabel('mean RMS |y| (m)')
+    axes[1].set_yscale('log')
+    for ax in axes:
+        ax.set_xlabel('common hard tilt limit (deg); fail limit stays 40 deg')
+        ax.set_xticks(lims)
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=8)
+    axes[0].set_title('Success vs tilt limit (same limit for all controllers)')
+    axes[1].set_title('Lateral tracking vs tilt limit')
+    plt.tight_layout()
+    path = os.path.join(out_dir, 'envelope_sensitivity.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {path}')
@@ -560,6 +606,9 @@ if __name__ == '__main__':
     print(f"  Plant: fpv_5inch motors, m = {MASS} kg, T/W = {meta['params'].t2w:.2f}, "
           f"{1 / DT:.0f} Hz control, RLS {1 / DT_EST:.0f} Hz (Gamma = {GAMMA}, time constant "
           f"{DT_EST / GAMMA:.2f} s)")
+    print(f'  Common hard tilt limit (commanded attitude clipped, all controllers): '
+          f'{np.degrees(THETA_LIM):.0f} deg (card) for the headline and Monte Carlo; '
+          f'sensitivity at ' + ', '.join(f'{np.degrees(x):.0f}' for x in TILT_LIMITS[1:]) + ' deg')
     print(f'\n  Headline seed {HEAD_SEED}:')
     print('  controller  result   t_end    RMS|y|  peak|y|  peak att  mean att  z RMS   '
           'energy   RLS conv  est RMS')
@@ -602,6 +651,22 @@ if __name__ == '__main__':
           f'{int(np.sum(~np.isfinite(tc)))} seeds); RMS error vs the true instantaneous wind '
           f'acceleration {er.mean():.3f} +- {er.std():.3f} m/s^2')
 
+    C = meta['C']
+    print(f'\n  Tilt-limit sensitivity ({S} seeds each, fail limits unchanged: 40 deg, 5 m):')
+    print('  limit  controller  success  RMS|y| mean+-std  peak|y| mean  peak att mean  failures')
+    sens = {}
+    for li, lim in enumerate(meta['limits']):
+        for ci, c in enumerate(CTRLS):
+            R_ = [res[(li * C + ci) * S + s] for s in range(S)]
+            ry = np.array([r['rms_y'] for r in R_])
+            sens[(li, c)] = (sum(r['success'] for r in R_), ry.mean())
+            fails = ', '.join(f"{r['seed']} ({'y' if r['fail'].startswith('|y|') else 'att'})"
+                              for r in R_ if r['fail'])
+            print(f"  {np.degrees(lim):4.0f}   {LABEL[c]:10s}  {sens[(li, c)][0]:2d}/{S}    "
+                  f"{ry.mean():.3f} +- {ry.std():.3f}     {np.mean([r['peak_y'] for r in R_]):.3f}"
+                  f"        {np.mean([r['peak_att'] for r in R_]):5.2f}       "
+                  f"{fails if fails else '-'}")
+    plot_envelope(res, meta, out)
     plot_trajectory_3d(logs, res, meta, out)
     plot_lateral_and_attitude(logs, res, meta, out)
     plot_rls_convergence(logs, res, meta, out)
