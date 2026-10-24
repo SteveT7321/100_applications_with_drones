@@ -51,7 +51,7 @@ TAU_V       = 0.3        # s   first-order velocity response time constant
 KP          = 2.0        # 1/s position-error gain of the tracking loop
 V_MAX       = 3.0        # m/s commanded-speed limit
 A_MAX       = 2.0        # m/s^2 acceleration limit of the airframe (main configuration)
-A_SWEEP     = [float('inf'), 4.0, 2.0, 1.5]   # m/s^2 acceleration-limit sweep
+A_SWEEP     = [float('inf'), 12.0, 10.0, 8.0, 6.0, 4.0, 3.0, 2.0, 1.5]   # m/s^2 sweep
 T_HOVER_VIA = 1.0        # s   minimum hover above the approach point before the descent
 N_MC        = 100        # Monte Carlo seeds (layout + GPS noise)
 SIGMA_SWEEP = [0.0, 0.05, 0.1, 0.2]   # m GPS-noise sweep
@@ -632,8 +632,11 @@ if __name__ == '__main__':
             s_ = sw['min_snap'][i]
             parts = [f'{LABELS[m]} {sw[m][i].mean():.2f} ± {sw[m][i].std():.2f}' for m in METHODS]
             wins = [f'vs {m} {int(np.sum(s_ > sw[m][i]))}/{N_SWEEP}' for m in METHODS[1:]]
+            gap = (s_ - sw['straight_ff'][i]).mean()
             print('    ' + fmt.format(xv) + ': ' + ', '.join(parts) + '; min-snap wins ' +
-                  ', '.join(wins))
+                  ', '.join(wins) + f'; paired gap vs straight_ff {gap:+.3f}')
+    print(f'  Size of the one-step stop impulse v_approach / dt = {V_APPROACH / DT:.1f} m/s^2 '
+          f'(an artefact of the {DT} s step, not an airframe property)')
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)

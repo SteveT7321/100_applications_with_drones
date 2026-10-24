@@ -619,7 +619,9 @@ if __name__ == '__main__':
 > **Correction (implementation, 100 seeds)**: with acceleration feedforward and a 2 m/s²
 > acceleration limit, the results are min-snap 0.037 m / 69.2 % / 17.29 and straight line
 > 0.068 m / 51.5 % / 12.87. The straight-line targets (0.15–0.25 m, < 25 %, < 7) are not reproduced.
-> Min-snap's advantage needs both feedforward and an acceleration limit.
+> Min-snap's advantage needs both feedforward and an acceleration limit. The 2 m/s² limit is
+> deliberately tight. The gap shrinks as the limit is raised (+0.362 at 8 m/s², 40 seeds) and
+> vanishes around $v_{approach}/\Delta t$ = 10 m/s².
 > - With the straight-line stop also fed forward and **no** acceleration limit, the two are
 >   equal (17.58 vs 17.57).
 > - Without feedforward, min-snap is *worse* (12.79 vs 13.15 without a limit).

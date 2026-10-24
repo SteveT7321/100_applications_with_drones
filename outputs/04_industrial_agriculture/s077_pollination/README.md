@@ -49,7 +49,7 @@ The drone is a 3D point mass whose velocity follows the command with time consta
 
 $$\mathbf{v}_{cmd} = \mathbf{v}_{ref} + \tau_v\,\mathbf{a}_{ref} + K_p(\mathbf{p}_{ref} - \tilde{\mathbf{p}}), \qquad \Delta\mathbf{v} = \text{clip}_{\|\cdot\| \le a_{max}\Delta t}\bigl((1 - e^{-\Delta t/\tau_v})(\mathbf{v}_{cmd} - \mathbf{v})\bigr), \qquad |\mathbf{v}_{cmd}| \le 3\ \text{m/s}$$
 
-Here $\tilde{\mathbf{p}} = \mathbf{p} + \boldsymbol{\eta}$ is the GPS measurement, with $\boldsymbol{\eta} \sim \mathcal{N}(0, \sigma_{GPS}^2 I)$ drawn every 0.05 s. The term $\tau_v\mathbf{a}_{ref}$ is the **acceleration feedforward (FF)**. Four configurations are run: FF on or off, crossed with $a_{max}$ = 2 m/s² (main) or no limit. The main configuration's 2 m/s² limit is above the min-snap reference's 1.57 m/s² peak and far below the 10 m/s² impulse the straight-line stop asks for.
+Here $\tilde{\mathbf{p}} = \mathbf{p} + \boldsymbol{\eta}$ is the GPS measurement, with $\boldsymbol{\eta} \sim \mathcal{N}(0, \sigma_{GPS}^2 I)$ drawn every 0.05 s. The term $\tau_v\mathbf{a}_{ref}$ is the **acceleration feedforward (FF)**. Four configurations are run: FF on or off, crossed with $a_{max}$ = 2 m/s² (main) or no limit. The main configuration uses a tight 2 m/s² limit: above the min-snap reference's 1.57 m/s² peak, and far below the 10 m/s² impulse the straight-line stop asks for. Typical multirotors manage 5–10 m/s². The limit is therefore swept from 1.5 to 12 m/s² and to no limit. The 10 m/s² impulse is $v_{approach}/\Delta t$, a property of the 0.05 s time step, not of the airframe.
 
 ### Docking error and transfer probability
 
@@ -75,7 +75,7 @@ Here $\mathbf{p}$ is the **true** position. Overshoot is the largest distance pa
 | Velocity time constant $\tau_v$ (added) | 0.3 s |
 | Position gain $K_p$ (added) | 2.0 s⁻¹ |
 | Speed limit (added) | 3 m/s |
-| Acceleration limit $a_{max}$ (added) | 2 m/s² (main); sweep: none, 4, 2, 1.5 m/s² |
+| Acceleration limit $a_{max}$ (added) | 2 m/s² (main, deliberately tight); sweep: none, 12, 10, 8, 6, 4, 3, 2, 1.5 m/s² |
 | Hover above the approach point before the descent (added) | ≥ 1.0 s (docking window 8.35 s) |
 | Seed of the example run | 42 |
 | Monte Carlo | 100 seeds (layout + GPS noise), shared by all methods and configurations |
@@ -94,7 +94,7 @@ conda activate drones
 python src/04_industrial_agriculture/s077_pollination.py
 ```
 
-Runtime ≈ 1.5–2 min (83–120 s measured while other simulations shared the CPU). All docking windows of all seeds are flown in one vectorised loop. The climb and transit legs are not scored and are flown kinematically on their references.
+Runtime ≈ 1.5–2.5 min (100–139 s measured while other simulations shared the CPU). All docking windows of all seeds are flown in one vectorised loop. The climb and transit legs are not scored and are flown kinematically on their references.
 
 ---
 
@@ -113,20 +113,30 @@ Percentages are the transfer success rate $E[N_{poll}]/25$. Without FF, the two 
 
 ### Acceleration-limit sweep (FF, σ = 0.1 m, 40 seeds)
 
-| $a_{max}$ (m/s²) | none | 4 | 2 | 1.5 |
-|---|---:|---:|---:|---:|
-| Minimum-snap | 17.55 | 17.55 | 17.26 | 14.32 |
-| Straight + stop-impulse FF | 17.54 | 15.13 | 13.29 | 10.63 |
-| Straight (no FF at stop) | 13.58 | 13.57 | 12.89 | 10.42 |
-| Min-snap wins vs straight + FF | 22/40 | 40/40 | 40/40 | 40/40 |
+| $a_{max}$ (m/s²) | none | 12 | 10 | 8 | 6 | 4 | 3 | 2 | 1.5 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Minimum-snap | 17.55 | 17.55 | 17.55 | 17.55 | 17.55 | 17.55 | 17.54 | 17.26 | 14.32 |
+| Straight + stop-impulse FF | 17.54 | 17.54 | 17.52 | 17.19 | 16.32 | 15.13 | 14.44 | 13.29 | 10.63 |
+| Straight (no FF at stop) | 13.58 | 13.58 | 13.58 | 13.58 | 13.58 | 13.57 | 13.51 | 12.89 | 10.42 |
+| Paired gap, min-snap − straight + FF | +0.011 | +0.011 | +0.025 | +0.362 | +1.231 | +2.418 | +3.102 | +3.971 | +3.686 |
+| Min-snap wins vs straight + FF | 22/40 | 22/40 | 30/40 | 40/40 | 40/40 | 40/40 | 40/40 | 40/40 | 40/40 |
 
 The tour is 52.43 m long. The mission takes 312.05 s with min-snap and 311.90 s with the straight lines; only the kinematic climb after each dwell differs slightly, so mission time is not a comparison metric.
 
 **Key findings**:
 - **With the stop fed forward and no acceleration limit, the trajectory shape does not matter.** Feeding the straight line's stop forward as a one-step deceleration lets it match min-snap: 17.57 vs 17.58 flowers, min-snap wins only 60/100 paired seeds. Noise-free for seed 42 it reaches 23.95 against min-snap's 24.99. The earlier 100/100 min-snap win came from denying the straight line this feedforward. Its 10 m/s² stop impulse is only possible with an unlimited acceleration.
-- **With a realistic acceleration limit, min-snap wins clearly.** At $a_{max}$ = 2 m/s², the min-snap reference (peak 1.57 m/s²) stays flyable and the drone reaches the flower almost at rest (0.004 m/s at the start of the dwell, noise-free). The straight line's stop is clipped to 2 m/s², so the drone is still moving at 0.402 m/s when the dwell starts and overshoots by 0.0837 m, even with FF. Min-snap wins all 100 paired seeds (+4.027 flowers). The acceleration-limit sweep shows the advantage appearing as soon as the limit binds: 22/40 wins with no limit, 40/40 at 4, 2 and 1.5 m/s². This is the physical reason a smooth reference beats a straight line: a real airframe cannot decelerate instantly.
+- **Min-snap's advantage grows as the acceleration limit tightens, and vanishes around $v_{approach}/\Delta t$ = 10 m/s².**
+  - At the deliberately tight $a_{max}$ = 2 m/s², the min-snap reference (peak 1.57 m/s²) stays flyable and the drone reaches the flower almost at rest (0.004 m/s at the start of the dwell, seed 42 noise-free). The straight line's stop is clipped to 2 m/s², so even with FF the drone is still moving at 0.402 m/s when the dwell starts and overshoots by 0.0837 m. Min-snap wins all 100 paired seeds (+4.027 flowers).
+  - In the 40-seed sweep the paired gap against the FF straight line is +3.971 at 2 m/s², +2.418 at 4, +1.231 at 6, +0.362 at 8, +0.025 at 10, and +0.011 at 12 m/s² and with no limit. Min-snap wins 40/40 down to 8 m/s², then 30/40 at 10 and 22/40 at 12.
+  - The gap closes at 10 m/s², the size of the one-step stop impulse. Above that, the FF straight line can execute its stop exactly.
+  - That threshold is set by the 0.05 s simulation step, not by an airframe. For multirotors with the more typical 6–10 m/s² limit, the sweep gives a gap of only +1.231 to +0.025 flowers, not 4.
+  - The physical point stands: a smooth reference wins only when the airframe cannot decelerate as abruptly as the straight-line stop demands.
 - **Without feedforward, min-snap loses**, in both limit settings (0/100). Its reference must speed up to 0.830 m/s mid-segment and then brake, and the lagging drone overshoots more: 0.1362 m vs 0.0951 m with no limit, 0.1715 vs 0.1220 m at 2 m/s².
-- **Why min-snap wins noise-free but loses with noise when there is no FF** (no limit). Noise-free, it has the larger, earlier overshoot: mean distance 0.0910 m in the first half of the dwell vs 0.0787 m for the straight line. But it then settles closer: 0.0105 vs 0.0244 m in the second half. That gives a slightly lower mean (0.0507 vs 0.0515 m) and the win (15.06 vs 14.94; 40/40 at σ = 0 in the 40-seed sweep). With GPS noise the noise sets a floor in the second half (0.0426 vs 0.0490 m), so min-snap's settling advantage mostly disappears. Its larger first-half error then dominates: 0.1019 vs 0.0896 m, mean 0.0722 vs 0.0693 m. It loses at σ = 0.05, 0.1 and 0.2 m (0/40 each). Overshoot alone does not explain the reversal: min-snap overshoots more in both cases.
+- **Why min-snap wins noise-free but loses with noise when there is no FF** (no limit).
+  - **Single run, seed 42, noise-free:** min-snap has the larger, earlier overshoot (mean distance 0.0910 m in the first half of the dwell vs 0.0787 m) but settles closer (0.0105 vs 0.0244 m in the second half). That gives a slightly lower mean, 0.0507 vs 0.0515 m, and E[N] 15.06 vs 14.94.
+  - **Same seed, σ = 0.1 m:** the noise sets a floor in the second half (0.0426 vs 0.0490 m), so the settling advantage mostly disappears. The larger first-half error then dominates: 0.1019 vs 0.0896 m, mean 0.0722 vs 0.0693 m.
+  - **40-seed sweep:** min-snap wins 40/40 at σ = 0 and 0/40 at σ = 0.05, 0.1 and 0.2 m.
+  - Overshoot alone does not explain the reversal: min-snap overshoots more in both cases.
 - **GPS noise sets the ceiling.** In the main configuration, min-snap falls from 24.50 (σ = 0) to 20.82, 17.26 and 10.28 flowers at σ = 0.05, 0.1 and 0.2 m. The straight line with FF falls from 15.55 to 14.88, 13.29 and 8.43. Min-snap wins 40/40 at every σ.
 - **Card expectations**: min-snap meets all three targets: mean $e_{dock}$ 0.0374 m (< 0.12), 69.2 % (> 35 %), 17.29 (> 9). The straight-line targets do not hold: 0.0675 m (card 0.15–0.25), 51.5 % (card < 25 %), 12.87 (card < 7). The P loop filters the white GPS noise, so the true docking error stays well below $\sigma_{GPS}$. The card's own error model (error = the GPS sample itself) gives $E\|\eta\| = 0.1596$ m and $P_t = 0.203$ for **every** method, so it cannot separate them.
 - The descent curls under the approach point to join the 30° line. The lowest altitude flown in seed 42 is 0.46 m; the lowest approach point is 0.61 m.
@@ -195,7 +205,7 @@ Seed 42, main configuration: all three drones fly the tour; flowers turn green o
 | Departure "vertically upward"; card code flew straight from the flower to the next via point | Vertical climb to 3.5 m, then transit | Follows the card's problem statement. |
 | Transit legs part of the simulated flight | Climb and transit flown kinematically on smooth references; each docking window (hover ≥ 1 s at the via point, descent, approach, dwell) flown dynamically | Docking is the only scored part. The fixed-length windows let all seeds run in one vectorised loop. |
 | Single run with seed 42 | Seed 42 for the figures, plus 100-seed Monte Carlo and 40-seed sweeps with common random numbers | Results depend on random noise (X2). |
-| Added parameters | $\tau_v$ = 0.3 s, $K_p$ = 2 s⁻¹, $v_{max}$ = 3 m/s, $a_{max}$ = 2 m/s², via-point hover ≥ 1 s | Needed for the dynamic model; not in the card. $a_{max}$ is also swept. |
+| Added parameters | $\tau_v$ = 0.3 s, $K_p$ = 2 s⁻¹, $v_{max}$ = 3 m/s, $a_{max}$ = 2 m/s², via-point hover ≥ 1 s | Needed for the dynamic model; not in the card. $a_{max}$ = 2 m/s² is deliberately tight; the headline gap depends on it, so it is swept from 1.5 to 12 m/s² and no limit. |
 
 ---
 
