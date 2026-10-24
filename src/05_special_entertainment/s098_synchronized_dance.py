@@ -158,7 +158,9 @@ def metrics(t, delta, act, ide, spd):
     d_move = np.maximum(spd.max(axis=1) * DT_PTP, 0.01)                  # card definition
     vk = np.clip(1.0 - pos_err / d_move[:, None], 0.0, 1.0)
     V = vk.mean(axis=1)
-    return dict(err_abs=err_abs, err_rel=err_rel, pos_err=pos_err, V=V)
+    # card code variant: each drone normalised by its own speed
+    vk_pd = np.clip(1.0 - pos_err / np.maximum(spd * DT_PTP, 0.01), 0.0, 1.0)
+    return dict(err_abs=err_abs, err_rel=err_rel, pos_err=pos_err, V=V, V_pd=vk_pd.mean(axis=1))
 
 
 def run_simulation(splines, strategy, seed=RNG_SEED, dt_ptp=DT_PTP):
@@ -175,6 +177,7 @@ def summary(r):
                 frac_abs_ok=(r['err_abs'] < SYNC_TARGET_MS).mean(),
                 frac_rel_ok=(r['err_rel'] < SYNC_TARGET_MS).mean(),
                 meanV=r['V'].mean(), minV=r['V'].min(), max_pos=r['pos_err'].max(),
+                meanV_pd=r['V_pd'].mean(), minV_pd=r['V_pd'].min(),
                 rms_abs=np.sqrt(np.mean(r['delta'] ** 2)) * 1e3)
 
 
@@ -360,14 +363,18 @@ def save_animation(res, out_dir, step=4):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def fmt(m):
-    return (f'max KPI {np.mean(m["max_abs"]):.1f} ± {np.std(m["max_abs"]):.1f} ms, '
-            f'max relative {np.mean(m["max_rel"]):.1f} ± {np.std(m["max_rel"]):.1f} ms, '
+    return (f'per-show max KPI: mean {np.mean(m["max_abs"]):.1f} ± {np.std(m["max_abs"]):.1f} ms, '
+            f'worst {np.max(m["max_abs"]):.2f} ms; '
+            f'per-show max relative: mean {np.mean(m["max_rel"]):.1f} ± '
+            f'{np.std(m["max_rel"]):.1f} ms, worst {np.max(m["max_rel"]):.2f} ms; '
             f'RMS offset {np.mean(m["rms_abs"]):.2f} ms, '
             f'time KPI<10ms {100 * np.mean(m["frac_abs_ok"]):.1f}%, '
             f'time relative<10ms {100 * np.mean(m["frac_rel_ok"]):.1f}%, '
             f'shows with KPI<10ms throughout {int((m["max_abs"] < SYNC_TARGET_MS).sum())}, '
             f'mean V {100 * np.mean(m["meanV"]):.2f}%, min V {100 * np.min(m["minV"]):.1f}%, '
-            f'max pos err {100 * np.max(m["max_pos"]):.1f} cm')
+            f'max pos err {100 * np.max(m["max_pos"]):.1f} cm; per-drone-normalised V '
+            f'(card code): mean {100 * np.mean(m["meanV_pd"]):.2f}%, '
+            f'min {100 * np.min(m["minV_pd"]):.1f}%')
 
 
 if __name__ == '__main__':
@@ -423,7 +430,10 @@ if __name__ == '__main__':
         print(f'  interval {d:4.2f} s: ' + '; '.join(
             f'{LABELS[s]} time KPI<10ms {100 * sweep[d][s]["frac_abs_ok"].mean():.1f}%, '
             f'relative<10ms {100 * sweep[d][s]["frac_rel_ok"].mean():.1f}%, '
-            f'max KPI {sweep[d][s]["max_abs"].mean():.1f} ms' for s in ('peer_05', 'master_05')))
+            f'per-show max KPI mean {sweep[d][s]["max_abs"].mean():.1f} ms / worst '
+            f'{sweep[d][s]["max_abs"].max():.2f} ms, shows always <10 ms '
+            f'{int((sweep[d][s]["max_abs"] < SYNC_TARGET_MS).sum())}/100'
+            for s in ('peer_05', 'master_05')))
 
     print()
     plot_sync_error(res, OUTPUT_DIR)

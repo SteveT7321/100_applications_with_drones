@@ -89,7 +89,7 @@ conda activate drones
 python src/05_special_entertainment/s098_synchronized_dance.py
 ```
 
-Runtime: about 3–4 min, measured while about ten other simulations shared the 12-thread machine, so it is shorter when the script runs alone. Most of the time goes into writing the GIF.
+Runtime: 2.9–3.2 min, measured while other simulations shared the machine (the independent review measured 1.7 min). Most of the time goes into writing the GIF.
 
 ---
 
@@ -108,30 +108,34 @@ The card's literal update diverges: its KPI reaches 2.95e+03 ms at 5 s and 7.03e
 
 ### Monte Carlo (200 shows)
 
-| Strategy | Max KPI (ms) | Max relative (ms) | RMS offset | Time KPI < 10 ms | Time relative < 10 ms | Shows always < 10 ms | Mean V | Min V | Max pos. error |
+Per-show maximum = the largest value within one 60 s show. The table gives its mean ± std over the 200 shows and, in brackets, the worst show.
+
+| Strategy | Per-show max KPI (ms) | Per-show max relative (ms) | RMS offset | Time KPI < 10 ms | Time relative < 10 ms | Shows always < 10 ms | Mean V | Min V | Max pos. error |
 |---|---|---|---:|---:|---:|---:|---:|---:|---:|
-| No sync | 120.8 ± 26.6 | 114.4 ± 25.1 | 38.45 ms | 1.0% | 1.2% | 0 | 95.86% | 88.4% | 75.2 cm |
-| Peer PTP β=0.5 | 33.5 ± 8.1 | 19.0 ± 1.6 | 11.70 ms | 24.7% | 80.0% | 0 | 98.61% | 93.5% | 18.5 cm |
-| Peer PTP β=0.9 | 31.3 ± 8.0 | **16.0 ± 1.5** | 11.28 ms | 37.0% | **93.6%** | 0 | 98.65% | 93.6% | 18.1 cm |
-| Master PTP β=0.5 | **20.2 ± 1.8** | 19.3 ± 1.7 | **4.67 ms** | **71.6%** | 77.5% | 0 | **99.48%** | **98.5%** | **7.5 cm** |
+| No sync | 120.8 ± 26.6 (209.47) | 114.4 ± 25.1 (217.23) | 38.45 ms | 1.0% | 1.2% | 0 | 95.86% | 88.4% | 75.2 cm |
+| Peer PTP β=0.5 | 33.5 ± 8.1 (57.89) | 19.0 ± 1.6 (23.93) | 11.70 ms | 24.7% | 80.0% | 0 | 98.61% | 93.5% | 18.5 cm |
+| Peer PTP β=0.9 | 31.3 ± 8.0 (57.12) | **16.0 ± 1.5 (20.23)** | 11.28 ms | 37.0% | **93.6%** | 0 | 98.65% | 93.6% | 18.1 cm |
+| Master PTP β=0.5 | **20.2 ± 1.8 (26.30)** | 19.3 ± 1.7 (25.03) | **4.67 ms** | **71.6%** | 77.5% | 0 | **99.48%** | **98.5%** | **7.5 cm** |
+
+With $V$ normalised by each drone's own speed (as in the card's code) instead of the fastest drone (card text): mean / min $V$ = 94.14% / 85.1% (no sync), 98.03% / 90.9% (peer β=0.5), 98.09% / 90.9% (peer β=0.9), 99.27% / 98.0% (master). The ranking is the same.
 
 Per show: β = 0.9 had a smaller maximum relative error than β = 0.5 in **193/200** shows. The master clock had a smaller maximum KPI than peer β = 0.5 in **195/200** shows.
 
-**PTP interval sweep** (100 shows each, same drift rate; % of show time below 10 ms; max KPI):
+**PTP interval sweep** (100 shows each, same drift rate). Percentages are the mean fraction of show time below 10 ms, printed to 0.1%, so 100.0% can be a rounded 99.95% or more. Per-show max KPI is given as the mean over shows / the worst show, followed by the number of shows that stay below 10 ms throughout:
 
-| Interval | Peer β=0.5: KPI / relative / max KPI | Master β=0.5: KPI / relative / max KPI |
+| Interval | Peer β=0.5: time KPI / time relative / per-show max KPI (mean / worst) / shows always < 10 ms | Master β=0.5: same columns |
 |---|---|---|
-| 0.10 s | 50.4% / 100.0% / 26.7 ms | **100.0% / 100.0% / 8.7 ms** |
-| 0.25 s | 38.5% / 98.2% / 30.3 ms | 96.3% / 97.6% / 14.4 ms |
-| 0.50 s | 24.5% / 79.8% / 34.4 ms | 71.5% / 77.4% / 20.2 ms |
-| 1.00 s | 11.0% / 40.8% / 39.5 ms | 31.1% / 38.1% / 27.8 ms |
+| 0.10 s | 50.4% / 100.0% / 26.7 / 47.21 ms / 0 | **100.0% / 100.0% / 8.7 / 10.69 ms / 96** |
+| 0.25 s | 38.5% / 98.2% / 30.3 / 49.99 ms / 0 | 96.3% / 97.6% / 14.4 / 18.34 ms / 0 |
+| 0.50 s | 24.5% / 79.8% / 34.4 / 51.75 ms / 0 | 71.5% / 77.4% / 20.2 / 25.40 ms / 0 |
+| 1.00 s | 11.0% / 40.8% / 39.5 / 63.49 ms / 0 | 31.1% / 38.1% / 27.8 / 42.45 ms / 0 |
 
 **Key findings**:
 
-- **The card's 10 ms target is not met at a 0.5 s interval, by any strategy, in any of the 200 shows.** The drift in a single interval already has a 5 ms standard deviation per drone. Over ten drones and 120 intervals, the worst draw is about 3.5 σ ≈ 17 ms (a back-of-envelope estimate, not printed by the script), even if every correction were perfect. The card's "PTP < 10 ms / β = 0.9 < 8 ms" expectation does not hold (X6). The no-sync expectation of "~50 ms" is also low: the worst drone reaches 120.8 ms on average.
+- **The card's 10 ms target is not met at a 0.5 s interval, by any strategy, in any of the 200 shows.** The drift in a single interval already has a 5 ms standard deviation per drone. Over ten drones and 120 intervals, the worst draw is about 3.5 σ ≈ 17 ms (a back-of-envelope estimate, not printed by the script), even if every correction were perfect. The card's "PTP < 10 ms / β = 0.9 < 8 ms" expectation does not hold (X6). The no-sync expectation of "~50 ms" is also low: the per-show maximum averages 120.8 ms, and the worst show reaches 209.47 ms.
 - **A peer consensus cannot fix absolute time.** It aligns the clocks with each other, while their mean keeps drifting (std 17.3 ms over 60 s; −19.5 ms at the end of seed 42). The card's absolute KPI therefore stays at 31–34 ms for both β, even though the relative error is about 16–19 ms. A master reference removes the common drift: RMS offset 4.67 ms against 11.70 ms, and 71.6% of the time below 10 ms against 24.7%.
 - **β = 0.9 is better than β = 0.5 here**, with a smaller relative error in 193/200 shows. With only 1 ms of timestamp jitter against 5 ms of drift per interval, faster correction wins; the noise sensitivity the card expects does not appear at this jitter level.
-- **The PTP interval is the real lever.** A master clock at 0.1 s keeps every show below 10 ms (max 8.7 ms, 100% of the time). Peer PTP keeps the relative error below 10 ms at 0.1 s, but its absolute KPI still drifts (26.7 ms).
+- **The PTP interval is the real lever.** A master clock at 0.1 s keeps 96 of 100 shows below 10 ms for the whole show. The per-show maximum averages 8.7 ms, and the worst show reaches 10.69 ms. At 0.25 s and longer, no show stays below 10 ms throughout. Peer PTP keeps the relative error below 10 ms at 0.1 s (100.0% of the time, rounded), but its absolute KPI still drifts (per-show maximum 26.7 ms on average, 47.21 ms worst).
 - **Visual fidelity barely separates the strategies**: mean $V$ is 95.86–99.48%, and only no-sync dips below 90% (min 88.4%). The card's "~75%" for no-sync does not appear. With a 0.5 s normaliser, 10 ms of error costs only about 2% of $V$. The largest position error is more telling: 75.2 cm without sync against 7.5 cm with the master clock.
 
 ### Synchronisation Error
@@ -174,6 +178,7 @@ Top-down view: no sync (left) against master PTP (right). Grey = ideal positions
 | No measurement noise; "β = 0.9 amplifies noise" | 1 ms timestamp jitter per message | Without noise the trade-off the card describes cannot appear. |
 | Three strategies | Added a master-referenced PTP | The KPI is measured against global time, and a peer consensus cannot control the common drift. |
 | "Natural cubic spline" (text) | Not-a-knot spline (the card's code) | The code was followed; the difference is negligible for the timing analysis. |
+| $V$ normaliser: fastest drone's speed (card text) vs each drone's own speed (card code) | Card text used for $V$; the card-code variant is also printed | Same ranking either way: the no-sync minimum is 88.4% with the text version and 85.1% with the code version. |
 | Expected: PTP < 10 ms, β = 0.9 < 8 ms, no sync ~50 ms / ~75% V | Not reproduced; see the key findings | Reported as measured (X6). |
 | — | Absolute and relative error, max position error, interval sweep | Make the comparison discriminative. |
 
