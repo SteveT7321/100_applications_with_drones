@@ -1,6 +1,6 @@
 # S072 Oil Pipeline Leak Detection
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Pipeline Line-Following + Chemical Gradient Localisation | **Dimension**: 3D
 
 ---
@@ -86,7 +86,10 @@ Three independent PID loops regulate these errors; the total commanded accelerat
 $$\mathbf{a}_{PID} = a_T\,\hat{T}_i + a_N\,\hat{N}_i + a_B\,\hat{z}$$
 
 with GPS noise $\boldsymbol{\eta}_{GPS} \sim \mathcal{N}(\mathbf{0},\,\sigma_{GPS}^2\mathbf{I})$,
-$\sigma_{GPS} = 0.1$ m, added at each timestep.
+$\sigma_{GPS} = 0.1$ m, added at each timestep to the **measured** position that the
+controllers use. (The code sketch below adds it to the true position, which would make the
+true drone position jump randomly by 0.1 m per axis every 0.05 s; the simulation corrupts only
+the measurement.)
 
 ### Gaussian Plume Dispersion (Instantaneous Point Source)
 
@@ -422,7 +425,7 @@ def run_simulation(seed=42):
 
 | Parameter | Symbol | Value |
 |-----------|--------|-------|
-| Pipeline length | $S$ | 200 m (polyline) |
+| Pipeline length | $S$ | 201.5 m (the five vertices below; about 200 m) |
 | Drone patrol height | $h$ | 3.0 m |
 | Patrol speed | $v_{patrol}$ | 2.0 m/s |
 | Sensor sampling interval | $\Delta t$ | 0.5 s |
