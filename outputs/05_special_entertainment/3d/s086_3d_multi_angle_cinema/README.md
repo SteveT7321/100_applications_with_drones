@@ -70,7 +70,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s086_3d_multi_angle_cinema.py
 ```
 
-The subject path and the S086 parameters are imported from the 2D script. All 100 seeds run as one vectorised batch per formation; the script checks that a seed's result does not depend on the batch. Runtime ≈ 1 min. Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
+The subject path and the S086 parameters are imported from the 2D script. All 100 seeds run as one vectorised batch per formation; the script checks that a seed's result does not depend on the batch. Runtime ≈ 1–2 min (50–110 s measured on a shared machine). Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
 
 ---
 
@@ -97,9 +97,9 @@ The card's distance formula gives the same 8.86 / 7.77 / 5.73 m. Ideal hemispher
 | Flat, world-fixed | 4.08 ± 0.02° | 66.9 % | 2.10 ± 0.05° | 98.2 % | 2.10° | 0.989 ± 0.007 | 82.2° / 82.2° | 10.39 / 10.39 m | 33.1° / 68.6° |
 | Hemisphere, oracle state | 9.12° | 33.2 % | 2.61° | 97.0 % | 0.66° | 1.000 | 52.8° / 54.0° | 5.31 / 5.61 m | 35.5° / 76.0° |
 
-Per drone (phase / elevation error after 5 s): hemisphere 7.76 / 2.50°, 8.92 / 2.90°, **12.72** / 3.66° (drones 0, 1, 2); flat 7.76 / 3.21°, 7.79 / 1.83°, 6.69 / 1.64°; hemisphere with oracle state 5.55 / 2.50°, 9.32 / 2.08°, 12.49 / 3.25°.
+Per drone (phase / elevation error / mean gimbal pitch after 5 s): hemisphere 7.76 / 2.50 / −22.6°, 8.92 / 2.90 / −42.8°, **12.72** / 3.66 / −66.9° (drones 0, 1, 2); flat 7.76 / 3.21 / −37.1°, 7.79 / 1.83 / −32.4°, 6.69 / 1.64 / −32.6°; hemisphere with oracle state 5.55 / 2.50 / −22.5°, 9.32 / 2.08 / −42.9°, 12.49 / 3.25 / −66.8°.
 
-**Per seed, hemisphere vs the 2D baseline** (same noise): the hemisphere has a lower phase error in 0/100 seeds, higher framing in 0/100 (mean difference −0.040), a smaller mean coverage gap in 0/100 (+2.6° on average) and a smaller worst gap in 0/100 (+8.4°), and a larger minimum separation in 0/100. World-fixed: hemisphere 7.29° vs flat 4.08° phase error, framing 0.941 vs 0.989 (0/100 seeds in favour of the hemisphere on either).
+**Per seed, hemisphere vs the 2D baseline** (same noise): the hemisphere has a lower phase error in 0/100 seeds, higher framing in 0/100 (mean difference −0.040), a smaller mean coverage gap in 0/100 (+2.6° on average) and a smaller worst gap in 0/100 (+8.4°), and a larger minimum separation in 0/100 (0/100 also after 5 s). It has a lower elevation error in 0/100 seeds, a lower pointing error in 0/100, and a larger closest-pair distance in 0/100 (whole run) and 0/100 (after 5 s). World-fixed: hemisphere 7.29° vs flat 4.08° phase error, framing 0.941 vs 0.989 (0/100 seeds in favour of the hemisphere on either).
 
 ### Probes
 
@@ -116,17 +116,17 @@ Per drone (phase / elevation error after 5 s): hemisphere 7.76 / 2.50°, 8.92 / 
 | 70° | 2.05 m | 12.72° / 12.49° | 3.66° | 0.932 | 51.3° | 35.6° / 76.9° | 3.37 m |
 | 80° | 1.04 m | 21.87° / 20.82° | 4.22° | 0.932 | 45.5° | 37.1° / 82.5° | 3.27 m |
 
-**Repulsion stress test** (60/70/80°): the (1, 2) pair sits at 25.6° on average after 5 s, below $\psi_{min}$. The card's law is active on 100.00 % of steps but changes nothing measurable: against no repulsion the largest per-seed difference is 5.68e-07° in phase error, 2.78e-04 in framing and 4.56e-03 m in minimum distance (start-up only), because it pushes only the higher drone up and that drone is already at the 80° clamp. The symmetric variant (lower drone pushed down as well) raises the (1, 2) separation to 27.0°, still below 30°: one pair is below $\psi_{min}$ for the whole run (33.33 % of pair-time) in all three versions. The stress formation also breaks $d_{min}$ = 3 m (closest pair after 5 s 2.53 m, 2.70 m with symmetric repulsion; ideal 2.74 m).
+**Repulsion stress test** (60/70/80°): the (1, 2) pair sits at 25.6° on average after 5 s, below $\psi_{min}$. The card's law is active on 100.00 % of steps but changes nothing measurable: against no repulsion the largest per-seed difference is 5.68e-07° in phase error, 2.78e-04 in framing and 4.56e-03 m in minimum distance (start-up only), because it pushes only the higher drone up and that drone is already at the 80° clamp. The symmetric variant (lower drone pushed down as well) raises the (1, 2) separation to 27.0°, still below 30°: one pair is below $\psi_{min}$ for the whole run (33.33 % of pair-time) in all three versions. The stress formation also breaks $d_{min}$ = 3 m: closest pair 1.01 m over the whole run (1.11 m with symmetric repulsion) and 2.53 m after 5 s (2.70 m; ideal 2.74 m); the smallest separation is 9.7° over the whole run (10.6° symmetric) and 23.2° after 5 s (24.5°). The whole-run minima occur during the KF start-up.
 
 **Key findings**
 
-- **The hemisphere delivers three distinct vertical perspectives, and the elevations hold reasonably well.** The cameras stay at their 20°, 45° and 70° targets with a mean elevation error of 3.02° (within ±5° 85.4 % of the time); the gimbal pitches settle near −22°, −43° and −67° (read from the figure, not printed). This is the card's goal and the flat formation cannot provide it.
-- **Every other measured quality gets worse than in the flat S086 formation, on every seed.** Phase error 9.80° vs 7.41°, framing 0.932 vs 0.972, closest pair 5.29 m vs 9.16 m after start-up (3.37 m vs 7.39 m including it), minimum view separation 49.8° vs 79.3°. The card's expectations of ≤ 3° elevation error, ≥ 5 m minimum distance and ≤ 2° pointing error are narrowly missed (3.02°, 3.37 m including start-up, 2.71°); framing ≥ 0.90 is met (0.932).
+- **The hemisphere delivers three distinct vertical perspectives, and the elevations hold reasonably well.** The cameras stay at their 20°, 45° and 70° targets with a mean elevation error of 3.02° (within ±5° 85.4 % of the time); the mean gimbal pitches after 5 s are −22.6°, −42.8° and −66.9°. This is the card's goal and the flat formation cannot provide it.
+- **Every other measured quality gets worse than in the flat S086 formation, on every seed** (per-seed counts above, all 0/100 in favour of the hemisphere): phase error 9.80° vs 7.41°, elevation error 3.02° vs 2.23°, pointing error 2.71° vs 2.27°, framing 0.932 vs 0.972, closest pair 5.29 m vs 9.16 m after start-up (3.37 m vs 7.39 m including it), minimum view separation 49.8° vs 79.3°.
 - **The high camera's phase error comes from its small orbit radius (sweep + oracle).** At 70° the high drone circles only 2.05 m from the subject, so the same position lag of the P controller is a larger azimuth angle: its phase error is 12.72° against 7.76° for the low drone, and it grows to 21.87° at 80° (1.04 m radius). The oracle runs give almost the same values (12.49°, 20.82°), so this is controller lag, not KF noise.
 - **The framing loss is a range effect (probe).** A flat ring flown at the hemisphere's 6 m range frames 0.930, the same as the hemisphere (0.932; the hemisphere is ahead on 63/100 seeds); the S086 ring frames 0.972 only because it is 7.21 m away.
 - **The hemisphere does not cover the viewing hemisphere better.** Measured as the angle from any viewing direction to the nearest camera, the 20/45/70° arrangement leaves larger gaps (mean 35.6°, worst 76.9°) than the flat ring (33.1° / 68.5°), on every seed. With 120° azimuth spacing, the best three-camera coverage on a 5° grid is close to a ring at 35–40°. Elevation diversity and uniform coverage are different goals; the card's expected output treats them as the same.
 - **The occlusion-repulsion law never acts in the card's configuration.** The ideal separations are 95.2°, 80.8° and 57.1°, and the repulsion was active on 0.00 % of steps. In the stress test it acts on every step but cannot help: see the stress-test line above.
-- **Card expectations**: mean elevation error ≤ 3° (3.02°, not met by a small margin), minimum separation ≥ 28° (34.2° including start-up, met), minimum 3D distance ≥ 5 m (3.37 m including start-up, 5.29 m after it), pointing ≤ 2° (2.71°, not met; the oracle reaches 0.66°), framing ≥ 0.90 (0.932, met).
+- **Card expectations**: mean elevation error ≤ 3° — **not met** (3.02°); minimum separation ≥ 28° — met (34.2° including start-up); minimum 3D distance ≥ 5 m — **not met** over the whole run (3.37 m; only 34/100 seeds stay ≥ 5 m), met after the 5 s start-up (5.29 m); pointing ≤ 2° — **not met** (2.71°; the oracle reaches 0.66°); framing ≥ 0.90 — met (0.932).
 - **The KF is shared, so its error is the same for every formation**: position RMSE 0.358 m.
 
 **Physical checks** (asserted every step for every seed): commanded speed ≤ 4 m/s and altitude within 0.5–8 m.
@@ -145,7 +145,7 @@ Hemisphere formation, seed 0: three altitude bands, elevation angles against the
 
 ### Gimbal angles
 
-Pitch (about −22°, −43° and −67°, read from the figure) and unwrapped yaw of each camera, seed 0:
+Pitch (mean after 5 s over all seeds −22.6°, −42.8° and −66.9°) and unwrapped yaw of each camera, seed 0:
 
 ![Gimbal angles](./gimbal_angles.png)
 

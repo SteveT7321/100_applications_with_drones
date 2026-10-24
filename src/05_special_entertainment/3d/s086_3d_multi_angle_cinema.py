@@ -191,7 +191,7 @@ def simulate(cfg, noise, log=False):
     alpha_g = beta_g = None
     a_g = 1.0 - np.exp(-DT / TAU_G)
 
-    L = {k: np.zeros((N_STEPS, S, N_DRONES)) for k in ('phase', 'elev', 'point', 'img')}
+    L = {k: np.zeros((N_STEPS, S, N_DRONES)) for k in ('phase', 'elev', 'point', 'img', 'pitch')}
     L['psi'] = np.zeros((N_STEPS, S, 3))
     L['dist'] = np.zeros((N_STEPS, S, 3))
     L['est'] = np.zeros((N_STEPS, S))
@@ -258,6 +258,7 @@ def simulate(cfg, noise, log=False):
         dn = np.linalg.norm(dtrue, axis=2)
         eps = np.arccos(np.clip(np.sum(c * dtrue, axis=2) / dn, -1, 1))
         L['point'][k] = eps
+        L['pitch'][k] = alpha_g
         L['img'][k] = np.tan(np.minimum(eps, np.radians(89.0))) / np.tan(FOV_HALF)
 
         # Geometry relative to the true subject
@@ -286,6 +287,7 @@ def simulate(cfg, noise, log=False):
         'elev_mean': deg(L['elev'][late].mean(axis=0)),             # (S, N)
         'elev_ok': 100 * np.mean(L['elev'][late] <= ELEV_TOL, axis=(0, 2)),
         'point_mean': deg(L['point'][late].mean(axis=(0, 2))),
+        'pitch_mean': deg(L['pitch'][late].mean(axis=0)),           # (S, N) gimbal pitch after 5 s
         'frame': np.mean(L['img'] <= FRAME_THR, axis=(0, 2)),
         'frame_s086fov': np.mean(L['img'] * np.tan(FOV_HALF) / (m2d.FOV_HALF_WIDTH / m2d.ORBIT_RADIUS)
                                  <= FRAME_THR, axis=(0, 2)),
@@ -578,11 +580,12 @@ if __name__ == '__main__':
                  for b in range(0, 91, 5) for c in range(0, 91, 5)), key=lambda x: (round(x[0], 9), x[1]))
     print(f'    best equal elevation (1 deg grid): {best[1]} deg, mean gap {best[0]:.1f}; best of a 5 deg '
           f'grid over three elevations: {best3[1]} deg, mean gap {best3[0]:.1f}')
-    print('  Per drone (after 5 s, mean over seeds): phase error / elevation error (deg)')
+    print('  Per drone (after 5 s, mean over seeds): phase error / elevation error / mean gimbal pitch (deg)')
     for key in MAIN:
         r = res[key]
         print(f"    {LABELS[key]:<38}" + '; '.join(
-            f"d{k}: {r['phase_mean'][:, k].mean():.2f} / {r['elev_mean'][:, k].mean():.2f}" for k in range(N_DRONES)))
+            f"d{k}: {r['phase_mean'][:, k].mean():.2f} / {r['elev_mean'][:, k].mean():.2f} / "
+            f"{r['pitch_mean'][:, k].mean():+.1f}" for k in range(N_DRONES)))
     print('  Pairwise separation psi after 5 s (mean over seeds, deg) and mean distance (m):')
     for key in ('hemi', 'flat', 'stress', 'stress_norep', 'stress_sym'):
         r = res[key]
@@ -603,6 +606,15 @@ if __name__ == '__main__':
           f"(diff {H_['cov_mean'].mean() - F_['cov_mean'].mean():+.1f} deg); smaller worst coverage gap in "
           f"{int(np.sum(H_['cov_max'] < F_['cov_max']))}/{N_MC} (diff {H_['cov_max'].mean() - F_['cov_max'].mean():+.1f} deg); "
           f"larger min separation in {int(np.sum(H_['psi_min'] > F_['psi_min']))}/{N_MC}")
+    print(f"    lower mean elevation error in {int(np.sum(H_['elev_mean'].mean(1) < F_['elev_mean'].mean(1)))}/{N_MC}; "
+          f"larger closest-pair distance in {int(np.sum(H_['min_dist'] > F_['min_dist']))}/{N_MC} (whole run) and "
+          f"{int(np.sum(H_['min_dist_late'] > F_['min_dist_late']))}/{N_MC} (after 5 s); larger min separation after 5 s in "
+          f"{int(np.sum(H_['psi_min_late'] > F_['psi_min_late']))}/{N_MC}; lower pointing error in "
+          f"{int(np.sum(H_['point_mean'] < F_['point_mean']))}/{N_MC}")
+    print(f"  Card distance target >= 5 m: hemisphere min over seeds {H_['min_dist'].min():.2f} m (whole run) -> "
+          f"{'met' if H_['min_dist'].min() >= 5 else 'NOT met'}; after 5 s {H_['min_dist_late'].min():.2f} m -> "
+          f"{'met' if H_['min_dist_late'].min() >= 5 else 'NOT met'}; seeds with whole-run min >= 5 m: "
+          f"{int(np.sum(H_['min_dist'] >= 5))}/{N_MC}")
     for a, b in (('hemi_world', 'flat_world'),):
         A, B = res[a], res[b]
         print(f"    world-fixed: hemisphere lower phase error in {int(np.sum(A['phase_mean'].mean(1) < B['phase_mean'].mean(1)))}/{N_MC} "
