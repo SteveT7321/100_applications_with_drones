@@ -1,6 +1,6 @@
 # S097 3D Upgrade — Aerial Puzzle Assembly
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S097 original](../S097_aerial_puzzle.md)
 
 ---
@@ -19,6 +19,9 @@ This 3D upgrade introduces three key additions:
 1. **Full 6-DOF piece transport**: each puzzle piece has a body-fixed frame; roll ($\phi$),
    pitch ($\theta$), and yaw ($\psi$) are all independently controlled and must converge to
    the slot's required attitude before insertion is attempted.
+   *(Correction 2026-10-24: a quadrotor cannot hold a non-zero roll or pitch while hovering,
+   because its tilt sets its horizontal acceleration. Independent roll and pitch of the piece
+   therefore need a 2-axis gimbal between drone and piece; the implementation assumes one.)*
 2. **Layered assembly sequence**: the hexagon is not assembled in a flat plane but in a
    shallow funnel geometry — alternating pieces arrive from above and below the nominal
    assembly plane ($z_{asm} \pm \Delta z_{approach}$), eliminating simultaneous-collision
@@ -54,7 +57,7 @@ Each slot $k$ is assigned:
 
 1. **Ascent + layered approach** ($t = 0$ to $t_{asc}$): drones climb to their
    individual approach altitudes $z_k^{app} = z_{asm} + \Delta z_k$, where
-   $\Delta z_k = \delta_z \cos(2\pi k / N)$ staggers even- and odd-indexed drones.
+   $\Delta z_k = \delta_z (-1)^k$ staggers even- and odd-indexed drones (corrected; see below).
 2. **Consensus positioning** ($t_{asc}$ to $t_{conv}$): ring-graph consensus contracts
    horizontal position errors while altitude holds at $z_k^{app}$.
 3. **Attitude alignment** ($t_{conv}$ to $t_{att}$): each drone independently rotates to
@@ -79,7 +82,12 @@ Slots are arranged on a regular hexagon with circumradius $r_{hex} = 1.0$ m. To 
 simultaneous mid-air collisions, even-indexed slots arrive from above and odd-indexed
 slots from below the nominal assembly plane:
 
-$$\Delta z_k = \delta_z \cos\!\left(\frac{2\pi k}{N}\right), \qquad \delta_z = 0.25 \text{ m}$$
+$$\Delta z_k = \delta_z\,(-1)^k, \qquad \delta_z = 0.25 \text{ m}$$
+
+*(Corrected 2026-10-24. The earlier formula $\delta_z \cos(2\pi k/N)$ gives
++0.25, +0.125, −0.125, −0.25, −0.125, +0.125 m: it does not alternate, and four neighbour pairs are
+only 0.125 m apart, less than the 0.133 m vertical extent of a tilted piece with a 20 mm panel.
+Both forms are simulated.)*
 
 The approach position for drone $k$ is:
 
@@ -142,6 +150,11 @@ $$\mathbf{P}[t+1] = \mathbf{P}[t]
 where $\mathbf{P}_{xy}$ collects the x-y columns, $\mathbf{z}^{app}$ is the vector of
 approach altitudes, $\alpha_{xy} = 0.10$, and $\alpha_z = 0.15$ (faster vertical settling).
 
+*(Correction 2026-10-24: consensus on absolute positions, $-\varepsilon\mathbf{L}\mathbf{P}$, pulls
+the drones together; S097 showed that its fixed point is a hexagon shrunk to 0.667 of its size. The
+implementation runs the consensus on the slot errors $\mathbf{P} - \mathbf{P}^{app}$, as the fixed
+S097 does.)*
+
 ### 6-DOF Impedance Fitting Law
 
 Once attitude alignment is satisfied, the controller switches to a 6-DOF impedance law.
@@ -165,17 +178,20 @@ The rotational channel for attitude error $\theta_{err,k}$:
 $$I_{eff}\,\ddot{\theta}_{err,k} + B_r\,\dot{\theta}_{err,k} + K_r\,\theta_{err,k} = \tau_{contact,k}$$
 
 $$\omega_{n,r} = \sqrt{\frac{K_r}{I_{eff}}} = 3.87 \text{ rad/s}, \qquad
-  \zeta_r = \frac{B_r}{2\sqrt{K_r I_{eff}}} = 1.0 \quad \text{(}I_{eff} = 0.2 \text{ kg m}^2\text{)}$$
+  \zeta_r = \frac{B_r}{2\sqrt{K_r I_{eff}}} = 0.968 \quad \text{(}I_{eff} = 0.2 \text{ kg m}^2\text{)}$$
 
-Both channels are critically damped to prevent oscillation at the moment of edge contact.
+Both channels are (near-)critically damped to prevent oscillation at the moment of edge contact.
+*(Corrected 2026-10-24: $1.5/(2\sqrt{3 \times 0.2}) = 0.968$, not 1.0.)*
 
 ### 6-DOF Assembly Error Metric
 
 $$\varepsilon_{6DOF}(t) = \max_{k}\sqrt{\|\mathbf{p}_k - \mathbf{p}_k^*\|^2
-  + \left(\frac{K_t}{K_r}\right)\theta_{err,k}^2}$$
+  + \left(\frac{K_r}{K_t}\right)\theta_{err,k}^2}$$
 
 This scalar combines translational and rotational residuals weighted by the ratio of
-stiffness gains, giving a single convergence measure in SI-compatible units (metres).
+stiffness gains, giving a single convergence measure in metres.
+*(Corrected 2026-10-24: the earlier weight $K_t/K_r$ has units 1/m², so the sum was not a length;
+$K_r/K_t$ = 0.375 m²/rad² makes 1° worth 10.69 mm.)*
 
 ---
 
@@ -207,7 +223,7 @@ stiffness gains, giving a single convergence measure in SI-compatible units (met
 | Rotational damping | $B_r$ | 1.5 N m s/rad |
 | Effective rotational inertia | $I_{eff}$ | 0.2 kg m² |
 | Rotational natural frequency | $\omega_{n,r}$ | 3.87 rad/s |
-| Both channels damping ratio | $\zeta$ | 1.0 (critical) |
+| Damping ratio, translational / rotational | $\zeta$ | 1.0 / 0.968 |
 | Phase-switch threshold | $\delta_{switch}$ | 50 mm |
 | Assembly success threshold | $\delta_{fit}$ | 5 mm |
 | Attitude success threshold | $\delta_{att,final}$ | 1° |
