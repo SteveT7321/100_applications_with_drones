@@ -1,6 +1,6 @@
 # S086 Cooperative Multi-Angle Filming
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Phase-Locked Orbit Formation + KF Subject Tracking | **Dimension**: 3D
 
 ---
@@ -46,7 +46,14 @@ The subject moves on a Lissajous figure-8 parametrised by arc-length time $t$:
 $$\mathbf{q}(t) = \bigl(a \sin(\omega t),\; b \sin(2\omega t),\; 0\bigr)^\top$$
 
 where $a = 10$ m, $b = 6$ m, and angular frequency $\omega$ is chosen so that the RMS
-path speed equals $v_{sub} = 1.5$ m/s. The subject's velocity is:
+path speed equals $v_{sub} = 1.5$ m/s. The mean squared speed is
+$\omega^2 (a^2 + 4b^2)/2$, so $\omega = v_{sub}/\sqrt{(a^2 + 4b^2)/2} = 0.1358$ rad/s
+(lap time 46.3 s; the speed varies between 0.92 and 2.12 m/s).
+
+> **Correction (implementation):** the value $\omega = 0.18$ rad/s used below gives an RMS speed of
+> 1.99 m/s, not 1.5 m/s.
+
+The subject's velocity is:
 
 $$\dot{\mathbf{q}}(t) = \bigl(a\omega\cos(\omega t),\; 2b\omega\cos(2\omega t),\; 0\bigr)^\top$$
 
@@ -140,7 +147,17 @@ where the normalised offset is:
 
 $$\delta_k(t) = \frac{\mathbf{q}_{proj,k}(t)}{r_{fov}}$$
 
-with $r_{fov}$ the half-width of the field of view at orbit radius $r$. The fleet-wide
+with $r_{fov}$ the half-width of the field of view at orbit radius $r$. Here the camera of drone
+$k$ points at the KF estimate $(\hat x, \hat y, 0)$, and $\mathbf{q}_{proj,k}$ is the offset of the
+**true** subject from the camera axis (lateral and vertical, in the camera frame), scaled to the
+orbit radius: $\delta_k = (\text{offset}/\text{depth}) \cdot r / r_{fov}$.
+
+> **Correction (implementation):** `framing_score` in the code below divides the world-frame vector
+> from drone to subject by `FOV_HALF_WIDTH` = 2 m. That vector has length about 6 m (the orbit
+> radius), so at least one component is about 4.2 m or more and $\|\delta\|_\infty \geq 2.1 > 0.15$:
+> the score would be 0 at every step. The offset must be measured from the camera axis.
+
+The fleet-wide
 framing score averaged over time and drones:
 
 $$\bar{F} = \frac{1}{3\,T} \int_0^T \sum_{k=0}^{2} F_k(t)\,dt$$
@@ -460,7 +477,7 @@ if __name__ == '__main__':
 | Subject walking speed (RMS) | $v_{sub}$ | 1.5 m/s |
 | Figure-8 semi-axis x | $a$ | 10.0 m |
 | Figure-8 semi-axis y | $b$ | 6.0 m |
-| Figure-8 angular frequency | $\omega$ | 0.18 rad/s |
+| Figure-8 angular frequency | $\omega$ | 0.1358 rad/s (corrected from 0.18) |
 | Nominal inter-drone separation (ideal) | $d^{ideal}$ | $r\sqrt{3} \approx 10.39$ m |
 | Minimum inter-drone distance | $d_{min}$ | 3.0 m |
 | Phase offset between drones | $\Delta\varphi$ | $120°$ ($2\pi/3$ rad) |
