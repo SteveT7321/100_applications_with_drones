@@ -1,6 +1,6 @@
 # S078 3D Upgrade — Harvester Guidance
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S078 original](../S078_harvester_guidance.md)
 
 ---
@@ -25,6 +25,12 @@ uniform 400 × 100 occupancy grid with no vertical component. Three significant 
    sub-pattern geometry must all be expressed in 3D, including the correct projection of the
    horizontal corridor onto a tilted terrain surface.
 
+> **Card corrections (2026-10-24, verified in `src/04_industrial_agriculture/3d/s078_3d_harvester_guidance.py`)**:
+> (1) The DEM below spans $A_{dem}[-1, 1.5] = [-2, 3]$ m over the field (a 5 m span, lifted by $A_{dem}$ in the simulation so that it runs 0–5 m and the MSL altitude bounds stay positive) and its steepest slope is 5.08°, not "0–4 m" and "≈ 12°".
+> (2) $\phi$ in $\eta_{slope}$ must be the signed slope along the heading, $\phi = \arctan(\nabla z\cdot\hat{\mathbf u})$; the gradient magnitude defined below is never negative, so the downhill branch could not occur.
+> (3) The PD law mixes units: $K_d(\dot z_{cmd} - \dot z)$ is in metres, not m/s. Implemented as $\dot z = \mathrm{clip}(\dot z_{cmd} + K_p(z_{cmd} - z), \pm\dot z_{max})$ (rate feed-forward plus P).
+> (4) With $h_{ACL}$ = 2.0 m the scout is $h_{crop} + 1.5$ m above an obstacle top, so with the 2.5 m sensor sphere it cannot detect anything under crop taller than about 0.9 m (horizontal radius 0.00 m under the 1.2 m crop); "fly low enough to detect them" requires a lower clearance.
+
 This 3D upgrade adds a Digital Elevation Model (DEM), altitude-varying crop-height detection, and
 full 3D drone-to-harvester relative positioning. The harvester's speed is modulated by slope (a
 simple tractive-force energy model), and the scout drone maintains a target ACL above the local
@@ -35,14 +41,14 @@ canopy.
 ## Problem Definition
 
 **Setup**: A 200 × 50 m agricultural field is modelled with a smooth sinusoidal DEM giving terrain
-heights $z_{terrain}(x,y)$ that vary between 0 and 4 m, producing slopes up to approximately 12°.
+heights $z_{terrain}(x,y)$ that span 5 m (lifted to 0–5 m), producing slopes up to 5.08° (corrected from "0–4 m, ≈ 12°").
 A spatially varying crop-height map $h_{crop}(x,y) \in [0.3, 1.2]$ m (taller near field centre,
 shorter near boundaries) is superimposed on the terrain. $N_{obs} = 15$ obstacles (rocks, stumps)
 are placed at 3D positions; their effective detection height above terrain is $h_{obs} = 0.5$ m so
 the scout must fly low enough to detect them.
 
 The harvester advances along the field's long axis at a nominal speed of $v_0 = 1.5$ m/s, but its
-actual speed is attenuated by terrain slope $\phi(x, y)$ (positive uphill):
+actual speed is attenuated by the terrain slope along its heading, $\phi = \arctan(\nabla z\cdot\hat{\mathbf u})$ (positive uphill; corrected: signed, along the heading):
 
 $$v_{harvester}(x, y) = v_0 \cdot \cos\phi(x, y) \cdot \eta_{slope}(\phi)$$
 
@@ -110,7 +116,9 @@ $$z_{cmd}(x, y) = z_{terrain}(x, y) + h_{crop}(x, y) + h_{ACL}$$
 
 Altitude tracking with a PD controller:
 
-$$\dot{z}_{drone} = K_p \left(z_{cmd} - z_{drone}\right) + K_d \left(\dot{z}_{cmd} - \dot{z}_{drone}\right)$$
+$$\dot{z}_{drone} = \mathrm{clip}\bigl(\dot{z}_{cmd} + K_p \left(z_{cmd} - z_{drone}\right), \pm\dot z_{max}\bigr)$$
+
+(corrected: the card's $K_d(\dot z_{cmd} - \dot z)$ term has units of metres; the rate feed-forward replaces it)
 
 with $K_p = 2.0\,\text{s}^{-1}$, $K_d = 0.4\,\text{s}$, and maximum vertical rate
 $\dot{z}_{max} = 1.5\,\text{m/s}$.
@@ -170,7 +178,7 @@ The detection and inflation logic from S078 carries over unchanged.
 
 ## Key 3D Additions
 
-- **Terrain DEM**: bivariate sinusoidal elevation model, slopes up to ~12°; used to compute
+- **Terrain DEM**: bivariate sinusoidal elevation model, slopes up to 5.08° (corrected); used to compute
   harvester speed attenuation and drone target altitude.
 - **Slope-attenuated harvester speed**: $v_{harvester}$ is modulated by $\eta_{slope}(\phi)$
   (range 0.4–1.3×), extending or shortening mission time relative to the flat baseline.
@@ -193,7 +201,7 @@ The detection and inflation logic from S078 carries over unchanged.
 | Field dimensions | 200 × 50 m (horizontal) |
 | DEM amplitude $A_{dem}$ | 2.0 m |
 | DEM wavelengths | $L_{dem,x}$ = 200 m, $L_{dem,y}$ = 100 m |
-| Max terrain slope | ~12° |
+| Max terrain slope | 5.08° (corrected from ~12°) |
 | Crop height range $h_{crop}$ | 0.3 – 1.2 m |
 | Above-canopy level $h_{ACL}$ | 2.0 m |
 | Nominal harvester speed $v_0$ | 1.5 m/s |
