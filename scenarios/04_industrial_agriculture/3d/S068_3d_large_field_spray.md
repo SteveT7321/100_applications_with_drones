@@ -1,6 +1,6 @@
 # S068 3D Upgrade — Large-Scale Field Spraying
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S068 original](../S068_large_field_spray.md)
 
 ---
@@ -107,7 +107,7 @@ yielding an effective swath width:
 
 $$w_{eff}(t) = 2\,r_{swath}(t) = 2\,d_{noz}(t)\tan\theta_{cone}$$
 
-At nominal $d_{noz} = h_{AGL} = 2.0$ m this recovers $w_{eff} \approx 2.0$ m.
+At nominal $d_{noz} = h_{AGL} = 2.0$ m this recovers $w_{eff} \approx 2.0$ m (precisely $2 \cdot 2.0 \cdot \tan 27.5° = 2.082$ m; the 1.9 m run spacing keeps neighbouring swaths touching only while $d_{noz} \ge 1.825$ m).
 Terrain undulations that shift $d_{noz}$ by $\pm 0.3$ m produce a $\pm 15\%$ swath
 variation — significant for dose uniformity.
 
@@ -150,6 +150,8 @@ $$\Phi(t) = \max_{|i-j|=1} \Phi_{ij}(t)$$
 
 The altitude stagger is deemed sufficient when $\Phi(t) < \Phi_{max} = 0.15$ for all $t$.
 
+> **Correction (3D implementation, 2026-10-24).** (1) $\Delta z_i$ in this index is the height of drone $i$ above the ground under drone $j$, not the vertical separation between the drones, so a stagger lowers $\Phi$ only because the higher drone's wash is weaker at ground level (two co-located drones: 0.822 without, 0.689 with the 0.4 m stagger); with the vertical separation $z_i - z_j$ a 0.4 m stagger reduces the wash overlap by a factor of only 0.965. (2) Adjacent drones spray strips at least 13.3 m apart, so $\Phi$ is about $10^{-106}$ while spraying with or without a stagger; it exceeds 0.15 only when the drones converge on the station for their simultaneous battery swaps (max 0.762 with the stagger, 0.902 without). The criterion \"$\Phi < 0.15$ for all $t$\" is not met by the stagger.
+
 ### 3D Coverage Accounting
 
 Coverage is now assessed on a 2D surface grid (the canopy surface) rather than a flat plane.
@@ -168,7 +170,7 @@ the vertical component:
 
 $$d_{3D,return} = \|\mathbf{p}_i(t) - \mathbf{p}_{sta}\|_3 = \sqrt{(x_i - p_{sta,x})^2 + (y_i - p_{sta,y})^2 + (z_i - z_{sta})^2}$$
 
-The battery return trigger is updated accordingly:
+The battery return trigger is updated accordingly (corrected: a drone that follows the terrain home flies a longer path than the straight 3D line, so this trigger is not conservative; the shortfall is 0.103–0.126 s here. The implementation uses the exact terrain-following path time):
 
 $$t_{elapsed} + \frac{d_{3D,return}}{v} \geq T_{bat}$$
 
@@ -213,7 +215,7 @@ $$T_{mission} = \max_{i \in \{0,\ldots,N-1\}} T_i$$
 | Battery swap time | $T_{charge}$ | 120 s |
 | Charging station | $\mathbf{p}_{sta}$ | $(0, 50, z_{ter})$ m |
 | Coverage grid resolution | $\Delta$ | 0.5 m |
-| Altitude range | $z$ | 1.5 – 5.0 m |
+| Altitude range | $z$ | 1.5 – 5.0 m (read as height above ground: the terrain-following command itself spans 0.5–3.9 m above the datum) |
 | Simulation timestep | $\Delta t$ | 0.2 s |
 
 ---
@@ -221,8 +223,8 @@ $$T_{mission} = \max_{i \in \{0,\ldots,N-1\}} T_i$$
 ## Expected Output
 
 - **3D trajectory plot**: Matplotlib 3D axes showing the DEM surface mesh in grey, all four drone flight paths in distinct colours (red, orange, blue, purple), and altitude stagger visually evident between adjacent strips.
-- **Altitude vs time**: four time series (one per drone) showing terrain-following $z_i(t)$ against the commanded $z_{cmd,i}(t)$; tracking error $|\epsilon_{z,i}|$ should remain below 0.1 m throughout.
-- **Wash interference index vs time**: $\Phi(t)$ for each adjacent pair $(0,1)$, $(1,2)$, $(2,3)$; horizontal dashed line at $\Phi_{max} = 0.15$; all curves should stay below this threshold once stagger is applied.
+- **Altitude vs time**: four time series (one per drone) showing terrain-following $z_i(t)$ against the commanded $z_{cmd,i}(t)$; tracking error $|\epsilon_{z,i}|$ should remain below 0.1 m throughout (corrected: with the loop above, which damps the absolute vertical speed, the steady error on a 1.5 m sinusoid at 3 m/s is 0.119 m and the simulated maximum while spraying is 0.168 m; velocity feed-forward $K_{zd}(\dot z_{cmd} - \dot z)$ brings it to 0.087 m).
+- **Wash interference index vs time**: $\Phi(t)$ for each adjacent pair $(0,1)$, $(1,2)$, $(2,3)$; horizontal dashed line at $\Phi_{max} = 0.15$; all curves should stay below this threshold once stagger is applied (corrected: they do not; see the correction under the wash model).
 - **Effective swath width vs time**: $w_{eff,i}(t)$ for each drone illustrating how terrain slope modulates the spray footprint; reference line at $w_{spray} = 2.0$ m.
 - **Coverage map**: top-down view of the field with green heatmap on the canopy surface showing dose uniformity; strip boundaries as dashed lines; charging station as gold star.
 - **Coverage progress curve**: $C(t)$ vs wall-clock time $t$; compared to the 2D flat-terrain baseline from S068 to quantify the overhead from terrain following and stagger.
