@@ -8,7 +8,8 @@ helical descent from 500 m to 50 m through a 3D Rankine vortex:
   * eyewall updraft w_max sin(pi z / 600 m) and eye subsidence;
   * 3D Ornstein-Uhlenbeck gusts with std 10 % of the local tangential wind.
 The wind acts through drag, m a = u - m g e_z + b (v_wind + v_gust - v) (S058 fix).
-Thrust: |u_xy| <= m g (45 deg tilt), u_z in [0.7, 1.3] m g (card's decoupled limits).
+Thrust: |u_xy| <= m g, u_z in [0.7, 1.3] m g (card's decoupled limits; the tilt is 45 deg at u_z = m g
+and up to 55 deg at u_z = 0.7 m g). Ablation: tilt cone |u_xy| <= min(m g, u_z) for PD and H-inf.
 
 Controllers (S058, extended to 6 states): PD with still-air + gravity feed-forward,
 condensed MPC over 20 steps with wind feed-forward and the thrust constraints (ADMM),
@@ -44,7 +45,7 @@ OUTPUT_DIR = os.path.normpath(os.path.join(
 # ── Parameters (card / S058) ──────────────────────────────────────────────────
 M_DRONE, G, B_DRAG = 1.5, 9.81, 0.4
 F_MAX_CARD = 30.0
-U_XY_MAX   = M_DRONE * G                      # 45 deg tilt
+U_XY_MAX   = M_DRONE * G                      # card: m g tan 45 deg (decoupled from u_z)
 DUZ        = 0.3 * M_DRONE * G
 UZ_MIN, UZ_MAX = M_DRONE * G - DUZ, M_DRONE * G + DUZ
 R_MAX, V_MAX, V_INFLOW, SIGMA_RAD = 150.0, 50.0, 8.0, 40.0
@@ -261,12 +262,14 @@ def hinf_synthesis():
 U_HOVER = np.array([0.0, 0.0, M_DRONE * G])
 
 
-def saturate(u):
+def saturate(u, cone=False):
+    """Card limits; cone=True also caps the tilt at 45 deg of the actual vertical thrust."""
     u = u.copy()
-    n = np.hypot(u[0], u[1])
-    if n > U_XY_MAX:
-        u[:2] *= U_XY_MAX / n
     u[2] = min(max(u[2], UZ_MIN), UZ_MAX)
+    lim = min(U_XY_MAX, u[2]) if cone else U_XY_MAX
+    n = np.hypot(u[0], u[1])
+    if n > lim:
+        u[:2] *= lim / n
     return u
 
 
@@ -378,7 +381,10 @@ def simulate(ctrl, profile, seed, v_max=V_MAX, K_hinf=None, record=False):
     P_r, V_r, A_r, X_r = ref_table(profile)
     x = X_r[0].copy()
     gvec = np.array([0.0, 0.0, -G])
+    cone = ctrl.endswith('_cone')
+    ctrl = ctrl.replace('_cone', '')
     mpc = MPC(ctrl, profile, v_max) if ctrl.startswith('mpc') else None
+    tilt_max = 0.0
     err3, errxy, errz, sat, ezs = (np.zeros(N_STEPS) for _ in range(5))
     traj = np.zeros((N_STEPS + 1, 3))
     traj[0] = x[:3]
@@ -394,16 +400,17 @@ def simulate(ctrl, profile, seed, v_max=V_MAX, K_hinf=None, record=False):
             u = ff - K_hinf @ (x - xr)
         else:
             u = mpc.step(x, k)
-        us = saturate(u)
-        sat[k] = float(np.any(np.abs(us - u) > 1e-9) or np.hypot(us[0], us[1]) >= U_XY_MAX * (1 - 1e-6)
+        us = saturate(u, cone)
+        lim = min(U_XY_MAX, us[2]) if cone else U_XY_MAX
+        sat[k] = float(np.any(np.abs(us - u) > 1e-9) or np.hypot(us[0], us[1]) >= lim * (1 - 1e-6)
                        or us[2] <= UZ_MIN + 1e-9 or us[2] >= UZ_MAX - 1e-9)
         u = us
-        assert np.hypot(u[0], u[1]) <= U_XY_MAX + 1e-9 and UZ_MIN - 1e-9 <= u[2] <= UZ_MAX + 1e-9
-        assert np.linalg.norm(u) <= F_MAX_CARD
+        assert np.hypot(u[0], u[1]) <= lim + 1e-9 and UZ_MIN - 1e-9 <= u[2] <= UZ_MAX + 1e-9
+        tilt_max = max(tilt_max, math.degrees(math.atan2(math.hypot(u[0], u[1]), u[2])))
         w = B_DRAG / M_DRONE * v_w + gvec
         x = AD @ x + BD @ u + ED @ w
         assert np.all(np.isfinite(x)) and np.linalg.norm(x[3:]) < 150.0, 'state blew up'
-        assert x[2] > 0.0, 'drone hit the sea surface'
+        assert 0.0 < x[2] < H_DOM, 'drone left the modelled layer (sea surface to 600 m domain top)'
         d = x[:3] - P_r[k + 1]
         err3[k], errxy[k], errz[k], ezs[k] = np.linalg.norm(d), np.hypot(d[0], d[1]), abs(d[2]), d[2]
         traj[k + 1] = x[:3]
@@ -421,7 +428,7 @@ def simulate(ctrl, profile, seed, v_max=V_MAX, K_hinf=None, record=False):
            't_peak_z': (kz + 1) * DT, 'r_peak_z': float(rr[kz + 1]), 'z_peak_z': float(traj[kz + 1, 2]),
            'effort': DT * np.linalg.norm(U, axis=1).sum(), 'sat': sat.mean(),
            'success': bool(err3.max() <= E_FAIL), 'compl': compl, 'z_min': float(traj[:, 2].min()),
-           'umax': float(np.linalg.norm(U, axis=1).max())}
+           'umax': float(np.linalg.norm(U, axis=1).max()), 'tilt_max': tilt_max}
     if mpc is not None:
         res['admm'] = mpc.n_admm / mpc.n_solves
     if record:
@@ -449,6 +456,9 @@ def run_simulation():
                                         record=(s == SHOW_SEED and prof in ('helix', 'flat50')))
                                for s in seeds]
     main[('helix', 'mpc_abscost')] = [simulate('mpc_abscost', 'helix', s, K_hinf=K_hinf) for s in seeds]
+    for prof in ('helix', 'flat50', 'helix_nodecay'):                # tilt-cone ablation
+        for c in ('pd', 'hinf'):
+            main[(prof, c + '_cone')] = [simulate(c + '_cone', prof, s, K_hinf=K_hinf) for s in seeds]
     sweep = {}
     for vm in SWEEP_VMAX:
         for prof in ('helix', 'flat50'):
@@ -456,6 +466,11 @@ def run_simulation():
                 sweep[(vm, prof, c)] = (main[(prof, c)][:N_SEEDS_SWEEP] if vm == V_MAX else
                                         [simulate(c, prof, SEED0 + i, v_max=vm, K_hinf=K_hinf)
                                          for i in range(N_SEEDS_SWEEP)])
+    for c in CTRL:                                                   # updraft probe at v_max = 40 m/s
+        main[('helix', c, 40.0)] = sweep[(40.0, 'helix', c)]          # same runs as the sweep (reused)
+        main[('flat50', c, 40.0)] = sweep[(40.0, 'flat50', c)]
+        main[('helix_noupdraft', c, 40.0)] = [simulate(c, 'helix_noupdraft', SEED0 + i, v_max=40.0, K_hinf=K_hinf)
+                                              for i in range(N_SEEDS_SWEEP)]
     return main, sweep, {'K': K_hinf, 'gstar': gstar, 'gamma': gamma}
 
 
@@ -710,6 +725,30 @@ def report(main, sweep, synth):
             parts.append(f"{prof}: peak {np.mean([r['peak'] for r in rs]):.2f} m, e_z {np.mean([r['ez'] for r in rs]):.3f} m, "
                          f"success {sum(r['success'] for r in rs)}, sat {100 * np.mean([r['sat'] for r in rs]):.1f} %")
         print(f'    {LABELS[c]:26s} ' + ' | '.join(parts))
+    print(f'\n  --- thrust geometry: tilt at |u_xy| = m g is {math.degrees(math.atan2(U_XY_MAX, M_DRONE * G)):.1f} deg '
+          f'at u_z = m g and {math.degrees(math.atan2(U_XY_MAX, UZ_MIN)):.1f} deg at u_z = 0.7 m g; largest applied tilt '
+          f"(card limits, helix / fixed 50 m, all controllers): "
+          f"{max(r['tilt_max'] for c in CTRL for r in main[('helix', c)]):.1f} / "
+          f"{max(r['tilt_max'] for c in CTRL for r in main[('flat50', c)]):.1f} deg")
+    print('  --- tilt-cone ablation |u_xy| <= min(m g, u_z) (PD and H-inf; mean peak error, success, saturation) ---')
+    for c in ('pd', 'hinf'):
+        parts = []
+        for prof in ('helix', 'flat50', 'helix_nodecay'):
+            rs = main[(prof, c + '_cone')]
+            parts.append(f"{prof}: peak {np.mean([r['peak'] for r in rs]):.2f} m (xy {np.mean([r['peak_xy'] for r in rs]):.2f}), "
+                         f"success {sum(r['success'] for r in rs)}/{N_SEEDS}, sat {100 * np.mean([r['sat'] for r in rs]):.1f} %, "
+                         f"max tilt {max(r['tilt_max'] for r in rs):.1f} deg")
+        ph = np.array([r['peak'] for r in main[('helix', c + '_cone')]])
+        pf = np.array([r['peak'] for r in main[('flat50', c + '_cone')]])
+        print(f'    {LABELS[c]:26s} ' + ' | '.join(parts) + f'; helix lower peak than fixed 50 m in '
+              f'{int(np.sum(ph < pf))}/{N_SEEDS}, mean peak ratio {ph.mean() / pf.mean():.2f}')
+    print(f'  --- updraft probe at v_max = 40 m/s ({N_SEEDS_SWEEP} seeds): mean peak error / mean e_z / success / saturation ---')
+    for c in CTRL:
+        print(f'    {LABELS[c]:26s} ' + ' | '.join(
+            f"{prof}: {np.mean([r['peak'] for r in main[(prof, c, 40.0)]]):.2f} m / "
+            f"{np.mean([r['ez'] for r in main[(prof, c, 40.0)]]):.3f} m / {sum(r['success'] for r in main[(prof, c, 40.0)])} / "
+            f"{100 * np.mean([r['sat'] for r in main[(prof, c, 40.0)]]):.1f} %"
+            for prof in ('helix', 'helix_noupdraft', 'flat50')))
     print('\n  --- controller ranking on the helix (per-seed wins on mean 3D error) ---')
     E = np.array([[r['e3'] for r in main[('helix', c)]] for c in CTRL])
     print('    ' + ', '.join(f'{LABELS[c]} {int(np.sum(np.argmin(E, 0) == i))}' for i, c in enumerate(CTRL)))

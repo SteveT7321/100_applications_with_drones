@@ -11,7 +11,7 @@
 - An eyewall updraft of up to 5 m/s, with subsidence inside the eye.
 - 3D band-limited gusts.
 
-The 1.5 kg drone has six states. Its horizontal thrust is limited to $mg$ (45° tilt) and its vertical thrust to $[0.7, 1.3]\,mg$. It must track the helix and complete the altitude sounding.
+The 1.5 kg drone has six states. Its horizontal thrust is limited to $mg$ and its vertical thrust to $[0.7, 1.3]\,mg$. These are the card's decoupled limits: the tilt is 45° at hover thrust and up to 55.0° when $u_z$ = 0.7 $mg$. A tilt-cone ablation, $\|\mathbf u_{xy}\| \le \min(mg, u_z)$, checks the results under a true 45° limit. It must track the helix and complete the altitude sounding.
 
 **Controllers** (S058, extended to 6 states; same gusts for every run of a seed):
 
@@ -72,7 +72,9 @@ The model is discretised exactly (ZOH) at 0.1 s. The largest possible $\|\mathbf
 | $w_{max}$ / $w_{sub}$ / $H_{dom}$ | 5 m/s / 2 m/s / 600 m |
 | Gusts | 10 % of local $v_{tan}$, OU with 2 s correlation (S058) |
 | $m$ / $b$ / $F_{max}$ | 1.5 kg / 0.4 N·s/m / 30 N |
-| Thrust limits | $\|\mathbf u_{xy}\| \le$ 14.71 N; $u_z \in$ [10.30, 19.13] N |
+| Thrust limits | $\|\mathbf u_{xy}\| \le$ 14.71 N; $u_z \in$ [10.30, 19.13] N (tilt 45.0° at $u_z = mg$, 55.0° at 0.7 $mg$) |
+| Tilt-cone ablation (added) | $\|\mathbf u_{xy}\| \le \min(mg, u_z)$, PD and H-infinity |
+| Updraft probe (added) | helix with and without vertical wind at $v_{max}$ = 40 m/s, 5 seeds |
 | $v_{inbound}$ / $\omega_{spiral}$ / $v_{descent}$ | 0.8 m/s / 0.12 rad/s / 2.0571 m/s |
 | Mission | 218.75 s, 2188 steps of 0.1 s |
 | MPC | $N_p$ = 20, $Q$ = diag(10, 10, 10, 1, 1, 1), $R$ = diag(0.1, 0.1, 0.05), ADMM ≤ 150 iterations, tolerance 10⁻³ N |
@@ -94,7 +96,11 @@ conda activate drones
 python src/03_environmental_sar/3d/s058_3d_typhoon.py
 ```
 
-The script sets BLAS to one thread, as S058 does. Runtime is 4–6 min, dominated by the MPC runs (249 s, 277 s and 373 s measured on a loaded machine). Three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script sets BLAS to one thread, as S058 does. Runtime is dominated by the MPC runs:
+- 297–346 s for the version without the tilt-cone and 40 m/s updraft probes, measured in an independent review run;
+- 387–568 s for this version, measured with the CPU saturated by other simulations running in parallel.
+
+The 568 s run is above the 8-minute target, so the runtime is a risk on a busy machine (X9). Three runs (two with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, one with default threading; the script fixes BLAS to one thread itself) printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -160,6 +166,21 @@ ADMM was active in 6.7 % of the steps (MPC + FF, helix), 6.6 % (no FF, helix), 5
 
 With $\Phi$ = 1 the peak horizontal errors equal the fixed-50 m ones: 9.17 / 3.85 / 4.83 m for PD / MPC / H-infinity.
 
+**Tilt-cone ablation** ($\|\mathbf u_{xy}\| \le \min(mg, u_z)$, 12 seeds; mean peak error, horizontal part in brackets, success, saturated steps). With the card's decoupled limits the largest applied tilt is 55.0° on both plans; with the cone it is 45.0°:
+
+| Controller | Helix | Fixed 50 m | Helix, $\Phi$ = 1 | Helix lower peak than fixed 50 m | Mean peak ratio helix / fixed |
+|---|---|---|---|:---:|:---:|
+| PD | 7.73 m (7.01), 12/12, 8.1 % | 20.90 m (20.90), 6/12, 13.3 % | 74.11 m (74.10), 0/12, 30.5 % | 12/12 | 0.37 |
+| H-infinity | 5.10 m (3.93), 12/12, 8.9 % | 16.55 m (16.55), 7/12, 13.4 % | 75.21 m (75.20), 0/12, 31.3 % | 12/12 | 0.31 |
+
+**Updraft probe at $v_{max}$ = 40 m/s** (5 seeds; mean peak error / mean $e_z$ / successes / saturated steps):
+
+| Controller | Helix | Helix, no vertical wind | Fixed 50 m |
+|---|---|---|---|
+| PD | 4.44 m / 0.283 m / 5 / 3.1 % | 3.84 m / 0.162 m / 5 / 0.0 % | 4.85 m / 0.193 m / 5 / 0.2 % |
+| MPC + FF | 1.90 m / 0.093 m / 5 / 3.3 % | 0.41 m / 0.057 m / 5 / 0.1 % | 0.51 m / 0.066 m / 5 / 0.1 % |
+| H-infinity | 2.22 m / 0.102 m / 5 / 3.3 % | 0.99 m / 0.044 m / 5 / 0.1 % | 1.24 m / 0.052 m / 5 / 0.2 % |
+
 **Severity sweep** (5 seeds; mean $\bar e_{3D}$ / mean peak / successes):
 
 | $v_{max}$ | Helix PD | Helix MPC | Helix H-inf | Fixed 50 m PD | Fixed 50 m MPC | Fixed 50 m H-inf |
@@ -171,9 +192,12 @@ With $\Phi$ = 1 the peak horizontal errors equal the fixed-50 m ones: 9.17 / 3.8
 | 70 | 89.612 / 200.26 / 0 | 80.679 / 206.30 / 0 | 89.168 / 199.29 / 0 | 183.585 / 328.46 / 0 | 150.846 / 272.15 / 0 | 179.262 / 321.28 / 0 |
 
 **Key findings**:
-- **The descending helix makes the eyewall easier to cross than the 2D baseline.** The helix crosses the eyewall at 397.1 m, where $\Phi$ = 0.806. The steady horizontal thrust needed there peaks at 9.48 N (64 % of $mg$) instead of 13.09 N (89 %) in the boundary layer. On the same seeds the helix has a lower peak error than the fixed-50 m flight in 9–10 of 12 seeds and a lower mean horizontal error in 12 of 12 for every controller. The mean peak is 0.64–0.75× the fixed-50 m value. PD succeeds in 12/12 instead of 10/12. In the severity sweep the helix still succeeds in 4/5 seeds at 60 m/s, where every controller fails 0/5 at 50 m; at 70 m/s both fail.
+- **The descending helix makes the eyewall easier to cross than the 2D baseline.** The helix crosses the eyewall at 397.1 m, where $\Phi$ = 0.806. The steady horizontal thrust needed there peaks at 9.48 N (64 % of $mg$) instead of 13.09 N (89 %) in the boundary layer. On the same seeds the helix has a lower peak error than the fixed-50 m flight in 9–10 of 12 seeds and a lower mean horizontal error in 12 of 12 for every controller. The mean peak is 0.64–0.75× the fixed-50 m value. PD succeeds in 12/12 instead of 10/12. In the severity sweep at $v_{max}$ = 60 m/s, the helix still succeeds in 4/5 seeds, while every controller at the fixed 50 m altitude fails 0/5; at 70 m/s both plans fail. Under a true 45° tilt cone the advantage grows: the helix has the lower peak in 12/12 seeds for PD and H-infinity (mean peak ratio 0.37 / 0.31), and the fixed-50 m flight succeeds in only 6/12 and 7/12 seeds.
 - **The vertical wind decay is the cause, shown by the ablation.** With $\Phi$ = 1 on the same helix, the peak horizontal errors return exactly to the fixed-50 m values (9.17 / 3.85 / 4.83 m). Saturation rises from 5.2–6.0 % to 11.6–12.6 %, and PD fails 3 of 12 seeds. The descent itself does not help; flying the eyewall at altitude, where the wind is weaker, does.
-- **The eyewall updraft is the helix's new problem.** The updraft reaches 4.51 m/s on the helix. Together with the gusts it pushes the vertical thrust against its ±0.3 $mg$ band. The largest altitude errors sit in the updraft zone: median at r ≈ 135 m, z ≈ 365 m, peak $e_z$ 2.90–3.62 m. The drone flies above the reference on average (+0.086 to +0.286 m). Removing the vertical wind cuts the MPC peak error from 2.97 to 0.64 m and saturation from 5.7 to 0.6 %. At low wind speeds the updraft makes the helix *worse* than the fixed 50 m flight: MPC peak 1.90 vs 0.51 m at $v_{max}$ = 40 m/s. The updraft does not scale with $v_{max}$, but the horizontal benefit does. The card's expectation that "$e_z$ peaks in the updraft zone" holds.
+  - The *exact* equality is an artefact of the card's decoupled limits, under which horizontal authority does not depend on $u_z$.
+  - Under the tilt cone, the $\Phi$ = 1 helix is far worse than the fixed 50 m flight: 74–75 m peaks and 0/12 successes. The steady thrusts suggest why (*not separately probed*). On the helix the steady vertical thrust drops as low as 12.09 N while descending through the updraft, and the cone then caps the horizontal thrust below the 13.09 N the full-strength eyewall needs.
+  - So the vertical decay is what makes the descending helix feasible.
+- **The eyewall updraft is the helix's new problem.** The updraft reaches 4.51 m/s on the helix. Together with the gusts it pushes the vertical thrust against its ±0.3 $mg$ band. The largest altitude errors sit in the updraft zone: median at r ≈ 135 m, z ≈ 365 m, peak $e_z$ 2.90–3.62 m. The drone flies above the reference on average (+0.086 to +0.286 m). Removing the vertical wind cuts the MPC peak error from 2.97 to 0.64 m and saturation from 5.7 to 0.6 %. At low wind speeds the updraft makes the helix *worse* than the fixed 50 m flight. At $v_{max}$ = 40 m/s the MPC peak is 1.90 m on the helix against 0.51 m at fixed 50 m. Removing the vertical wind brings it to 0.41 m (H-infinity 2.22 → 0.99 m, PD 4.44 → 3.84 m), so the probe confirms the updraft as the cause. The updraft does not scale with $v_{max}$, but the horizontal benefit does. The card's expectation that "$e_z$ peaks in the updraft zone" holds.
 - **The controller ranking from S058 carries over.** On the helix: MPC 0.263 m < H-infinity 0.799 m < PD 2.833 m mean error. MPC wins all 12 seeds and has a lower peak than H-infinity in 11/12. Without the wind feed-forward, MPC drops to 1.415 m, between H-infinity and PD, as in S058. Most of MPC's lead therefore still comes from knowing the wind.
 - **H-infinity does not get harder in 3D.** The axes are decoupled, so the vertical channel is one more double integrator with drag. Its worst-case gain under the H-infinity controller is 0.4859, below the horizontal 0.5709, and $\gamma^*$ stays at the S058 value of 0.5289. The card expected it to increase; the card has been corrected.
 - **Sounding completeness cannot separate the controllers.** It is 100 % for every controller and every helix variant, because the 5 m / 20 m tolerances are far larger than any tracking error. It only shows that the fixed-altitude flights produce no sounding at all.
@@ -230,7 +254,9 @@ Seed 100, rotating 3D view: the three drones on the helix, with the wind vector 
 | "$\gamma^*$ expected to increase relative to 2D" | $\gamma^*$ = 0.5289, the same as S058 | The decoupled vertical channel has a lower worst-case gain (0.4859 < 0.5709). Card corrected. |
 | PD without feed-forward, drone starts at rest, H-infinity placeholder | S058 versions: still-air + gravity feed-forward, start on the reference, game-Riccati synthesis | S058 fixes. |
 | "Mission success" | Track-loss threshold: 3D error never above 15 m | S058 fix. |
-| Three controllers on the helix | Plus the fixed-50 m 2D baseline, fixed 500 m, $\Phi$ = 1 and no-vertical-wind ablations, an MPC without wind, and a severity sweep | The X5 baseline comparison, and direct probes of what causes the differences. |
+| Three controllers on the helix | Plus the fixed-50 m 2D baseline, fixed 500 m, $\Phi$ = 1 and no-vertical-wind ablations (the latter also at 40 m/s), an MPC without wind, a tilt-cone ablation and a severity sweep | The X5 baseline comparison, and direct probes of what causes the differences. |
+| "Attitude limit ±45°" as $\|\mathbf u_{xy}\| \le mg$ | Card's decoupled limits kept (tilt up to 55.0°); tilt cone $\|\mathbf u_{xy}\| \le \min(mg, u_z)$ as an ablation for PD and H-infinity | The card's limit equals 45° only at hover thrust. The MPC's ADMM projection is not extended to the cone. |
+| — | Assert that the drone stays between the sea surface and the 600 m domain top | The wind model is undefined above $H_{dom}$; replaces a thrust-norm check that could not fail (24.13 N < 30 N). |
 
 ---
 
