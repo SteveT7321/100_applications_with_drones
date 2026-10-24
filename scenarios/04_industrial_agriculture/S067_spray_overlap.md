@@ -1,6 +1,6 @@
 # S067 Spray Coverage Overlap Optimization
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Gaussian Spray Model + CV-Minimisation Optimisation | **Dimension**: 2D
 
 ---
@@ -85,11 +85,29 @@ $$d^*_{approx} = w_{spray} \cdot (1 - \rho_{opt}), \qquad \rho_{opt} = \text{SPR
 
 giving $d^*_{approx} = 2.0 \times 0.90 = 1.80$ m. The numerical minimisation refines this value.
 
+> **Corrected (2026-10, implementation review).** $\text{CV}(d)$ has no interior minimum. For a
+> Gaussian comb, the first Fourier harmonic gives
+> $\text{CV}(d) \approx \sqrt{2}\,\exp(-2\pi^2\sigma_s^2/d^2)$, which rises monotonically with
+> $d$. Numerically, the noise-free interior CV increases strictly for $d \ge 0.68$ m and stays below
+> 0.07 % for smaller $d$. So "$\arg\min$ CV" only returns the smallest spacing that the
+> discretisation can resolve (0.676 m, CV = 0.008 %). The 10 %-overlap value of 1.80 m is not an
+> optimum: it gives CV = 30.7 %. The well-posed question is the **widest** spacing, and so the
+> shortest flight, whose CV stays below a target $\text{CV}^*$:
+> $d^*(\text{CV}^*) = \max\{d : \text{CV}(d') \le \text{CV}^*\ \forall d' \le d\}$.
+> For $\text{CV}^* = 10\,\%$ this is 1.365 m noise-free. With $\sigma_{gps} = 0.1$ m (95th
+> percentile over 200 trials) it is 0.662 m. GPS error therefore **narrows** the usable spacing;
+> it does not widen it. The search range in the card text ($0.5\sigma_s$–$4\sigma_s$ = 0.25–2 m)
+> and in the card code (0.5–4 m) differ; the implementation uses 0.25–4 m.
+
 ### Strip Count and Mission Path Length
 
 For a field of cross-track width $W = 50$ m, the number of strips is:
 
-$$N = \left\lceil \frac{W}{d} \right\rceil$$
+$$N = \left\lceil \frac{W}{d} \right\rceil + 1$$
+
+(strips at $x = 0, d, \ldots$ until one lies at or beyond the far edge; with
+$\lceil W/d \rceil$ strips the last one can stop up to $d$ short of the edge, and the
+interior near $x = W - w/2$ is then under-dosed by construction.)
 
 and the total path length (along-track strips of length $L = 50$ m plus lateral turn legs) is:
 
@@ -475,13 +493,16 @@ if __name__ == "__main__":
 
 ## Expected Output
 
-- **Dose heatmaps** (3 panels): top-down 2-D dose maps for under-spaced, optimal, and over-spaced
-  configurations ($d = 0.70\,d^*$, $d^*$, $1.35\,d^*$); strip centrelines drawn as dashed cyan
-  lines; colour scale in normalised dose units; visual gap formation visible for under-spacing and
-  hot-spot banding for over-spacing.
+- **Dose heatmaps**: top-down 2-D dose maps for close and wide spacings; strip centrelines drawn as
+  dashed cyan lines; colour scale in normalised dose units. Gaps (dose below the mean) and hot-spot
+  bands both appear when the spacing is **too wide**. A small spacing gives a flat relative dose; its
+  cost is flight time and, at fixed nozzle flow, total chemical (the mean dose scales as $1/d$).
+  The redundant-area metric (> 1.5 × mean) is relative to the mean, so it grows with $d$
+  (0 % up to about 1.9 m noise-free).
 - **CV vs strip spacing curve**: noise-free CV curve (black solid) with Monte Carlo mean ± 1σ band
   (blue shading); vertical markers for noise-free $d^*$ (red), Monte Carlo $d^*_{MC}$ (orange),
-  and nominal design spacing (green dashed); minimum CV clearly visible as a well-defined trough.
+  and nominal design spacing (green dashed). CV rises monotonically with $d$ (no trough); the
+  markers show the widest spacing that meets the CV target.
 - **Cross-track dose profiles**: normalised $D(x)/\mu_D$ for all three spacing configurations on a
   single axis; horizontal reference lines at $D = 1$ (mean) and $D = 1.5$ (redundancy threshold);
   the optimal profile is nearly flat while under-spacing shows deep gaps and over-spacing shows
