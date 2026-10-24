@@ -1,6 +1,6 @@
 # S056 Nuclear Plant Leak Detection (Radiation Hotspot Localization)
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
@@ -73,9 +73,10 @@ $$z_k = D(\mathbf{p}_k,\, \mathbf{p}_s^*,\, A^*) + \varepsilon_k, \qquad
 where the measurement noise standard deviation $\sigma_{rad}$ scales with the true dose rate
 (reflecting Poisson counting statistics):
 
-$$\sigma_{rad}(\mathbf{p}_k) = \sigma_0 \sqrt{D(\mathbf{p}_k,\, \mathbf{p}_s^*,\, A^*) + D_{bg}}$$
+$$\sigma_{rad}(\mathbf{p}_k) = \sigma_0 \sqrt{D(\mathbf{p}_k,\, \mathbf{p}_s^*,\, A^*)}$$
 
-with $\sigma_0$ (µSv$^{1/2}$·h$^{1/2}$) a detector-dependent noise coefficient.
+with $\sigma_0$ (µSv$^{1/2}$·h$^{1/2}$) a detector-dependent noise coefficient. $D$ already
+contains $D_{bg}$, so the background is counted once (an earlier version added $D_{bg}$ again).
 
 ### Bayesian Source Localization
 
@@ -92,7 +93,7 @@ $$P_0(g_j) = \frac{1}{N_c}, \quad \forall\, j$$
 $$P(z_k \mid g_j) = \frac{1}{\sqrt{2\pi}\,\hat{\sigma}_{rad}(g_j)}
   \exp\!\left(-\frac{\bigl(z_k - D(\mathbf{p}_k, g_j, A)\bigr)^2}{2\,\hat{\sigma}_{rad}^2(g_j)}\right)$$
 
-where $\hat{\sigma}_{rad}(g_j) = \sigma_0\sqrt{D(\mathbf{p}_k, g_j, A) + D_{bg}}$ uses the
+where $\hat{\sigma}_{rad}(g_j) = \sigma_0\sqrt{D(\mathbf{p}_k, g_j, A)}$ uses the
 model-predicted dose rate at cell $g_j$.
 
 **Sequential Bayesian update** after measurement $k$:
@@ -143,8 +144,8 @@ $$\text{Var}(\tilde{z} \mid \mathbf{x}) = \sum_{j=1}^{N_c} P_k(g_j)
   \bigl[D(\mathbf{x},\, g_j,\, A) - \bar{z}(\mathbf{x})\bigr]^2
   + \bar{\sigma}_{rad}^2(\mathbf{x})$$
 
-where $\bar{\sigma}_{rad}^2(\mathbf{x}) = \sigma_0^2 \sum_j P_k(g_j)\bigl[D(\mathbf{x}, g_j, A)
-+ D_{bg}\bigr]$ is the expected noise variance.
+where $\bar{\sigma}_{rad}^2(\mathbf{x}) = \sigma_0^2 \sum_j P_k(g_j)\,D(\mathbf{x}, g_j, A)$ is the
+expected noise variance.
 
 **Approximate EIG** via the Gaussian mutual information approximation:
 
@@ -346,7 +347,8 @@ def run_simulation():
 - **Localisation error vs measurements**: $\epsilon_{RMS}(k)$ averaged over $N_{trial} = 50$
   Monte Carlo trials for each strategy; with 95 % confidence bands.
 - **Dose-rate field**: background image of the true dose-rate field $D(\mathbf{p})$ over the
-  500 × 500 m grid at $h = 15$ m, shown on log scale; contour rings at 0.5, 1, 5, 20 µSv/h.
+  500 × 500 m grid at $h = 15$ m, shown on log scale; contour rings at 0.5, 1, 5 µSv/h (the peak at 15 m altitude is about
+  9 µSv/h, so a 20 µSv/h ring does not exist).
 - **Flight path comparison**: top-down overlay of cumulative flight paths for all three strategies
   after 80 measurements; total path length printed in the legend.
 - **Animation (GIF)**: step-by-step update of the belief map and drone position; belief heatmap
