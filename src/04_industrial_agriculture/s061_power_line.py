@@ -1,7 +1,7 @@
 """
 S061 Power Line Inspection
 ==========================
-A drone follows a 103 m high-voltage cable (5-vertex 3D polyline, 3 support poles)
+A drone follows a 100.55 m high-voltage cable (5-vertex 3D polyline, 3 support poles)
 at a lateral standoff of 1.5 m and 0.5 m above it, at 1.0 m/s. A Frenet-frame
 controller (along-track speed loop, cross-track PID, vertical PD) tracks the
 nominal offset path from noisy GPS (sigma = 0.1 m); a repulsive potential field
@@ -10,7 +10,7 @@ pushes the drone away from each pole.
 Four controller configurations are compared over 20 GPS-noise seeds (common
 random numbers):
   A  card law      : finite-difference error derivatives on GPS, no drag feed-forward
-  B  vel-deriv     : error derivatives from the velocity estimate, no feed-forward
+  B  vel-deriv     : error derivatives from the true (noise-free) velocity, no feed-forward
   C  vel-deriv + FF: B plus drag / slope feed-forward (proposed)
   D  C without the pole potential field (ablation)
 
@@ -316,7 +316,7 @@ def plot_trajectory_3d(log, out_dir):
                     vmin=0, vmax=DEV_TOL, s=4, label='Drone (colour = deviation)')
     ax.scatter(*P[0], color='green', s=50, label='Start')
     ax.scatter(*P[-1], color='red', s=50, label='End')
-    fig.colorbar(sc, ax=ax, shrink=0.6, label='|deviation| (m)')
+    fig.colorbar(sc, ax=ax, shrink=0.6, pad=0.12, label='|deviation| (m)')
     ax.set_xlabel('x (m)')
     ax.set_ylabel('y (m)')
     ax.set_zlabel('z (m)')
@@ -524,6 +524,11 @@ if __name__ == '__main__':
     print(f'  Per-seed RMS wins: B < A in {int(np.sum(rmsB < rmsA))}/{N_SEEDS}; '
           f'C < B in {int(np.sum(rmsC < rmsB))}/{N_SEEDS}; '
           f'C < D in {int(np.sum(rmsC < rmsD))}/{N_SEEDS}')
+    for k in ('C', 'D'):
+        lg = logs[k]
+        near = [float(np.max(np.abs(lg['eN'][np.abs(lg['s'] - sp) <= 3.0]))) for sp in S0_SEG[1:4]]
+        print(f"  Seed {ANIM_SEED} config {k}: max |e_N| within 3 m of poles 1/2/3: "
+              + ' / '.join(f'{v:.3f}' for v in near) + ' m')
     mC = metrics(logs[MAIN])
     print(f'  Seed {ANIM_SEED} config {MAIN}: time {mC["time"]:.1f} s, coverage '
           f'{mC["coverage"]:.1f} %, RMS {mC["rms"]:.3f} m, max|e_N| {mC["max_eN"]:.3f} m, '

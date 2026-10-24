@@ -17,9 +17,9 @@
 | Config | Error derivatives | Drag feed-forward | Pole potential field |
 |---|---|---|---|
 | **A** card law | finite difference of the GPS-measured errors (card code) | no | yes |
-| **B** | from the velocity estimate | no | yes |
-| **C** proposed | from the velocity estimate | $c_{drag} v_{insp} \hat T$ | yes |
-| **D** ablation | from the velocity estimate | $c_{drag} v_{insp} \hat T$ | **no** |
+| **B** | from the true velocity (noise-free) | no | yes |
+| **C** proposed | from the true velocity (noise-free) | $c_{drag} v_{insp} \hat T$ | yes |
+| **D** ablation | from the true velocity (noise-free) | $c_{drag} v_{insp} \hat T$ | **no** |
 
 A GPS-noise sweep (σ = 0.1, 0.25, 0.5, 1.0 m; 10 seeds each) tests A, C and D for robustness.
 
@@ -39,7 +39,7 @@ $$a_T = K_p^{(T)}(v_{insp} - \dot s) - K_d^{(T)}\ddot s,\qquad a_N = -K_p^{(N)}e
 
 $$\mathbf a_{cmd} = a_T\hat T + a_N\hat N + a_B\hat z\;[+\,c_{drag}v_{insp}\hat T]\;[+\,\mathbf a_{rep}]$$
 
-Config A computes $\dot e_N, \dot e_B$ by finite differences of the GPS-measured errors, as in the card's code. B–D use $\dot e_N = \mathbf v\cdot\hat N$ and $\dot e_B = v_z - \dot s\,T_z$.
+Config A computes $\dot e_N, \dot e_B$ by finite differences of the GPS-measured errors, as in the card's code. B–D use $\dot e_N = \mathbf v\cdot\hat N$ and $\dot e_B = v_z - \dot s\,T_z$, where $\mathbf v$ is the drone's **true** velocity: the simulation assumes velocity is measured without noise (for example by an IMU / GPS-Doppler fusion). The along-track speed $\dot s$ also uses the true velocity in every configuration, as in the card. The B/C/D advantage over A is therefore an upper bound; a noisy velocity estimate would narrow it.
 
 ### Pole repulsion (card)
 
@@ -141,7 +141,7 @@ Config C, seed 0: the cable (black), the three poles (grey cylinders) and the dr
 
 ### Tracking Errors and Speed
 
-Cross-track and vertical errors (true position) for the card law A and for C, seed 0, with the ±0.3 m band in yellow and the poles as grey bands. The bottom panel shows A and B settling at 0.706 m/s while C holds 1.0 m/s. The cross-track bumps at s ≈ 25, 50 and 75 m are the potential-field push at the poles. The largest, at pole 2 (+0.14 m), is where the cable turns most sharply in the horizontal plane:
+Cross-track and vertical errors (true position) for the card law A and for C, seed 0, with the ±0.3 m band in yellow and the poles as grey bands. The bottom panel shows A and B settling at 0.706 m/s while C holds 1.0 m/s. The cross-track bumps at s ≈ 25, 50 and 75 m come mainly from the cable's corners at the poles: the reference switches to the next segment's frame there, and the drone needs time to follow. They appear with and without the potential field. Max |e_N| within 3 m of poles 1/2/3 in seed 0 is 0.061 / 0.140 / 0.032 m with the field (C) and 0.061 / 0.095 / 0.073 m without it (D). The field adds to the bump only at pole 2, where the cable turns most sharply in the horizontal plane (0.140 against 0.095 m):
 
 ![Error Time Series](./error_timeseries.png)
 
@@ -171,9 +171,9 @@ Top view of config C, seed 0. The red dot is the drone, the orange dots are the 
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| GPS noise added to $\dot{\mathbf p}$ (and to `pos` every step in the card's code) | GPS noise only corrupts the measured position $\tilde{\mathbf p}$ that the controller uses; the true position integrates $\mathbf v$ | Adding 0.1 m to the true position at every 0.05 s step is a 2 m/s random velocity, not a sensor error. Card corrected. |
+| GPS noise added to $\dot{\mathbf p}$ (and to `pos` every step in the card's code) | GPS noise only corrupts the measured position $\tilde{\mathbf p}$ that the controller uses; the true position integrates $\mathbf v$ | Adding 0.1 m to the true position at every 0.05 s step is a 2 m/s random velocity, not a sensor error. Card math and code corrected. |
 | One controller | Four configurations A–D with 20 common-random-number seeds, plus a GPS sweep | The card's law misses the speed target (next row). The comparison isolates the effect of the derivative, the feed-forward and the potential field. |
-| $a_T = K_p(v_{insp} - \dot s) - K_d\ddot s$ (card code: $-K_d\dot s$) | Card math ($-K_d\ddot s$) in all configs; C and D add $c_{drag}v_{insp}\hat T$ | The card code's $-K_d\dot s$ would settle at 1.2/2.1 = 0.57 m/s. The math version settles at 0.706 m/s because of drag; the feed-forward removes this steady-state error. A note is added to the card. |
+| $a_T = K_p(v_{insp} - \dot s) - K_d\ddot s$ (card code: $-K_d\dot s$) | Card math ($-K_d\ddot s$) in all configs; C and D add $c_{drag}v_{insp}\hat T$ | The card code's $-K_d\dot s$ would settle at 1.2/2.1 = 0.57 m/s. The math version settles at 0.706 m/s because of drag; the feed-forward removes this steady-state error. A note is added to the card, and the card code now uses $-K_d\ddot s$ plus the feed-forward. |
 | Cable length ≈ 103 m; task time 103 s | 100.55 m; 141.6 s (A) / 100.2 s (C) | Computed from the card's vertices. Card corrected. |
 | Coverage: "within lateral distance $d_{lat} + \epsilon$ of the segment midpoint" ($\epsilon$ not given; card code uses distance to the nominal point with $\epsilon = 0.5$) | Euclidean distance from the true position to the segment midpoint ≤ 2.0 m ($\epsilon = 0.5$ m) for ≥ 0.5 s | The card code's test is nearly always true and only counts time per segment. The midpoint distance makes coverage depend on actually passing close to each segment. |
 | No speed limit | 5 m/s speed limit, enforced with an assert | X4 sanity check; it is only reached with GPS noise of σ = 1.0 m. |

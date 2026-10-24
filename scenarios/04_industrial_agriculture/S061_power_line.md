@@ -281,38 +281,43 @@ def simulate(vertices, frames, rng):
     eB_log     = [0.0]
     speed_log  = [V_INSP]
 
+    prev_sdot = V_INSP
     while True:
+        # GPS is a measurement error: the controller sees meas, the drone is at pos
+        meas = pos + rng.normal(0.0, GPS_SIGMA, 3)
         s, p_ref, seg_idx, T_hat, N_hat = project_to_cable(
-            pos, frames, vertices)
+            meas, frames, vertices)
 
         # Nominal target
         p_nom = p_ref + D_LAT * N_hat + DELTA_Z * np.array([0, 0, 1])
 
-        # Frenet errors
-        diff   = pos - p_nom
+        # Frenet errors (measured)
+        diff   = meas - p_nom
         e_N    = np.dot(diff, N_hat)
         e_B    = diff[2]
         s_dot  = np.dot(vel, T_hat)
 
-        # PID accelerations
-        a_T = KP_T * (V_INSP - s_dot) - KD_T * np.dot(vel, T_hat)
+        # PID accelerations: speed loop with K_d on s-double-dot (math above);
+        # C_DRAG * V_INSP feed-forward removes the drag-induced speed deficit
+        s_ddot = (s_dot - prev_sdot) / DT
+        a_T = KP_T * (V_INSP - s_dot) - KD_T * s_ddot + C_DRAG * V_INSP
         i_N += e_N * DT
         d_eN = (e_N - prev_eN) / DT
         a_N  = -(KP_N * e_N + KD_N * d_eN + KI_N * i_N)
         d_eB = (e_B - prev_eB) / DT
         a_B  = -(KP_B * e_B + KD_B * d_eB)
+        prev_sdot = s_dot
 
         a_PID = a_T * T_hat + a_N * N_hat + a_B * np.array([0, 0, 1])
 
         # Repulsive avoidance
-        a_rep = repulsive_accel(pos, POLE_POSITIONS, K_REP, R_AVOID)
+        a_rep = repulsive_accel(meas, POLE_POSITIONS, K_REP, R_AVOID)
 
         a_cmd = a_PID + a_rep
 
-        # Double-integrator with drag
+        # Double-integrator with drag (no noise on the true state)
         vel = vel + (a_cmd - C_DRAG * vel) * DT
-        noise = rng.normal(0.0, GPS_SIGMA, 3)
-        pos = pos + vel * DT + noise
+        pos = pos + vel * DT
 
         # Dwell tracking
         seg_j = int(np.clip(s / seg_len, 0, N_SEG - 1))
