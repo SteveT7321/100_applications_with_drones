@@ -26,7 +26,7 @@
 
 $$x = R\sin s, \qquad y = \tfrac{R}{2}\sin 2s, \qquad z = 0$$
 
-with $s(t)$ chosen by arc-length reparametrisation so that the speed is exactly 1.5 m/s. The path is 48.78 m long, one lap takes 32.52 s (1.85 laps in 60 s), and the tightest turns at the lobe tips have a 1.67 m radius of curvature, so the heading turns at up to 0.898 rad/s.
+with $s(t)$ chosen by arc-length reparametrisation so that the speed is exactly 1.5 m/s. The path is 48.78 m long, one lap takes 32.52 s (1.85 laps in 60 s), and the tightest turns, at (±6.26, ±3.90) m on the outer part of each lobe, have a 1.67 m radius of curvature, so the heading turns at up to 0.898 rad/s. At the lobe tips themselves (x = ±8 m) the radius is 8.00 m.
 
 ### Kalman filter
 
@@ -69,6 +69,7 @@ $$e_{orbit} = \|\mathbf{p}^{xy}_{drone} - \mathbf{p}^{xy}_{person}\| - r, \qquad
 | LS window (added) | 10 fixes (1 s) |
 | Monte Carlo | 100 GPS-noise seeds (master seed 2026), shared by all strategies |
 | GPS noise sweep | σ = 0.1, 0.2, 0.3, 0.5, 0.8 m |
+| Acceleration-limit sweep (added) | $a_{max}$ = 4, 6, 10 m/s², unlimited (100 seeds) |
 
 ---
 
@@ -83,7 +84,7 @@ conda activate drones
 python src/05_special_entertainment/s081_selfie_follow.py
 ```
 
-Runtime ≈ 35 s (all 100 seeds run as one vectorised batch).
+Runtime ≈ 1 min on a heavily loaded machine (all 100 seeds run as one vectorised batch per strategy).
 
 ---
 
@@ -103,9 +104,19 @@ Per-seed comparison: the KF has a higher framing score than raw GPS in 100/100 s
 Seed 0 (shown in the figures and animation): KF 92.5 % / 0.748 m, raw GPS 42.6 % / 1.771 m, window LS 87.8 % / 0.726 m, oracle 0.785 m.
 
 **Key findings**:
-- **The KF doubles the framing score of raw GPS** (92.1 % vs 45.7 %) and is also clearly better than the 1 s least-squares fit (87.0 %), winning on every seed. Framing depends directly on the position estimate (the camera points at it): at 5 m range the 3° tolerance is about $5\tan 3° = 0.26$ m of lateral error (hand calculation), and the KF position error (RMSE 0.227 m) is smaller than the raw fix error (0.426 m) and the LS error (0.265 m).
-- **Raw GPS also wrecks the orbit, not only the framing.** Differentiating two fixes 0.1 s apart gives velocity noise of about $\sqrt{2}\cdot 0.3/0.1 \approx 4$ m/s (hand calculation), larger than the 1.5 m/s walking speed, so the estimated heading, and with it the desired point $\mathbf{p}_d$ on the 5 m circle, jumps around randomly. The drone cannot follow these jumps (its acceleration command is at the 6 m/s² limit 79.19 % of the time, vs 24.73 % for the KF) and settles near the average of the jumping set-points, which lies inside the circle: its mean orbit error is −1.438 m (too close) and it came within 0.67 m horizontally of the person (it flies 4 m above, so it never collides).
-- **The orbit error is set by the controller, not by the estimator, once the estimate is filtered.** KF (0.758 m), LS (0.754 m) and even the oracle with perfect information (0.785 m) have almost the same RMS orbit error, and the KF beats LS on orbit error in only 42/100 seeds. With the oracle the drone is on average 0.544 m too far away: the PD law has no drag feedforward, so it lags behind $\mathbf{p}_d$, and $\mathbf{p}_d$ swings quickly around the person at the lobe tips, where the heading turns at up to 0.898 rad/s. The oracle is slightly worse than the KF, probably because the oracle's heading changes instantly in the turns while the filtered heading changes more smoothly, but this was not separately tested.
+- **The KF frames far better than raw GPS** (92.1 % vs 45.7 % with the 6 m/s² acceleration limit, a factor of 2.01; the factor depends on that added limit, see the next bullet) and is also clearly better than the 1 s least-squares fit (87.0 %), winning on every seed. Framing depends directly on the position estimate (the camera points at it): at 5 m range the 3° tolerance is about $5\tan 3° = 0.26$ m of lateral error (hand calculation), and the KF position error (RMSE 0.227 m) is smaller than the raw fix error (0.426 m) and the LS error (0.265 m).
+- **How badly raw GPS does depends on the acceleration limit I added** (the card has none). The KF and LS results hardly change with the limit (KF 92.1–92.2 %, LS 86.6–87.3 %), but raw GPS gets worse the more freely the drone can chase its jumping set-point:
+
+| $a_{max}$ (m/s²) | 4 | **6 (used)** | 10 | unlimited |
+|---|---|---|---|---|
+| Raw GPS: $F$ / RMS $e_{orbit}$ / mean $e_{orbit}$ | 54.6 % / 1.148 m / −0.618 m | 45.7 % / 1.676 m / −1.438 m | 34.9 % / 2.466 m / −2.339 m | 21.4 % / 3.480 m / −3.416 m |
+| KF: $F$ / RMS $e_{orbit}$ | 92.2 % / 0.813 m | 92.1 % / 0.758 m | 92.1 % / 0.733 m | 92.2 % / 0.744 m |
+| Window LS: $F$ / RMS $e_{orbit}$ | 87.3 % / 0.839 m | 87.0 % / 0.754 m | 86.8 % / 0.703 m | 86.6 % / 0.695 m |
+| $F_{KF}/F_{raw}$ | 1.69 | 2.01 | 2.64 | 4.30 |
+
+  So the KF's framing advantage over raw GPS is between 1.69× and 4.30× depending on how aggressive the drone is allowed to be; the ranking does not change.
+- **Raw GPS also degrades the orbit** (at every tested limit its RMS orbit error is the largest: 1.148–3.480 m vs 0.733–0.813 m for the KF). Differentiating two fixes 0.1 s apart gives velocity noise of about $\sqrt{2}\cdot 0.3/0.1 \approx 4$ m/s (hand calculation), larger than the 1.5 m/s walking speed, so the estimated heading, and with it the desired point $\mathbf{p}_d$ on the 5 m circle, jumps around randomly. The drone cannot follow these jumps (its acceleration command is at the 6 m/s² limit 79.19 % of the time, vs 24.73 % for the KF) and settles near the average of the jumping set-points, which lies inside the circle: its mean orbit error is −1.438 m (too close) and it came within 0.67 m horizontally of the person (it flies 4 m above, so it never collides).
+- **The orbit error is set by the controller, not by the estimator, once the estimate is filtered.** KF (0.758 m), LS (0.754 m) and even the oracle with perfect information (0.785 m) have almost the same RMS orbit error, and the KF beats LS on orbit error in only 42/100 seeds. With the oracle the drone is on average 0.544 m too far away. The cause is the PD controller's response to the **accelerating** set-point, not drag: in the tight turns the desired point $\mathbf{p}_d$ swings around the person (the heading turns at up to 0.898 rad/s), and the closed loop from $\mathbf{p}_d$ to the drone, $H(s) = (K_d s + K_p)/(s^2 + (K_d + c_{drag})s + K_p)$, has a gain of 1.378 (phase −29.3°) at 0.898 rad/s, so the drone overshoots the swing outward and lags it. Diagnostic oracle runs (seed 0) confirm this: adding drag feedforward $c_{drag}\dot{\mathbf p}_d$ makes the RMS slightly worse (0.785 → 0.823 m; mean offset +0.544 → +0.432 m), while adding the set-point acceleration $\ddot{\mathbf p}_d$ as feedforward cuts the RMS to 0.212 m (mean +0.067 m), and both together to 0.092 m. The oracle is slightly worse than the KF, probably because the filtered heading swings more smoothly in the turns than the true heading; this was not separately tested.
 - **Card expectation only partly holds.** The card expects KF 82.0 % / 0.31 m / 1.12 m and raw GPS 54.0 % / 0.89 m / 2.74 m. The ranking holds (KF far better on both metrics), but the RMS orbit error is about 0.76 m, not 0.31 m, for the KF and even for the oracle, so a 0.31 m orbit error is not reachable with the card's PD gains on this path.
 - **Sensitivity to GPS noise**: the KF's advantage in framing grows with the noise. At σ = 0.1 m all three estimators frame well (KF 100.0 %, LS 100.0 %, raw 97.9 %); at σ = 0.8 m the KF still frames 57.1 % of the time vs 39.6 % for LS and 13.9 % for raw GPS. The orbit error of KF and LS stays between 0.72 and 0.88 m over the whole sweep.
 
@@ -135,7 +146,9 @@ Framing score and RMS orbit error over the 100 seeds:
 
 ![Monte Carlo](./monte_carlo.png)
 
-### Sensitivity to GPS Noise
+### Sensitivity to GPS Noise and to the Acceleration Limit
+
+Top: framing and orbit error vs GPS noise (at $a_{max}$ = 6 m/s²). Bottom: the same vs the acceleration limit (at σ = 0.3 m); only raw GPS depends strongly on it:
 
 ![Sensitivity](./sensitivity.png)
 
@@ -151,7 +164,7 @@ Top-down view (KF, seed 0): person (blue), drone (red triangle), 5 m standoff ci
 |------|----------------|--------|
 | Card code: $x = R\sin(2\pi\omega t)$, $y = \tfrac{R}{2}\sin(4\pi\omega t)$ with $\omega = v/(\pi R)$; the math writes $\lambda = vt/L$ as an "arc-length parameter" | Arc-length reparametrisation, speed exactly 1.5 m/s (lap 32.52 s) | The card's code has a period of 16.76 s, so the person walks 48.78 m in 16.76 s = 2.91 m/s on average, not 1.5 m/s; and $\lambda$ linear in time does not give a constant speed. Card corrected. |
 | `framing_score_instant` builds the camera direction from the true target | Camera yaw points at the estimate ($\psi_{drone}$ in the card's math); $u$ is the wrapped bearing error to the true person divided by 30° | With the card's code the lateral offset is $\mathbf{d}\cdot\mathbf{n}_\perp = 0$ for every strategy, so $F = 100\,\%$ for everyone and the comparison is meaningless. Card corrected. |
-| No acceleration or speed limit | $\|\mathbf{a}_{cmd}\| \le 6$ m/s², $\|\mathbf{v}\| \le 10$ m/s | The card's $K_d$ term differentiates the set-point $\mathbf{p}_d$ over one step, so every jump of the estimate becomes a velocity spike. Without the limit the PD command peaks at 173.3 m/s² (raw GPS) and 169.4 m/s² (KF) over the Monte Carlo, far beyond what a multirotor can do. With the limit the KF is saturated 24.73 % of the time and raw GPS 79.19 %; the oracle never saturates (peak 4.4 m/s²). |
+| No acceleration or speed limit | $\|\mathbf{a}_{cmd}\| \le 6$ m/s², $\|\mathbf{v}\| \le 10$ m/s | The card's $K_d$ term differentiates the set-point $\mathbf{p}_d$ over one step, so every jump of the estimate becomes a velocity spike. Without the limit the PD command peaks at 173.3 m/s² (raw GPS) and 169.4 m/s² (KF) over the Monte Carlo, far beyond what a multirotor can do. With the limit the KF is saturated 24.73 % of the time and raw GPS 79.19 %; the oracle never saturates (peak 4.4 m/s²). The limit is an assumption, so it is swept (4, 6, 10 m/s², unlimited): KF and LS barely change, raw GPS ranges from 54.6 % to 21.4 % framing. |
 | Two strategies (KF, raw GPS) | Added window LS (1 s) and an oracle reference | Raw GPS with one-step differencing is a weak baseline; the LS fit is a fair non-model-based filter. The oracle separates controller error from estimation error. |
 | Single run, seed 42 | 100-seed Monte Carlo with the same GPS noise for every strategy; per-seed win counts; GPS noise sweep | Results depend on the noise realisation. |
 | Outputs `s081_selfie_follow.gif`, figures via `plt.show()` | `animation.gif`, `trajectory_3d.png`, `metrics.png`, `monte_carlo.png`, `sensitivity.png` | Project naming convention. The animation also draws the camera's field of view. |
@@ -162,7 +175,7 @@ Top-down view (KF, seed 0): person (blue), drone (red triangle), 5 m standoff ci
 ## Extensions
 
 1. **Derivative on measurement**: replace $K_d\dot{\mathbf{p}}_d$ (finite difference of a jumping set-point) by a filtered set-point rate, to remove the acceleration spikes that saturate the KF drone 24.73 % of the time.
-1. **Drag feedforward**: add $c_{drag}\dot{\mathbf{p}}_d$ to the command to remove the systematic +0.5 m lag seen with the oracle.
+1. **Set-point acceleration feedforward**: add $\ddot{\mathbf{p}}_d$ (computed from the filtered heading rate) to the command. With perfect information this removes most of the orbit error (oracle 0.785 → 0.212 m); the open question is how much of that survives with a noisy heading estimate.
 2. **Curvature-aware bearing**: smooth or rate-limit the desired bearing in tight turns so that $\mathbf{p}_d$ does not swing faster than the drone can follow.
 3. **Gimbal dynamics**: give the camera yaw a rate limit (e.g. 90°/s) instead of pointing instantly at the estimate.
 4. **Vertical framing**: add camera tilt and a person height so that both image axes count.

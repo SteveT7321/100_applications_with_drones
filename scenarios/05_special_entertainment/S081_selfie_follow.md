@@ -57,7 +57,8 @@ $$x_{tgt} = R \sin s, \qquad y_{tgt} = \frac{R}{2} \sin 2s, \qquad z_{tgt} = 0, 
 and the curve parameter $s(t)$ is chosen so that the arc length walked by time $t$ equals
 $v_{target}\, t$ (modulo the path length $L$). This arc-length reparametrisation gives a truly
 constant ground speed. For $R = 8$ m, $L = 48.78$ m, one lap takes 32.52 s, and the tightest
-turn (at the lobe tips) has a radius of curvature of 1.67 m.
+turn has a radius of curvature of 1.67 m, at (±6.26, ±3.90) m on the outer part of each lobe (at the
+lobe tips, x = ±8 m, the radius is 8 m).
 
 > **Correction (implementation):** the earlier form $x = R\sin(2\pi\lambda)$ with $\lambda = v t / L$
 > linear in time does not give a constant speed, and the code below uses $\omega = v/(\pi R)$, i.e. a

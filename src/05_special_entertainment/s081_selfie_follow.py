@@ -56,6 +56,7 @@ LS_WINDOW    = 10                  # fixes (1 s) for the windowed least-squares 
 N_MC         = 100                 # Monte Carlo GPS-noise seeds
 SEED         = 2026
 SIGMA_SWEEP  = [0.1, 0.2, 0.3, 0.5, 0.8]   # m — GPS noise sensitivity
+A_MAX_SWEEP  = [4.0, 6.0, 10.0, np.inf]    # m/s^2 — acceleration-limit sensitivity
 ANIM_STEP    = 4                   # sim steps per animation frame (0.2 s)
 
 STRATS = ['kf', 'raw', 'ls', 'oracle']
@@ -92,11 +93,15 @@ def figure8(t):
 
 
 def curvature_radius_min():
+    """Smallest radius of curvature, where it occurs, and the radius at the lobe tips (x = +-R)."""
     s = S_TAB[::100]
     dx, dy = R_FIGURE8 * np.cos(s), R_FIGURE8 * np.cos(2 * s)
     ddx, ddy = -R_FIGURE8 * np.sin(s), -2 * R_FIGURE8 * np.sin(2 * s)
     kappa = np.abs(dx * ddy - dy * ddx) / (dx ** 2 + dy ** 2) ** 1.5
-    return 1.0 / kappa.max()
+    i = int(np.argmax(kappa))
+    where = (R_FIGURE8 * np.sin(s[i]), 0.5 * R_FIGURE8 * np.sin(2 * s[i]))
+    tip = int(np.argmin(np.abs(s - np.pi / 2)))
+    return 1.0 / kappa[i], where, 1.0 / kappa[tip]
 
 
 # ── Kalman filter (vectorised over seeds; P and K are seed-independent) ──────
@@ -115,10 +120,13 @@ def wrap(a):
 
 # ── Simulation ────────────────────────────────────────────────────────────────
 
-def simulate(strategy, noise, sigma_gps=GPS_SIGMA, log=False):
+def simulate(strategy, noise, sigma_gps=GPS_SIGMA, log=False, a_max=A_MAX, ff=None):
     """Run the follow mission for all seeds at once.
 
     noise : (S, n_fix, 2) standard-normal draws, shared by every strategy (CRN).
+    a_max : acceleration limit (np.inf = unlimited; used by the sensitivity sweep).
+    ff    : diagnostic feedforward added to the PD command (oracle only):
+            'drag' = c_drag * dp_d/dt, 'acc' = d2p_d/dt2, 'both' = sum of the two.
     Returns per-seed metrics and, if log=True, the full time series of every seed.
     """
     S = noise.shape[0]
@@ -142,6 +150,7 @@ def simulate(strategy, noise, sigma_gps=GPS_SIGMA, log=False):
     p_drone = desired(pos_est, vel_est)
     v_drone = np.zeros((S, 2))
     p_d_prev = p_drone.copy()
+    pd_dot_prev = np.zeros((S, 2))
 
     u_log = np.zeros((N_STEPS, S))
     e_log = np.zeros((N_STEPS, S))
@@ -196,19 +205,26 @@ def simulate(strategy, noise, sigma_gps=GPS_SIGMA, log=False):
         # Orbit PD (card): a = Kp e + Kd (p_d_dot - v), then drag
         p_d = desired(pos_est, vel_est)
         e = p_d - p_drone
-        e_dot = (p_d - p_d_prev) / DT - v_drone
+        pd_dot = (p_d - p_d_prev) / DT
+        e_dot = pd_dot - v_drone
         a_cmd = KP_ORBIT * e + KD_ORBIT * e_dot
+        if ff in ('drag', 'both'):
+            a_cmd = a_cmd + C_DRAG * pd_dot
+        if ff in ('acc', 'both') and k > 1:
+            a_cmd = a_cmd + (pd_dot - pd_dot_prev) / DT
+        pd_dot_prev = pd_dot
         a_norm = np.linalg.norm(a_cmd, axis=1, keepdims=True)
-        n_sat += int(np.sum(a_norm > A_MAX))
+        n_sat += int(np.sum(a_norm > a_max))
         a_raw_peak = max(a_raw_peak, float(a_norm.max()))
-        a_cmd = np.where(a_norm > A_MAX, a_cmd / np.maximum(a_norm, 1e-12) * A_MAX, a_cmd)
+        if np.isfinite(a_max):
+            a_cmd = np.where(a_norm > a_max, a_cmd / np.maximum(a_norm, 1e-12) * a_max, a_cmd)
         v_new = v_drone + (a_cmd - C_DRAG * v_drone) * DT
         v_norm = np.linalg.norm(v_new, axis=1, keepdims=True)
         v_new = np.where(v_norm > V_MAX, v_new / np.maximum(v_norm, 1e-12) * V_MAX, v_new)
         p_new = p_drone + v_new * DT
 
         # Physical invariants
-        assert np.all(np.linalg.norm(a_cmd, axis=1) <= A_MAX + 1e-9)
+        assert np.all(np.linalg.norm(a_cmd, axis=1) <= a_max + 1e-9)
         assert np.all(np.linalg.norm(v_new, axis=1) <= V_MAX + 1e-9)
         assert np.all(np.linalg.norm(p_new - p_drone, axis=1) <= V_MAX * DT + 1e-9)
         a_peak = max(a_peak, float(np.linalg.norm(a_cmd, axis=1).max()))
@@ -234,6 +250,7 @@ def simulate(strategy, noise, sigma_gps=GPS_SIGMA, log=False):
         'min_dist': np.min(e_log + STANDOFF_R, axis=0),
         'a_peak': a_peak, 'v_peak': v_peak, 'sat_frac': n_sat / (N_STEPS * S),
         'a_raw_peak': a_raw_peak,
+        'e_mean': e_log.mean(axis=0),
     }
     if log:
         res.update({'t': t_all, 'p_tgt': p_tgt, 'u': u_log, 'e': e_log,
@@ -252,7 +269,18 @@ def run_simulation():
         for s in sweep:
             r = simulate(s, noise, sigma_gps=sig)
             sweep[s].append((r['F'].mean(), r['F'].std(), r['rms'].mean(), r['rms'].std()))
-    return results, sweep
+
+    # Sensitivity of every estimator to the (added) acceleration limit
+    asweep = {s: [] for s in ['kf', 'raw', 'ls']}
+    for am in A_MAX_SWEEP:
+        for s in asweep:
+            r = simulate(s, noise, a_max=am)
+            asweep[s].append((r['F'].mean(), r['F'].std(), r['rms'].mean(), r['rms'].std(),
+                              r['e_mean'].mean()))
+
+    # Diagnostics for the oracle's orbit offset: add feedforward terms one at a time
+    diag = {ff: simulate('oracle', noise[:1], ff=ff) for ff in (None, 'drag', 'acc', 'both')}
+    return results, sweep, asweep, diag
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -349,24 +377,40 @@ def plot_monte_carlo(results, out_dir):
     print(f'Saved: {path}')
 
 
-def plot_sensitivity(sweep, out_dir):
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+def plot_sensitivity(sweep, asweep, out_dir):
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    (ax1, ax2), (ax3, ax4) = axes
+    xa = np.arange(len(A_MAX_SWEEP))
     for s, vals in sweep.items():
         v = np.array(vals)
         ax1.errorbar(SIGMA_SWEEP, 100 * v[:, 0], yerr=100 * v[:, 1], fmt='o-', capsize=3,
                      color=COLORS[s], label=LABELS[s])
         ax2.errorbar(SIGMA_SWEEP, v[:, 2], yerr=v[:, 3], fmt='o-', capsize=3,
                      color=COLORS[s], label=LABELS[s])
+        a = np.array(asweep[s])
+        ax3.errorbar(xa, 100 * a[:, 0], yerr=100 * a[:, 1], fmt='s-', capsize=3,
+                     color=COLORS[s], label=LABELS[s])
+        ax4.errorbar(xa, a[:, 2], yerr=a[:, 3], fmt='s-', capsize=3,
+                     color=COLORS[s], label=LABELS[s])
     ax1.set_xlabel('GPS noise σ (m)')
     ax1.set_ylabel('Framing score F (%)')
-    ax1.set_title('Framing vs GPS noise')
+    ax1.set_title(f'Framing vs GPS noise (a_max = {A_MAX:.0f} m/s²)')
     ax2.set_xlabel('GPS noise σ (m)')
     ax2.set_ylabel('RMS orbit error (m)')
-    ax2.set_title('Orbit error vs GPS noise')
-    for ax in (ax1, ax2):
+    ax2.set_title(f'Orbit error vs GPS noise (a_max = {A_MAX:.0f} m/s²)')
+    alabels = [f'{a:.0f}' if np.isfinite(a) else 'unlimited' for a in A_MAX_SWEEP]
+    for ax in (ax3, ax4):
+        ax.set_xticks(xa, alabels)
+        ax.set_xlabel('Acceleration limit a_max (m/s²)')
+    ax3.set_ylabel('Framing score F (%)')
+    ax3.set_title(f'Framing vs acceleration limit (σ = {GPS_SIGMA} m)')
+    ax4.set_ylabel('RMS orbit error (m)')
+    ax4.set_title(f'Orbit error vs acceleration limit (σ = {GPS_SIGMA} m)')
+    for ax in (ax1, ax2, ax3, ax4):
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
-    fig.suptitle(f'S081 Sensitivity to GPS noise (mean ± std over {N_MC} seeds)')
+    fig.suptitle(f'S081 Sensitivity to GPS noise and to the acceleration limit '
+                 f'(mean ± std over {N_MC} seeds)')
     plt.tight_layout()
     path = os.path.join(out_dir, 'sensitivity.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -427,14 +471,16 @@ def save_animation(results, out_dir, seed=0):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    results, sweep = run_simulation()
+    results, sweep, asweep, diag = run_simulation()
 
     print('\n=== S081 Selfie Follow Mode — Results ===')
     print(f'  Figure-8 path length {PATH_LEN:.2f} m, lap time {PATH_LEN / V_TARGET:.2f} s, '
           f'{T_TOTAL * V_TARGET / PATH_LEN:.2f} laps in {T_TOTAL:.0f} s')
-    rho = curvature_radius_min()
-    print(f'  Min radius of curvature {rho:.2f} m -> max heading rate {V_TARGET / rho:.3f} rad/s, '
-          f'peak lateral accel {V_TARGET ** 2 / rho:.3f} m/s^2')
+    rho, where, rho_tip = curvature_radius_min()
+    print(f'  Min radius of curvature {rho:.2f} m at (±{abs(where[0]):.2f}, ±{abs(where[1]):.2f}) m '
+          f'-> max heading rate {V_TARGET / rho:.3f} rad/s, peak lateral accel '
+          f'{V_TARGET ** 2 / rho:.3f} m/s^2; radius at the lobe tips (x = ±{R_FIGURE8:.0f} m) '
+          f'{rho_tip:.2f} m')
     print(f'  Card code period 1/omega = {np.pi * R_FIGURE8 / V_TARGET:.2f} s -> mean speed '
           f'{PATH_LEN / (np.pi * R_FIGURE8 / V_TARGET):.2f} m/s')
     print(f'  Monte Carlo: {N_MC} seeds, same GPS noise for every estimator')
@@ -477,11 +523,29 @@ if __name__ == '__main__':
     for j, sig in enumerate(SIGMA_SWEEP):
         print(f'    sigma = {sig:.1f} m: ' + ', '.join(
             f"{s}: {100 * sweep[s][j][0]:.1f}% / {sweep[s][j][2]:.3f} m" for s in sweep))
+    print(f'  Acceleration-limit sweep ({N_MC} seeds; F % / RMS m / mean e_orbit m):')
+    for j, am in enumerate(A_MAX_SWEEP):
+        lab = f'{am:.0f} m/s^2' if np.isfinite(am) else 'unlimited'
+        ratio = asweep['kf'][j][0] / asweep['raw'][j][0]
+        print(f'    a_max = {lab:>10}: ' + ', '.join(
+            f"{s}: {100 * asweep[s][j][0]:.1f}% / {asweep[s][j][2]:.3f} / {asweep[s][j][4]:+.3f}"
+            for s in asweep) + f';  F(KF)/F(raw) = {ratio:.2f}')
+    # Oracle orbit offset: closed-loop response of the PD to the moving orbit point
+    w = V_TARGET / rho
+    s_jw = 1j * w
+    H = (KD_ORBIT * s_jw + KP_ORBIT) / (s_jw ** 2 + (KD_ORBIT + C_DRAG) * s_jw + KP_ORBIT)
+    print(f'  Oracle diagnostics: |H(jw)| of p_d -> p_drone, H = (Kd s + Kp)/(s^2 + (Kd + c) s + Kp), '
+          f'at w = {w:.3f} rad/s: {abs(H):.3f} (phase {np.degrees(np.angle(H)):+.1f} deg)')
+    names = {None: 'oracle, no feedforward', 'drag': 'oracle + drag FF c*dp_d/dt',
+             'acc': 'oracle + accel FF d2p_d/dt2', 'both': 'oracle + drag + accel FF'}
+    for ff, r in diag.items():
+        print(f"    {names[ff]:<30} RMS {r['rms'][0]:.3f} m, mean e_orbit {r['e_mean'][0]:+.3f} m, "
+              f"max {r['max'][0]:.3f} m, time at accel limit {100 * r['sat_frac']:.2f}%")
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
     plot_trajectory_3d(results, out)
     plot_metrics(results, out)
     plot_monte_carlo(results, out)
-    plot_sensitivity(sweep, out)
+    plot_sensitivity(sweep, asweep, out)
     save_animation(results, out)
