@@ -56,7 +56,7 @@ then $\mathbf{v} \leftarrow \mathbf{v} + \mathbf{a}\,\Delta t$, with $|\mathbf{a
 | Parameter | Value |
 |-----------|-------|
 | Drones $N$ | 50 |
-| Sphere radius $R_{sphere}$ | 20 m |
+| Sphere radius $R_{sphere}$ / centre | 20 m / (0, 0, 25) m, so every start and goal is at 5–45 m altitude ($z \ge 0$ asserted) |
 | Body radius $r$ / collision distance $2r$ | 0.25 m / 0.5 m |
 | Minimum start separation (`FORMATION_DIST`) | 2.0 m (rejection sampling, also between goals) |
 | Preferred speed $v_{pref}$ / speed cap $v_{max}$ | 2.0 / 3.0 m/s |
@@ -83,7 +83,7 @@ conda activate drones
 python src/05_special_entertainment/s089_collision_avoidance.py
 ```
 
-Runtime ≈ 3–3.5 min (183 and 209 s measured while other jobs shared the CPU).
+Runtime ≈ 1.5–2.5 min (90, 110 and 135 s measured while other jobs shared the CPU).
 
 ---
 
@@ -99,7 +99,7 @@ Seed 42: the closest pair of start points is 2.500 m apart (8 candidate points w
 | Potential field | 0 | 0/50 | 0.80074 m | 100.0% (100.0%) | 30.95 s | 27.48 s | 0.495 m/s² |
 | No avoidance | 11548 (80 timesteps) | 50/50 | 0.00625 m | 100.0% (0.0%) | 20.55 s | 20.55 s | 0.170 m/s² |
 
-ORCA changed the preferred velocity in 23.9% of agent-steps; the LP was infeasible in 654 agent-steps. The acceleration limit bound in 1.7% of agent-steps for ORCA and no avoidance and in 0.0% for the potential field.
+The runs end when the last drone arrives: 449 logged timesteps for ORCA (0–22.40 s), 620 for the potential field (0–30.95 s) and 412 for no avoidance (0–20.55 s). ORCA changed the preferred velocity in 23.9% of agent-steps; the LP was infeasible in 654 agent-steps. The acceleration limit bound in 1.7% of agent-steps for ORCA and no avoidance and in 0.0% for the potential field.
 
 ### Monte Carlo, 20 placements (mean ± std)
 
@@ -114,7 +114,7 @@ ORCA: active in 23.7 ± 0.8% of agent-steps, infeasible LP in 754.1 ± 97.9 agen
 **Key findings**:
 - **ORCA almost meets the zero-collision goal.** 18 of 20 placements have no collision at all. In each of the other two, one pair was at 0.49999 m for one timestep (about 0.01 mm inside the threshold). ORCA holds the swarm right on the 0.5 m boundary while it crosses the centre, so these are discretisation and infeasible-LP effects of that size, not real crashes. A small safety margin in the ORCA radius should remove them; this was not tested (Extension 1).
 - **No avoidance is a mass collision.** All 50 drones touch another drone (11796.9 ± 252.9 pair-steps, closest pair 0.005 m). In this ghost-through kinematic model they still reach the goal in 20.55 s, but none of them without contact.
-- **The potential field is safer than the card expects, but slow.** With the shared acceleration limit and velocity-tracking attraction it had collisions in only 1 of 20 placements (4 pair-steps, closest 0.448 m) and every drone arrived. It pays in time and smoothness: mission time 30.86 vs 22.38 s for ORCA, and almost twice the mean acceleration (0.477 vs 0.253 m/s²). Repulsion spreads the jam out in time: in the seed-42 timeline (read from the figure) the potential-field minimum separation stays around 1 m from about 9 to 24 s, and arrivals are spread over roughly 22–31 s (last arrival 30.95 s, printed).
+- **The potential field is safer than the card expects, but slow** (at the used gain $k_{att} = 1$ s⁻¹; see the gain sensitivity below). With the shared acceleration limit and velocity-tracking attraction it had collisions in only 1 of 20 placements (4 pair-steps, closest 0.448 m) and every drone arrived. It pays in time and smoothness: mission time 30.86 vs 22.38 s for ORCA, and almost twice the mean acceleration (0.477 vs 0.253 m/s²). Repulsion spreads the jam out in time: in the seed-42 timeline (read from the figure) the potential-field minimum separation stays around 1 m from about 9 to 24 s, and arrivals are spread over roughly 22–31 s (last arrival 30.95 s, printed).
 - **ORCA costs only 1.83 s over a straight flight** (22.38 vs 20.55 s mission time) and is smoother than the potential field, matching the card's "ORCA smoothest among the avoiding strategies".
 
 **Card expectations that did not hold**:
@@ -128,6 +128,16 @@ ORCA: active in 23.7 ± 0.8% of agent-steps, infeasible LP in 754.1 ± 97.9 agen
 | Mean \|accel\|: no avoidance lowest, ORCA lowest among avoiders | Holds: 0.170 < 0.253 < 0.477 m/s² |
 
 The potential-field gap is partly the baseline design: this version shares the acceleration limit, the speed cap of the goal term ($v_{pref}$) and a damped (velocity-tracking) attraction with the other strategies. The card's undamped spring $k_{att}(\mathbf{g} - \mathbf{p})$ at 40 m distance would saturate at $a_{max}$, cruise at $v_{max} = 3$ m/s and oscillate around the goal, which is a weaker but also unfair baseline (see Deviations).
+
+**Potential-field gain sensitivity** (20 placements): a stiffer velocity tracking shortens the potential-field mission but does not close the gap to ORCA (22.38 s):
+
+| $k_{att}$ | Mission time | Collision pair-steps | Worst min separation | Mean \|accel\| |
+|---|---:|---:|---:|---:|
+| 1 s⁻¹ (used) | 30.86 ± 0.75 s | 0.2 ± 0.9 | 0.4482 m | 0.477 ± 0.010 m/s² |
+| 2 s⁻¹ | 27.66 ± 0.45 s | 0.1 ± 0.7 | 0.4799 m | 0.521 ± 0.015 m/s² |
+| 5 s⁻¹ | 25.32 ± 0.33 s | 0.5 ± 1.1 | 0.4361 m | 0.563 ± 0.017 m/s² |
+
+So the potential field's time penalty depends on the gain chosen for the reinterpreted attraction term (30.86 → 25.32 s), but ORCA is faster and smoother at every tested gain.
 
 ### 3D Trajectories
 
@@ -165,6 +175,7 @@ Seed 42, XY projection, ORCA (left) and no avoidance (right) side by side, 113 f
 | No acceleration limit for ORCA and no avoidance | $a_{max} = 5$ m/s² for every strategy | Physical sanity and a fair comparison (the card already limits the potential field). |
 | PF attraction $k_{att}(\mathbf{g} - \mathbf{p})$ | $k_{att}(\mathbf{v}^{goal} - \mathbf{v})$ | The spring form is undamped: it saturates at $a_{max}$, cruises at 3 m/s while the others fly at 2 m/s, and oscillates around the goal. The velocity-tracking form is the same attraction with damping and the same cruise speed. |
 | Preferred velocity $v_{pref}\,\hat{\mathbf{e}}_{goal}$; arrived drones set to zero velocity and dropped from the neighbour sets | Speed tapers as $d/T_{arr}$ near the goal; arrived drones keep holding their goal and stay neighbours | Avoids instantaneous stops and drones that become invisible to the others. |
+| Sphere centred at the origin (half the drones below z = 0) | Centre at (0, 0, 25) m; $z \ge 0$ asserted | No flight below ground; relative geometry, and therefore every result, is unchanged. |
 | Random start points | Rejection sampling with 2.0 m minimum separation (`FORMATION_DIST`, unused in the card) between starts and between goals | With uniform sampling the expected number of start pairs closer than 0.5 m is about 0.19 (1225 pairs × cap fraction 1.6·10⁻⁴), so some placements would start in collision. |
 | Single run | 20 placements with common random numbers | Results depend on the placement. |
 | Collision count over "ordered pairs" (maths) vs unordered pairs (code) | Unordered pairs, plus "arrived with no contact" | Card maths corrected to match its code. Collided drones are not removed, so arrival alone cannot show crashes. |

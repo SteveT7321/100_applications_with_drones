@@ -45,6 +45,8 @@ NB_RADIUS        = 10.0       # m neighbour radius (ORCA and potential field)
 D_REP            = 5.0        # m potential-field activation radius
 K_REP            = 5.0        # potential-field repulsion gain (m^3/s^2)
 K_ATT            = 1.0        # 1/s potential-field attraction gain (velocity tracking)
+SPHERE_CENTRE    = np.array([0.0, 0.0, 25.0])   # m sphere centre; all points at z >= 5 m
+K_ATT_SWEEP      = (1.0, 2.0, 5.0)              # 1/s potential-field gain sensitivity
 SEED_MAIN        = 42
 N_MC             = 20
 MC_SEEDS         = [SEED_MAIN + k for k in range(N_MC)]
@@ -77,7 +79,7 @@ def init_sphere_positions(seed, n=N_DRONES, radius=SPHERE_RADIUS, d_min=FORMATIO
                 continue
         pts.append(p)
     pos = np.array(pts)
-    return pos, -pos, n_rej
+    return SPHERE_CENTRE + pos, SPHERE_CENTRE - pos, n_rej
 
 
 # ── 3D ORCA (RVO2-3D half-planes and incremental linear programs) ────────────
@@ -293,7 +295,7 @@ def orca_step(pos, vel, v_pref, radius=DRONE_RADIUS, t_h=TAU, r_sense=NB_RADIUS,
 
 # ── Potential field ───────────────────────────────────────────────────────────
 
-def pf_acceleration(pos, vel, v_goal):
+def pf_acceleration(pos, vel, v_goal, k_att=K_ATT):
     """a = K_ATT (v_goal - v) + sum_j k_rep (1/d - 1/d_rep) / d^2 * unit(p_i - p_j)."""
     diff = pos[:, None, :] - pos[None, :, :]                # p_i - p_j
     d = np.linalg.norm(diff, axis=2)
@@ -303,7 +305,7 @@ def pf_acceleration(pos, vel, v_goal):
         mag = np.where(act, K_REP * (1.0 / d - 1.0 / D_REP) / d ** 2, 0.0)
         f_rep = np.sum(np.where(act[:, :, None], mag[:, :, None] * diff / d[:, :, None], 0.0),
                        axis=1)
-    return K_ATT * (v_goal - vel) + f_rep
+    return k_att * (v_goal - vel) + f_rep
 
 
 # ── Simulation ────────────────────────────────────────────────────────────────
@@ -315,7 +317,7 @@ def goal_velocity(pos, goals):
     return np.where(dist > 1e-9, to_goal / np.maximum(dist, 1e-9) * speed, 0.0)
 
 
-def simulate(strategy, pos0, goals, keep_history=False):
+def simulate(strategy, pos0, goals, keep_history=False, k_att=K_ATT):
     n = len(pos0)
     pos = pos0.copy()
     vel = np.zeros((n, 3))
@@ -352,7 +354,7 @@ def simulate(strategy, pos0, goals, keep_history=False):
             n_active += nc
             n_infeasible += ni
         elif strategy == 'potential_field':
-            v_cmd = vel + pf_acceleration(pos, vel, v_goal) * DT
+            v_cmd = vel + pf_acceleration(pos, vel, v_goal, k_att) * DT
         else:
             v_cmd = v_goal
         dv = v_cmd - vel
@@ -367,6 +369,7 @@ def simulate(strategy, pos0, goals, keep_history=False):
         assert np.all(np.linalg.norm(dv, axis=1) <= lim + 1e-9), 'acceleration limit violated'
         acc_sum += float(np.sum(np.linalg.norm(dv, axis=1)) / DT)
         pos = pos + vel * DT
+        assert np.all(pos[:, 2] >= 0.0), 'drone below ground'
         if keep_history:
             hist.append(pos.copy())
     arrived = ~np.isnan(arrival)
@@ -433,7 +436,8 @@ def plot_trajectories_3d(main, goals, out_dir):
         ax.set_title(f"{LABEL[s]}: {r['collisions']} collision pair-steps,\n"
                      f"min sep {r['min_sep']:.3f} m, {r['pct_arrived']:.0f}% arrived",
                      fontsize=10)
-        ax.set_xlim(-22, 22); ax.set_ylim(-22, 22); ax.set_zlim(-22, 22)
+        ax.set_xlim(-22, 22); ax.set_ylim(-22, 22)
+        ax.set_zlim(SPHERE_CENTRE[2] - 22, SPHERE_CENTRE[2] + 22)
         ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)'); ax.set_zlabel('z (m)')
         ax.legend(fontsize=7, loc='upper left')
     fig.suptitle(f'S089 Trajectories of {N_DRONES} drones to antipodal goals (seed {SEED_MAIN})',
@@ -571,6 +575,15 @@ def _ms(vals, fmt='{:.2f}'):
 
 if __name__ == '__main__':
     main, mc, placement = run_simulation()
+    pf_sweep = []
+    for ka in K_ATT_SWEEP:
+        rows = []
+        for seed in MC_SEEDS:
+            p0, g0, _ = placement[seed]
+            rr = simulate('potential_field', p0, g0, k_att=ka)
+            rows.append({k: rr[k] for k in ('mission_time', 'collisions', 'min_sep',
+                                            'mean_accel')})
+        pf_sweep.append((ka, rows))
     pos0, goals, n_rej = placement[SEED_MAIN]
     d0 = np.linalg.norm(pos0[:, None] - pos0[None], axis=2)
     np.fill_diagonal(d0, np.inf)
@@ -593,6 +606,7 @@ if __name__ == '__main__':
         print(f"    Mission time             : {r['mission_time']:.2f} s "
               f"(mean time-to-goal {r['mean_t_goal']:.2f} s)")
         print(f"    Mean |accel|             : {r['mean_accel']:.3f} m/s²")
+        print(f"    Timesteps logged         : {r['steps'] + 1} (t = 0 to {r['steps'] * DT:.2f} s)")
         print(f"    Acceleration-limited rate: {100 * r['acc_sat_rate']:.1f}% of agent-steps")
         if s == 'orca':
             print(f"    ORCA active rate         : {100 * r['orca_active_rate']:.1f}% of "
@@ -619,6 +633,12 @@ if __name__ == '__main__':
             print(f'    ORCA active rate         : '
                   f'{_ms([100 * x["orca_active_rate"] for x in m], "{:.1f}")} % of agent-steps'
                   f', infeasible LP agent-steps {_ms([x["orca_infeasible"] for x in m], "{:.1f}")}')
+    print(f'\n  Potential-field gain sensitivity (k_att, {N_MC} placements, mean ± std):')
+    for ka, rows in pf_sweep:
+        print(f'    k_att = {ka:.0f} 1/s: mission time {_ms([x["mission_time"] for x in rows])} s, '
+              f'collision pair-steps {_ms([x["collisions"] for x in rows], "{:.1f}")}, '
+              f'min separation {min(x["min_sep"] for x in rows):.4f} m (worst), '
+              f'mean |accel| {_ms([x["mean_accel"] for x in rows], "{:.3f}")} m/s²')
     o = [x['collisions'] for x in mc['orca']]
     p = [x['collisions'] for x in mc['potential_field']]
     z = [x['collisions'] for x in mc['none']]
