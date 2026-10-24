@@ -1,6 +1,6 @@
 # S060 Multi-Drone Cooperative Meteorological Measurement
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
@@ -43,7 +43,7 @@ $\mathbf{x} = (x, y, z)$ to serve as ground truth. For temperature:
 $$T(x, y, z) = T_0 - \Gamma_d \cdot z + A_T \sin\!\left(\frac{2\pi x}{L_x}\right)\cos\!\left(\frac{2\pi y}{L_y}\right)e^{-z/H_T}$$
 
 where $T_0 = 288$ K is the surface reference temperature, $\Gamma_d = 6.5 \times 10^{-3}$ K/m
-is the dry adiabatic lapse rate, $A_T = 2$ K is the amplitude of horizontal thermal structure,
+is the standard-atmosphere (environmental) lapse rate (the dry adiabatic rate would be $9.8 \times 10^{-3}$ K/m), $A_T = 2$ K is the amplitude of horizontal thermal structure,
 and $H_T = 300$ m is the decay scale height. Sensor noise is additive Gaussian:
 
 $$\tilde{f}(\mathbf{x}_i) = f(\mathbf{x}_i) + \epsilon_i, \qquad \epsilon_i \sim \mathcal{N}(0,\, \sigma_s^2)$$
@@ -148,7 +148,7 @@ Y_RANGE        = 600.0       # m — horizontal domain depth
 Z_MIN          = 20.0        # m — lowest sampling altitude
 Z_MAX          = 500.0       # m — highest sampling altitude
 T0             = 288.0       # K — surface reference temperature
-LAPSE_RATE     = 6.5e-3      # K/m — dry adiabatic lapse rate
+LAPSE_RATE     = 6.5e-3      # K/m — standard-atmosphere lapse rate (dry adiabatic = 9.8e-3)
 A_TEMP         = 2.0         # K — horizontal thermal perturbation amplitude
 H_DECAY        = 300.0       # m — thermal structure scale height
 SIGMA_SENSOR   = 0.3         # K — sensor noise standard deviation
@@ -325,7 +325,7 @@ def run_simulation():
 | Altitude range $[z_{min}, z_{max}]$ | 20 – 500 m |
 | Altitude band boundaries | 20, 180, 340, 500 m |
 | Surface reference temperature $T_0$ | 288 K |
-| Dry adiabatic lapse rate $\Gamma_d$ | 6.5 $\times$ 10$^{-3}$ K/m |
+| Standard-atmosphere lapse rate $\Gamma_d$ | 6.5 $\times$ 10$^{-3}$ K/m |
 | Thermal perturbation amplitude $A_T$ | 2 K |
 | Thermal decay scale height $H_T$ | 300 m |
 | Sensor noise std dev $\sigma_s$ | 0.3 K |
