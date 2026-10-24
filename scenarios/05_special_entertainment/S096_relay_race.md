@@ -1,6 +1,6 @@
 # S096 Drone Relay Race
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: KF Rendezvous Prediction + Velocity-Matched Intercept | **Dimension**: 3D
 
 ---
@@ -128,6 +128,18 @@ $$t^* = \arg\min_{\tau > 0} \left\|\mathbf{p}_{out}(t + \tau) - \hat{\mathbf{p}}
 subject to the minimum-snap trajectory being physically feasible (thrust and velocity limits). In
 practice $t^*$ is found by a 1D grid search over $\tau \in [t_{min}, t_{max}]$ with resolution
 $\Delta\tau = 0.1$ s.
+
+> **Implementation notes (2026-10)**: (1) The code below re-plans the min-snap every step and
+> evaluates the fresh plan at $t_{local} = 0$, where the boundary conditions force
+> $p_{ref} = p$, $v_{ref} = v$, $a_{ref} = 0$, so the commanded acceleration is exactly zero and the
+> outgoing drone never moves. Re-plans must start from the previous reference acceleration and
+> jerk and be evaluated at the elapsed time. (2) `find_intercept_time` picks the $\tau$ that
+> minimises the distance to the predicted point, not a feasible intercept. The implementation
+> launches at the latest moment at which a rest-to-$v_{in}$ min-snap with peak acceleration
+> $0.8\,a_{max}$ still meets the predicted incoming drone: such a profile lasts
+> $T = 1.875\,v_{in}/a$ and covers $v_{in}T/2$. (3) Without an exchange-zone limit the speed
+> optimum is trivially $v_{max}$; the implementation requires each baton pass to finish within
+> 50 m past the relay point. See the outputs README.
 
 ### Minimum-Snap Intercept Trajectory
 
