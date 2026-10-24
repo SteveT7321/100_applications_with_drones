@@ -1,6 +1,6 @@
 # S052 3D Upgrade — Glacier Area Monitoring
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S052 original](../S052_glacier.md)
 
 ---
@@ -11,8 +11,9 @@ The original S052 flies the survey drone at a single fixed altitude $h = 80$ m a
 flat reference plane (`z = const` throughout). The glacier surface elevation is never modelled —
 the boustrophedon grid is planned entirely in the x-y plane, and the camera footprint formula
 assumes a constant slant range equal to $h$. On a real alpine glacier this causes three critical
-failures: (1) terrain relief of 50–200 m across an 800 × 600 m glacier changes the actual GSD
-by up to $\pm$40%, breaking the photogrammetric overlap guarantee; (2) lateral ice-cliff faces
+failures: (1) terrain relief of 50–200 m across an 800 × 600 m glacier changes the actual GSD several-fold (a fixed plane that keeps 80 m clearance over the highest
+ice has 3.3× the nominal GSD over the lowest ice; it keeps the overlap, which only breaks when the
+fixed plane sits below max(DEM) + 80 m — correction 2026-10-24); (2) lateral ice-cliff faces
 (typical height 10–40 m) are invisible to a nadir-pointing camera; (3) the planar NDWI mosaic
 provides no volumetric information, so mass-balance estimation requires an external DEM.
 
@@ -118,11 +119,17 @@ terrain surface.
 ### Oblique Ice-Cliff Inspection
 
 For a cliff face approximated as a vertical plane at position $x = x_{cliff}$, the drone flies
-a horizontal leg at stand-off distance $d_s = 30$ m from the cliff face at altitude
-$z_{mid} = z_{cliff,base} + h_{cliff}/2$. The camera is pitched by angle $\psi_{pitch} = 70°$
-from nadir (i.e., $20°$ from horizontal). The slant range from drone to cliff-face centre:
+a horizontal leg at stand-off distance $d_s = 30$ m from the cliff face. The camera is pitched
+by angle $\psi_{pitch} = 70°$ from nadir (i.e., $20°$ below horizontal), so the optical axis meets
+the face $d_s/\tan\psi_{pitch}$ = 10.92 m below the camera; to aim at the face centre
+$z_{mid} = z_{cliff,base} + h_{cliff}/2$ the drone flies at $z_{mid} + d_s/\tan\psi_{pitch}$.
+The slant range from drone to cliff-face centre (correction 2026-10-24: the horizontal
+component of the axis is $\sin\psi_{pitch}$, so the earlier $d_s/\cos\psi_{pitch}$ = 87.7 m was wrong):
 
-$$R_{slant} = \frac{d_s}{\cos\psi_{pitch}}$$
+$$R_{slant} = \frac{d_s}{\sin\psi_{pitch}} = 31.9\ \text{m}$$
+
+One leg sees the face from 2.85 m to 20.68 m below the camera (17.8 m of face height), so
+cliffs of 20–40 m need several stacked legs.
 
 The GSD on the cliff face:
 
@@ -208,14 +215,14 @@ A_{melt} = \sum_{u,v} \mathbf{1}[\text{NDWI}(u,v) > 0.2] \cdot \text{GSD}^2$$
 | Focal length $f$ | 25 mm |
 | Sensor size | 17.3 × 13.0 mm |
 | Image resolution | 4 608 × 3 456 px |
-| Nominal GSD at $h_{AGL}$ | $\approx$ 4.8 cm/px |
+| Nominal GSD at $h_{AGL}$ | 1.20 cm/px (corrected; 4.8 cm/px would need 320 m) |
 | GSD limit | 5 cm/px |
 | Forward overlap $O_f$ | 80% |
 | Side overlap $O_s$ | 60% |
 | Ice-cliff height $h_{cliff}$ | 20–40 m |
 | Cliff stand-off distance $d_s$ | 30 m |
 | Camera pitch for cliff $\psi_{pitch}$ | 70° from nadir |
-| Slant-range GSD on cliff | $\approx$ 8.4 cm/px |
+| Slant-range GSD on cliff | 0.51 cm/px on the axis (corrected from 8.4 cm/px) |
 | Drone cruise speed $v$ | 10 m/s |
 | Ice density $\rho_{ice}$ | 917 kg/m³ |
 | z altitude bounds | [2 780, 3 060] m |
