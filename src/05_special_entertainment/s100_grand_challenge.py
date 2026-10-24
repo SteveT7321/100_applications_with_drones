@@ -615,7 +615,7 @@ def connectivity(pos):
 def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
                 assignment='hungarian', anti_windup=True, policy='greedy', failsafe_on=True,
                 ki=KI, hover_cost=True, margin=FAILSAFE_MARGIN, log=False, phase2_only=False):
-    """hover_cost=False is the card code's accounting: only c_fly * |v| while flying
+    """hover_cost=False is the original card code's accounting: only c_fly * |v| while flying
     (hovering free), plus c_hover * tau_deliver for each delivery dwell."""
     S = len(seeds)
     plan = plan if plan is not None else nn_plan()
@@ -837,7 +837,7 @@ def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
                     delivered[s, w] = True
                     t_deliver[s, w] = t
                 if not hover_cost:
-                    E[m3d, d] -= chov * TAU_DELIVER      # card code: dwell charged once
+                    E[m3d, d] -= chov * TAU_DELIVER      # original card code: dwell charged once
                 ptr[m3d, c] += 1
                 cst[m3d, c] = 4
                 target[m3d, d] = PADS[c]

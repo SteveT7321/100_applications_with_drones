@@ -625,16 +625,19 @@ def run_mission(seed=42):
                 elif courier_mode[d] == 'out':
                     if fly_to(d, DELIVERY_WPS[route[ptr]], V_COURIER):    # arrived
                         courier_mode[d], dwell_until[d] = 'dwell', t + TAU_DELIVER
-                elif courier_mode[d] == 'dwell' and t >= dwell_until[d]:
-                    delivered[route[ptr]] = True
-                    deliveries_made += 1
-                    route_ptr[d] += 1
-                    courier_mode[d] = 'back'
+                elif courier_mode[d] == 'dwell':
+                    energy[d] -= C_HOVER * DT              # hovering over the waypoint
+                    if t >= dwell_until[d]:
+                        delivered[route[ptr]] = True
+                        deliveries_made += 1
+                        route_ptr[d] += 1
+                        courier_mode[d] = 'back'
                 elif courier_mode[d] == 'back':
                     if fly_to(d, PADS[d], V_COURIER):          # landed on its pad
                         courier_mode[d] = 'pad'
                         reload_until[d] = t + T_LOAD
             # fly_to() moves the drone and charges max(c_hover, c_fly |v|) per second
+            land(0)    # catcher A: brake to a hold, descend (charged like fly_to), stay down
 
             # Phase 2 completion: every courier has no trip left and is on its pad
             all_couriers_done = all(route_ptr[d] >= len(tsp_routes[d]) and
@@ -715,8 +718,8 @@ def run_mission(seed=42):
                 phase_end_t[4] = t
                 state = Phase.DONE
 
-        # Drone E holds by hovering during Phases 1-3 (and every airborne drone that is
-        # waiting pays the same hover rate)
+        # Drone E holds by hovering during Phases 1-3. The other drones wait on the
+        # ground (A lands after Phase 1), so no other drone hovers idle.
         if state in (Phase.PHASE1, Phase.PHASE2, Phase.PHASE3):
             energy[4] -= C_HOVER * DT
         assert np.all(energy >= 0.0), 'flying on an empty battery'
