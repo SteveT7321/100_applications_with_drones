@@ -99,7 +99,7 @@ DZ_OFF      = D_BACK * np.tan(PHI_MAX)  # 4.62 m (card's own envelope rule)
 
 # ── Parameters (added) ────────────────────────────────────────────────────────
 N_MC        = 20                      # seeds (S092 used 10; raised for the sign tests)
-Z_FIX_SWEEP = [2.0, 2.5, 3.0]         # m: extra fixed altitudes of the 2D baseline (plus 4.62 m)
+Z_FIX_ALL   = [2.0, 2.5, 3.0, DZ_OFF, 6.5, 7.0, 8.0]  # m: fixed altitudes of the 2D baseline (DZ_OFF = 8 tan 30)
 SEED        = 9200                    # noise of seed s from default_rng(SEED + s)
 H_PIL_SWEEP = [4.0, 6.0, 8.0]
 OVER_ROWS_R = R_SAFE + 1.0            # m: horizon instants this close (horizontally) get the overfly constraint
@@ -111,14 +111,28 @@ LOS_SAMPLES = 40
 MAIN_SEED   = 0
 ANIM_STEP   = 4                       # 0.2 s per frame
 
-VARIANTS = ['2d', '2d_20', '2d_25', '2d_30', '3d_card', '3d_under', '3d_around', '3d_nogimbal', '3d_nozpred', '3d_oracle']
-LAB = {'2d': '2D baseline: fixed z = 4.62 m', '2d_20': '2D baseline: fixed z = 2.0 m',
-       '2d_25': '2D baseline: fixed z = 2.5 m', '2d_30': '2D baseline: fixed z = 3.0 m', '3d_card': '3D, card deck rule',
+def zkey(z, aware):
+    base = '2d' if abs(z - DZ_OFF) < 1e-9 else f'2d_{int(round(10 * z)):02d}'
+    return 'k' + base if aware else base
+
+
+V2D = [zkey(z, False) for z in Z_FIX_ALL]                 # S092 strategy: pillars treated as infinitely tall
+V2DK = [zkey(z, True) for z in Z_FIX_ALL]                 # same, but knows the pillar heights (may overfly)
+V3D = ['3d_card', '3d_under', '3d_around', '3d_nogimbal', '3d_nozpred', '3d_oracle']
+VARIANTS = V2D + V2DK + V3D
+LAB = {'3d_card': '3D, card deck rule',
        '3d_under': '3D, underfly deck', '3d_around': '3D, no pillar overfly',
        '3d_nogimbal': '3D underfly, w_phi = 0', '3d_nozpred': '3D underfly, no z prediction',
        '3d_oracle': '3D underfly, oracle reference'}
-COL = {'2d': 'grey', '2d_20': 'tab:olive', '2d_25': 'tab:green', '2d_30': 'tab:blue', '3d_card': 'darkorange', '3d_under': 'red', '3d_around': 'tab:brown',
+COL = {'3d_card': 'darkorange', '3d_under': 'red', '3d_around': 'tab:brown',
        '3d_nogimbal': 'tab:pink', '3d_nozpred': 'tab:cyan', '3d_oracle': 'black'}
+for _z in Z_FIX_ALL:
+    LAB[zkey(_z, False)] = f'2D fixed z = {_z:.2f} m'
+    LAB[zkey(_z, True)] = f'2D fixed z = {_z:.2f} m + pillar heights'
+    COL[zkey(_z, False)] = 'grey'
+    COL[zkey(_z, True)] = 'tab:blue'
+COL['2d_25'] = 'tab:purple'
+COL['k2d_65'] = 'tab:olive'
 
 
 # ── World ─────────────────────────────────────────────────────────────────────
@@ -315,7 +329,8 @@ def solve_mpc(p0, v0, ref_full, car_ref, cfg, h_pil, p_lin, deck_mode):
     """Enumerate the around/over choice of every nearby pillar (deck mode fixed by the caller);
     keep the combination with the lowest QP objective (first one on ties)."""
     near = [k for k, o in enumerate(PILLARS) if np.linalg.norm(p0[:2] - o) < OBS_RANGE]
-    choice = [k for k in near if cfg['overfly'] and
+    can_over = cfg['overfly'] and (cfg['dim'] == 3 or cfg['z_fix'] >= h_pil + Z_CLEAR)   # fixed z: only if already above
+    choice = [k for k in near if can_over and
               np.min(np.linalg.norm(p_lin[:, :2] - PILLARS[k], axis=1)) < OVER_ROWS_R + R_SAFE]
     best = None
     n_combo = 2 ** len(choice)
@@ -341,10 +356,6 @@ def solve_mpc(p0, v0, ref_full, car_ref, cfg, h_pil, p_lin, deck_mode):
 # ── Simulation ────────────────────────────────────────────────────────────────
 
 CFG = {
-    '2d':          dict(dim=2, overfly=False, deck='none', w_phi=0.0, pred='kf'),
-    '2d_20':       dict(dim=2, overfly=False, deck='none', w_phi=0.0, pred='kf', z_fix=2.0),
-    '2d_25':       dict(dim=2, overfly=False, deck='none', w_phi=0.0, pred='kf', z_fix=2.5),
-    '2d_30':       dict(dim=2, overfly=False, deck='none', w_phi=0.0, pred='kf', z_fix=3.0),
     '3d_card':     dict(dim=3, overfly=True, deck='card', w_phi=W_PHI, pred='kf'),
     '3d_under':    dict(dim=3, overfly=True, deck='under', w_phi=W_PHI, pred='kf'),
     '3d_around':   dict(dim=3, overfly=False, deck='under', w_phi=W_PHI, pred='kf'),
@@ -352,6 +363,9 @@ CFG = {
     '3d_nozpred':  dict(dim=3, overfly=True, deck='under', w_phi=W_PHI, pred='kf_noz'),
     '3d_oracle':   dict(dim=3, overfly=True, deck='under', w_phi=W_PHI, pred='oracle'),
 }
+for _z in Z_FIX_ALL:
+    for _aw in (False, True):
+        CFG[zkey(_z, _aw)] = dict(dim=2, overfly=_aw, deck='none', w_phi=0.0, pred='kf', z_fix=_z)
 
 
 def simulate(variant, seed, h_pil=H_PIL_CARD, keep=False, w_phi=None):
@@ -443,8 +457,8 @@ def simulate(variant, seed, h_pil=H_PIL_CARD, keep=False, w_phi=None):
     dxy_f = np.linalg.norm(Pf[:, None, :2] - PILLARS[None], axis=2)
     pillar_in = int(np.sum(np.any((dxy_f < PILLAR_RADIUS) & (Pf[:, None, 2] < h_pil), axis=1)))
     deck_in = int(np.sum(in_deck(Pf)))
+    assert pillar_in == 0, f'{variant}: drone inside a pillar'
     if cfg['dim'] == 3:
-        assert pillar_in == 0, f'{variant}: drone inside a pillar'
         assert deck_in == 0, f'{variant}: drone inside the bridge deck'
     clear3d = np.minimum(pillar_distance(Pf, h_pil), box_distance(Pf))
     # horizontal pillar clearance while below the top, vertical clearance above it when overhead
@@ -547,7 +561,7 @@ def plot_trajectory_3d(main, out_dir):
     r = main['3d_under']
     ax.plot(*r['pc'].T, color='blue', lw=2, label='car (with ramp)')
     ax.plot(*r['pd'].T, 'g--', lw=1.1, label='desired offset (8 m behind, 4.62 m above)')
-    for v, ls in (('3d_under', '-'), ('3d_card', '-'), ('2d', ':'), ('2d_25', '--')):
+    for v, ls in (('3d_under', '-'), ('3d_card', '-'), ('2d', ':'), ('2d_25', '-.'), ('k2d_65', (0, (1, 3)))):
         P = main[v]['P']
         ax.plot(*P.T, color=COL[v], lw=1.4 if v[:2] != '2d' else 1.1, ls=ls, label=LAB[v])
     for c in PILLARS:
@@ -583,7 +597,7 @@ def plot_altitude(main, out_dir):
     ax.axhspan(DECK_Z[0], DECK_Z[1], xmin=0, xmax=1, color='none')
     ax.plot(t, r['pc'][:, 2], 'b-', lw=1.5, label='car z (ramp)')
     ax.plot(t, r['pd'][:, 2], 'g--', lw=1, label='desired z (car + 4.62 m)')
-    for v in ('3d_under', '3d_card', '3d_nozpred', '2d', '2d_25'):
+    for v in ('3d_under', '3d_card', '3d_nozpred', '2d', '2d_25', 'k2d_65'):
         ax.plot(t, main[v]['P'][:, 2], color=COL[v], lw=1.1, label=LAB[v])
     ax.fill_between([b0, b1], DECK_Z[0], DECK_Z[1], color='k', alpha=0.25, label='deck slab z 3-6 m')
     ax.axhline(Z_FLOOR, color='k', ls=':', lw=0.8)
@@ -603,7 +617,7 @@ def plot_altitude(main, out_dir):
 
 def plot_gimbal_framing(main, out_dir):
     fig, (a1, a2) = plt.subplots(2, 1, figsize=(13, 7.5), sharex=True)
-    for v in ('3d_under', '3d_card', '3d_nogimbal', '2d', '2d_25'):
+    for v in ('3d_under', '3d_card', '3d_nogimbal', '2d', '2d_25', 'k2d_65'):
         r = main[v]
         a1.plot(r['t'], np.degrees(r['phi']), color=COL[v], lw=1, label=LAB[v])
         fh = np.where(r['vis'], 100 * r['f_h'], np.nan)
@@ -630,7 +644,7 @@ def plot_gimbal_framing(main, out_dir):
 
 def plot_clearance(main, out_dir):
     fig, ax = plt.subplots(figsize=(13, 4.5))
-    for v in ('3d_under', '3d_card', '3d_around', '2d', '2d_25'):
+    for v in ('3d_under', '3d_card', '3d_around', '2d', '2d_25', 'k2d_65'):
         r = main[v]
         ax.plot(r['t'], r['clear_t'], color=COL[v], lw=1, label=f"{LAB[v]} (min {r['clear3d']:.2f} m)")
     ax.axhline(Z_CLEAR, color='r', ls=':', lw=1, label='vertical clearance 0.5 m')
@@ -651,8 +665,8 @@ def plot_clearance(main, out_dir):
 
 def plot_monte_carlo(mc, sweep, out_dir):
     fig, axes = plt.subplots(1, 4, figsize=(21, 4.8))
-    keys = VARIANTS
-    short = ['2D\n4.62', '2D\n2.0', '2D\n2.5', '2D\n3.0', 'card\nrule', 'under', 'no\noverfly', 'w_phi\n= 0',
+    keys = ['2d', '2d_25', '2d_65', 'k2d_25', 'k2d_65', '3d_card', '3d_under', '3d_around', '3d_nozpred', '3d_oracle']
+    short = ['2D\n4.62', '2D\n2.5', '2D\n6.5', '2D+H\n2.5', '2D+H\n6.5', 'card\nrule', 'under', 'no\noverfly',
              'no z\npred', 'oracle']
     for ax, (key, lab, sc) in zip(axes[:3], (('rms_xy_nb', 'Horizontal RMS error, t >= 3 s, outside deck span (m)', 1),
                                              ('frame', 'Framed & visible, 10-20 % band (%)', 100),
@@ -780,14 +794,14 @@ if __name__ == '__main__':
     for v in VARIANTS:
         R = mc[v]
         g = lambda k: [r[k] for r in R]
-        print(f"  {LAB[v]:<34}{ms(g('rms')):>16}{ms(g('rms_nobridge')):>26}{ms(g('in_ball'), '{:.1f}', 100):>13}"
+        print(f"  {LAB[v]:<44}{ms(g('rms')):>16}{ms(g('rms_nobridge')):>26}{ms(g('in_ball'), '{:.1f}', 100):>13}"
               f"{ms(g('frame'), '{:.1f}', 100):>16}{np.mean(g('visible')) * 100:>9.1f} ({np.mean(g('vis_bridge')) * 100:5.1f})"
               f"{ms(g('gimbal_in'), '{:.1f}', 100):>16}{ms(g('rate_ok'), '{:.1f}', 100):>15}{ms(g('z_rms_ramp')):>16}")
     print('  Error split, t >= 3 s outside the deck span (mean over seeds): horizontal / vertical RMS; '
           'closest horizontal approach to any pillar axis (min over seeds)')
     for v in VARIANTS:
         R = mc[v]
-        print(f"    {LAB[v]:<34} {ms([r['rms_xy_nb'] for r in R])} m / {ms([r['rms_z_nb'] for r in R])} m; "
+        print(f"    {LAB[v]:<44} {ms([r['rms_xy_nb'] for r in R])} m / {ms([r['rms_z_nb'] for r in R])} m; "
               f"{min(r['pillar_hmin'] for r in R):.3f} m")
     print('  Safety and limits (over all seeds): min 3D clearance to any obstacle SURFACE, min horizontal pillar '
           'clearance below the top from the AXIS / from the SURFACE (axis - 0.6 m), min height above a pillar top '
@@ -796,7 +810,7 @@ if __name__ == '__main__':
     for v in VARIANTS:
         R = mc[v]
         hc = min(r['hclear'] for r in R)
-        print(f"    {LAB[v]:<34} {min(r['clear3d'] for r in R):.3f} m, {hc:.3f} / {hc - PILLAR_RADIUS:.3f} m, "
+        print(f"    {LAB[v]:<44} {min(r['clear3d'] for r in R):.3f} m, {hc:.3f} / {hc - PILLAR_RADIUS:.3f} m, "
               f"{min(r['vclear'] for r in R):.3f} m, {sum(r['pillar_in'] for r in R)} / {sum(r['deck_in'] for r in R)}, "
               f"{max(r['max_vxy_inf'] for r in R):.2f} m/s, {max(r['max_vz'] for r in R):.2f} m/s, "
               f"{min(r['zmin'] for r in R):.2f}-{max(r['zmax'] for r in R):.2f} m, {max(r['rate_max'] for r in R):.1f} deg/s")
@@ -804,7 +818,7 @@ if __name__ == '__main__':
     for v in VARIANTS:
         R = mc[v]
         s = lambda k: sum(r[k] for r in R)
-        print(f"    {LAB[v]:<34} {s('n_solves')}, {s('n_fail')}, {s('n_slack')}, {s('n_over')}, "
+        print(f"    {LAB[v]:<44} {s('n_solves')}, {s('n_fail')}, {s('n_slack')}, {s('n_over')}, "
               f"{s('n_deck_under')} / {s('n_deck_over')}")
     print('  Paired per seed against 3D underfly (same noise):')
     base = mc['3d_under']
@@ -817,15 +831,19 @@ if __name__ == '__main__':
         df = np.array([a['frame'] - b['frame'] for a, b in zip(base, R)])
         dz = np.array([a['z_rms_ramp'] - b['z_rms_ramp'] for a, b in zip(base, R)])
         dg = np.array([a['gimbal_in'] - b['gimbal_in'] for a, b in zip(base, R)])
-        print(f"    vs {LAB[v]:<32} lower RMS (no deck) in {wins(dr)} (mean diff {dr.mean():+.3f} m); "
+        dv = np.array([a['vis_bridge'] - b['vis_bridge'] for a, b in zip(base, R)])
+        ramp = (f"lower ramp z RMS in {wins(dz)} (mean diff {dz.mean():+.3f} m)" if v in V3D else
+                'ramp z RMS: n/a (a fixed altitude cannot follow the ramp by construction)')
+        rmsall = (f"lower RMS (no deck) in {wins(dr)} (mean diff {dr.mean():+.3f} m); " if v in V3D else '')
+        print(f"    vs {LAB[v]:<44} {rmsall}"
               f"lower horizontal RMS in {wins(dxy)} (mean diff {dxy.mean():+.3f} m); "
               f"higher framing in {wins(df, False)} (mean diff {100 * df.mean():+.1f} pp); "
-              f"higher gimbal-in-envelope in {wins(dg, False)} (mean diff {100 * dg.mean():+.1f} pp); "
-              f"lower ramp z RMS in {wins(dz)} (mean diff {dz.mean():+.3f} m)")
+              f"higher deck-span visibility in {wins(dv, False)} (mean diff {100 * dv.mean():+.1f} pp); "
+              f"higher gimbal-in-envelope in {wins(dg, False)} (mean diff {100 * dg.mean():+.1f} pp); {ramp}")
     print('  Gimbal pitch rate after 3 s (mean over seeds): RMS / max (deg/s); whole-run max')
     for v in VARIANTS:
         R = mc[v]
-        print(f"    {LAB[v]:<34} {np.mean([r['rate_rms_s'] for r in R]):.2f} / {np.mean([r['rate_max_s'] for r in R]):.2f}; "
+        print(f"    {LAB[v]:<44} {np.mean([r['rate_rms_s'] for r in R]):.2f} / {np.mean([r['rate_max_s'] for r in R]):.2f}; "
               f"{max(r['rate_max'] for r in R):.1f}")
     print('  w_phi sweep (3D underfly): pitch-rate RMS after 3 s / RMS t >= 3 s outside deck / framed+visible')
     for w in W_PHI_SWEEP:
@@ -846,27 +864,35 @@ if __name__ == '__main__':
         print(f"      horizontal RMS: overfly vs no overfly lower in {wins(np.array(a) - np.array(b))} "
               f"(mean diff {np.mean(a) - np.mean(b):+.3f} m); 3D underfly vs 2D at 2.5 m: {np.mean(a) - np.mean(c):+.3f} m")
     print('  2D baseline altitude sweep (X5): deck points / min surface clearance / visible in deck span / '
-          'gimbal in +-30 / horizontal RMS / framed; feasible = never inside the deck')
-    feas = []
-    for v in ('2d_20', '2d_25', '2d_30', '2d'):
-        R = mc[v]
-        dk = sum(r['deck_in'] for r in R)
-        fr = np.mean([r['frame'] for r in R])
-        if dk == 0:
-            feas.append((fr, v))
-        print(f"    {LAB[v]:<34} {dk} / {min(r['clear3d'] for r in R):.3f} m / {100 * np.mean([r['vis_bridge'] for r in R]):.1f}% / "
-              f"{100 * np.mean([r['gimbal_in'] for r in R]):.1f}% / {np.mean([r['rms_xy_nb'] for r in R]):.3f} m / {100 * fr:.1f}%"
-              f"{'  (feasible)' if dk == 0 else '  (INSIDE the deck)'}")
-    best = max(feas)[1]
-    print(f'    best feasible 2D baseline (highest framing): {LAB[best]}')
-    print('  Card targets (3D underfly / 3D card rule / best feasible 2D):')
+          'gimbal in +-30 / horizontal RMS / framed / overfly cycles; feasible = never inside the deck')
+    bests = {}
+    for group, name in ((V2D, 'S092 strategy'), (V2DK, 'with pillar heights')):
+        feas = []
+        for v in group:
+            R = mc[v]
+            dk = sum(r['deck_in'] for r in R)
+            fr = np.mean([r['frame'] for r in R])
+            xy = np.mean([r['rms_xy_nb'] for r in R])
+            if dk == 0:
+                feas.append((fr, -xy, v))
+            print(f"    {LAB[v]:<44} {dk} / {min(r['clear3d'] for r in R):.3f} m / {100 * np.mean([r['vis_bridge'] for r in R]):.1f}% / "
+                  f"{100 * np.mean([r['gimbal_in'] for r in R]):.1f}% / {xy:.3f} m / {100 * fr:.1f}% / "
+                  f"{sum(r['n_over'] for r in R)}{'  (feasible)' if dk == 0 else '  (INSIDE the deck)'}")
+        bf = max(feas)[2]
+        bests[name] = (bf,)
+        xs = [np.mean([r['rms_xy_nb'] for r in mc[v]]) for v in group]
+        print(f'    {name}: best feasible by framing {LAB[bf]}; horizontal RMS over all fixed altitudes '
+              f'{min(xs):.3f}-{max(xs):.3f} m')
+    best, bestk = bests['S092 strategy'][0], bests['with pillar heights'][0]
+    print('  Card targets (3D underfly / 3D card rule / best feasible 2D / best feasible 2D with pillar heights):')
     for name, fn in (('framing >= 0.75', lambda R: np.mean([r['frame'] for r in R]) >= 0.75),
                      ('RMS <= 2.0 m', lambda R: np.mean([r['rms'] for r in R]) <= 2.0),
                      ('clearance >= 1.5 m from every surface', lambda R: min(r['clear3d'] for r in R) >= 1.5),
                      ('gimbal within +-30 deg >= 95 %', lambda R: np.mean([r['gimbal_in'] for r in R]) >= 0.95),
                      ('|v_xy|_inf <= 12 and |v_z| <= 4 m/s', lambda R: max(r['max_vxy_inf'] for r in R) <= V_XY + 0.05
                       and max(r['max_vz'] for r in R) <= V_Z + 0.05)):
-        print(f"    {name:<40} " + ' / '.join('met' if fn(mc[v]) else 'NOT met' for v in ('3d_under', '3d_card', best)))
+        print(f"    {name:<40} " + ' / '.join('met' if fn(mc[v]) else 'NOT met'
+                                                for v in ('3d_under', '3d_card', best, bestk)))
     r0 = main['3d_under']
     print(f"  Seed 0, 3D underfly: RMS {r0['rms']:.3f} m, framed {100 * r0['frame']:.1f}%, min clearance "
           f"{r0['clear3d']:.3f} m; card rule: framed {100 * main['3d_card']['frame']:.1f}%, visible in deck span "
