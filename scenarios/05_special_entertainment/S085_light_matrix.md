@@ -1,6 +1,6 @@
 # S085 Drone Light Matrix Positioning
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Hungarian Assignment + Independent PID + Repulsion | **Dimension**: 3D
 
 ---
@@ -81,6 +81,18 @@ The position is integrated at each timestep:
 $$\mathbf{p}_k(t + \Delta t) = \mathbf{p}_k(t) + \mathbf{u}_k(t)\,\Delta t$$
 
 with the velocity command clipped to $\|\mathbf{u}_k\| \leq v_{max}$ to respect actuator limits.
+
+> **Correction (implementation):** with these gains the integral must not keep accumulating while
+> $\mathbf{u}_k$ is clipped. The climb from the staging volume to 50 m takes roughly 8–10 s at
+> $v_{max}$ (40–49 m at 5 m/s),
+> and with plain integration (the code below) the integral winds up so much that the drones
+> overshoot the grid by 8.89 m and are still 1.24 m (max) from their slots at $t = 60$ s, so
+> $T_{conv}$ is never reached. The implementation freezes the integral of a drone while its PID
+> command exceeds $v_{max}$ (conditional integration). Even then the unsaturated loop
+> $(1 + K_d)s^2 + K_p s + K_i = 0$ has a slow pole at $-0.044$ s⁻¹ (22.8 s time constant), so the
+> residual error left after the climb (about 0.2 m) decays slowly and $T_{conv} \approx 36$ s. The code below also starts with
+> `prev_err = 0`, which gives a derivative kick $K_d\,\mathbf{e}(0)/\Delta t$ at $t = 0$; the
+> implementation starts with `prev_err = e(0)`.
 
 ### ORCA-lite Repulsive Potential
 
