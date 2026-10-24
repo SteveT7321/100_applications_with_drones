@@ -63,7 +63,7 @@ conda activate drones
 python src/04_industrial_agriculture/s068_large_field_spray.py
 ```
 
-Runtime: 63 s and 61 s in the two reproducibility runs, with about ten other simulations running on the same machine. The run is deterministic (no random inputs).
+Runtime: 16 s in each of the two reproducibility runs (single-threaded BLAS); the first runs, with about ten other simulations on the same machine, took 61–63 s. The run is deterministic (no random inputs).
 
 ---
 
@@ -91,7 +91,7 @@ Per-drone breakdown (time until each drone's last spray):
 | B | 2 | 26 (104.5–153.9 m) | 1133.4 s | 866.7 s | 15.8 s | 184.5 s | 1 |
 | B | 3 | 25 (153.9–199.9 m) | 1144.2 s | 833.3 s | 14.7 s | 244.5 s | 1 |
 
-The ferry column covers the flights to and from the station, including the first flight out; the final flight home is excluded. The finish-time spread is 128.9 s for E and 29.1 s for B. The single drone spends 3533.3 s spraying, 66.0 s turning, 530.8 s ferrying and 720 s on its 6 swaps.
+The ferry column covers every flight to and from the station: the first flight out, the swap round trip and the final flight home. The finish-time spread is 128.9 s for E and 29.1 s for B. The single drone spends 3533.3 s spraying, 66.0 s turning, 530.8 s ferrying (including the flight home) and 720 s on its 6 swaps.
 
 ![Coverage map](./coverage_map.png)
 
@@ -101,14 +101,18 @@ The ferry column covers the flights to and from the station, including the first
 
 ![Battery trips](./battery_trips.png)
 
-The animation compares E (top) and B (bottom) side by side. It has 60 frames, one every 20 s from 0 to 1175.9 s, at 12 fps. Faded markers show drones that are swapping batteries:
+The animation compares E (top) and B (bottom) side by side. It has 60 frames, one every 20 s, with the last frame at 1176.0 s, at 12 fps. Faded markers show drones that are swapping batteries:
 
 ![Animation](./animation.gif)
 
 ### Key findings
 
 - **Four drones are more than 4× faster than one.** The speed-up is 4.066× for E and 4.180× for B. This is not a free lunch: the single drone needs 6 swaps (720 s of idle time) and 530.8 s of ferrying for 3599.8 s of runs, while each of the four drones needs only one swap. One drone's share of the work (about 900 s of runs) takes just over one battery, so splitting the field removes swaps as well as dividing the work.
-- **The equal partition is limited by ferry distance.** The station is on the left edge, so drone 3 of E ferries 242.3 s against 67.8 s for drone 0 and finishes 128.9 s after it. Balancing the blocks (28/27/26/25 runs instead of 26/27/27/26) moves work towards the station. That cuts $T_{mission}$ by 31.8 s (2.7 %) and the finish-time spread to 29.1 s, with the same 4 swaps. The gain is modest because the swaps, not the ferries, dominate the overhead.
+- **The equal partition is limited by ferry distance.** The station is on the left edge, so drone 3 of E ferries 242.3 s against 67.8 s for drone 0 and finishes 128.9 s after it. Balancing the blocks (28/27/26/25 runs instead of 26/27/27/26) moves work towards the station. That cuts $T_{mission}$ by 31.8 s (2.7 %) and the finish-time spread to 29.1 s, with the same 4 swaps.
+- **Why the gain is small.** Swaps cannot cause the imbalance, because every drone swaps exactly once (480.0 s of swaps in total). The imbalance comes from ferrying (610.9 s in total for E, of which 242.3 s is the bottleneck drone's), but it is small to begin with:
+  - The mean finish time of E is 1126.6 s, so even perfectly divisible work could save at most about 49.3 s.
+  - Work can only move in whole runs of 33.97 s each (one 100 m run plus a turn).
+  - The balanced partition's remaining spread, 29.1 s, is already less than one run.
 - **The card's "unlimited station capacity" assumption is binding.** Every drone of E, Ec and B swaps in the same window, 600–720 s: all four start together and drain their batteries at the same rate. With one swap slot, three drones would queue (the card's Extension 2).
 - **The card's run grid is slightly wasteful.** Clamping the last run of every 50 m strip gives 108 runs instead of 106, and the mission takes 1207.7 s instead of 1175.9 s (E).
 - **Every strategy reaches 100.000 % coverage.** With the 0.5 m cell test, 11.29–13.06 % of the cells count as sprayed twice. The nominal swath overlap is only 5.26 % of the field; the rest comes from cells whose centres lie exactly on a swath edge, plus the extra overlap of Ec's clamped runs.

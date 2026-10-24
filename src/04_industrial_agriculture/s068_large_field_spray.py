@@ -404,7 +404,8 @@ def save_animation(res, out_dir):
     path = os.path.join(out_dir, 'animation.gif')
     anim.save(path, writer='pillow', fps=12, dpi=60)
     plt.close(fig)
-    print(f'Saved: {path} ({n_frames} frames)')
+    print(f'Saved: {path} ({n_frames} frames, every {ANIM_DT:.0f} s, last frame at '
+          f'{(n_samples - 1) * DT:.1f} s)')
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -460,6 +461,16 @@ if __name__ == '__main__':
     fin_b = [d['t_cover'] for d in res['B']['drones']]
     print(f'Finish-time spread: equal {max(fin_e) - min(fin_e):.1f} s, '
           f'balanced {max(fin_b) - min(fin_b):.1f} s')
+    for s in ['E', 'B']:
+        ac = [d['acc'] for d in res[s]['drones']]
+        print(f"[{s}] overhead incl. the flight home: ferry {sum(a['ferry'] for a in ac):.1f} s, "
+              f"swaps {sum(a['charge'] for a in ac):.1f} s (every drone swaps "
+              f"{sorted(set(res[s]['trips']))} time(s)); bottleneck drone ferry "
+              f"{ac[int(np.argmax([d['t_cover'] for d in res[s]['drones']]))]['ferry']:.1f} s")
+    print(f'Mean finish time of E {np.mean(fin_e):.1f} s -> perfect rebalancing could save at most '
+          f'about {max(fin_e) - np.mean(fin_e):.1f} s; one run + turn takes '
+          f'{FIELD_D / SPEED + RUN_SPACING / SPEED:.2f} s, so blocks can only shift in steps of '
+          f'that size')
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
