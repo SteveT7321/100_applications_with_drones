@@ -56,7 +56,7 @@ integrated exactly over each 0.1 s step (piecewise-constant power, as in the 2D 
 | Pause / time step | 30 s / 0.1 s | card |
 | Turn / speed floor | 3 s at hover power / 0.05 m/s | 2D base |
 | Low pass altitude | 1.0 m | added |
-| MPC candidates / weight $w$ | 1.0–6.0 m in 0.5 m steps / 10 s per °C (swept 0, 10, 100) | added |
+| MPC candidates / weight $w$ | 1.0–6.0 m in 0.5 m steps / 10 s per °C (swept 0, 10, 100, 1000 in four cases) | added |
 | Hot case / sweeps | $T_{surf}$ 63 °C; $T_{surf}$ 55–65 °C × $z_{bl}$ 2, 3, 4 m | added |
 | Animation | hot case, one frame per 30 s of mission, 142 frames | added |
 
@@ -73,7 +73,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s076_3d_thermal_management.py
 ```
 
-Runtime 171–205 s over three runs (measured while other simulations shared the machine). Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
+Runtime 118–119 s over three runs. Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
 
 ---
 
@@ -104,7 +104,18 @@ From 1 to 6 m the ambient falls 5.026 °C, but from 2 to 6 m only 0.026 °C. The
 
 Bold: battery above 65 °C, i.e. capacity derated below the card's 80 % floor. Against the 2D baseline: in the card case `alt_opt` takes +5.3 s and is −0.03 °C cooler (motor and battery), `mpc` is identical (+0.0 s), `fixed_1m` takes +91.1 s and runs +4.01 °C hotter. In the hot case `alt_opt` takes +2.4 s, `fixed_1m` +1596.2 s. The fixed 2 m run reproduces the 2D base's throttle-to-$T_{max}$ results (35.87 min at 45 °C, 41.11 min at 52 °C in the sweep below).
 
-**MPC weight**: with $w$ = 0, 10 and 100 s/°C the MPC picks 2.0 m for every strip and takes 2152.0 s in every case; the weight does not matter here.
+**MPC weight** (strip altitudes chosen, peak motor temperature, mission time):
+
+| Case | $w$ = 0 | $w$ = 10 (default) | $w$ = 100 | $w$ = 1000 s/°C |
+|---|---|---|---|---|
+| card (55 °C, $z_{bl}$ 2 m) | 2.0 m, 80.93 °C, 2152.0 s | 2.0 m, 80.93 °C, 2152.0 s | 2.0 m, 80.93 °C, 2152.0 s | 2.0 and 6.0 m, 80.91 °C, 2157.3 s |
+| 60 °C, $z_{bl}$ 3 m | 2.5 m, 83.43 °C, 2152.7 s | 3.0 m, 80.93 °C, 2153.3 s | 3.0 m, 80.93 °C, 2153.3 s | 3.0 and 6.0 m, 80.91 °C, 2157.3 s |
+| 58 °C, $z_{bl}$ 4 m | 2.0 m, 83.93 °C, 2152.0 s | 2.5 and 3.0 m, 79.11 °C, 2153.3 s | 2.5 and 3.0 m, 79.11 °C, 2153.3 s | 2.5 and 3.0 m, 79.11 °C, 2153.3 s |
+| 63 °C, $z_{bl}$ 3 m | 3.0 m, 83.93 °C, 2153.3 s | 3.0 m, 83.93 °C, 2153.3 s | 3.0 m, 83.93 °C, 2153.3 s | 3.0 and 6.0 m, 83.91 °C, 2157.3 s |
+
+The weight changes the chosen altitude and the peak motor temperature (83.93 vs 79.11 °C at 58 °C, $z_{bl}$ 4 m), but every mission time stays between 2152.0 and 2157.3 s; the time conclusions below do not depend on it.
+
+**Constant altitude vs MPC** (63 °C): with $z_{bl}$ = 3 m a constant 3.0 m takes 2153.3 s, the same as the MPC (which flies 3.0 m throughout); with $z_{bl}$ = 4 m a constant 4.0 m takes 2154.7 s, the same as the MPC (3.5 and 4.0 m); a constant 6.0 m takes 2157.3 s in both.
 
 ### Sweep: mission time (min) against surface temperature and hot-layer depth
 
@@ -121,15 +132,15 @@ Bold: battery above 65 °C, i.e. capacity derated below the card's 80 % floor. A
 | 4 m | alt-opt | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 | 35.96 |
 | 4 m | MPC | 35.88 | 35.88 | 35.89 | 35.89 | 35.89 | 35.90 | 35.90 | 35.91 | 35.91 | 35.91 | 35.91 |
 
-(fixed 1 m is identical for every $z_{bl}$ because 1 m is inside the layer in all three.) Best 3D plan (alt-opt or MPC) minus the 2D baseline: 0.0 s at every $T_{surf}$ for $z_{bl}$ = 2 m; −0.7 to −1.3 s (slower) up to 59 °C and 88.6 → 756.5 s faster from 60 to 65 °C for $z_{bl}$ = 3 m; 88.0 → 845.4 s faster from 60 to 65 °C for $z_{bl}$ = 4 m. No run in the sweep spent any time above $T_{max}$ (longest 0.0 s).
+(fixed 1 m is identical for every $z_{bl}$ because 1 m is inside the layer in all three.) Gain of the best 3D plan (alt-opt or MPC) over the 2D baseline, printed as baseline time minus 3D time: 0.0 s at every $T_{surf}$ for $z_{bl}$ = 2 m; −0.7 to −1.3 s (the 3D plans are slower) up to 59 °C and +88.6 → +756.5 s (faster) from 60 to 65 °C for $z_{bl}$ = 3 m; +88.0 → +845.4 s from 60 to 65 °C for $z_{bl}$ = 4 m. No run in the sweep spent any time above $T_{max}$ (longest 0.0 s).
 
 **Battery**: at 2 m the minimum $Q/Q_{nom}$ falls from 0.827 (55 °C) to 0.789 (65 °C) and breaks the 0.8 floor at 4 of the 11 surface temperatures (62–65 °C) for every hot-layer depth. Flying at $z^*$ does not change this when $z_{bl}$ = 2 m (4/11), but removes all violations when the layer is 3 m (0/11, minimum 0.804) or 4 m deep (0/11, minimum 0.827).
 
 **Key findings**
 
-- **With the card's atmosphere, altitude planning above the 2D height buys nothing.** The 2D base already flies at the top of the hot layer; climbing to $z^*$ = 6 m lowers the steady-state motor temperature by 0.03 °C and costs 5.3 s of climbing (card case). The MPC sees this and stays at 2 m on every strip, tying the 2D baseline exactly at every surface temperature when $z_{bl}$ = 2 m. The card's expectation that the altitude-optimised and MPC strategies keep "larger margins" than the baseline does not hold.
+- **With the card's atmosphere, altitude planning above the 2D height buys nothing.** The 2D base already flies at the top of the hot layer; climbing to $z^*$ = 6 m lowers the steady-state motor temperature by 0.03 °C and costs 5.3 s of climbing (card case). With the default weight the MPC stays at 2 m on every strip (it climbs to 6 m only with $w$ = 1000 s/°C), tying the 2D baseline exactly at every surface temperature when $z_{bl}$ = 2 m. The card's expectation that the altitude-optimised and MPC strategies keep "larger margins" than the baseline does not hold.
 - **The altitude that matters is the one inside the hot layer.** A 1 m inspection pass runs 4.01 °C hotter, has to throttle for 2109.1 s and takes 91.1 s longer at 55 °C; at 63 °C it takes 70.11 min instead of 43.51 min. The safe corridor starts at 1.20 m.
-- **If the hot layer is deeper than the 2D height, altitude planning pays.** With $z_{bl}$ = 3 or 4 m the baseline at 2 m sits inside the layer: at $T_{surf}$ = 65 °C the 3D plans are 756.5 s ($z_{bl}$ = 3 m) and 845.4 s ($z_{bl}$ = 4 m) faster and stay above the battery floor, while the baseline derates its battery below 80 % from 62 °C on. Below $T_{surf}$ = 60 °C nothing needs throttling and the 3D plans are 0.7–1.3 s slower because they climb.
+- **If the hot layer is deeper than the 2D height, altitude planning pays.** With $z_{bl}$ = 3 or 4 m the baseline at 2 m sits inside the layer: at $T_{surf}$ = 65 °C the 3D plans are 756.5 s ($z_{bl}$ = 3 m) and 845.4 s ($z_{bl}$ = 4 m) faster and stay above the battery floor, while the baseline derates its battery below 80 % from 62 °C on. Below $T_{surf}$ = 60 °C nothing needs throttling and the 3D plans are 0.7–1.3 s slower because they climb. The gain comes from **choosing a different constant altitude** above the layer, not from varying altitude during the mission: a constant 3.0 m (or 4.0 m) matches the MPC's mission time exactly, and the altitude-optimised plan is a single climb to 6 m.
 - **The battery limit, not the motor limit, decides the hot cases.** The throttle law keeps every run below $T_{max}$, but at 63 °C every strategy's battery reaches 66.0–69.0 °C (capacity 0.780–0.795), which no altitude in [1, 6] m avoids when the layer is 2 m thick.
 - **No strategy pauses.** The base's throttle-to-$T_{max}$ law never reaches $T_{max}$, so pause counts are 0 everywhere and are not a discriminating metric; throttled time and mission time are.
 
@@ -167,7 +178,7 @@ Bold: battery above 65 °C, i.e. capacity derated below the card's 80 % floor. A
 | $t_{climb} = |\Delta z|/v_{z,max}$ with the $f_{trap}$ profile | $T = 2|\Delta z|/v_{z,max}$; card corrected | the profile's peak speed is $2|\Delta z|/T$; the card's duration would need 3.0 m/s |
 | $T_{bat,ss} = T_{amb} + R_{bat}P_{total}/\eta_{esc}$ with $P_{total}$ already divided by $\eta_{esc}$ | $T_{amb} + R_{bat}P_{motor}/\eta_{esc}$; card corrected | $\eta_{esc}$ counted twice |
 | Baseline "reactive throttle only"; strategies 2 and 3 with their own pause rules | every strategy uses the 2D base's throttle-to-$T_{max}$ law and pause at $T_{max}$ | same speed envelope for all, so the comparison isolates the altitude plan; the 2D base found this law the fastest safe one |
-| MPC "minimising the weighted sum of mission time and peak motor temperature" at every step | per-strip receding horizon over 11 candidate altitudes, cost = strip time + $w$ (peak − $T_{warn}$)⁺, weight swept 0–100 s/°C | a full per-step MPC is unnecessary here: the ambient depends on altitude only; the weight does not change any choice |
+| MPC "minimising the weighted sum of mission time and peak motor temperature" at every step | per-strip receding horizon over 11 candidate altitudes, cost = strip time + $w$ (peak − $T_{warn}$)⁺, weight swept 0–1000 s/°C in four cases | a full per-step MPC is unnecessary here: the ambient depends on altitude only; the weight changes the chosen altitude and the peak temperature (83.93 vs 79.11 °C in one case) but every mission time stays within 2152.0–2157.3 s |
 | Expected: baseline approaches $T_{warn}$, battery near/above 65 °C only for the baseline, ≈ 5 °C gain from altitude | 80.93 °C, battery 59.59 °C for every plan at 2 m or above, 0.03 °C gain above 2 m | reported as simulated; the 5 °C exists only between 1 and 6 m |
 | Single card case | plus a hot case, a surface-temperature sweep and hot-layer depths 3 and 4 m | the card case alone cannot show when altitude matters |
 | — | `fixed_1m` added | shows the cost of flying inside the hot layer |

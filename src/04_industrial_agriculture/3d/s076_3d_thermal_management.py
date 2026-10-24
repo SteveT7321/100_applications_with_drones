@@ -71,7 +71,8 @@ Z_2D = 2.0                       # the 2D base's height (its 45 degC ambient = T
 Z_LOW = 1.0                      # low inspection pass
 Z_GRID = np.round(np.arange(Z_MIN, Z_MAX + 1e-9, 0.5), 3)   # MPC candidates
 W_PEAK = 10.0                    # s per degC above T_warn in the MPC cost
-W_SWEEP = [0.0, 10.0, 100.0]
+W_SWEEP = [0.0, 10.0, 100.0, 1000.0]
+W_CASES = [(55.0, 2.0), (60.0, 3.0), (58.0, 4.0), (63.0, 3.0)]   # (T_surf, z_bl) for the weight sweep
 T_SURF_SWEEP = np.arange(55.0, 65.01, 1.0)
 Z_BL_SWEEP = [2.0, 3.0, 4.0]
 ANIM_DT = 30.0                   # s of mission per GIF frame
@@ -237,12 +238,14 @@ def fly_strip(f, i, z):
         f.turn()
 
 
-def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True):
+def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True, z_fix=None):
     f = Flight(env, record)
     zs = []
     for i in range(N_STRIPS):
         if strategy == 'fixed_2m':
             z = Z_2D
+        elif strategy == 'fixed_z':
+            z = z_fix
         elif strategy == 'fixed_1m':
             z = Z_LOW
         elif strategy == 'alt_opt':
@@ -276,7 +279,11 @@ def simulate(strategy, env=(T_SURF, Z_BL), w_peak=W_PEAK, record=True):
 def run_simulation():
     env = (T_SURF, Z_BL)
     res = dict(card={s: simulate(s, env) for s in STRATS})
-    res['w_sweep'] = {w: simulate('mpc', env, w_peak=w, record=False) for w in W_SWEEP}
+    res['w_sweep'] = {(c, w): simulate('mpc', c, w_peak=w, record=False) for c in W_CASES for w in W_SWEEP}
+    # is the deeper-layer gain altitude variation or just a different constant altitude?
+    res['const_probe'] = {(ts, zb): {z: simulate('fixed_z', (ts, zb), record=False, z_fix=z)
+                                     for z in (zb, Z_MAX)}
+                          for ts, zb in ((63.0, 3.0), (63.0, 4.0))}
     hot = (T_SURF_SWEEP[-3], Z_BL)
     res['hot_env'] = hot
     res['hot'] = {s: simulate(s, hot) for s in STRATS}
@@ -481,10 +488,17 @@ def report(res):
             r = res[case][s]
             print(f"    {s} vs 2D baseline: mission {r['mission'] - b['mission']:+.1f} s, peak T_m "
                   f"{r['peak_tm'] - b['peak_tm']:+.2f} degC, peak T_bat {r['peak_tb'] - b['peak_tb']:+.2f} degC")
-    print(f'  [MPC weight sweep, card case]')
-    for w, r in res['w_sweep'].items():
-        print(f"    w = {w:5.1f} s/degC: mission {r['mission']:.1f} s, peak T_m {r['peak_tm']:.2f}, altitudes "
-              + ', '.join(f'{z:.1f}' for z in sorted(set(r['z_plan']))))
+    print(f'  [MPC weight sweep: mission, peak motor temperature and the strip altitudes chosen]')
+    for c in W_CASES:
+        for w in W_SWEEP:
+            r = res['w_sweep'][(c, w)]
+            print(f"    T_surf {c[0]:.0f} degC, z_bl {c[1]:.0f} m, w = {w:6.1f} s/degC: mission {r['mission']:.1f} s, "
+                  f"peak T_m {r['peak_tm']:.2f} degC, altitudes " + ', '.join(f'{z:.1f}' for z in sorted(set(r['z_plan']))))
+    print('  [Constant-altitude probe at T_surf 63 degC]')
+    for (ts, zb), d in res['const_probe'].items():
+        m = res['sweep'][(zb, ts)]['mpc']
+        print(f"    z_bl {zb:.0f} m: fixed {zb:.1f} m {d[zb]['mission']:.1f} s, fixed {Z_MAX:.1f} m {d[Z_MAX]['mission']:.1f} s, "
+              f"MPC {m['mission']:.1f} s (altitudes " + ', '.join(f'{z:.1f}' for z in sorted(set(m['z_plan']))) + ')')
     print('  [Sweep: mission time (min) by surface temperature; all runs: time above T_max]')
     t_over = max(r['t_over'] for d in res['sweep'].values() for r in d.values())
     for zb in Z_BL_SWEEP:
