@@ -85,7 +85,7 @@ conda activate drones
 python src/03_environmental_sar/s055_oil_spill.py
 ```
 
-Runtime ≈ 45–50 s (measured with other simulations running in parallel).
+Runtime ≈ 45–60 s depending on machine load.
 
 ---
 
