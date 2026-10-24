@@ -1,6 +1,6 @@
 # S092 Movie Car Chase Scene
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 **Algorithm**: Predictive KF Tracking + MPC Obstacle-Aware Trajectory | **Dimension**: 3D
 
@@ -17,8 +17,10 @@ the future, then feeds that prediction into a **Model Predictive Controller** (M
 10-step receding-horizon trajectory respecting obstacle-clearance constraints.
 
 **Roles**:
-- **Car (target)**: follows a pre-scripted sinusoidal winding road at constant tangential speed
-  v = 8 m/s; acts as a disturbance source for the drone controller.
+- **Car (target)**: follows a pre-scripted sinusoidal winding road with a constant forward
+  (x) speed of 8 m/s; because the road winds, its speed along the road varies between 8.0 and
+  12.4 m/s (road arc length 386 m over x = 0–300 m). Acts as a disturbance source for the drone
+  controller.
 - **Camera drone**: executes KF-predicted MPC trajectory to maintain desired relative position
   while avoiding 5 pillars; broadcasts no active signals — purely reactive observer.
 
@@ -78,7 +80,10 @@ fixed body-frame offset:
 
 $$\mathbf{p}_{d}(t) = \mathbf{p}_{car}(t) + R_{car}(t)\, \mathbf{d}_{offset}$$
 
-$$\mathbf{d}_{offset} = \begin{pmatrix} 0 \\ -8 \\ 5 \end{pmatrix}\ \text{m} \quad \text{(behind and above in car body frame)}$$
+$$\mathbf{d}_{offset} = \begin{pmatrix} -8 \\ 0 \\ 5 \end{pmatrix}\ \text{m} \quad \text{(behind and above in car body frame: } x \text{ forward, } y \text{ left)}$$
+
+(With $R_{car}$ as defined above, the earlier value $(0, -8, 5)$ placed the drone 8 m to the
+car's right, at −90° to the heading, not behind it.)
 
 The third component (height) is added as a world-frame z offset; R_car only rotates the
 horizontal plane components.
@@ -124,9 +129,11 @@ The fraction of frame height occupied by the car (assuming vertical FoV = 60 deg
 
 $$f_{height}(t) = \frac{\theta_{frame}(t)}{\theta_{FoV}}$$
 
-The framing score over the mission of duration T is:
+At the nominal offset the drone is $\sqrt{8^2 + 5^2} = 9.43$ m from the car, which gives
+$f_{height} = 15.2\,\%$. A 20–40 % band would need a distance of 3.53–7.14 m, so it can never be
+met while holding the offset. The band is therefore 10–20 % (distance 7.14–14.31 m):
 
-$$f_{score} = \frac{1}{T} \int_0^T \mathbf{1}\!\left[0.20 \leq f_{height}(t) \leq 0.40\right] dt$$
+$$f_{score} = \frac{1}{T} \int_0^T \mathbf{1}\!\left[0.10 \leq f_{height}(t) \leq 0.20\right] dt$$
 
 ### Tracking Lag
 
@@ -162,6 +169,9 @@ A_WAVE     = 15.0    # m  (road amplitude)
 L_WAVE     = 80.0    # m  (road wavelength)
 D_OFFSET   = np.array([0.0, -8.0, 5.0])   # body-frame offset (behind, above)
 
+# NOTE: these pillars are 4.6-15.0 m from the desired camera path (verified), so the 1.5 m
+# clearance constraint never binds. The implementation moves each pillar to the camera path
+# (0.5 m to the side, alternating) at the same x station; see the outputs README.
 PILLARS = np.array([          # (x, y, z_base) world coords; cylindrical, height 6 m
     [ 40.0,  8.0, 0.0],
     [ 90.0, -10.0, 0.0],
@@ -278,6 +288,8 @@ def run_simulation(T_total=37.5, rng_seed=0):
                                 [0, 0, 1]])
         p_d_now  = np.array([p_car_pred[0], p_car_pred[1], 0.0]) + R_pred @ D_OFFSET
 
+        # NOTE: this uses the true future (an oracle); p_car_pred above is never used.
+        # The implementation builds the reference from the KF prediction instead.
         p_ref_seq = np.array([
             desired_drone_pos(t + i*DT_MPC) for i in range(N_HOR+1)
         ])
@@ -300,7 +312,7 @@ def run_simulation(T_total=37.5, rng_seed=0):
 | Parameter | Value |
 |-----------|-------|
 | Road length | 300 m |
-| Car speed | 8.0 m/s |
+| Car speed | 8.0 m/s forward (x); 8.0–12.4 m/s along the road |
 | Road amplitude (A) | 15.0 m |
 | Road wavelength (L_wave) | 80.0 m |
 | Mission duration | 37.5 s (car traverses full road) |
@@ -319,7 +331,7 @@ def run_simulation(T_total=37.5, rng_seed=0):
 | Drone max speed (v_max) | 12.0 m/s |
 | Drone max acceleration (a_max) | 6.0 m/s² |
 | Camera vertical FoV | 60 deg |
-| Target framing zone (f_height) | 20–40 % of frame |
+| Target framing zone (f_height) | 10–20 % of frame (20–40 % is unreachable at the 9.43 m offset) |
 | Car height for framing model (h_car) | 1.5 m |
 
 ---
