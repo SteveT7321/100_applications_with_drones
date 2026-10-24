@@ -340,6 +340,7 @@ def speed_grid(a_launch=A_LAUNCH):
     T = np.full((len(GRID_V), len(GRID_V)), np.nan)
     X = np.full_like(T, np.nan)
     XP = np.full(T.shape + (2,), np.nan)          # each pass's offset past its relay point
+    LG = np.full(T.shape + (2,), np.nan)          # gap at the outgoing drone's launch
     for i, va in enumerate(GRID_V):
         for j, vb in enumerate(GRID_V):
             r = run_simulation('kf', [va, vb, V_CRUISE_MAX], seed=0, a_launch=a_launch)
@@ -347,8 +348,9 @@ def speed_grid(a_launch=A_LAUNCH):
                 T[i, j] = r['finish']
                 X[i, j] = max(h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs']))
                 XP[i, j] = [h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs'])]
+                LG[i, j] = [h['launch_gap'] for h in r['handoffs']]
     Z = np.isfinite(T) & (np.nan_to_num(X, nan=np.inf) <= L_ZONE)
-    return T, Z, X, XP
+    return T, Z, X, (XP, LG)
 
 
 def best_feasible(T, X, L):
@@ -644,16 +646,18 @@ if __name__ == '__main__':
         f'{GRID_V[a]:.0f}->none' for a in range(len(GRID_V))))
     print('  Sensitivity of the fastest feasible (v_A, v_B) -> time to a_launch and L_ZONE:')
     for al in A_SWEEP:
-        Tg, _, Xg, XPg = grids[al]
+        Tg, _, Xg, (XPg, LGg) = grids[al]
         cells = []
         for L in L_SWEEP:
             b = best_feasible(Tg, Xg, L)
-            cells.append(f'L {L:.0f}: ' + (
+            vl = math.sqrt(2 * al * L / SNAP_PEAK)
+            cells.append(f'L {L:.0f} (v_lim {vl:.2f}): ' + (
                 f'({b[0]:.0f}, {b[1]:.0f}) {b[2]:.2f} s, passes +{XPg[b[3], b[4], 0]:.1f} / '
                 f'+{XPg[b[3], b[4], 1]:.1f} m vs formula '
-                f'{SNAP_PEAK * b[0] ** 2 / (2 * al):.1f} / {SNAP_PEAK * b[1] ** 2 / (2 * al):.1f} m'
+                f'{SNAP_PEAK * b[0] ** 2 / (2 * al):.1f} / {SNAP_PEAK * b[1] ** 2 / (2 * al):.1f} m, '
+                f'launch gaps {LGg[b[3], b[4], 0]:.1f} / {LGg[b[3], b[4], 1]:.1f} m'
                 if b else 'none'))
-        print(f'    a_launch {al:.0f} m/s^2: ' + '; '.join(cells))
+        print(f'    a_launch {al:.0f} m/s^2:\n      ' + '\n      '.join(cells))
 
     v_opt = [best[0], best[1], V_CRUISE_MAX]
     print(f'\nMonte Carlo ({N_MC} seeds; same disturbance and sensor noise for every strategy):')
