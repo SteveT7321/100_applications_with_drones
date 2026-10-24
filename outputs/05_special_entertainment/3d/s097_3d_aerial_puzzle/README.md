@@ -54,7 +54,7 @@ $$\mathbf u_k = K_{p}\bigl(-\varepsilon(\mathbf L\mathbf e)_k - \boldsymbol\alph
 
 | Parameter | Value |
 |-----------|-------|
-| Drones / mass / piece side | 6 / 0.5 kg / 1.7321 m (S097 tiling; card 0.7 m; sweep 0.7, 1.2, 1.7321 m) |
+| Drones / mass / piece side | 6 / 0.5 kg / 1.7321 m (S097 tiling; card 0.7 m; sweep 0.7, 1.2, 1.5, 1.55, 1.6, 1.65, 1.7, 1.7321 m) |
 | Slot radius / assembly altitude / staging | 1.0 m / 10 m / 5 m at 8 m, ±0.3 rad jitter (S097) |
 | Consensus $\varepsilon$, $\alpha_{xy}$, $\alpha_z$ | 0.05, 0.10, 0.15 (card) |
 | Consensus tracking / ascent PD | 10, 5 / 8, 4 (S097) |
@@ -85,7 +85,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s097_3d_aerial_puzzle.py
 ```
 
-Runtime: 2.1–2.5 min (127–148 s over three runs, with a pool of 4 worker processes; other simulations were running on the machine at the same time). Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading. The script asserts that every altitude stays above 0, every speed below 10 m/s, every attitude matrix stays a rotation ($|\det - 1| < 10^{-6}$), and that the flat baseline reproduces S097.
+Runtime: 3.3–3.7 min (200–223 s over three runs, with a pool of 4 worker processes; other simulations were running on the machine at the same time). Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading. The script asserts that every altitude stays above 0, every speed below 10 m/s, every attitude matrix stays a rotation ($|\det - 1| < 10^{-6}$), and that the flat baseline reproduces S097.
 
 ---
 
@@ -153,7 +153,7 @@ No stagger makes any seed collision-free (0/10 at every value). Beyond 0.15 m th
 
 The concurrent 2D baseline seats in 18.30 s at every offset; the card sequence grows from 18.95 to 19.90 s (flat) and 19.23 to 20.07 s (alternating).
 
-Without heading offsets layering makes things slightly worse: `flat_card` is collision-free in 9/10 seeds (0.1 mm), `alt_card` in 0/10 (3.8 mm). The flat pieces close in horizontally from outside, so their shared edges stay open until they are seated; the layered pieces drop into a zero-clearance gap from above and below. This is the same insertion effect as above and, like it, a hypothesis consistent with the piece-size sweep.
+Without heading offsets layering makes things slightly worse: `flat_card` is collision-free in 9/10 seeds (0.1 mm), `alt_card` in 0/10 (3.8 mm). The flat pieces close in horizontally from outside, so their shared edges stay open until they are seated; the layered pieces drop into a zero-clearance gap from above and below. This is the same insertion effect as above and, like it, a hypothesis; the piece-size sweep is consistent with it (with 47.4 mm or more of clearance the layered `alt_card` is collision-free in at least 9/10 seeds).
 
 ### Piece size and clearance (10 seeds)
 
@@ -161,11 +161,22 @@ The 3D card specifies a piece half-side of 0.35 m (side 0.7 m); S097 uses side 1
 
 | Side (clearance) | `flat_conc` | `flat_card` | `cos_card` | `alt_card` | `alt_conc` |
 |---|---|---|---|---|---|
-| 0.7 m, card (595.9 mm) | 0.0 mm, 10/10 | 0.0 mm, 10/10 | 0.0 mm, 10/10 | 0.0 mm, 10/10 | 0.0 mm, 10/10 |
-| 1.2 m (307.2 mm) | 0.0 mm, 10/10 | 0.0 mm, 10/10 | 0.0 mm, 10/10 | 0.0 mm, 10/10 | 0.0 mm, 10/10 |
-| 1.7321 m, S097 (0.0 mm) | 0.0 mm, 10/10 | 285.4 mm, 0/10 | 62.5 mm, 0/10 | 47.4 mm, 0/10 | 0.0 mm, 9/10 |
+| 0.7 m, card (595.9 mm) | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 |
+| 1.2 m (307.2 mm) | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 | 0.0 (0.0) mm, 10/10 |
+| 1.5 m (134.0 mm) | 0.0 (0.0) mm, 10/10 | **112.0 (192.4) mm, 0/10** | 0.0 (0.0) mm, 10/10 | **0.0 (0.0) mm, 10/10** | 0.0 (0.0) mm, 10/10 |
+| 1.55 m (105.1 mm) | 0.0 (0.0) mm, 10/10 | **149.4 (232.1) mm, 0/10** | 0.5 (4.8) mm, 9/10 | **0.0 (0.0) mm, 10/10** | 0.0 (0.0) mm, 10/10 |
+| 1.6 m (76.2 mm) | 0.0 (0.0) mm, 10/10 | **186.7 (271.7) mm, 0/10** | 7.1 (38.0) mm, 7/10 | **0.0 (0.0) mm, 10/10** | 0.0 (0.0) mm, 10/10 |
+| 1.65 m (47.4 mm) | 0.0 (0.0) mm, 10/10 | **224.1 (311.3) mm, 0/10** | 20.2 (71.1) mm, 5/10 | **3.7 (36.7) mm, 9/10** | 0.0 (0.0) mm, 10/10 |
+| 1.7 m (18.5 mm) | 0.0 (0.0) mm, 10/10 | 261.5 (350.9) mm, 0/10 | 41.8 (104.3) mm, 0/10 | 23.1 (75.9) mm, 0/10 | 0.0 (0.0) mm, 10/10 |
+| 1.7321 m, S097 (0.0 mm) | 0.0 (0.0) mm, 10/10 | 285.4 (376.3) mm, 0/10 | 62.5 (125.5) mm, 0/10 | 47.4 (101.1) mm, 0/10 | 0.0 (0.0) mm, 9/10 |
 
-Each cell: mean deepest collision, collision-free seeds. With clearance, no variant collides in any seed, with or without layering, and with the seated exclusion removed every 0.7 m and 1.2 m run is free of any overlap (printed). The times to all seated do not depend on the piece size (18.30 s concurrent flat, 19.57 s card-sequence flat, 19.73 s alternating).
+Each cell: mean (max) deepest collision, collision-free seeds. Three regimes:
+
+- **Large clearance (side 0.7 m, the card's piece, and 1.2 m; 307.2 mm or more):** no variant collides in any seed, with or without layering; with the seated exclusion removed every run is free of any overlap (printed). Layering is not needed.
+- **Moderate clearance (side 1.5–1.65 m; 47.4–134.0 mm):** the flat card sequence collides in every seed (112.0–224.1 mm mean), while the alternating stagger is collision-free in 10/10 seeds from 76.2 mm of clearance up and in 9/10 at 47.4 mm. Here altitude layering removes the collisions, which is the card's claim. The card's own cos stagger helps less (5/10 to 10/10 collision-free).
+- **Small or zero clearance (side 1.7 m and S097's 1.7321 m; 18.5 mm and 0):** every card-sequence variant collides in every seed; layering only reduces the depth (285.4 → 47.4 mm at zero clearance).
+
+The concurrent sequence (attitude aligned in transit) is collision-free at every piece size, flat or layered (`alt_conc` 9/10 at zero clearance, none above 1 mm). The times to all seated do not depend on the piece size (18.30 s concurrent flat, 19.57 s card-sequence flat, 19.73 s alternating).
 
 **Card cos stagger with the concurrent sequence** (10 seeds, S097 pieces): collision-free in 5/10 seeds, mean 0.70 mm, max 2.8 mm. Its 0.125 m neighbour spacing lets inserting neighbours touch even when the attitude is aligned in transit.
 
@@ -175,11 +186,11 @@ Each cell: mean deepest collision, collision-free seeds. With clearance, no vari
 
 **Key findings**:
 
-- **Whether pieces collide at all depends on the piece size, not on altitude.** With the card's own piece (side 0.7 m, 595.9 mm clearance) and with a 1.2 m piece, no variant collides in any seed, so layering has nothing to remove. Collisions appear only with S097's zero-clearance tiling (side 1.7321 m).
+- **Whether layering matters depends on the clearance between pieces.** With the card's own piece (side 0.7 m, 595.9 mm clearance) and with a 1.2 m piece, no variant collides in any seed, so layering has nothing to remove. At moderate clearance (47.4–134.0 mm, side 1.5–1.65 m) the flat card sequence collides in every seed and the alternating stagger removes the collisions (10/10 collision-free from 76.2 mm up, 9/10 at 47.4 mm): there the card's claim holds. At 18.5 mm and at S097's zero clearance, layering only reduces the collisions.
 - **With zero-clearance pieces, the card's claim that layering removes collisions does not hold under the card's own sequence.** Layering reduces them: the alternating stagger cuts the deepest collision from 293.9 to 49.3 mm (smaller in 20/20 seeds). But no stagger from 0.05 to 0.5 m gives a collision-free seed: pieces of the same layer still meet near the hexagon centre, and pieces collide during the vertical insertion (not because of the 2° alignment switch; see the switch probe).
 - **The card's own stagger formula is worse than its intent**: $0.25\cos(2\pi k/6)$ leaves four neighbour pairs 0.125 m apart, less than the 0.133 m vertical extent of a tilted piece, and its deepest collisions are mostly between neighbours (17/20). Card corrected to $(-1)^k$.
-- **For zero-clearance pieces, the collisions come from the sequence, not from the missing third dimension.** The 2D baseline aligns the attitude while the drones converge (as S097's yaw does). It is collision-free in 20/20 seeds and at every heading offset up to 34.4°, and it seats fastest (17.81 s, 1.26–1.42 s ahead of the card sequences in 20/20 seeds). Layering on top of concurrent alignment (`alt_conc`) adds nothing but 0.36 s of vertical insertion.
-- **Altitude changes the collision outcome, but the fix the card needs is not altitude.** Under the card's sequence, the stagger cuts the mean deepest collision from 293.9 to 49.3 mm. Under a concurrent sequence it is worth nothing and costs time. The final accuracy (slot error 10.8 mm, edge gap 5.7–5.8 mm, attitude ≤ 0.004°) is set by the S097 bias and wind and does not depend on the variant (≤ 0.16 mm differences).
+- **The collisions come from the card's sequence; a 2D sequence avoids them at every piece size.** The 2D baseline aligns the attitude while the drones converge (as S097's yaw does). It is collision-free in 20/20 seeds and at every heading offset up to 34.4°, and it seats fastest (17.81 s, 1.26–1.42 s ahead of the card sequences in 20/20 seeds). Layering on top of concurrent alignment (`alt_conc`) adds nothing but 0.36 s of vertical insertion.
+- **Under the card's sequence, altitude layering is a real fix only at moderate clearance.** At 47.4–134.0 mm of clearance it removes the flat card sequence's collisions; at zero clearance it cuts the mean deepest collision from 293.9 to 49.3 mm (20 seeds) but does not remove it; at large clearance there is nothing to remove. The concurrent sequence is collision-free at every piece size without altitude, and layering on top of it only costs time. The final accuracy (slot error 10.8 mm, edge gap 5.7–5.8 mm, attitude ≤ 0.004°) is set by the S097 bias and wind and does not depend on the variant (≤ 0.16 mm differences).
 - The card's success target for attitude (≤ 1°) is met by every variant; the 5 mm slot target is missed by every variant for the same reason as in S097 (5 mm RTK-class bias).
 
 ### 3D Trajectories
@@ -210,7 +221,7 @@ Alternating stagger with the card sequence, seed 0, from 3 s before the switch t
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| Piece half-side $a$ = 0.35 m (side 0.7 m), $m_p$ = 0.05 kg | Main runs with S097's side 1.7321 m; sweep over 0.7 (card), 1.2 and 1.7321 m; piece mass not added to the 0.5 kg drone | The S097 slots (1 m centroid radius) tile only with side 1.7321 m; the collision result depends entirely on this choice (0 collisions at 0.7 and 1.2 m, printed). The card's $\omega_n$ and $\zeta$ use $m_D$ alone |
+| Piece half-side $a$ = 0.35 m (side 0.7 m), $m_p$ = 0.05 kg | Main runs with S097's side 1.7321 m; sweep over 0.7 (card), 1.2, 1.5, 1.55, 1.6, 1.65, 1.7 and 1.7321 m; piece mass not added to the 0.5 kg drone | The S097 slots (1 m centroid radius) tile only with side 1.7321 m. The collision result depends on the clearance: at 0.7 and 1.2 m nothing collides, at 1.5–1.65 m layering removes the flat card sequence's collisions, at 1.7 and 1.7321 m layering only reduces them (all printed). The card's $\omega_n$ and $\zeta$ use $m_D$ alone |
 | Roll, pitch and yaw of the piece independently controlled on a quadrotor | 2-axis gimbal assumed; card corrected | A hovering quadrotor's tilt sets its horizontal acceleration |
 | $\Delta z_k = \delta_z\cos(2\pi k/N)$, "even from above, odd from below" | Both run: the card formula (`cos_card`) and $\delta_z(-1)^k$ (`alt_card`, `alt_conc`); card corrected to $(-1)^k$ | The cos form does not alternate; four neighbour pairs are 0.125 m apart (printed) |
 | Consensus on absolute 3D positions | Consensus on slot errors (S097) | The absolute law has a shrunken fixed point (S097) |
