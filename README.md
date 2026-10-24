@@ -112,11 +112,11 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S048 | [Full-Area Coverage Scan (Lawnmower)](outputs/03_environmental_sar/s048_lawnmower/README.md) | [card](scenarios/03_environmental_sar/S048_lawnmower.md) | [3D](outputs/03_environmental_sar/3d/s048_3d_lawnmower/README.md) |
 | S049 | [Dynamic Zone Search](outputs/03_environmental_sar/s049_dynamic_zone/README.md) | [card](scenarios/03_environmental_sar/S049_dynamic_zone.md) | [3D](outputs/03_environmental_sar/3d/s049_3d_dynamic_zone/README.md) |
 | S050 | [Swarm Cooperative Mapping (Distributed EKF-SLAM)](outputs/03_environmental_sar/s050_slam/README.md) | [card](scenarios/03_environmental_sar/S050_slam.md) | [3D](outputs/03_environmental_sar/3d/s050_3d_slam/README.md) |
-| S051 | [Post-Disaster Communication Network Restoration](outputs/03_environmental_sar/s051_post_disaster_comm/README.md) | [card](scenarios/03_environmental_sar/S051_post_disaster_comm.md) |  |
-| S052 | [Glacier Melt Area Measurement](outputs/03_environmental_sar/s052_glacier/README.md) | [card](scenarios/03_environmental_sar/S052_glacier.md) |  |
+| S051 | [Post-Disaster Communication Network Restoration](outputs/03_environmental_sar/s051_post_disaster_comm/README.md) | [card](scenarios/03_environmental_sar/S051_post_disaster_comm.md) | [3D](outputs/03_environmental_sar/3d/s051_3d_post_disaster_comm/README.md) |
+| S052 | [Glacier Melt Area Measurement](outputs/03_environmental_sar/s052_glacier/README.md) | [card](scenarios/03_environmental_sar/S052_glacier.md) | [3D](outputs/03_environmental_sar/3d/s052_3d_glacier/README.md) |
 | S053 | [Coral Reef 3D Reconstruction](outputs/03_environmental_sar/s053_coral_reef/README.md) | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
-| S054 | [Minefield Detection](outputs/03_environmental_sar/s054_minefield/README.md) | [card](scenarios/03_environmental_sar/S054_minefield.md) |  |
-| S055 | [Coastline Oil Spill Tracking](outputs/03_environmental_sar/s055_oil_spill/README.md) | [card](scenarios/03_environmental_sar/S055_oil_spill.md) |  |
+| S054 | [Minefield Detection](outputs/03_environmental_sar/s054_minefield/README.md) | [card](scenarios/03_environmental_sar/S054_minefield.md) | [3D](outputs/03_environmental_sar/3d/s054_3d_minefield/README.md) |
+| S055 | [Coastline Oil Spill Tracking](outputs/03_environmental_sar/s055_oil_spill/README.md) | [card](scenarios/03_environmental_sar/S055_oil_spill.md) | [3D](outputs/03_environmental_sar/3d/s055_3d_oil_spill/README.md) |
 | S056 | [Nuclear Plant Leak Detection (Radiation Hotspot Localization)](outputs/03_environmental_sar/s056_radiation/README.md) | [card](scenarios/03_environmental_sar/S056_radiation.md) |  |
 | S057 | [Wildlife Population Census](outputs/03_environmental_sar/s057_wildlife/README.md) | [card](scenarios/03_environmental_sar/S057_wildlife.md) |  |
 | S058 | [Typhoon Eye Probing](outputs/03_environmental_sar/s058_typhoon/README.md) | [card](scenarios/03_environmental_sar/S058_typhoon.md) |  |
@@ -245,7 +245,7 @@ drones/
 | Special Ops & Entertainment | 20 | 20 |
 | **Total** | **100** | **100** |
 
-> **3D Upgrades**: 52 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 10 in Environmental & SAR (S041–S050) and 4 in Special Ops & Entertainment (S081, S083, S086, S092). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
+> **3D Upgrades**: 56 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 14 in Environmental & SAR (S041–S052, S054, S055) and 4 in Special Ops & Entertainment (S081, S083, S086, S092). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
