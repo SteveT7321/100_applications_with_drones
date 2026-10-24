@@ -829,18 +829,17 @@ def report(draws, mc, rth, demo, demo_rth):
                 ci = f"eig3d/eigfix RMS ratio {rms(E['eig3d']) / rms(E['eigfix']):.2f} CI [{lo:.2f}, {hi:.2f}]"
             print(f"      {lab}: " + ' | '.join(parts) + f"; {ci}, eig3d lower error in {int(np.sum(E['eig3d'] < E['eigfix'] - 1e-9))}, "
                   f"higher in {int(np.sum(E['eig3d'] > E['eigfix'] + 1e-9))}")
-        if True:
-            print(f'    LARGER-SAMPLE CHECK OF THE 3 m EFFECT ({N_BIG} held-out seeds, '
-                  f'{N_TRIALS}-{N_TRIALS + N_BIG - 1}, sigma0 = {SIGMA_0 * m:g}):')
-            for tag, lab in (('_big', 'continuous sources'), ('_zon_big', 'z on the voxel centre (horizontal mismatch only)')):
-                E = {s: np.array([r['err3'] for r in mc[(s + tag, m)]]) for s in ('eig3d', 'eigfix', 'eig3d_no3')}
-                parts = [f"{s} RMS {rms(E[s]):.2f} m, median {np.median(E[s]):.2f}, gross > 30 m {int(np.sum(E[s] > 30))}"
-                         for s in E]
-                cis = []
-                for a, b, sd in (('eig3d', 'eig3d_no3', 5800), ('eig3d', 'eigfix', 5801), ('eig3d_no3', 'eigfix', 5802)):
-                    lo, hi = boot_ratio(E[a], E[b], sd + (10 if tag == '_zon_big' else 0) + (0 if m == 1.0 else 100))
-                    cis.append(f"{a}/{b} {rms(E[a]) / rms(E[b]):.2f} [{lo:.2f}, {hi:.2f}]")
-                print(f"      {lab}: " + ' | '.join(parts) + '; RMS ratios ' + ', '.join(cis))
+        print(f'    LARGER-SAMPLE CHECK OF THE 3 m EFFECT ({N_BIG} held-out seeds, '
+              f'{N_TRIALS}-{N_TRIALS + N_BIG - 1}, sigma0 = {SIGMA_0 * m:g}):')
+        for tag, lab in (('_big', 'continuous sources'), ('_zon_big', 'z on the voxel centre (horizontal mismatch only)')):
+            E = {s: np.array([r['err3'] for r in mc[(s + tag, m)]]) for s in ('eig3d', 'eigfix', 'eig3d_no3')}
+            parts = [f"{s} RMS {rms(E[s]):.2f} m, median {np.median(E[s]):.2f}, gross > 30 m {int(np.sum(E[s] > 30))}"
+                     for s in E]
+            cis = []
+            for a, b, sd in (('eig3d', 'eig3d_no3', 5800), ('eig3d', 'eigfix', 5801), ('eig3d_no3', 'eigfix', 5802)):
+                lo, hi = boot_ratio(E[a], E[b], sd + (10 if tag == '_zon_big' else 0) + (0 if m == 1.0 else 100))
+                cis.append(f"{a}/{b} {rms(E[a]) / rms(E[b]):.2f} [{lo:.2f}, {hi:.2f}]")
+            print(f"      {lab}: " + ' | '.join(parts) + '; RMS ratios ' + ', '.join(cis))
         Hs = {s: curve(mc[(s, m)], 'H') for s in ['eig3d', 'eigfix', 'lawn', 'lawn15']}
         for kk in (1, 2, 3, 5, 10):
             print(f'    mean voxel entropy after {kk} reading(s): ' + ', '.join(
