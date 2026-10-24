@@ -225,7 +225,7 @@ At the first plan ($t = t_{react}$), PCP chose hold mode for 98 throws (98 caugh
 
 ### PN diagnostic probes
 
-To find out why PN fails, the script re-runs PN on the seed-0 throws with the same EKF estimates and changes one thing at a time. These probes break the drone limits on purpose, so they are not checked against the reachability bound:
+To find out why PN fails, the script re-runs PN on the seed-0 throws with the same EKF estimates and changes one thing at a time. Most of these probes break the drone limits on purpose (raised a_max, no ceiling), so they are not checked against the reachability bound; augmented PN at a_max = 10 m/s² keeps all drone limits, and all of its catches fall inside the bound:
 
 | Variant | Catches | Rate | Change vs main PN |
 |---------|--------:|-----:|------:|
