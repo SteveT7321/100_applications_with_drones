@@ -1,6 +1,6 @@
 # S058 Typhoon Eye Probing
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
@@ -80,9 +80,18 @@ $$\mathbf{f}_{turb}(t) \sim \mathcal{N}\!\left(\mathbf{0},\; \sigma_w^2(r)\,\mat
 The drone is modelled as a 2D point mass (the x-y plane of the spiral trajectory) under thrust
 control $\mathbf{u} = (u_x, u_y)$ (horizontal thrust components in N) and the wind disturbance:
 
-$$m\ddot{\mathbf{p}} = \mathbf{u} + m\,\mathbf{f}_{wind}(\mathbf{p}) + \mathbf{f}_{turb}(t) - \mathbf{b}\,\dot{\mathbf{p}}$$
+$$m\ddot{\mathbf{p}} = \mathbf{u} + b\,\bigl(\mathbf{f}_{wind}(\mathbf{p}) + \mathbf{f}_{turb}(t) - \dot{\mathbf{p}}\bigr)$$
 
-where $\mathbf{b} = b\,\mathbf{I}_2$ is an aerodynamic drag coefficient ($ b = 0.4$ N·s/m).
+where $b = 0.4$ N·s/m is a linear aerodynamic drag coefficient. The wind is a velocity (m/s) and
+acts on the drone through drag on the air-relative velocity; $\mathbf{f}_{turb}$ is the gust
+velocity.
+
+> Correction (S058 implementation): an earlier version wrote
+> $m\ddot{\mathbf{p}} = \mathbf{u} + m\,\mathbf{f}_{wind} + \mathbf{f}_{turb} - b\dot{\mathbf{p}}$, which adds a
+> velocity (m/s) as an acceleration. Read literally, the eyewall term is 50 m/s², 5.1 × the 9.81 m/s²
+> the thrust limit allows (39.5 m/s² already at the entry radius), so no controller could hold the
+> spiral. With the drag form, the thrust needed to stay on the spiral in the mean wind peaks at
+> 13.09 N (89 % of $mg$) at the eyewall.
 Attitude limits translate to a thrust cone constraint:
 
 $$\|\mathbf{u}\| \leq F_{max}, \qquad
@@ -99,8 +108,8 @@ $$A = \begin{pmatrix} \mathbf{0}_2 & \mathbf{I}_2 \\ \mathbf{0}_2 & -\frac{b}{m}
   B = \begin{pmatrix} \mathbf{0}_2 \\ \frac{1}{m}\mathbf{I}_2 \end{pmatrix}, \quad
   E = \begin{pmatrix} \mathbf{0}_2 \\ \mathbf{I}_2 \end{pmatrix}$$
 
-where $\mathbf{w} = \mathbf{f}_{wind} + \mathbf{f}_{turb}/m \in \mathbb{R}^2$ is the total
-disturbance acceleration.
+where $\mathbf{w} = (b/m)\,(\mathbf{f}_{wind} + \mathbf{f}_{turb}) \in \mathbb{R}^2$ is the total
+disturbance acceleration (the drag the wind exerts on a drone at rest, divided by $m$).
 
 ### Spiral Reference Trajectory
 
