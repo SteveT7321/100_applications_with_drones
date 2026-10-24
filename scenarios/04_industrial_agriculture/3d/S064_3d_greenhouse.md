@@ -1,6 +1,6 @@
 # S064 3D Upgrade — Greenhouse Interior Navigation
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S064 original](../S064_greenhouse.md)
 
 ---
@@ -35,7 +35,7 @@ In the full 3D upgrade, altitude becomes a first-class control dimension:
 ## Problem Definition
 
 **Setup**: A single drone navigates a commercial greenhouse (40 × 10 × 3 m) executing a
-boustrophedon inspection sweep across four aisles (between five plant rows). The greenhouse now
+boustrophedon inspection sweep across five aisles (the four between the five plant rows plus the strip between the $y = 0$ wall and row 1, where the drone starts; corrected as in the 2D S064). The greenhouse now
 contains a fully 3D obstacle field:
 
 - **Plant-row walls** at $y \in \{2, 4, 6, 8, 10\}$ m, each 0.2 m thick, extending from
@@ -52,7 +52,7 @@ No GPS is available. The drone fuses:
 3. A downward ToF reading (clearance to the highest canopy directly below).
 
 **Roles**:
-- **Drone**: starts at $\mathbf{p}_0 = (0.0, 1.0, 0.4)$ m facing $+X$; dimensions
+- **Drone**: starts at $\mathbf{p}_0 = (1.0, 1.0, 0.4)$ m facing $+X$ (corrected: $x = 0$ is the gable wall); dimensions
   0.3 × 0.3 × 0.15 m; carries IMU, two lateral ultrasonic sensors, and one downward ToF sensor.
 - **Plant rows**: five static obstacle walls at $y = 2, 4, 6, 8, 10$ m; each row has an
   independently sampled canopy height $h_k$ and two trellis wires at $z = 0.6$ m and $z = 1.2$ m.
@@ -88,7 +88,7 @@ row $k$ if:
 $$|y - y_{row,k}| \le \frac{w_{row}}{2} + r_{drone}
 \quad \text{AND} \quad |z - z_{ti}| \le r_{wire} + r_{drone}$$
 
-where $r_{wire} = 0.01$ m (wire radius), $r_{drone} = 0.18$ m (drone body half-diagonal), and
+where $r_{wire} = 0.01$ m (wire radius), $r_{drone} = 0.18$ m (drone body half-diagonal; corrected: the half-diagonal of a 0.3 × 0.3 m body is 0.212 m, and the 3D implementation uses box-to-box distances with half-extents 0.15 / 0.15 / 0.075 m instead), and
 $w_{row} = 0.1$ m is the half-thickness of the row wall. For collision avoidance purposes the
 combined clearance radius is $\rho = r_{wire} + r_{drone} = 0.19$ m.
 
@@ -107,13 +107,15 @@ $$z_{cruise}^{aisle} = \frac{z_{t2} + \rho + z_{max}^{aisle}}{2}
 
 This guarantees at least $d_{safe}$ clearance above $z_{t2}$ and below the canopy.
 
+> **Correction (3D implementation, 2026-10-24).** This band is empty for every canopy draw: its lower bound is $z_{t2} + \rho = 1.39$ m and its upper bound is $\min(h_k, h_{k+1}) - d_{safe} \le 1.6 - 0.25 = 1.35$ m. The trellis wires also do not constrain aisle flight: they run along the row centre line, inside the 0.2 m row wall, which the drone in the aisle never approaches. What the aisle altitude really decides is whether the side-looking ultrasonic sensors see the plants: a row returns an echo only where the drone is below the local canopy top. The implementation therefore keeps the aisle altitude at the 2D value of 1.0 m (below every canopy) and runs the card rule above as a separate configuration, plus an altitude sweep (0.5 to 1.5 m).
+
 ### Row-Turn Altitude Transition (Three-Phase Manoeuvre)
 
 When the drone approaches a row-end turning zone ($x < x_{turn} = 2$ m or $x > 38$ m), it
 executes a three-phase vertical manoeuvre to cross from aisle $k$ to aisle $k+1$:
 
 **Phase 1 — Climb**: ascend from $z_{cruise}^k$ to $z_{cross} = h_{max} + 0.3$ m where
-$h_{max} = \max_k h_k = 1.6$ m, giving $z_{cross} = 1.9$ m:
+$h_{max} = \max_k h_k = 1.6$ m, giving $z_{cross} = 1.9$ m (corrected to 2.0 m: at 1.9 m the 0.15 m tall body clears a 1.6 m canopy by only $1.9 - 0.075 - 1.6 = 0.225$ m $< d_{safe}$; the minimum is 1.925 m):
 
 $$\dot{z} = K_{alt} \cdot (z_{cross} - z), \qquad K_{alt} = 1.5 \;\text{s}^{-1}$$
 
@@ -202,8 +204,8 @@ $$\bar{E}_{lat} = \frac{1}{N_t}\sum_t E_{lat}(t), \qquad
 | Canopy height range $h_k$ | $\mathcal{U}(1.0, 1.6)$ m |
 | Trellis wire heights | 0.6 m, 1.2 m |
 | Wire radius $r_{wire}$ | 0.01 m |
-| Aisle cruise altitude $z_{cruise}^{aisle}$ | per-aisle, ~1.4 – 1.7 m |
-| Row-crossing altitude $z_{cross}$ | 1.9 m |
+| Aisle cruise altitude $z_{cruise}^{aisle}$ | 1.0 m (corrected; the card band is empty, see above) |
+| Row-crossing altitude $z_{cross}$ | 2.0 m (corrected from 1.9 m) |
 | Lateral cruise speed $v_x$ | 1.0 m/s |
 | Turn lateral speed $v_{lat,turn}$ | 0.5 m/s |
 | IMU horizontal drift $\sigma_{x,y}$ | 0.02 m/s |
@@ -219,7 +221,7 @@ $$\bar{E}_{lat} = \frac{1}{N_t}\sum_t E_{lat}(t), \qquad
 | Waypoint capture radius $d_{wp}$ | 0.5 m |
 | Mission horizon $T_{max}$ | 300 s |
 | Simulation timestep $\Delta t$ | 0.05 s |
-| Start position $\mathbf{p}_0$ | (0.0, 1.0, 0.4) m |
+| Start position $\mathbf{p}_0$ | (1.0, 1.0, 0.4) m (corrected) |
 | Z flight range | 0.3 – 2.8 m |
 
 ---
@@ -249,7 +251,7 @@ $$\bar{E}_{lat} = \frac{1}{N_t}\sum_t E_{lat}(t), \qquad
   minimum 3D obstacle clearance, per-waypoint arrival log.
 
 **Typical expected metrics** (seed 42):
-- Aisles completed: 4 / 4
+- Aisles completed: 5 / 5 (corrected: five aisles)
 - Mean lateral error: ~0.02 – 0.05 m
 - Mean altitude error: ~0.01 – 0.02 m (lower drift due to ToF)
 - Minimum obstacle clearance: $> d_{safe} = 0.25$ m (collision-free)
