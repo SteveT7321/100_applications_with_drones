@@ -104,7 +104,7 @@ Per-seed comparison: the KF has a higher framing score than raw GPS in 100/100 s
 Seed 0 (shown in the figures and animation): KF 92.5 % / 0.748 m, raw GPS 42.6 % / 1.771 m, window LS 87.8 % / 0.726 m, oracle 0.785 m.
 
 **Key findings**:
-- **The KF frames far better than raw GPS** (92.1 % vs 45.7 % with the 6 m/s² acceleration limit, a factor of 2.01; the factor depends on that added limit, see the next bullet) and is also clearly better than the 1 s least-squares fit (87.0 %), winning on every seed. Framing depends directly on the position estimate (the camera points at it): at 5 m range the 3° tolerance is about $5\tan 3° = 0.26$ m of lateral error (hand calculation), and the KF position error (RMSE 0.227 m) is smaller than the raw fix error (0.426 m) and the LS error (0.265 m).
+- **The KF frames far better than raw GPS** (92.1 % vs 45.7 % with the 6 m/s² acceleration limit, a factor of 2.01; the factor depends on that added limit, see the next bullet) and is also better than the 1 s least-squares fit (87.0 %), winning on every seed; that margin is against the 1 s window used here (an added parameter that was not tuned), so a better-tuned window would narrow it. Framing depends directly on the position estimate (the camera points at it): at 5 m range the 3° tolerance is about $5\tan 3° = 0.26$ m of lateral error (hand calculation), and the KF position error (RMSE 0.227 m) is smaller than the raw fix error (0.426 m) and the LS error (0.265 m).
 - **How badly raw GPS does depends on the acceleration limit I added** (the card has none). The KF and LS results hardly change with the limit (KF 92.1–92.2 %, LS 86.6–87.3 %), but raw GPS gets worse the more freely the drone can chase its jumping set-point:
 
 | $a_{max}$ (m/s²) | 4 | **6 (used)** | 10 | unlimited |
@@ -175,11 +175,11 @@ Top-down view (KF, seed 0): person (blue), drone (red triangle), 5 m standoff ci
 ## Extensions
 
 1. **Derivative on measurement**: replace $K_d\dot{\mathbf{p}}_d$ (finite difference of a jumping set-point) by a filtered set-point rate, to remove the acceleration spikes that saturate the KF drone 24.73 % of the time.
-1. **Set-point acceleration feedforward**: add $\ddot{\mathbf{p}}_d$ (computed from the filtered heading rate) to the command. With perfect information this removes most of the orbit error (oracle 0.785 → 0.212 m); the open question is how much of that survives with a noisy heading estimate.
-2. **Curvature-aware bearing**: smooth or rate-limit the desired bearing in tight turns so that $\mathbf{p}_d$ does not swing faster than the drone can follow.
-3. **Gimbal dynamics**: give the camera yaw a rate limit (e.g. 90°/s) instead of pointing instantly at the estimate.
-4. **Vertical framing**: add camera tilt and a person height so that both image axes count.
-5. **GPS latency**: delay the fixes by 0.2 s and compare a KF that predicts forward to the present against one that does not.
+2. **Set-point acceleration feedforward**: add $\ddot{\mathbf{p}}_d$ (computed from the filtered heading rate) to the command. With perfect information this removes most of the orbit error (oracle 0.785 → 0.212 m); the open question is how much of that survives with a noisy heading estimate.
+3. **Curvature-aware bearing**: smooth or rate-limit the desired bearing in tight turns so that $\mathbf{p}_d$ does not swing faster than the drone can follow.
+4. **Gimbal dynamics**: give the camera yaw a rate limit (e.g. 90°/s) instead of pointing instantly at the estimate.
+5. **Vertical framing**: add camera tilt and a person height so that both image axes count.
+6. **GPS latency**: delay the fixes by 0.2 s and compare a KF that predicts forward to the present against one that does not.
 
 ---
 
