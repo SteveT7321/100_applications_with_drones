@@ -154,7 +154,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-5"></a>
-<details open><summary><b>5 · Special Ops & Entertainment</b> — 19/20 done</summary>
+<details open><summary><b>5 · Special Ops & Entertainment</b> — 20/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -177,7 +177,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S097 | [Aerial Puzzle Assembly](outputs/05_special_entertainment/s097_aerial_puzzle/README.md) | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) |  |
 | S098 | [Swarm Synchronized Dance](outputs/05_special_entertainment/s098_synchronized_dance/README.md) | [card](scenarios/05_special_entertainment/S098_synchronized_dance.md) |  |
 | S099 | [Cross-Obstacle Relay Pass](outputs/05_special_entertainment/s099_obstacle_relay/README.md) | [card](scenarios/05_special_entertainment/S099_obstacle_relay.md) |  |
-| S100 | Ultimate Grand Challenge — Multi-Domain Integration *(planned)* | [card](scenarios/05_special_entertainment/S100_grand_challenge.md) |  |
+| S100 | [Ultimate Grand Challenge — Multi-Domain Integration](outputs/05_special_entertainment/s100_grand_challenge/README.md) | [card](scenarios/05_special_entertainment/S100_grand_challenge.md) |  |
 
 </details>
 
@@ -241,8 +241,8 @@ drones/
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 20 | 20 |
 | Industrial & Agriculture | 20 | 20 |
-| Special Ops & Entertainment | 19 | 20 |
-| **Total** | **99** | **100** |
+| Special Ops & Entertainment | 20 | 20 |
+| **Total** | **100** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
