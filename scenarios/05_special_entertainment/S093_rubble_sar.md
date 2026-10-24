@@ -146,7 +146,8 @@ $$z_i \sim \mathrm{Bernoulli}\!\bigl(P_{detect,i}(\mathbf{p})\bigr)$$
 Victim $i$ is **confirmed found** when at least $K_{conf} = 3$ positive observations occur within
 a sliding window of $T_{win} = 5$ s. The simplified instantaneous model used for the analytic
 expected value below is **not** equivalent: it counts a victim as found after a single positive
-detection, so it overestimates the confirmation probability. Single-detection model:
+detection, so it can over- or underestimate the confirmation probability: it is more lenient
+(one positive instead of three) but ignores detections beyond $r_{acoustic}$. Single-detection model:
 
 $$z_i = \mathbf{1}\!\left[U_i < P_{detect,i}\right], \quad U_i \sim \mathcal{U}(0,1)$$
 

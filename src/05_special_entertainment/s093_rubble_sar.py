@@ -715,6 +715,8 @@ if __name__ == '__main__':
     print(f"    Coverage xi       : {r['xi']:.1f} % (reachable-component xi {r['xi_reach']:.1f} %)")
     print(f"    Path length       : {r['path_len']:.1f} m, replans {r['n_replans']}, "
           f"viewpoints exhausted {r['n_banned_events']}, recovery plans {r['n_recover']}")
+    print(f"    Mean ground speed : {r['path_len'] / r['t_mission']:.2f} m/s "
+          f"(path / mission time; v_max {V_MAX} m/s)")
     print(f"    Min clearance     : {r['min_clear']:.3f} m to rubble (body radius {R_DRONE} m); "
           f"max speed {r['max_speed']:.2f} m/s")
     print(f"    Map errors        : {r['false_free']} occupied voxels mapped free, "
@@ -737,8 +739,9 @@ if __name__ == '__main__':
           f"{np.std([x['xi'] for x in mc]):.1f} %")
     print(f"    E[N] at end    : card {np.mean([x['e_card'][-1] for x in mc]):.2f}, "
           f"rule {np.mean([x['e_rule'][-1] for x in mc]):.2f}, actual {np.mean(nf):.2f}")
-    print(f"    Viewpoints exhausted / replans: "
-          f"{sum(x['n_banned_events'] for x in mc)} / {sum(x['n_replans'] for x in mc)}")
+    n_ban = sum(x['n_banned_events'] for x in mc)
+    n_rep = sum(x['n_replans'] for x in mc)
+    print(f"    Viewpoints exhausted / replans: {n_ban} / {n_rep} ({100 * n_ban / n_rep:.1f} %)")
     nr = groups['nearest']
     print(f'\n  Nearest-frontier policy (score = geodesic distance only), same {len(nr)} fields:')
     for x, y in zip(mc, nr):
