@@ -103,7 +103,7 @@ conda activate drones
 python src/04_industrial_agriculture/s066_cooperative_crane.py
 ```
 
-All 55 runs (5 configurations × 11 wind cases) are integrated together as one NumPy batch. Runtime: 85 s in the first run, and 226 s and 355 s in the two reproducibility runs. All three were measured with about ten other simulations running on the same 12-thread machine. The code asserts the physical invariants at every control step: no drone or anchor below ground, cable stretch < 5 %, thrust ≤ 20 N, drone speed < 5 m/s. Only C0 may stop early; it is frozen at its last valid state once it diverges.
+All 55 runs (5 configurations × 11 wind cases) are integrated together as one NumPy batch. Runtime: 85 s and 81 s in the two reproducibility runs (single-threaded BLAS). The first runs, with about ten other simulations on the same machine, took 85–355 s. The code asserts the physical invariants at every control step: no drone or anchor below ground, cable stretch < 5 %, thrust ≤ 20 N, drone speed < 5 m/s. Only C0 may stop early; it is frozen at its last valid state once it diverges.
 
 ---
 
@@ -173,7 +173,7 @@ No run saturated the 20 N thrust limit, and the $T_{min}$ clamp in the allocatio
 
 ### The card's centralised controller (C0) is unstable
 
-C0 drives the drones only from the beam error. The beam hangs from the drones like a pendulum, so this is non-collocated feedback through an undamped cable mode, and nothing damps the drone-relative swing. C0 diverged in **11/11** runs: at t = 2.18 s in calm air and at 2.18 ± 0.01 s (2.16–2.20 s) with wind. It is stopped once the beam pitch exceeds 20°, the position error exceeds 1 m or a cable is stretched by more than 4 %. Adding the per-drone slot-holding PD (strategy C) makes it stable. That is why C, not C0, is the centralised baseline above.
+C0 drives the drones only from the beam error. The beam hangs from the drones like a pendulum, so this is non-collocated feedback through an undamped cable mode, and nothing damps the drone-relative swing. C0 diverged in **11/11** runs: at t = 2.18 s in calm air and at 2.18 ± 0.01 s (2.16–2.20 s) with wind. A run is frozen at its last valid state as soon as any stop criterion fires: a non-finite state, |pitch| > 20°, position error > 1 m, any drone speed > 4 m/s, cable stretch > 4 %, or any drone below 0.3 m. In all 11 runs the criterion that fired was **drone speed > 4 m/s**. At that moment the beam pitch is −12.4° to −13.9° and the position error 0.147–0.284 m; in calm air these are −12.8° and 0.185 m, with a peak drone speed of 4.00 m/s. The drones are swinging out of control before the beam itself fails a limit. Adding the per-drone slot-holding PD (strategy C) makes it stable. That is why C, not C0, is the centralised baseline above.
 
 ![C0 divergence](./c0_divergence.png)
 
@@ -181,7 +181,7 @@ C0 drives the drones only from the beam error. The beam hangs from the drones li
 
 ![3D trajectory](./trajectory_3d.png)
 
-The animation shows wind seed 0 with all three strategies side by side, in camera views that follow the beam. It has 161 frames, one every 0.25 s from 0 to 40 s, at 20 fps. The green × marks the reference point.
+The animation shows wind seed 0 with all three strategies side by side, in camera views that follow the beam. It has 161 frames, one every 0.25 s from 0 to 40 s, at 20 fps (3.16 MB, rendered at 58 dpi). The green × marks the reference point.
 
 ![Animation](./animation.gif)
 

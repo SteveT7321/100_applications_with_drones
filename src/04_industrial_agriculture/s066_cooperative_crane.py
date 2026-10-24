@@ -87,6 +87,8 @@ LABELS = {'D': 'Distributed allocation', 'C': 'Centralised mixer + formation hol
 COLORS = {'D': '#1F77B4', 'C': '#E87722', 'U': '#9467BD', 'D0': '#8C564B', 'C0': '#7F7F7F'}
 DRONE_COLORS = ['#D62728', '#17BECF', '#BCBD22']
 FRAME_STEP = 25             # log samples per GIF frame (0.25 s)
+DIV_NAMES = ['non-finite state', '|pitch| > 20 deg', 'position error > 1 m',
+             'drone speed > 4 m/s', 'cable stretch > 4 %', 'drone height < 0.3 m']
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'outputs',
                           '04_industrial_agriculture', 's066_cooperative_crane')
@@ -217,6 +219,8 @@ def simulate(cfgs, seeds, phi_fan):
     n_tmin_alloc = np.zeros(B, dtype=int)
     alive = np.ones(B, dtype=bool)
     t_div = np.full(B, np.nan)
+    div_why = np.zeros((B, len(DIV_NAMES)), dtype=bool)
+    div_state = np.full((B, 5), np.nan)
     n_sat = np.zeros(B, dtype=int)
 
     def kinematics():
@@ -331,13 +335,21 @@ def simulate(cfgs, seeds, phi_fan):
         # Divergence of C0: freeze the run at its last valid state and record the time
         R, eb, r, anch, ww, adot = kinematics()
         p_ref1 = reference(t + DT)[0]
-        div = (~np.isfinite(pL).all(axis=1)) | (np.abs(eb[:, 2]) > np.sin(np.radians(20.0))) \
-            | (np.linalg.norm(pL - p_ref1, axis=1) > 1.0) \
-            | (np.linalg.norm(vd, axis=2).max(axis=1) > 4.0) \
-            | (np.linalg.norm(pd - anch, axis=2).max(axis=1) > 1.04 * L_CABLE) \
-            | (pd[..., 2].min(axis=1) < 0.3)
+        crit = np.stack([~np.isfinite(pL).all(axis=1),
+                         np.abs(eb[:, 2]) > np.sin(np.radians(20.0)),
+                         np.linalg.norm(pL - p_ref1, axis=1) > 1.0,
+                         np.linalg.norm(vd, axis=2).max(axis=1) > 4.0,
+                         np.linalg.norm(pd - anch, axis=2).max(axis=1) > 1.04 * L_CABLE,
+                         pd[..., 2].min(axis=1) < 0.3], axis=1)
+        div = crit.any(axis=1)
         new_dead = div & alive & may_diverge
         t_div[new_dead] = t + DT
+        div_why[new_dead] = crit[new_dead]
+        div_state[new_dead] = np.stack([np.degrees(np.arcsin(np.clip(eb[:, 2], -1, 1))),
+                                        np.linalg.norm(pL - p_ref1, axis=1),
+                                        np.linalg.norm(vd, axis=2).max(axis=1),
+                                        np.linalg.norm(pd - anch, axis=2).max(axis=1),
+                                        pd[..., 2].min(axis=1)], axis=1)[new_dead]
         alive &= ~new_dead
         dead = ~alive
         if dead.any():
@@ -361,6 +373,8 @@ def simulate(cfgs, seeds, phi_fan):
     log['n_tmin_alloc'] = n_tmin_alloc
     log['n_sat'] = n_sat
     log['t_div'] = t_div
+    log['div_why'] = div_why
+    log['div_state'] = div_state
     log['wind'] = wind
     return log
 
@@ -610,7 +624,7 @@ def save_animation(log, index, seed, out_dir):
 
     anim = animation.FuncAnimation(fig, update, frames=n_frames, interval=50, blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    anim.save(path, writer='pillow', fps=20, dpi=70)
+    anim.save(path, writer='pillow', fps=20, dpi=58)
     plt.close(fig)
     print(f'Saved: {path} ({n_frames} frames)')
 
@@ -721,6 +735,14 @@ if __name__ == '__main__':
     print(f'[C0] {LABELS["C0"]}: diverged in {int(np.sum(np.isfinite(td)))}/{N_SEEDS + 1} runs; '
           f'calm divergence t = {td[0]:.2f} s; wind seeds t = {_fmt(td[1:], 2)} s '
           f'(min {np.nanmin(td[1:]):.2f}, max {np.nanmax(td[1:]):.2f})')
+    print('[C0] stop criteria: ' + '; '.join(DIV_NAMES))
+    for s in [None] + list(range(N_SEEDS)):
+        b = index[('C0', s)]
+        why = [n for n, f in zip(DIV_NAMES, log['div_why'][b]) if f]
+        p, e, v, c, z = log['div_state'][b]
+        print(f'    {"calm" if s is None else f"seed {s}"}: stop at t = {log["t_div"][b]:.2f} s '
+              f'by [{", ".join(why)}]; pitch {p:+.1f} deg, error {e:.3f} m, max drone speed '
+              f'{v:.2f} m/s, max cable length {c:.4f} m, min drone height {z:.2f} m')
 
     print('\n-- Per-seed wins among D/C/U (lower is better except min_sep, mean_bal) --')
     higher = {'min_sep', 'mean_bal'}
