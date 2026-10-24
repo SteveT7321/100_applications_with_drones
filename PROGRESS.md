@@ -105,7 +105,7 @@
 
 ---
 
-## Domain 4: Industrial & Agriculture — 10/20
+## Domain 4: Industrial & Agriculture — 15/20
 
 - [x] **S061** Power Line Inspection
 - [x] **S062** Wind Turbine Blade Inspection
@@ -117,11 +117,11 @@
 - [x] **S068** Large-Scale Field Spraying
 - [x] **S069** Automated Warehouse Inventory
 - [x] **S070** Swarm Weeding
-- [ ] **S071** Bridge Underside Inspection
-- [ ] **S072** Pipeline Leak Detection
-- [ ] **S073** Solar Panel Thermal Inspection
-- [ ] **S074** Mine 3D Mapping
-- [ ] **S075** Container Yard Inventory
+- [x] **S071** Bridge Underside Inspection
+- [x] **S072** Pipeline Leak Detection
+- [x] **S073** Solar Panel Thermal Inspection
+- [x] **S074** Mine 3D Mapping
+- [x] **S075** Container Yard Inventory
 - [ ] **S076** Thermal Management in Hot Environment
 - [ ] **S077** Precision Pollination
 - [ ] **S078** Harvester Guidance
@@ -162,6 +162,6 @@
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 15 | 20 |
-| Industrial & Agriculture | 10 | 20 |
+| Industrial & Agriculture | 15 | 20 |
 | Special Ops & Entertainment | 1 | 20 |
-| **Total** | **66** | **100** |
+| **Total** | **71** | **100** |
