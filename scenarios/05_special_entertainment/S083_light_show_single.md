@@ -1,6 +1,6 @@
 # S083 Light Show Single-Drone Test
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐ | **Status**: `[x]` Complete
 **Algorithm**: Cubic Spline Interpolation + PID + Feedforward | **Dimension**: 3D
 
 ---
@@ -89,7 +89,10 @@ The total acceleration command becomes:
 $$\mathbf{a}_{cmd}(t) = \mathbf{a}_{PID}(t) + \mathbf{a}_{ff}(t)$$
 
 The feedforward term cancels the nominal inertial load of the curved reference, leaving the PID
-to correct only the residual error caused by wind disturbance.
+to correct only the residual error caused by wind disturbance — once the launch transient has
+died out. The drone starts at rest while the reference starts at 4.68 m/s, and the integral term
+winds up during that transient; the closed loop $s^3 + K_d s^2 + K_p s + K_i$ has a slow real pole
+at $-0.051$ s⁻¹ (time constant 19.6 s), so this error decays slowly (see the implementation README).
 
 ### Point-Mass Dynamics
 
@@ -101,10 +104,18 @@ $$\dot{\mathbf{v}}(t) = \mathbf{a}_{cmd}(t) + \mathbf{w}(t)$$
 
 where the wind disturbance is sampled independently on each axis and at each time step:
 
-$$\mathbf{w}(t) \sim \mathcal{N}(\mathbf{0},\, \sigma_w^2 \mathbf{I}_3), \qquad \sigma_w = 0.5 \text{ m/s}$$
+$$\mathbf{w}(t) \sim \mathcal{N}(\mathbf{0},\, \sigma_w^2 \mathbf{I}_3), \qquad \sigma_w = 0.5 \text{ m/s}^2$$
+
+($\mathbf{w}$ enters $\dot{\mathbf{v}}$, so it is an acceleration in m/s², not m/s.)
 
 Integration is performed by `scipy.integrate.odeint` with a fixed timestep $\Delta t = 0.05$ s
 (20 Hz), re-sampling the wind term at each step.
+
+> **Correction (implementation):** the code below re-samples the wind and adds $\mathbf{e}\,\Delta t$ to
+> the integral *inside* the derivative function. `odeint` calls that function many times per output
+> step with its own internal step sizes, so the integral term would be wrong and the number of wind
+> samples would depend on the solver. The implementation holds the wind constant over each 0.05 s
+> step, carries $\int \mathbf{e}\,dt$ as part of the ODE state, and calls `odeint` once per step.
 
 ### Tracking Error Metrics
 
@@ -380,7 +391,7 @@ if __name__ == '__main__':
 | Mission duration | $T_{total}$ | 60 s |
 | Number of scripted waypoints | $N_{wp}$ | 200 |
 | Simulation timestep | $\Delta t$ | 0.05 s (20 Hz) |
-| Wind disturbance std dev (per axis) | $\sigma_w$ | 0.5 m/s |
+| Wind disturbance std dev (per axis) | $\sigma_w$ | 0.5 m/s² |
 | Proportional gain | $K_p$ | 2.0 |
 | Integral gain | $K_i$ | 0.1 |
 | Derivative gain | $K_d$ | 0.8 |
