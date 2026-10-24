@@ -1,6 +1,6 @@
 # S076 Extreme Heat Cooling Strategy
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: First-Order Motor Thermal Model + Predictive Throttle Scheduling | **Dimension**: 2D
 
 ---
@@ -81,6 +81,13 @@ For the reactive controller, the instantaneous safe speed given the current moto
 $T_m$ is:
 
 $$v_{safe}(T_m) = \sqrt{\max\!\left(0,\; \frac{T_{max} - T_m}{R_{th} \cdot k_v} - \frac{P_{hover}}{k_v}\right)}$$
+
+> **Correction (implementation)**: with the parameters below this expression is identically zero
+> for every $T_m \geq T_{max} - R_{th} P_{hover} = 61°C$, so inside the warning zone it always
+> commands the speed floor (0.05 m/s) and the drone chatters between 1.0 and 0.05 m/s. The
+> implementation uses the speed that holds the current temperature constant ($dT_m/dt = 0$):
+>
+> $$v_{hold}(T_m) = \sqrt{\max\!\left(0,\; \frac{(T_m - T_{amb})/R_{th} - P_{hover}}{k_v}\right)}$$
 
 ### Cooling Pause Temperature Decay
 
@@ -672,7 +679,7 @@ if __name__ == '__main__':
 | Speed-drag power coefficient | $k_v$ | 15 W·s²/m² |
 | Motor power at $v_0$ | $P_{motor}(v_0)$ | 45 W |
 | Steady-state $T_m$ at $v_0$ | $T_{m,\infty}(v_0)$ | 81 °C |
-| Safe cruise speed (unlimited) | $v_{safe}$ | ≈ 0.91 m/s |
+| Safe cruise speed (unlimited) | $v_{safe}$ | ≈ 1.155 m/s (corrected; 0.91 was wrong) |
 | Turn time per reversal | $t_{turn}$ | 3 s |
 | Simulation timestep | $\Delta t$ | 0.1 s |
 | Number of strips | $N$ | 20 |
@@ -696,7 +703,9 @@ if __name__ == '__main__':
   illustrates the time cost of each approach.
 - **Steady-state temperature vs speed curve**: $T_{m,\infty}(v)$ plotted against speed; safe and
   warning thresholds marked; nominal speed $v_0$ shown as a vertical line; the curve illustrates
-  why $v_0 = 1.0$ m/s is marginally above the safe continuous-cruise speed.
+  that $v_0 = 1.0$ m/s is *below* the safe continuous-cruise speed (1.155 m/s) at 45 °C, but
+  above the speed that holds $T_{warn}$ (0.957 m/s); $v_0$ exceeds $v_{safe}$ only for
+  $T_{amb} > 49°C$.
 - **Mission metrics bar chart**: grouped bars comparing mission time (min), pause count, and peak
   motor temperature for all three strategies; twin y-axis for temperature.
 - **Animation GIF** (reactive and predictive): top-down drone trail colour-coded by $T_m$ (hot
@@ -711,6 +720,12 @@ if __name__ == '__main__':
 | Pause count | 0 | 3–6 | 4–7 |
 | Mission time | ≈ 34 min | ≈ 37–39 min | ≈ 36–38 min |
 | Time above $T_{max}$ | $> 0$ s | 0 s | 0 s |
+
+> **Correction (implementation)**: these targets do not hold with the parameters above.
+> $T_{m,\infty}(v_0) = 81°C < T_{max}$, so at $T_{amb} = 45°C$ unmanaged flight peaks at 80.9 °C
+> and never breaches $T_{max}$; the full path takes 35.9 min (2095 s cruise + 19 × 3 s turns).
+> The simulation gives: reactive 37.0 min with 0 pauses; predictive 42.9 min with 14 pauses.
+> Unmanaged flight breaches $T_{max}$ only for $T_{amb} > 49°C$ (see the outputs README ambient sweep).
 
 ---
 
