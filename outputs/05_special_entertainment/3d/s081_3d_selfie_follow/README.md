@@ -62,7 +62,7 @@ $$u = \frac{\text{atan2}(\boldsymbol\delta\cdot\hat{\mathbf n}_r,\ \boldsymbol\d
 | $c_{drag}$ / $\tau_{gimbal}$ | 0.3 s⁻¹ / 0.1 s | card |
 | $\Delta t$ / $T$ | 0.05 s / 60 s | card |
 | Horizontal $a_{max}$ / $v_{max}$ | 6 m/s² / 10 m/s | added in S081 |
-| Vertical $a_{z,max}$ / $v_{z,max}$ | 4 m/s² / 3 m/s | added (swept 2, 4, 8, ∞) |
+| Vertical $a_{z,max}$ / $v_{z,max}$ | 4 m/s² / 3 m/s | added ($a_{z,max}$ swept 2, 4, 8, ∞; $v_{z,max}$ never binds, see Physical checks) |
 | 2D-baseline altitude | 3.0 m | added (swept 2, 3, 4, 5 m) |
 | S081 as-is | z = 4 m, r = 5 m | S081 |
 | Monte Carlo | 100 seeds, seed $s$ noise from `default_rng(2026 + s)` | added |
@@ -81,7 +81,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s081_3d_selfie_follow.py
 ```
 
-The script imports the figure-8 and limits from the 2D script. Runtime ≈ 40 s (all 100 seeds vectorised). Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF. The script also checks that a seed's result does not depend on which batch it runs in.
+The script imports the figure-8 and limits from the 2D script. Runtime ≈ 40–130 s depending on machine load (all 100 seeds vectorised; 36–93 s measured in this work, up to 129 s in the review run). Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF. The script also checks that a seed's result does not depend on which batch it runs in.
 
 ---
 
@@ -104,7 +104,7 @@ Estimate errors: KF xy RMSE 0.229 m and z RMSE 0.253 m; raw GPS 0.427 / 0.498 m.
 
 | vs | Higher $F_{2D}$ | Mean $\Delta F_{2D}$ (sph − other) | Lower RMS $e_{3D}$ | Mean $\Delta$ RMS $e_{3D}$ | Lower look-down error |
 |---|---|---|---|---|---|
-| cyl | 0/100 | −6.2 pp | 100/100 | −0.525 m | 100/100 |
+| cyl | 0/100 | −6.2 pp | 100/100 | −0.525 m (mostly by construction: the cylinder sits 0.590 m outside the sphere) | 100/100 |
 | raw | 100/100 | +36.6 pp | 100/100 | −0.533 m | 100/100 |
 | **fix (2D baseline)** | **6/100** | **−2.3 pp** | 100/100 | −0.141 m | 100/100 |
 | base (S081 as-is) | 100/100 | +45.0 pp | 100/100 | −1.056 m | 100/100 |
@@ -120,11 +120,11 @@ Seed 0 (figures): sph 54.5 % / 0.651 m, cyl 61.6 % / 1.172 m, raw 22.0 % / 1.259
 - **The ranking holds across vertical GPS noise.** Fixed altitude frames slightly better at every $\sigma_z$ (gap −0.4, −1.3, −2.3, −2.5 pp for $\sigma_z$ = 0.1, 0.25, 0.5, 1.0 m; sph higher in 35, 12, 6, 0/100 seeds), while altitude tracking keeps RMS $e_{3D}$ at 0.633–0.660 m against 0.782 m.
 - **Raw GPS is the worst 3D strategy**, as in S081: 22.4 % $F_{2D}$, its drone sits 1.000 m too close on average (min 3D distance 1.88 m), and it saturates the horizontal limit 74.08 % and the vertical limit 27.07 % of the time.
 - **S081 as built fails the vertical requirement.** Aiming the camera at flat ground while the person's altitude spans −1.00 to 2.49 m gives $F_v$ = 14.6 % ($F_{2D}$ 14.0 %) although $F_u$ is 95.5 %. Adding the vertical requirement costs every strategy: $F_{2D}/F_u$ = 0.647 (sph), 0.692 (cyl), 0.443 (raw), 0.674 (fix), 0.147 (base).
-- **Jumps** cost 2.8 pp of $F_{2D}$ for sph (61.8 % without jumps vs 59.0 %, higher without jumps on 96/100 seeds) and 3.0 pp for fix (64.3 vs 61.3 %, 97/100), and raise the RMS clearance error of the tracking drone from 0.208 to 0.245 m.
+- **Jumps** cost 2.8 pp of $F_{2D}$ for sph (61.8 % without jumps vs 59.0 %, higher without jumps on 96/100 seeds) and 3.0 pp for fix (64.3 vs 61.3 %, 97/100), and raise the RMS clearance error of the tracking drone from 0.208 to 0.245 m. The ranking does not depend on the jumps: without them the fixed-altitude baseline still frames better (gap +2.5 pp, fix higher in 99/100 seeds). Only on/off was tested; the jump timing and count (an added schedule) were not swept.
 - **The added vertical limit does not drive the results**: $a_{z,max}$ = 2 / 4 / 8 m/s² / unlimited gives $F_{2D}$ 59.2 / 59.0 / 59.0 / 59.0 % and RMS $e_{3D}$ 0.643 / 0.641 / 0.641 / 0.641 m.
 - **Card expectations**: sph 71.2 % / 0.38 m / 1.45 m, cyl 58.6 % / 0.52 m / 2.11 m, raw 39.4 % / 1.04 m / 3.67 m. Obtained (not tuned): 59.0 % / 0.641 m / 1.49 m, 65.2 % / 1.166 m / 2.22 m, 22.4 % / 1.174 m / 2.42 m. The 0.38 m orbit error is below the oracle's 0.653 m, so it is not reachable with the card's PD gains.
 
-**Physical checks** (asserted every step for every seed): $\|\mathbf a_{xy}\| \le 6$ m/s², $|a_z| \le a_{z,max}$, $\|\mathbf v_{xy}\| \le 10$ m/s, $|v_z| \le 3$ m/s, $1.5 \le z \le 8$ m, step length ≤ $\sqrt{10^2 + 3^2}\,\Delta t$. Peaks (sph): 6.00 / 4.00 m/s², 5.00 / 1.54 m/s. The set-point was clipped at the 1.5 m floor 6.96 % of the time (the dip bottom puts $\hat z + 2.5$ at the floor), and the braking envelope acted on 0.66 % of steps. The minimum 3D distance to the person was 3.88 m (sph) and 3.25 m (fix).
+**Physical checks** (asserted every step for every seed): $\|\mathbf a_{xy}\| \le 6$ m/s², $|a_z| \le a_{z,max}$, $\|\mathbf v_{xy}\| \le 10$ m/s, $|v_z| \le 3$ m/s, $1.5 \le z \le 8$ m, step length ≤ $\sqrt{10^2 + 3^2}\,\Delta t$. Peaks (sph): 6.00 / 4.00 m/s², 5.00 / 1.54 m/s. The added 3 m/s vertical speed limit never binds: the peak $|v_z|$ over all strategies is 1.58 m/s and 0 steps were clipped (all strategies and the $a_{z,max}$ sweep). The set-point was clipped at the 1.5 m floor 6.96 % of the time (the dip bottom puts $\hat z + 2.5$ at the floor), and the braking envelope acted on 0.66 % of steps. The minimum 3D distance to the person was 3.88 m (sph) and 3.25 m (fix).
 
 ### 3D trajectories
 
@@ -185,6 +185,7 @@ Altitude-tracking drone (red), person (blue) and the camera axis (5 m black line
 | "occasionally jumps" | 8 jumps every 7.5 s from 3.75 s; no-jump ablation | not specified; the ablation shows the jumps cost 2.8 pp (sph) and 3.0 pp (fix) of $F_{2D}$ |
 | No vertical acceleration / speed limit | $a_{z,max}$ = 4 m/s², $v_{z,max}$ = 3 m/s, braking envelope at the altitude bounds | physical sanity and the "saturation logic" of the card; swept, results unchanged |
 | Gimbal lag explicit Euler | exact first-order discretisation $1 - e^{-\Delta t/\tau}$ | $\Delta t/\tau = 0.5$; same time constant |
+| $\hat{\mathbf n}_{right} = [-\hat l_y, \hat l_x, 0]$, $\hat{\mathbf n}_{up} = \hat{\mathbf l} \times \hat{\mathbf n}_{right}$ | true right vector $[\sin\psi, -\cos\psi, 0]$, up $= \hat{\mathbf n}_{right} \times \hat{\mathbf l}$ (code unchanged); card corrected | the card's vector points left, so its $u$ had the opposite sign; $\lvert u\rvert$, $\lvert v\rvert$ and all scores are unchanged; in `framing_uv.png` $u > 0$ means right of centre |
 | Three strategies | added 2D baseline (fixed z = 3.0 m), S081 as-is and the oracle | X5 requires the 2D baseline; the oracle gives the controller floor |
 | Single run | 100 seeds with common random numbers, per-seed win counts, sweeps of every added parameter | results depend on the noise |
 | Expected sph 71.2 % > cyl 58.6 % framing | cyl 65.2 % > sph 59.0 % | not tuned; framing grows with range (range probe); card note added |

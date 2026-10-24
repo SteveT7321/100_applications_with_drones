@@ -227,12 +227,17 @@ $$\boldsymbol{\delta} = \mathbf{p}_{tgt} - \mathbf{p}_{drone}, \qquad
 
 Horizontal right-vector of the camera (perpendicular to look direction in horizontal plane):
 
-$$\hat{\mathbf{n}}_{right} = \frac{[-\hat{l}_y,\; \hat{l}_x,\; 0]^\top}
-{\|[-\hat{l}_y,\; \hat{l}_x,\; 0]^\top\|}$$
+$$\hat{\mathbf{n}}_{right} = \frac{[\hat{l}_y,\; -\hat{l}_x,\; 0]^\top}
+{\|[\hat{l}_y,\; -\hat{l}_x,\; 0]^\top\|} = [\sin\psi_{drone},\; -\cos\psi_{drone},\; 0]^\top$$
 
 Camera up-vector (orthogonal to both look and right):
 
-$$\hat{\mathbf{n}}_{up} = \hat{\mathbf{l}} \times \hat{\mathbf{n}}_{right}$$
+$$\hat{\mathbf{n}}_{up} = \hat{\mathbf{n}}_{right} \times \hat{\mathbf{l}}$$
+
+> **Correction (implementation, review follow-up):** the earlier $[-\hat l_y, \hat l_x, 0]$ points to
+> the camera's **left**, and with it $\hat{\mathbf l} \times \hat{\mathbf n}$ points up. The card now
+> uses the true right vector (as the code does), so $u > 0$ means the subject is right of centre;
+> $|u|$, $|v|$ and every framing score are unchanged.
 
 Normalised horizontal and vertical pixel offsets:
 

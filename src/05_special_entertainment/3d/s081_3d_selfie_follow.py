@@ -191,7 +191,7 @@ def simulate(cfg, noise, sig_z=SIG_Z, jumps=True, a_z_max=A_Z_MAX, tau_g=TAU_G, 
         L['zd'] = np.zeros((N_STEPS, S))
         L['yaw'] = np.zeros((N_STEPS, S))
         L['est'] = np.zeros((N_STEPS, S, 3))
-    n_clip = n_guard = n_sat_xy = n_sat_z = 0
+    n_clip = n_guard = n_sat_xy = n_sat_z = n_sat_vz = 0
     az_peak = vz_peak = axy_peak = vxy_peak = 0.0
     min_dist = np.inf
 
@@ -247,7 +247,9 @@ def simulate(cfg, noise, sig_z=SIG_Z, jumps=True, a_z_max=A_Z_MAX, tau_g=TAU_G, 
             a_z = np.clip(a_z, a_lo, a_hi)
             n_sat_z += int(np.sum(np.abs(a_z) > a_z_max))
             a_z = np.clip(a_z, -a_z_max, a_z_max)
-            vz_new = np.clip(vz + (a_z - C_DRAG * vz) * DT, -V_Z_MAX, V_Z_MAX)
+            vz_raw = vz + (a_z - C_DRAG * vz) * DT
+            n_sat_vz += int(np.sum(np.abs(vz_raw) > V_Z_MAX))
+            vz_new = np.clip(vz_raw, -V_Z_MAX, V_Z_MAX)
         else:
             a_z = np.zeros(S)
             vz_new = np.zeros(S)
@@ -306,7 +308,7 @@ def simulate(cfg, noise, sig_z=SIG_Z, jumps=True, a_z_max=A_Z_MAX, tau_g=TAU_G, 
         'xyrmse': np.sqrt(np.mean(L['xyerr'] ** 2, axis=0)),
         'out': np.mean((np.abs(L['u']) > 1) | (np.abs(L['v']) > 1), axis=0),
         'clip': n_clip / (N_STEPS * S), 'guard': n_guard / (N_STEPS * S),
-        'sat_xy': n_sat_xy / (N_STEPS * S), 'sat_z': n_sat_z / (N_STEPS * S),
+        'sat_xy': n_sat_xy / (N_STEPS * S), 'sat_z': n_sat_z / (N_STEPS * S), 'sat_vz': n_sat_vz,
         'az_peak': az_peak, 'vz_peak': vz_peak, 'axy_peak': axy_peak, 'vxy_peak': vxy_peak,
         'min_dist': min_dist,
     }
@@ -657,6 +659,10 @@ if __name__ == '__main__':
               f"{r['vxy_peak']:.2f} / {r['vz_peak']:.2f}, {100 * r['sat_xy']:.2f}% / "
               f"{100 * r['sat_z']:.2f}%, {100 * r['clip']:.2f}%, {100 * r['guard']:.2f}%, "
               f"{r['min_dist']:.2f} m")
+    vzp = max(results[s]['vz_peak'] for s in STRATS)
+    nvz = sum(results[s]['sat_vz'] for s in STRATS) + sum(azsweep[a]['sat_vz'] for a in A_Z_SWEEP)
+    print(f'  Vertical speed limit {V_Z_MAX:.0f} m/s (added): peak |v_z| over all strategies {vzp:.2f} m/s; '
+          f'steps clipped at the limit (all strategies and the a_z sweep) {nvz} -> never binds')
     print(f'  2D-baseline altitude sweep (fixed z, r_xy = {R_XY:.2f} m, 3D KF tilt):')
     for z in Z_FIX_SWEEP:
         r = zsweep[z]
@@ -688,6 +694,9 @@ if __name__ == '__main__':
         d = nojump[s]['F2'] - results[s]['F2']
         print(f"    {LABELS[s]}: removing the jumps changes F_2D by {100 * d.mean():+.1f} pp "
               f"(higher without jumps in {int(np.sum(d > 0))}/{N_MC})")
+    g = nojump['fix']['F2'] - nojump['sph']['F2']
+    print(f"    without jumps: F_2D gap fix - sph {100 * g.mean():+.1f} pp (fix higher in {int(np.sum(g > 0))}/{N_MC}) "
+          f"-> the ranking does not depend on the jumps")
     print('  Ablation — gimbal lag removed (tau = 0), F_v:')
     for s in ('sph', 'fix', 'oracle'):
         print(f"    {LABELS[s]:<34} tau = 0.1 s {100 * results[s]['Fv'].mean():.1f}%  ->  tau = 0 "
