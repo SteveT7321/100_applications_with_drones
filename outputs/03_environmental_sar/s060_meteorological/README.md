@@ -118,7 +118,17 @@ OK beats IDW in 4/10 seeds and card-sampling OK in 10/10. The fixed-nugget OK be
 **Key findings**:
 - **The card's sampling cannot see the horizontal structure.** The card samples only at the waypoints, the row ends at $x$ = 0 and $x$ = 600 m, where $\sin(2\pi x/600) = 0$. The perturbation at all 256 card sample points is at most 7.57 × 10⁻⁹ K. Kriging then reconstructs only the lapse-rate profile: its RMSE (0.5130 K) is the same as that of a pure lapse-rate profile (0.5088 K, the RMS of the perturbation at the validation points), and its mean is above the card's 0.5 K target (best seed 0.4947 K). Sampling every 50 m along the same paths gives 0.1534 K.
 - **The card's RMSE target holds with continuous sampling** (0.1534 K, below 0.5 K in 10/10 seeds, R² 0.9752).
-- **The fitted variogram is mis-specified, and Kriging is no better than IDW.** The 3.1 K lapse-rate trend over the 480 m column makes the experimental semivariogram grow like $h^2$ at short lags, which the concave exponential model cannot follow. The least-squares fit drives the nugget to its lower bound (0.0001 K² against a true noise variance of 0.09 K²) with a range of 1173 m, beyond the domain. With almost no nugget, Kriging nearly interpolates the noisy readings and does not filter the 0.3 K noise. Result: 0.1534 K for OK against 0.1489 K for IDW, which wins 6 of 10 seeds. Fixing the nugget at the known $\sigma_s^2$ (refitted $C_1$ = 10.173 K², $a$ = 3683 m) brings OK to 0.1090 K and makes it the best method in every seed. Detrending (universal Kriging) would be the principled fix.
+- **The fitted nugget collapses, and Kriging is no better than IDW.** The least-squares fit puts the nugget on its lower bound (0.0001 K² against a true noise variance of 0.09 K²) with a range of 1173 m, beyond the domain. With almost no nugget, Kriging nearly interpolates the noisy readings and does not filter the 0.3 K noise. Result: 0.1534 K for OK against 0.1489 K for IDW, which wins 6 of 10 seeds. Fixing the nugget at the known $\sigma_s^2$ (refitted $C_1$ = 10.173 K², $a$ = 3683 m) brings OK to 0.1090 K and makes it the best method in every seed.
+- **The cause is the variogram model and the fit, not the lapse-rate trend.** The script fits the same model to four versions of the seed-0 data, and every fit puts the nugget on its lower bound (0.0001 K²):
+
+| Data | First lag bin (28 m) | Fitted $C_0$ | $C_1$ | $a$ |
+|---|---:|---:|---:|---:|
+| Original (trend + noise) | 0.1058 K² | 0.0001 K² | 3.980 K² | 1173 m |
+| Exactly detrended, noisy | 0.0904 K² | 0.0001 K² | 0.330 K² | 112 m |
+| Noise-free field | 0.0170 K² | 0.0001 K² | 8.904 K² | 3209 m |
+| Detrended, noise-free | 0.0016 K² | 0.0001 K² | 0.250 K² | 157 m |
+
+  Even with the trend removed exactly, the first lag bin sits at the noise level (0.0904 K²) and the fit still returns no nugget. The field is smooth, so its true semivariogram rises like $h^2$ near the origin on top of the 0.09 K² nugget. The exponential model is linear at the origin. An unweighted least-squares fit over 15 bins, most of them at long lags, matches that shape by starting the curve at zero and rising steeply, rather than with a flat nugget. Detrending (universal Kriging) alone would therefore not fix the nugget. A model that is parabolic at the origin (Gaussian or Matérn), a fit weighted toward short lags (pair counts or Cressie weights), or a nugget taken from sensor calibration as in the fixed-nugget run would.
 - **The band assignment barely matters here.** The optimum equals the identity assignment and the spread between the best and worst assignment is 0.23 % of the band path length. The Hungarian step is correct but has no effect for this start/entry geometry.
 - **Band boundaries do not show higher uncertainty.** The card expects elevated Kriging variance at the band boundaries. Along the vertical line $x = y$ = 300 m the variance within 8 m of a boundary is 0.1232 K² against 0.1241 K² elsewhere, because both neighbouring drones sample the boundary level (180 m and 340 m are the top level of one band and the bottom level of the next). The variance is set by the 85.7 m row spacing instead: it is highest midway between rows (see the slices below).
 - **More altitude levels help little.** RMSE for $N_z$ = 3, 4, 6, 8, 10 is 0.1543, 0.1566, 0.1558, 0.1369, 0.1277 K (3 seeds). It does not fall steadily until $N_z$ = 8, although the mean Kriging variance falls monotonically (0.1010 → 0.0774 K²). The vertical structure is smooth, and the error comes mostly from the horizontal gaps between rows, which $N_z$ does not change. $N_z$ = 8 and 10 need 53 and 67 min of flight (3210 s and 4010 s), more than the 50 min battery.
@@ -131,7 +141,7 @@ OK beats IDW in 4/10 seeds and card-sampling OK in 10/10. The fixed-nugget OK be
 | 8 | 3219 | 3210 s (exceeds battery) | 0.1369 ± 0.0072 K | 0.0791 K² |
 | 10 | 4035 | 4010 s (exceeds battery) | 0.1277 ± 0.0049 K | 0.0774 K² |
 
-Seed 0: fitted variogram $C_0$ = 0.0001 K², $C_1$ = 3.980 K², $a$ = 1173 m; mean Kriging variance on the 13³ grid 0.0824 K² (√ = 0.287 K). The Kriging variance therefore over-states the actual error (0.1534 K RMSE).
+Seed 0: fitted variogram $C_0$ = 0.0001 K², $C_1$ = 3.980 K², $a$ = 1173 m; mean Kriging variance on the 13³ grid 0.0824 K² (√ = 0.287 K). At the 200 validation points themselves the mean Kriging variance is 0.0950 K² (√ = 0.308 K), against a mean squared error of 0.0243 K² (RMSE 0.1559 K for seed 0). The Kriging variance therefore over-states the actual error by about a factor of 4 in variance, consistent with the mis-fitted variogram (a sill of 3.98 K² and a 1173 m range describe a much rougher field than the real one).
 
 ### Flight Paths
 
@@ -190,7 +200,7 @@ The three drones fly their bands simultaneously; sample points appear coloured b
 
 ## Extensions
 
-1. **Universal Kriging**: model the lapse-rate trend explicitly and fit the variogram to the residuals; compare with the fixed-nugget result (0.1090 K).
+1. **Better variogram estimation**: fit a Gaussian or Matérn model (parabolic at the origin) with weights toward short lags, or estimate the parameters by restricted maximum likelihood, and compare with the fixed-nugget result (0.1090 K). Universal Kriging (explicit lapse-rate trend) can be combined with this, but the detrended fits above show that it does not fix the nugget on its own.
 2. **Anisotropic variogram**: separate horizontal and vertical ranges, since the field varies over 600 m horizontally but mostly linearly in height.
 3. **Row spacing instead of levels**: spend the flight budget on more rows per level, which attacks the error the $N_z$ sweep could not reduce.
 4. **Adaptive sampling**: redirect drones to the highest-$\sigma_K^2$ regions after each level.

@@ -534,6 +534,21 @@ if __name__ == '__main__':
           f"C1 = {C1:.3f} K^2, range a = {a:.0f} m; samples {m0['n_samples']}")
     print(f"  Mean kriging variance on the 13^3 grid (seed 0): {m0['ok']['grid_var']:.4f} K^2 "
           f"(sqrt {np.sqrt(m0['ok']['grid_var']):.3f} K)")
+    vv = m0['ok']['var']
+    print(f"  Kriging variance at the {N_VAL} validation points (seed 0): mean {vv.mean():.4f} K^2 "
+          f"(sqrt {np.sqrt(vv.mean()):.3f} K) vs squared error mean "
+          f"{np.mean((m0['ok']['pred'] - res['val_true']) ** 2):.4f} K^2 (RMSE {m0['ok']['rmse']:.4f} K)")
+    # why the nugget collapses: fit the same model to variants of the seed-0 data
+    pts0, vals0 = m0['pts'], m0['vals']
+    trend0 = T0 - LAPSE_RATE * pts0[:, 2]
+    signal0 = true_temperature(*pts0.T)
+    for name, data in [('original (trend + noise)', vals0),
+                       ('exactly detrended (noisy)', vals0 - trend0),
+                       ('noise-free field', signal0),
+                       ('detrended, noise-free', signal0 - trend0)]:
+        (c0, c1, aa), lg, gm, _ = fit_variogram(pts0, data)
+        print(f"  Variogram fit on {name} data: C0 = {c0:.4f} K^2, C1 = {c1:.3f} K^2, a = {aa:.0f} m; "
+              f"first lag bin ({lg[0]:.0f} m) gamma = {gm[0]:.4f} K^2")
     print(f"  Card sampling: {m0['ok_card']['n']} distinct points; max |field perturbation| at those "
           f"points = {m0['ok_card']['perturb_at_samples']:.2e} K (sin(2 pi x / 600) = 0 at x = 0, 600)")
     print(f'\n  --- {N_SEEDS} sensor-noise seeds (CRN), validation RMSE (K) ---')
