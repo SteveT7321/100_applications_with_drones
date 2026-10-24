@@ -81,6 +81,7 @@ CONFIGS = {  # key: (label, DEM amplitude, altitude mode, stagger, feed-forward)
     'fixed35': ('DEM, fixed z = 3.5 m (2D plan, AGL >= 2 m)', A_DEM, 'fixed35', 0.0, False),
     'tf': ('DEM, terrain following', A_DEM, 'tf', 0.0, False),
     'tf_stag': ('DEM, TF + 0.4 m stagger (card)', A_DEM, 'tf', DH, False),
+    'tf_ff': ('DEM, TF + feed-forward (no stagger)', A_DEM, 'tf', 0.0, True),
     'tf_stag_ff': ('DEM, TF + stagger + feed-forward', A_DEM, 'tf', DH, True),
 }
 
@@ -351,13 +352,17 @@ def wash_metrics(tls, drones, A):
         out['phi_series'][(i, j)] = (phi_c, phi_r)
     t = tls[0][0]
     out['close_time'] = 0.0
+    out['close_pairs'] = {}
     for i in range(n):
         for j in range(i + 1, n):
             both = air[i] & air[j]
             if both.any():
                 d3 = np.where(both, np.sqrt(((P[i] - P[j]) ** 2).sum(axis=0)), np.inf)
                 hs = np.where(both, np.hypot(P[i][0] - P[j][0], P[i][1] - P[j][1]), np.inf)
-                out['close_time'] += float(np.sum(hs < 2.0)) * DT
+                ct = float(np.sum(hs < 2.0)) * DT
+                out['close_time'] += ct
+                if ct > 0:
+                    out['close_pairs'][(i, j)] = ct
                 k = int(np.argmin(d3))
                 if d3[k] < out['min_sep']:
                     out['min_sep'] = float(d3[k])
@@ -385,7 +390,7 @@ def run_simulation():
             out['main'][(cfg, p)] = run(part[p], cfg)
     sw = out['sweep']
     sw['stagger'] = {dh: run(bal, 'tf', offset=dh) for dh in (0.0, 0.4, 1.0, 2.0)}
-    sw['amp'] = {a: {c: run(bal, c, A=a) for c in ('fixed', 'tf', 'tf_stag_ff')}
+    sw['amp'] = {a: {c: run(bal, c, A=a) for c in ('fixed', 'tf', 'tf_ff', 'tf_stag', 'tf_stag_ff')}
                  for a in (0.5, 1.0, 1.5)}
     sw['pad'] = {pd: run(bal, 'tf_stag', pad_dy=pd) for pd in (0.0, 1.0, 3.0, 6.0)}
     return out
@@ -630,14 +635,18 @@ def report(out):
             print(f'    [{CONFIGS[cfg][0]}] {_line(r)}')
             print(f"        spraying: AGL {r['agl_min']:.3f}-{r['agl_max']:.3f} m, swath "
                   f"{r['swath_min']:.3f}-{r['swath_max']:.3f} m, outside the card band "
-                  f"{AGL_BAND} {100 * r['band_frac']:.1f} %, |eps_z| max {r['eps_max']:.3f} m / mean "
-                  f"{r['eps_mean']:.4f} m / > 0.1 m {100 * r['eps_frac']:.2f} %; max |eps_z| more "
-                  f"than 5 s into a run {r['eps_max_late']:.3f} m")
+                  f"{AGL_BAND} {100 * r['band_frac']:.1f} %, " +
+                  ("|eps_z| n/a (no altitude loop: z equals the command by construction)"
+                   if r['mode'] != 'tf' else
+                   f"|eps_z| max {r['eps_max']:.3f} m / mean {r['eps_mean']:.4f} m / > 0.1 m "
+                   f"{100 * r['eps_frac']:.2f} %; max |eps_z| more than 5 s into a run "
+                   f"{r['eps_max_late']:.3f} m"))
             ev = r['min_sep_event']
             print(f"        closest approach: drones {ev[0]}-{ev[1]} at t = {ev[2]:.1f} s near "
                   f"({ev[3]:.1f}, {ev[4]:.1f}) m, both {ev[5]}/{ev[6]}, vertical gap {ev[7]:.2f} m; "
-                  f"pair-time with horizontal separation < 2 m: {r['close_time']:.1f} s; "
-                  f"last spray per drone " + ', '.join(f"{d['t_cover']:.1f}" for d in r['drones']) + ' s')
+                  f"pair-time with horizontal separation < 2 m: {r['close_time']:.1f} s in total ("
+                  + ', '.join(f'{a}-{b}: {v:.1f} s' for (a, b), v in r['close_pairs'].items())
+                  + '); last spray per drone ' + ', '.join(f"{d['t_cover']:.1f}" for d in r['drones']) + ' s')
             print(f"        wash: max Phi card {r['phi_card']:.3f} (while spraying {r['phi_card_spray']:.2e}), "
                   f"samples > 0.15 {100 * r['phi_card_frac']:.2f} %; max Phi vertical-separation "
                   f"{r['phi_corr']:.3f} (spraying {r['phi_corr_spray']:.2e}); min 3D separation "
@@ -654,13 +663,15 @@ def report(out):
     for dh, r in sw['stagger'].items():
         print(f"    {dh:.1f} m: {r['phi_card']:.3f} / {r['phi_corr']:.3f}, {r['min_sep']:.2f} m, "
               f"{100 * r['coverage']:.3f} %, {100 * r['overspray']:.2f} %, {r['t_mission']:.1f} s")
-    print('  Sweep: DEM amplitude (B): A -> coverage fixed / TF / TF+stagger+FF; max |eps_z| TF (card loop) '
-          '/ TF+FF; fixed-plan AGL range')
+    print('  Sweep: DEM amplitude (B), one factor at a time: A -> coverage fixed / TF / TF+FF / TF+stagger / '
+          'TF+stagger+FF; max |eps_z| while spraying TF / TF+FF / TF+stagger / TF+stagger+FF; >= 2x TF / '
+          'TF+stagger; fixed-plan AGL range; T_mission TF')
     for a, rr in sw['amp'].items():
-        print(f"    {a:.1f} m: {100 * rr['fixed']['coverage']:.3f} / {100 * rr['tf']['coverage']:.3f} / "
-              f"{100 * rr['tf_stag_ff']['coverage']:.3f} %; {rr['tf']['eps_max']:.3f} / "
-              f"{rr['tf_stag_ff']['eps_max']:.4f} m; {rr['fixed']['agl_min']:.2f}-{rr['fixed']['agl_max']:.2f} m; "
-              f"T_mission TF {rr['tf']['t_mission']:.1f} s")
+        ks = ('fixed', 'tf', 'tf_ff', 'tf_stag', 'tf_stag_ff')
+        print(f"    {a:.1f} m: " + ' / '.join(f"{100 * rr[k]['coverage']:.3f}" for k in ks) + ' %; '
+              + ' / '.join(f"{rr[k]['eps_max']:.4f}" for k in ks[1:]) + ' m; '
+              f"{100 * rr['tf']['overspray']:.2f} / {100 * rr['tf_stag']['overspray']:.2f} %; "
+              f"{rr['fixed']['agl_min']:.2f}-{rr['fixed']['agl_max']:.2f} m; {rr['tf']['t_mission']:.1f} s")
     print('  Sweep: pad spacing (B, TF + stagger): spacing -> max Phi card / vertical-sep, min 3D separation')
     for pd, r in sw['pad'].items():
         print(f"    {pd:.1f} m: {r['phi_card']:.3f} / {r['phi_corr']:.3f}, {r['min_sep']:.2f} m, "

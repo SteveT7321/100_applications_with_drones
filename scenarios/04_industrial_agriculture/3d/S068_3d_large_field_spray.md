@@ -150,7 +150,7 @@ $$\Phi(t) = \max_{|i-j|=1} \Phi_{ij}(t)$$
 
 The altitude stagger is deemed sufficient when $\Phi(t) < \Phi_{max} = 0.15$ for all $t$.
 
-> **Correction (3D implementation, 2026-10-24).** (1) $\Delta z_i$ in this index is the height of drone $i$ above the ground under drone $j$, not the vertical separation between the drones, so a stagger lowers $\Phi$ only because the higher drone's wash is weaker at ground level (two co-located drones: 0.822 without, 0.689 with the 0.4 m stagger); with the vertical separation $z_i - z_j$ a 0.4 m stagger reduces the wash overlap by a factor of only 0.965. (2) Adjacent drones spray strips at least 13.3 m apart, so $\Phi$ is about $10^{-106}$ while spraying with or without a stagger; it exceeds 0.15 only when the drones converge on the station for their simultaneous battery swaps (max 0.762 with the stagger, 0.902 without). The criterion \"$\Phi < 0.15$ for all $t$\" is not met by the stagger.
+> **Correction (3D implementation, 2026-10-24).** (1) $\Delta z_i$ in this index is the height of drone $i$ above the ground under drone $j$, not the vertical separation between the drones, so a stagger lowers $\Phi$ only because the higher drone's wash is weaker at ground level (two co-located drones: 0.822 without, 0.689 with the 0.4 m stagger); with the vertical separation $z_i - z_j$ a 0.4 m stagger reduces the wash overlap by a factor of only 0.965. (2) Adjacent drones spray strips at least 13.3 m apart, so $\Phi$ stays below $10^{-106}$ while spraying with or without a stagger; it exceeds 0.15 only when the drones converge on the station for their simultaneous battery swaps (max 0.762 with the stagger, 0.902 without). The criterion "$\Phi < 0.15$ for all $t$" is not met by the stagger.
 
 ### 3D Coverage Accounting
 

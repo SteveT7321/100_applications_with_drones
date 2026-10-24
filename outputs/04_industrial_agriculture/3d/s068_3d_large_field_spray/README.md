@@ -96,14 +96,15 @@ The script imports the 2D base module for the run grid and the DP partition. Run
 
 | Configuration | T_mission | All home | Coverage | Sprayed ≥ 2× | AGL while spraying | Swath | Max \|ε_z\| (> 5 s into a run) | Spray time with \|ε_z\| > 0.1 m |
 |---|---|---|---|---|---|---|---|---|
-| Flat field (2D base) | 1145.2 s | 1213.3 s | 100.000 % | 11.30 % | 2.000 m | 2.082 m | 0 | 0 % |
-| **Fixed z = 2 m (2D plan)** | **never** | 1213.3 s | **89.141 %** | 22.85 % | 0.500–3.500 m (22.9 % outside 1.5–5 m) | 0.521–3.644 m | 0 | 0 % |
-| Fixed z = 3.5 m | 1125.4 s | 1213.3 s | 100.000 % | **80.43 %** | 2.000–5.000 m | 2.082–5.206 m | 0 | 0 % |
+| Flat field (2D base) | 1145.2 s | 1213.3 s | 100.000 % | 11.30 % | 2.000 m | 2.082 m | n/a (no loop) | n/a |
+| **Fixed z = 2 m (2D plan)** | **never** | 1213.3 s | **89.141 %** | 22.85 % | 0.500–3.500 m (22.9 % outside 1.5–5 m) | 0.521–3.644 m | n/a (no loop) | n/a |
+| Fixed z = 3.5 m | 1125.4 s | 1213.3 s | 100.000 % | **80.43 %** | 2.000–5.000 m | 2.082–5.206 m | n/a (no loop) | n/a |
 | **Terrain following** | 1146.2 s | 1214.5 s | **100.000 %** | 10.12 % | 1.835–2.168 m | 1.911–2.258 m | 0.168 m (0.114 m) | 10.29 % |
+| TF + feed-forward (no stagger) | 1146.2 s | 1214.5 s | 100.000 % | 11.29 % | 1.914–2.087 m | 1.993–2.173 m | 0.087 m (0.041 m) | 0 % |
 | TF + 0.4 m stagger (card) | 1134.7 s | 1214.5 s | 100.000 % | 20.89 % | 1.849–2.554 m | 1.925–2.659 m | 0.168 m (0.114 m) | 10.29 % |
 | TF + stagger + feed-forward | 1134.7 s | 1214.5 s | 100.000 % | 21.54 % | 1.914–2.487 m | 1.993–2.589 m | **0.087 m** (0.041 m) | **0 %** |
 
-Every configuration needs one swap per drone. With partition E the picture is the same: fixed z = 2 m covers 89.141 %, terrain following covers 100.000 % in 1177.9 s against 1176.9 s on the flat field, and the card loop peaks at 0.174 m (10.21 % of spray time above 0.1 m).
+The fixed-altitude plans have no altitude loop: their altitude equals the command by construction, so $\varepsilon_z$ does not apply to them. Every configuration needs one swap per drone. With partition E the picture is the same: fixed z = 2 m covers 89.141 %, terrain following covers 100.000 % in 1177.9 s against 1176.9 s on the flat field, and the card loop peaks at 0.174 m (10.21 % of spray time above 0.1 m).
 
 **Last spray per drone (B)**: 1116.3, 1126.0, 1134.8, 1146.3 s with terrain following, both with and without the stagger, against 1116.0, 1125.5, 1133.4, 1145.3 s on the flat field. The stagger's lower T_mission (1134.7 vs 1146.2 s) is therefore a coverage effect, not a faster flight. Drone 3 is odd and gets the 2.5 m swath, which covers the last cells before its final run; all drones are home at 1214.5 s in both cases.
 
@@ -118,7 +119,7 @@ Every configuration needs one swap per drone. With partition E the picture is th
 | Terrain following | 0.902 (9.3e-107) | 0.15 % | 1.953 | 0.13 m | 13.3 m |
 | **TF + 0.4 m stagger** | **0.762** (7.6e-107) | 0.15 % | 1.891 | **0.40 m** | 13.3 m |
 
-**Where the drones meet**: drones 2 and 3 come closest at t ≈ 597.6 s (TF) or 722.4 s (TF + stagger), near (7.0, 53.3) m. Both are ferrying to or from their adjacent pads around the simultaneous battery swap. Their horizontal separation is below 2 m for a total of 8.4 s, and the vertical gap is 0.01 m without the stagger and 0.38 m with it.
+**Where the drones meet**: drones 2 and 3 come closest at t ≈ 597.6 s (TF) or 722.4 s (TF + stagger), near (7.0, 53.3) m. Both are ferrying to or from their adjacent pads around the simultaneous battery swap. The pair-time with horizontal separation below 2 m totals 8.4 s: 6.4 s for drones 2–3 and 2.0 s for drones 0–1. The vertical gap of drones 2–3 at closest approach is 0.01 m without the stagger and 0.38 m with it.
 
 | Stagger Δh (B, TF) | 0 | 0.4 m | 1.0 m | 2.0 m |
 |---|---|---|---|---|
@@ -134,17 +135,19 @@ Every configuration needs one swap per drone. With partition E the picture is th
 
 ### DEM amplitude sweep (B)
 
-| $A$ | Coverage fixed z = 2 m / TF / TF + stagger + FF | Max \|ε_z\| card loop / with FF | Fixed-plan AGL | T_mission TF |
-|---|---|---|---|---|
-| 0.5 m | 98.324 / 100.000 / 100.000 % | 0.058 / 0.0293 m | 1.50–2.50 m | 1145.3 s |
-| 1.0 m | 93.946 / 100.000 / 100.000 % | 0.118 / 0.0591 m | 1.00–3.00 m | 1145.7 s |
-| 1.5 m | 89.141 / 100.000 / 100.000 % | 0.168 / 0.0867 m | 0.50–3.50 m | 1146.2 s |
+One factor changes at a time: altitude mode (fixed → TF), feed-forward (TF → TF + FF), stagger (TF → TF + stagger).
+
+| $A$ | Coverage fixed z = 2 m / TF / TF + FF / TF + stagger / TF + stagger + FF | Max \|ε_z\| TF / TF + FF / TF + stagger / TF + stagger + FF | Sprayed ≥ 2× TF / TF + stagger | Fixed-plan AGL | T_mission TF |
+|---|---|---|---|---|---|
+| 0.5 m | 98.324 / 100.000 / 100.000 / 100.000 / 100.000 % | 0.0583 / 0.0293 / 0.0583 / 0.0293 m | 11.30 / 21.55 % | 1.50–2.50 m | 1145.3 s |
+| 1.0 m | 93.946 / 100.000 / 100.000 / 100.000 / 100.000 % | 0.1176 / 0.0591 / 0.1176 / 0.0591 m | 11.25 / 21.50 % | 1.00–3.00 m | 1145.7 s |
+| 1.5 m | 89.141 / 100.000 / 100.000 / 100.000 / 100.000 % | 0.1683 / 0.0867 / 0.1683 / 0.0867 m | 10.12 / 20.89 % | 0.50–3.50 m | 1146.2 s |
 
 ### Key findings
 
 - **Terrain following is what keeps the field covered (2D baseline comparison).** Flown at a fixed 2 m over the DEM, the 2D plan covers only 89.141 % of the field, and T_mission is never reached. Over the hills the swath shrinks to 0.521 m, so the runs no longer touch (white streaks in `coverage_maps.png`). In the valleys it widens to 3.644 m and double-sprays. The gap grows with relief: 98.324 / 93.946 / 89.141 % for A = 0.5 / 1.0 / 1.5 m. Terrain following covers 100.000 % at every amplitude and costs only +1.0 s of mission time. Raising the fixed plan to 3.5 m also covers everything, but 80.43 % of the field is then sprayed at least twice, against 10.12 % with terrain following.
-- **The card's altitude loop misses its own tolerance.** It damps the absolute vertical speed, so it lags a moving command. The maximum error while spraying is 0.168 m, 10.29 % of spray time is above 0.1 m, and even more than 5 s into a run the error reaches 0.114 m (analytic steady value 0.119 m). Coverage survives only narrowly: the lowest AGL, 1.835 m, is just above the 1.825 m at which neighbouring swaths separate. Velocity feed-forward cuts the maximum to 0.087 m, with 0 % of spray time above 0.1 m; the remaining peaks are turn transients.
-- **The 0.4 m stagger does not do what the card says.** While spraying, adjacent drones are at least 13.3 m apart, so the wash index is about $10^{-107}$ with or without a stagger. The index exceeds 0.15 only during the simultaneous battery swaps, when drones 2 and 3 converge on neighbouring pads. There the stagger lowers the maximum from 0.902 to 0.762, still far above $\Phi_{max}$ = 0.15. Most of that drop comes from the card's formula, which measures the wash at the ground rather than at the other drone. With the vertical separation between the drones, the drop is only from 1.953 to 1.891.
+- **The card's altitude loop misses its own tolerance.** It damps the absolute vertical speed, so it lags a moving command. The maximum error while spraying is 0.168 m, 10.29 % of spray time is above 0.1 m, and even more than 5 s into a run the error reaches 0.114 m (analytic steady value 0.119 m). Coverage survives only narrowly: the lowest AGL, 1.835 m, is just above the 1.825 m at which neighbouring swaths separate. Velocity feed-forward cuts the maximum to 0.087 m, with 0 % of spray time above 0.1 m, with or without the stagger (0.087 m in both). More than 5 s into a run its error stays at 0.041 m (B), so the remaining peaks are turn transients.
+- **The 0.4 m stagger does not do what the card says.** While spraying, adjacent drones are at least 13.3 m apart, so the wash index stays below $10^{-106}$ with or without a stagger. The index exceeds 0.15 only during the simultaneous battery swaps, when drones 2 and 3 converge on neighbouring pads. There the stagger lowers the maximum from 0.902 to 0.762, still far above $\Phi_{max}$ = 0.15. Most of that drop comes from the card's formula, which measures the wash at the ground rather than at the other drone. With the vertical separation between the drones, the drop is only from 1.953 to 1.891.
 - **The real 3D conflict is near-collision at the station, not spray interference.** Without a stagger, drones 2 and 3 pass within 0.13 m of each other at the same altitude near the pads. The 0.4 m stagger turns this into a 0.40 m vertical gap, still less than any real airframe size. Spacing the pads 1–6 m apart does not change it (0.40–0.42 m); with one shared pad point the drones coincide (0.00 m). The separation tracks the stagger (0.99 m at 1 m, 1.98 m at 2 m), but each step adds overspray from the higher drones' wider swath (36.93 % and 54.06 % sprayed twice or more). Separating the swap times, or using an approach corridor per pad, would address the cause; this was not simulated.
 - **Card checks**: ±0.3 m AGL → ±15.0 % swath ✓. Swath at 2 m: 2.082 m (card "≈ 2.0" ✓). "Tracking error below 0.1 m throughout" ✗ (0.168 m). "Φ below 0.15 once stagger applied" ✗ (0.762). Full coverage ✓ with terrain following. The 3D straight-line battery trigger is optimistic by 0.103–0.126 s.
 
