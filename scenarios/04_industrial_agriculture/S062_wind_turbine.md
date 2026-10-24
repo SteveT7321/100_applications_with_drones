@@ -1,6 +1,6 @@
 # S062 Wind Turbine Blade Inspection
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Phase-Locked Orbital Inspection + Safety Margin Controller | **Dimension**: 3D
 
 ---
@@ -15,8 +15,24 @@ in the same plane at radius $r_{orbit} = 17$ m (hub-centred), maintaining a fixe
 offset $\phi_{offset} = 60°$ ahead of each blade tip. GPS positioning carries an isotropic error
 $\sigma_{GPS} = 0.1$ m. The minimum safe separation from any blade surface is
 $d_{safe} = 1.5$ m (hard constraint), and the target inspection standoff is
-$d_{inspect} = 1.0$ m from the blade surface. The drone speed during an active inspection pass
-must satisfy $v_{drone} \leq v_{max,inspect} = 1.0$ m/s.
+$d_{inspect} = 2.0$ m from the blade surface. The drone speed **relative to the imaged blade
+section** during an active inspection pass must satisfy $v_{rel} \leq v_{max,inspect} = 1.0$ m/s.
+
+> **Corrections (verified in the implementation)**:
+> - The original card set $d_{inspect} = 1.0$ m, below $d_{safe} = 1.5$ m, so no segment could be
+>   imaged without violating the safety margin. $d_{inspect}$ is now 2.0 m (> $d_{safe}$).
+> - A drone that only orbits at $r_{orbit} = 17$ m with $y_{offset} = 1$ m is never closer than
+>   $\sqrt{2^2 + 1^2} = 2.24$ m to any blade, so it can neither violate $d_{safe}$ nor image any
+>   segment. And because $\phi_{offset} = 60°$ is exactly midway between two blades, an open-loop
+>   orbit at $\dot	heta = \omega$ is identical to the phase-locked one unless something disturbs
+>   the drone. The implemented mission therefore **co-rotates** with each blade in turn: it holds
+>   1.73 m behind the blade's trailing edge (2.0 m from the blade line at $y = 1$ m), slides from
+>   tip ($r = 17$ m) to root ($r = 1$ m) at 0.8 m/s relative to the blade, returns to $r = 17$ m at
+>   3 m/s and moves along the 17 m orbit to the next blade. The orbit and the 60° start phase are
+>   kept for the transit. A wind-gust disturbance (OU, $\sigma = 0.5$ m/s, $	au = 2$ s) is added
+>   so the three controllers can differ.
+> - Motion blur depends on the speed relative to the blade, not on ground speed: co-rotating at
+>   $r = 17$ m already means 8.5 m/s over the ground.
 
 **Roles**:
 - **Drone**: single inspection agent orbiting the rotor plane; carries a downward- and side-facing
@@ -167,7 +183,7 @@ import matplotlib.animation as animation
 
 # ── Domain constants ──────────────────────────────────────────────────────────
 INSPECTION_SPEED = 1.0          # m/s  — v_max_inspect
-INSPECTION_DIST  = 0.5          # m    — target standoff from blade surface
+INSPECTION_DIST  = 2.0          # m    — target standoff from blade surface (was 0.5)
 GPS_ERROR        = 0.1          # m    — isotropic GPS noise std dev
 
 # ── Turbine geometry ──────────────────────────────────────────────────────────
@@ -182,7 +198,7 @@ R_ORBIT       = 17.0            # m   hub-centred orbit radius
 Y_OFFSET      = 1.0             # m   lateral offset from rotor plane
 PHI_OFFSET    = np.deg2rad(60)  # rad phase lead ahead of blade tip
 D_SAFE        = 1.5             # m   hard safety margin from blade surface
-D_INSPECT     = 1.0             # m   target inspection standoff
+D_INSPECT     = 2.0             # m   target inspection standoff (was 1.0 < D_SAFE)
 EPS_INSPECT   = 0.2             # m   inspection distance tolerance
 N_SEG         = 15              # blade inspection segments
 
@@ -508,7 +524,7 @@ if __name__ == '__main__':
 | Lateral rotor-plane offset | $y_{offset}$ | 1.0 m |
 | Phase lead angle | $\phi_{offset}$ | 60° ($\pi/3$ rad) |
 | Hard safety margin | $d_{safe}$ | 1.5 m |
-| Target inspection standoff | $d_{inspect}$ | 1.0 m |
+| Target inspection standoff | $d_{inspect}$ | 2.0 m (was 1.0 m, below $d_{safe}$) |
 | Max inspection speed | $v_{max,inspect}$ | 1.0 m/s |
 | GPS noise std dev | $\sigma_{GPS}$ | 0.1 m |
 | PD gain $K_p$ | — | 2.0 rad/(rad·s) |
