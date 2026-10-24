@@ -85,6 +85,7 @@ Z_FLAT_REF = 10.0                # flat baseline reference altitude (S096)
 VARIANTS = {'base': ('x', 'cv'), 'flatz': ('path', 'flatz'),
             'cv3d': ('path', 'cv'), 'course': ('path', 'course')}
 ABLATIONS = {'zfix': ('path', 'zfix'), 'vzfix': ('path', 'vzfix'),
+             'zvzfix': ('path', 'zvzfix'), 'xyfix': ('path', 'xyfix'),
              'flatz_rp2': ('path', 'flatz_rp2')}          # added probes
 LABELS = {'base': 'S096 planner (x rule, CV)', 'flatz': 'flat-z predictor',
           'cv3d': '3D CV predictor (card)', 'course': 'course-aware predictor',
@@ -148,14 +149,16 @@ def predict(kind, xkf, taus, course):
         pf = p[None, :] + taus[:, None] * vh[None, :]
         return pf, np.broadcast_to(vh, (len(taus), 3))
     # ablations (added): which part of the course-aware state fixes the CV planner?
-    if kind in ('zfix', 'vzfix'):
+    if kind in ('zfix', 'vzfix', 'zvzfix', 'xyfix'):
         pc, vc = predict('course', xkf, taus, course)
         pv, vv = predict('cv', xkf, taus, course)
         pv, vv = pv.copy(), np.array(vv).copy()
-        if kind == 'zfix':                              # course altitude, CV v_z
+        if kind in ('zfix', 'zvzfix'):                  # course altitude
             pv[:, 2] = pc[:, 2]
-        else:                                           # CV altitude, course v_z
+        if kind in ('vzfix', 'zvzfix'):                 # course v_z
             vv[:, 2] = vc[:, 2]
+        if kind == 'xyfix':                             # course horizontal state, CV vertical
+            pv[:, :2], vv[:, :2] = pc[:, :2], np.array(vc)[:, :2]
         return pv, vv
     if kind == 'flatz_rp2':                             # CV at RP1, flat-z only at RP2
         return predict('cv' if p[0] < COURSE_WP[3, 0] else 'flatz', xkf, taus, course)
@@ -780,11 +783,15 @@ if __name__ == '__main__':
         print(f'  {k:7s}: mean race time / flat baseline = {ratio:.4f} '
               f'({100 * (ratio - 1):+.2f} %; card target <= +10 %)')
     print(f'\nAblations ({N_MC} seeds, card speeds, same seeds):')
+    mc_abl = {}
     for k, lab in (('cv3d', '3D CV (card)'), ('zfix', 'CV, course altitude, CV v_z'),
-                   ('vzfix', 'CV altitude, course v_z'), ('course', 'course-aware (both)'),
+                   ('vzfix', 'CV altitude, course v_z'),
+                   ('zvzfix', 'CV horizontal, course z and v_z'),
+                   ('xyfix', 'course horizontal, CV z and v_z'), ('course', 'course-aware (both)'),
                    ('flatz', 'flat-z at both relays'),
                    ('flatz_rp2', 'CV at RP1, flat-z only at RP2')):
         m = mc[k] if k in mc else monte_carlo(k)
+        mc_abl[k] = m
         H = m['H']
         print(f'  {lab:32s} both in zone {m["zone_ok"].sum()}/{N_MC}, race '
               f'{np.nanmean(m["finish"]):.2f} s; RP1 +{np.nanmean(H["x"][:, 0]):.1f} m, late '
@@ -793,6 +800,14 @@ if __name__ == '__main__':
               f'in zone {int(np.sum(H["x"][:, 1] <= L_ZONE))}/{N_MC}, RP2 launch gap '
               f'{np.nanmean(H["launch_gap"][:, 1]):.1f} m; second pass past the finish '
               f'{int(np.sum(H["x"][:, 1] + RELAY_XS[2] > RELAY_XS[3]))}/{N_MC}')
+    x_cv = mc_abl['cv3d']['H']['x'][:, 0]
+    gain_course = np.mean(x_cv - mc_abl['course']['H']['x'][:, 0])
+    print('  RP1 pass, paired against 3D CV (card):')
+    for k in ('zfix', 'vzfix', 'zvzfix', 'xyfix', 'course'):
+        d = x_cv - mc_abl[k]['H']['x'][:, 0]
+        print(f'    {k:7s}: {np.mean(d):+.2f} m closer to RP1 on average, closer in '
+              f'{int(np.sum(d > 0))}/{N_MC} seeds; share of the course-aware gain '
+              f'{100 * np.mean(d) / gain_course:.0f} %')
 
     print(f'\nLaunch-acceleration sensitivity ({N_SWEEP} seeds, card speeds; zone L = 50 m):')
     for al in A_SWEEP:
