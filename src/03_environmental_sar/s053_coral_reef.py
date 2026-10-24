@@ -45,6 +45,7 @@ IMAGE_H_PX   = 3000
 OVERLAP      = 0.60     # design image overlap
 N_MIN_VIEWS  = 2
 FLAT_Z       = 4.0      # m — flat lawnmower altitude
+FLAT_Z5      = 5.0      # m — added flat lawnmower at the spiral's top level
 STANDOFF     = 3.0      # m — altitude-adaptive standoff
 ALT_LEVELS   = [5.0, 3.5, 2.0]   # m — spiral levels
 L_MAX        = 500.0    # m — path budget
@@ -66,13 +67,14 @@ ANIM_FRAMES  = 120
 
 FOV_HALF = np.radians(FOV_DEG / 2)
 COS_MAX = np.cos(np.radians(THETA_MAX))
-STRATS = ['flat', 'adaptive', 'spiral', 'spiral1']
-LABELS = {'flat': 'Flat lawnmower', 'adaptive': 'Altitude-adaptive', 'spiral': 'Spiral descent',
-          'spiral1': 'Spiral, top level only'}
-COLORS = {'flat': '#1F77B4', 'adaptive': '#FF7F0E', 'spiral': '#2CA02C', 'spiral1': '#9467BD'}
+STRATS = ['flat', 'flat5', 'adaptive', 'spiral', 'spiral1']
+LABELS = {'flat': 'Flat lawnmower', 'flat5': 'Flat lawnmower, 5 m', 'adaptive': 'Altitude-adaptive',
+          'spiral': 'Spiral descent', 'spiral1': 'Spiral, top level only'}
+COLORS = {'flat': '#1F77B4', 'flat5': '#17BECF', 'adaptive': '#FF7F0E', 'spiral': '#2CA02C',
+          'spiral1': '#9467BD'}
 MODES = ['card', 'trunc', 'fit']
 # cut at 500 m, the top-level-only spiral is identical to the full spiral (same first level)
-MODE_STRATS = {'card': STRATS, 'trunc': ['flat', 'adaptive', 'spiral'], 'fit': STRATS}
+MODE_STRATS = {'card': STRATS, 'trunc': ['flat', 'flat5', 'adaptive', 'spiral'], 'fit': STRATS}
 MODE_LABELS = {'card': 'card spacing, no budget', 'trunc': 'card spacing, cut at 500 m',
                'fit': 're-spaced to fit 500 m'}
 
@@ -219,13 +221,14 @@ def build_path(strategy, reef, scale=1.0, n_strips=None):
     """
     h_max = reef.h_max
     segs = []          # (path, cams, cam_idx-in-this-path)
-    if strategy in ('flat', 'adaptive'):
-        z_rel = FLAT_Z - h_max if strategy == 'flat' else STANDOFF
+    if strategy in ('flat', 'flat5', 'adaptive'):
+        z_flat = FLAT_Z5 if strategy == 'flat5' else FLAT_Z
+        z_rel = z_flat - h_max if strategy != 'adaptive' else STANDOFF
         d_lat = lat_spacing(z_rel)
         n = n_strips if n_strips else int(np.ceil(REEF_LX / (d_lat * scale))) + 1
         xy = lawnmower_xy(n)
-        if strategy == 'flat':
-            zf = lambda x, y: np.full(np.shape(x), FLAT_Z)
+        if strategy != 'adaptive':
+            zf = lambda x, y: np.full(np.shape(x), z_flat)
         else:
             zf = lambda x, y: height_at(reef.H, x, y) + STANDOFF
         segs.append(densify(xy, zf, d_lat))
@@ -269,7 +272,7 @@ def build_path(strategy, reef, scale=1.0, n_strips=None):
 
 def fit_budget(strategy, reef):
     """Re-space a pattern so its full length is <= L_MAX (largest pattern that fits)."""
-    if strategy in ('flat', 'adaptive'):
+    if strategy in ('flat', 'flat5', 'adaptive'):
         best = None
         for n in range(2, 60):
             pl = build_path(strategy, reef, n_strips=n)
@@ -403,7 +406,7 @@ def plot_reef_3d(reef, plans, out_dir):
 
 
 def plot_coverage_maps(reef, res, out_dir):
-    fig, axes = plt.subplots(2, len(STRATS), figsize=(21, 8.5))
+    fig, axes = plt.subplots(2, len(STRATS), figsize=(26, 8.5))
     cmap = ListedColormap(['#BBBBBB', '#9ECAE1', '#4292C6', '#2171B5', '#08306B'])
     for r, mode in enumerate(['card', 'fit']):
         for c, s in enumerate(STRATS):
@@ -491,7 +494,8 @@ def plot_mc(mc, out_dir):
 
 def plot_gsd_hist(res, out_dir):
     fig, ax = plt.subplots(figsize=(8, 4.5))
-    bins = np.linspace(0, 1.6, 50)
+    allg = np.concatenate([1000 * res[(s, 'card')]['gsd_cells'] for s in STRATS])
+    bins = np.linspace(0, 1.02 * allg.max(), 60)              # covers every cell of every strategy
     for s in STRATS:
         ax.hist(1000 * res[(s, 'card')]['gsd_cells'], bins=bins, histtype='step', lw=1.5,
                 color=COLORS[s], label=f'{LABELS[s]} (card spacing)')
@@ -545,6 +549,8 @@ def save_animation(reef, plan, label, out_dir):
     cams, cam_d = plan['cams'], plan['cam_d']
     n = len(path)
     step = int(np.ceil((n - 1) / ANIM_FRAMES))
+    while 0 < (n - 1) % step < step / 2:      # keep the clamped last frame distinct from the one before
+        step += 1
     idx = [min(i * step, n - 1) for i in range(int(np.ceil((n - 1) / step)) + 1)]
     views = np.zeros(reef.pts.shape[0], dtype=np.int32)
     state = {'k': 0}
@@ -611,7 +617,19 @@ if __name__ == '__main__':
     print('  Spiral level spacing (card, 60 % overlap at the crest): ' + ', '.join(
         f'z={z}: {lat_spacing(z - reef.h_max):.2f} m' for z in ALT_LEVELS))
     print(f"  Lawnmower spacing (card): flat {lat_spacing(FLAT_Z - reef.h_max):.2f} m, "
-          f"adaptive {lat_spacing(STANDOFF):.2f} m")
+          f"flat 5 m {lat_spacing(FLAT_Z5 - reef.h_max):.2f} m, adaptive {lat_spacing(STANDOFF):.2f} m")
+    sc = plans[('spiral', 'fit')]['scale']
+    print(f"  Spiral fit-500 m level spacings: " + ', '.join(
+        f'{sc * lat_spacing(z - reef.h_max):.1f} m' for z in ALT_LEVELS) +
+          f" (scale {sc:.2f}); card-spacing spiral / budget = "
+          f"{plans[('spiral', 'card')]['length'] / L_MAX:.1f}x")
+    print(f"  Footprint radius at the {STANDOFF:.1f} m standoff: {STANDOFF * np.tan(FOV_HALF):.2f} m")
+    for s in ('flat', 'flat5', 'adaptive'):
+        nst = plans[(s, 'fit')]['n_strips']
+        z_rel = STANDOFF if s == 'adaptive' else (FLAT_Z5 if s == 'flat5' else FLAT_Z) - reef.h_max
+        sp = REEF_LX / (nst - 1)
+        print(f"  {LABELS[s]} fit-500 m: {nst} strips, {sp:.2f} m apart; lateral overlap at the crest "
+              f"{100 * (1 - sp / (2 * z_rel * np.tan(FOV_HALF))):.0f}% (along-track stays {100 * OVERLAP:.0f}%)")
     for mode in MODES:
         print(f'  [{MODE_LABELS[mode]}]')
         for s in MODE_STRATS[mode]:
@@ -643,6 +661,10 @@ if __name__ == '__main__':
           f"flat beats adaptive in {int(np.sum(mc[('flat', 'fit')] > mc[('adaptive', 'fit')]))}/{N_MC}; "
           f"top-level spiral beats flat in "
           f"{int(np.sum(mc[('spiral1', 'fit')] > mc[('flat', 'fit')]))}/{N_MC}")
+    for a, b in (('flat5', 'spiral1'), ('flat5', 'flat')):
+        x, y = mc[(a, 'fit')], mc[(b, 'fit')]
+        print(f"  Fit-500 m paired: {LABELS[a]} vs {LABELS[b]} -> higher {int(np.sum(x > y + 1e-12))}, "
+              f"equal {int(np.sum(np.abs(x - y) <= 1e-12))}, lower {int(np.sum(x < y - 1e-12))} of {N_MC}")
     print(f"  Fit-500 m reaching the 90 % target: " + ', '.join(
         f"{LABELS[s]} {int(np.sum(mc[(s, 'fit')] >= C_TARGET))}/{N_MC}" for s in STRATS))
 
@@ -655,4 +677,4 @@ if __name__ == '__main__':
     plot_gsd_hist(res, out)
     plot_coverage_curve(res, out)
     plot_incidence(res, out)
-    save_animation(reef, plans[('spiral1', 'fit')], 'Top-level spiral (fit 500 m)', out)
+    save_animation(reef, plans[('flat5', 'fit')], 'Flat lawnmower at 5 m (fit 500 m)', out)
