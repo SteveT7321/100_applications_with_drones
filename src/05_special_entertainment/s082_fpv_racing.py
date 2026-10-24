@@ -67,6 +67,7 @@ R_SEARCH    = 2.0            # m    a gate visit starts when the path comes this
 END_RADIUS  = 0.5            # m    lap ends when back within this distance of the start
 T_PAD       = 4.0            # s    simulated time after the reference ends
 GUP         = np.array([0.0, 0.0, G])
+RATE_SENS   = 40.0           # rad/s rate-setpoint clip used in the sensitivity run
 MAX_TILT    = np.radians(89.0)  # racing: no practical tilt limit (preset default is 70 deg)
 
 STRATS = ['minsnap', 'scaled', 'topp']
@@ -366,7 +367,7 @@ def _rate_ff(drone, u_now, u_next):
 
 
 # ── Simulation ────────────────────────────────────────────────────────────────
-def simulate(model, refs):
+def simulate(model, refs, max_rate=None):
     """Fly every reference in refs (one per layout) with the given plant model, batched."""
     B = len(refs)
     mpc = MPC()
@@ -410,8 +411,11 @@ def simulate(model, refs):
         return out
     # rigid body
     params = make_params('fpv_5inch', mass=MASS)
+    gains = default_gains('fpv_5inch', max_tilt=MAX_TILT)
+    if max_rate is not None:
+        gains['max_rate'] = np.array([max_rate, max_rate, gains['max_rate'][2]])
     drone = RigidBodyDrone(np.repeat(START[None], B, axis=0), preset='fpv_5inch',
-                           params=params, gains=default_gains('fpv_5inch', max_tilt=MAX_TILT), dt=DT_INNER,
+                           params=params, gains=gains, dt=DT_INNER,
                            drag_ff=False, ground_z=0.0)
     u = U[:, 0]
     rate_ff = np.zeros((B, 3))
@@ -525,6 +529,10 @@ def run_simulation():
             sims[(st, mo)] = simulate(mo, refs[(st, mo)])
             res[(st, mo)] = [metrics(sims[(st, mo)], b, *layouts[s], refs[(st, mo)][b]['T_ref'])
                              for b, s in enumerate(MC_SEEDS)]
+    # sensitivity: TOPP on the rigid body with the rate-setpoint clip raised 15 -> 40 rad/s
+    sim40 = simulate('rb', refs[('topp', 'rb')], max_rate=RATE_SENS)
+    res['topp_rate40'] = [metrics(sim40, b, *layouts[s], refs[('topp', 'rb')][b]['T_ref'])
+                          for b, s in enumerate(MC_SEEDS)]
     return layouts, splines, refs, sims, res
 
 
@@ -865,13 +873,15 @@ if __name__ == '__main__':
             i = r['t'] <= r['T_ref']
             u = r['u'][i]
             z = u / np.linalg.norm(u, axis=1, keepdims=True)
-            ang = np.arccos(np.clip(np.sum(z[1:] * z[:-1], axis=1), -1, 1)) / DT_INNER
+            ang = np.degrees(np.arccos(np.clip(np.sum(z[1:] * z[:-1], axis=1), -1, 1)))
             dirr.append(ang.max())
             down.append(np.mean(u[:, 2] < 0.0))
             umin.append(np.degrees(np.arccos(np.clip(z[:, 2], -1, 1))).max())
-        print(f"  Reference [{S_LABEL[st]}] over layouts: max thrust-direction rate "
-              f"{np.min(dirr):.1f}-{np.max(dirr):.1f} rad/s (rate limit "
-              f"{default_gains('fpv_5inch')['max_rate'][0]:.0f} rad/s), max thrust tilt "
+        clip = default_gains('fpv_5inch')['max_rate'][0]
+        print(f"  Reference [{S_LABEL[st]}] over layouts: largest change of thrust direction "
+              f"between consecutive {1000 * DT_INNER:.0f} ms samples {np.min(dirr):.1f}-"
+              f"{np.max(dirr):.1f} deg (the {clip:.0f} rad/s rate-setpoint clip allows "
+              f"{np.degrees(clip * DT_INNER):.1f} deg per sample), max thrust tilt "
               f"{np.min(umin):.0f}-{np.max(umin):.0f} deg, time with downward thrust "
               f"{100 * np.mean(down):.1f} %")
     for st in STRATS:
@@ -884,6 +894,12 @@ if __name__ == '__main__':
         n_out = sum(r['out_of_arena'] for r in res[k])
         print(f"  [{S_LABEL[k[0]]}, {M_LABEL[k[1]]}] layouts leaving the 20x20x10 m arena: "
               f"{n_out}/{len(MC_SEEDS)}")
+    r40 = res['topp_rate40']
+    h40 = np.array([r['hits'] for r in r40])
+    print(f"  [Time-optimal (TOPP), rigid body, rate clip {RATE_SENS:.0f} rad/s] mean hits "
+          f"{h40.mean():.2f}, all 8 hit on {np.sum(h40 == N_GATES)}/{len(r40)}, finished "
+          f"{sum(r['finished'] for r in r40)}/{len(r40)}, crashed {sum(r['crashed'] for r in r40)}"
+          f"; mean miss {100 * np.mean(np.concatenate([r['miss'] for r in r40])):.1f} cm")
     tm = np.array([r['tilt_max'] for r in res[('topp', 'rb')]])
     print(f"  [rigid body, time-optimal] max tilt over layouts {tm.min():.1f}-{tm.max():.1f} deg")
 
