@@ -49,7 +49,8 @@ ALPHA      = 0.85
 KP_LAT     = 0.8                 # 1/s
 KP_ALT     = 1.2                 # 1/s
 KP_X_TURN  = 0.8                 # 1/s  x hold in the headland (added)
-V_LAT_MAX  = 1.0                 # m/s  lateral speed limit (added)
+V_LAT_MAX  = 1.0                 # m/s  lateral speed limit of the tracking law (added)
+V_MAX      = 3.0                 # m/s  airframe speed limit incl. repulsion (added)
 K_REP      = 1.5                 # m/s
 DT         = 0.05
 T_MAX      = 300.0
@@ -143,7 +144,8 @@ def simulate(strategy, seed, alpha=ALPHA, keep_log=False):
     y_pure = y            # parallel pure dead-reckoning integrator (logging only)
     wp = 0
     reached = []
-    err, clr = [], []
+    err, clr, in_head = [], [], []
+    v_peak = vy_peak = 0.0
     viol = 0
     crash = False
     n_fix = 0
@@ -172,6 +174,13 @@ def simulate(strategy, seed, alpha=ALPHA, keep_log=False):
             if zr is not None and zr - DRONE_R < D_SAFE:
                 vy -= K_REP * (D_SAFE - (zr - DRONE_R)) / D_SAFE
         vz = KP_ALT * (Z_CRUISE - z)
+        sp = math.sqrt(vx * vx + vy * vy + vz * vz)
+        if sp > V_MAX:
+            vx, vy, vz = vx * V_MAX / sp, vy * V_MAX / sp, vz * V_MAX / sp
+        sp = math.sqrt(vx * vx + vy * vy + vz * vz)
+        assert sp <= V_MAX + 1e-9, 'commanded speed above V_MAX'
+        v_peak = max(v_peak, sp)
+        vy_peak = max(vy_peak, abs(vy))
         # ── truth propagation (unmeasured air-current drift, card) ──
         x += vx * DT + eta_t[k, 0]
         y += vy * DT + eta_t[k, 1]
@@ -200,6 +209,7 @@ def simulate(strategy, seed, alpha=ALPHA, keep_log=False):
 
         c = clearance(x, y)
         err.append(abs(y_hat - y))
+        in_head.append(not rows_present(x))
         clr.append(c)
         if c < D_SAFE:
             viol += 1
@@ -223,6 +233,8 @@ def simulate(strategy, seed, alpha=ALPHA, keep_log=False):
         'complete': wp == len(WPS) and not crash, 'crash': crash,
         'mean_err': float(err.mean()), 'max_err': float(err.max()),
         'min_clear': float(np.min(clr)), 'viol': viol, 'fix_frac': n_fix / (k + 1),
+        'peak_in_headland': bool(in_head[int(np.argmax(err))]),
+        'head_frac': float(np.mean(in_head)), 'v_peak': v_peak, 'vy_peak': vy_peak,
     }
     if keep_log:
         for key in lg:
@@ -437,6 +449,10 @@ if __name__ == '__main__':
               f"{sum(v == 0 for v in g('viol'))}/{N_SEEDS}")
         if s == 'fusion':
             print(f"    Steps with a wall fix: {100 * np.mean(g('fix_frac')):.1f} %")
+        print(f"    Peak |y_hat - y| occurs in a headland in {sum(g('peak_in_headland'))}/{N_SEEDS} runs "
+              f"(headlands = {100 * np.mean(g('head_frac')):.1f} % of flight time)")
+        print(f"    Max commanded speed: {np.max(g('v_peak')):.2f} m/s (limit {V_MAX:.1f}); "
+              f"max |v_y| {np.max(g('vy_peak')):.2f} m/s")
     e_f = np.array([r['mean_err'] for r in mc['fusion']])
     e_d = np.array([r['mean_err'] for r in mc['dr_rep']])
     print(f'  Per-seed mean error: fusion < DR + repulsion in {int(np.sum(e_f < e_d))}/{N_SEEDS}')

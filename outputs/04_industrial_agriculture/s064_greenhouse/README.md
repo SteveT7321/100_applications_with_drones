@@ -71,7 +71,7 @@ The lateral margin before a $d_{safe}$ violation is 0.90 − 0.15 − 0.25 = 0.5
 | Fix gate (added) | 0.5 m |
 | α | 0.85 (sweep 0.5–0.99) |
 | $K_p$ lateral / altitude / headland x | 0.8 / 1.2 / 0.8 s⁻¹ |
-| Lateral speed limit (added) | 1.0 m/s |
+| Lateral speed limit of the tracking law / overall speed limit (added) | 1.0 m/s / 3.0 m/s (asserted) |
 | $K_{rep}$ / $d_{safe}$ | 1.5 m/s / 0.25 m |
 | Waypoint radius $d_{wp}$ | 0.5 m |
 | Δt / $T_{max}$ | 0.05 s / 300 s |
@@ -119,7 +119,7 @@ Completed missions take 195.1–195.2 s (± 0.3 s) in every set-up, well within 
 
 - **Fusion is what makes the flight safe.** Dead reckoning alone drifts by 0.1967 m on average, with peaks up to 0.791 m. That uses up the 0.50 m margin in some runs: 3 of 30 DR-only flights hit a row, and 14 of 30 go below $d_{safe}$. With fusion, the error stays at 1.35 cm and every run keeps at least 0.421 m of clearance.
 - **The repulsive layer alone is not enough.** Feeding the ultrasonic ranges only to the safety layer cuts the violation steps from 163.9 to 49.1 per flight, but 2 of 30 flights still crash. The repulsion starts only once the drone is already inside $d_{safe}$. It also does nothing about the estimation error (0.1991 m), so the drone keeps steering towards a wrong aisle centre.
-- **The card's α = 0.85 is the best gain in the sweep** for mean error (0.0135 m). Lower α trusts the noisy ranges too much (0.0186 m at α = 0.5). Higher α corrects drift too slowly (0.0349 m at α = 0.99). The peak error is lowest at α = 0.95 (0.0875 m). A likely reason is that the peaks come from the headland turns, where no fix is available (as in seed 0 below), so they depend on how small the error is when the drone leaves the aisle rather than on the fix noise.
+- **The card's α = 0.85 is the best gain in the sweep** for mean error (0.0135 m). Lower α trusts the noisy ranges too much (0.0186 m at α = 0.5). Higher α corrects drift too slowly (0.0349 m at α = 0.99). The peak error is lowest at α = 0.95 (0.0875 m). The peaks come mostly from the headland turns, where no fix is available: with fusion, the peak error falls in a headland in 24/30 runs, although the headlands take only 7.7 % of the flight time. The peak therefore depends on how small the error is when the drone leaves the aisle, more than on the fix noise. Without fusion the drift builds up everywhere, and the peak falls in a headland in only 5/30 runs.
 - **Card expectations**: 4/4 row-ends (here 5/5, see Deviations) ✓; mean lateral error ~0.02–0.04 m: measured 0.0135 m, better than expected; peak 0.08–0.12 m ✓ (0.0967 m); collision-free ✓ (fusion). The card's drift estimate of 0.35 m after 300 s is right for one random walk (0.346 m).
 
 ### 3D Trajectory
@@ -154,7 +154,8 @@ Top view of the fusion flight, seed 0. The true path is blue and the estimate re
 | Repulsion uses true wall distances | Uses the measured ultrasonic ranges and the edge clearance (centre distance − 0.15 m) | The drone cannot know the true distances; $d_{safe}$ is a clearance to the airframe. |
 | Wall fix uses the known aisle index | Map association from $\hat y_{DR}$ and $x$, with a 0.5 m gate | Needed in the headlands and after drift; avoids using the true aisle. |
 | Only the fusion case | Adds DR-only and DR + repulsion baselines and an α sweep, over 30 / 10 seeds | The card asks to minimise drift error; a baseline shows what fusion buys (X2). |
-| Headland motion not specified | $v_x = 0.8(x_{wp} - x)$; lateral speed limited to 1 m/s | Needed for the 2 m sideways moves. |
+| Headland motion not specified | $v_x = 0.8(x_{wp} - x)$; lateral tracking speed limited to 1 m/s | Needed for the 2 m sideways moves. |
+| No speed limit | Commanded speed limited to 3 m/s and asserted (X4). The repulsion can add to the 1 m/s tracking speed: the highest commanded speed is 1.93 m/s (DR + repulsion, max $\|v_y\|$ 1.65 m/s), so the limit never binds | Physical sanity check. |
 | Plot file names `s064_3d_trajectory.png`, `s064_analysis.png`, `s064_animation.gif` (25 fps, ~400 frames) | `trajectory_3d.png`, `analysis.png`, `animation.gif` (12 fps, 197 frames); panel (b) shows errors relative to the truth over the whole flight | Naming convention; panel (b) in absolute $y$ hides the drift behind the 0–10 m axis. |
 
 ---

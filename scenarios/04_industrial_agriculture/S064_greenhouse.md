@@ -126,14 +126,18 @@ $$v_y^{total} = v_y^{cmd} + v_y^{rep}$$
 
 ### Boustrophedon Waypoint Sequence
 
-The drone navigates a sequence of $N_{wp} = 10$ waypoints defining the serpentine path through
-all five aisles. For aisle $k$ (between rows $k$ and $k+1$), the centre lateral coordinate is
-$y_k^{centre}$. The waypoints alternate between $x = 40$ m (right end) and $x = 0$ m (left end):
+The drone navigates a sequence of $N_{wp} = 9$ waypoints defining the serpentine path through
+all five aisles, whose centres are $y_k^{centre} \in \{0.95, 3, 5, 7, 9\}$ m. Rows end at
+$x = 2$ m and $x = 38$ m, so the turns happen in the headlands on the lines $x = 1$ m and
+$x = 39$ m. Aisle $k$ ($k = 0, \ldots, 4$) is flown towards
 
-$$\mathbf{w}_i = \begin{cases}
-(40.0,\; y_k^{centre},\; z_{cruise}) & \text{if } k \text{ is even (outbound leg)} \\
-(0.0,\; y_k^{centre},\; z_{cruise}) & \text{if } k \text{ is odd (return leg)}
+$$\mathbf{w}^{leg}_k = \begin{cases}
+(39.0,\; y_k^{centre},\; z_{cruise}) & \text{if } k \text{ is even (outbound leg)} \\
+(1.0,\; y_k^{centre},\; z_{cruise}) & \text{if } k \text{ is odd (return leg)}
 \end{cases}$$
+
+and, for $k \ge 1$, is preceded by a headland transfer waypoint at the same $x$ as the previous
+leg end and $y = y_k^{centre}$. The five leg ends are the row-ends.
 
 Waypoint $\mathbf{w}_i$ is considered reached when $\|\mathbf{p} - \mathbf{w}_i\| < d_{wp} = 0.5$ m.
 At each turn, the drone adjusts its heading and updates the active aisle index.
@@ -201,13 +205,24 @@ def aisle_centre(aisle_idx):
     return (y_left + y_right) / 2.0
 
 
+ROW_X0, ROW_X1 = 2.0, 38.0   # m  rows stop 2 m before each gable wall (headlands)
+AISLE_Y = [0.95, 3.0, 5.0, 7.0, 9.0]   # wall-side strip + four inter-row aisles
+
+
 def build_waypoints():
-    """Boustrophedon waypoints through 4 aisles (between 5 rows)."""
+    """Serpentine through 5 aisles: 5 leg ends (row-ends) + 4 headland transfers = 9 waypoints.
+
+    NOTE: the remaining helpers in this sketch are the original card code. The implementation
+    (src/04_industrial_agriculture/s064_greenhouse.py) differs where the correction note says:
+    rows span x = 2-38 m, side faces exist only there, the repulsion uses the measured
+    ultrasonic ranges, and the wall fix is associated with the map from the DR estimate.
+    """
     wps = []
-    for k in range(4):
-        yc = aisle_centre(k)
-        x_end = GH_X if (k % 2 == 0) else 0.0
-        wps.append(np.array([x_end, yc, Z_CRUISE]))
+    for k, yc in enumerate(AISLE_Y):
+        x_far = 39.0 if k % 2 == 0 else 1.0
+        if k > 0:
+            wps.append(np.array([40.0 - x_far, yc, Z_CRUISE]))   # headland transfer
+        wps.append(np.array([x_far, yc, Z_CRUISE]))              # row-end
     return wps
 
 
@@ -601,7 +616,7 @@ if __name__ == '__main__':
 - **3D trajectory plot** (`s064_3d_trajectory.png`): isometric view of the 40 × 10 × 3 m
   greenhouse; grey semi-transparent slabs show the five plant-row walls; blue polyline is the
   true flight path, red dashed polyline is the filter estimate; green circle at start, red cross
-  at end; visible serpentine boustrophedon turns at $x = 40$ m and $x = 0$ m.
+  at end; visible serpentine boustrophedon turns in the headlands at $x = 39$ m and $x = 1$ m.
 - **Four-panel analysis figure** (`s064_analysis.png`):
   - **(a) Lateral position** — true $Y(t)$ (blue) vs filtered estimate $\hat{Y}(t)$ (red dashed);
     horizontal grey dotted lines mark row-wall positions; visible bounded tracking error.
@@ -619,7 +634,7 @@ if __name__ == '__main__':
   clearance recorded during the mission, and a per-waypoint log of arrival time and position.
 
 **Typical expected metrics** (seed 42):
-- Row-ends visited: 4 / 4
+- Row-ends visited: 5 / 5
 - Mean lateral error: ~0.02 – 0.04 m
 - Peak lateral error: ~0.08 – 0.12 m
 - Minimum wall clearance: $> d_{safe}$ (collision-free)
