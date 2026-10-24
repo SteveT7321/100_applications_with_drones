@@ -74,7 +74,7 @@ N_WORKERS  = min(6, os.cpu_count() or 1)
 ANIM_FRAMES = 90
 
 STRATS = ['fixed3', 'fixed1', 'tf', 'tfc']
-LABELS = {'fixed3': 'Fixed z = max h + 3 m (2D baseline)', 'fixed1': 'Fixed z = max h + 1 m',
+LABELS = {'fixed3': 'Fixed z = max h + 3 m (3D GPR)', 'fixed1': 'Fixed z = max h + 1 m (3D GPR)',
           'tf': 'Terrain-following, survey only', 'tfc': 'Terrain-following + confirmation'}
 COLORS = {'fixed3': '#7F7F7F', 'fixed1': '#BCBD22', 'tf': '#1F77B4', 'tfc': '#D62728'}
 
@@ -295,13 +295,13 @@ class Mission3D(s2d.Mission):
             self.sense()
             self.log()
 
-    def _log3(self):
+    def _log3(self, traj=True):
         zg = float(self.ter.h(self.pos[0], self.pos[1]))
         cmd = self.override_agl if self.override_agl is not None else \
             (self.z_fixed - zg if self.mode == 'fixed' else self.z_agl_cmd)
         self.agl_log.append((self.t, self.z - zg, cmd, self.z, zg, self.override_agl is not None,
                              self.pos[0], self.pos[1]))
-        if self.record:
+        if self.record and traj:
             self.traj3.append(np.array([*self.pos, self.z]))
 
     # -- confirmation detours -----------------------------------------------------------
@@ -357,6 +357,7 @@ class Mission3D(s2d.Mission):
                 self.detour(key, xy)
 
     def run(self):
+        self._log3(traj=False)            # initial pose (t = 0), so the track check covers step 1
         self.sense()
         self.log()
         self.n_reclass_visits = 0
@@ -521,7 +522,7 @@ def report(res):
             sc = 100 if fmt == 'p' else 1
             parts.append(f'{s_} {sc * v.mean():.2f} +- {sc * v.std():.2f}')
         print(f'  {lab}: ' + '; '.join(parts))
-    for a, b in (('tf', 'fixed3'), ('tf', 'fixed1'), ('tfc', 'tf'), ('tf_narrow', 'tf'), ('tf', '2d')):
+    for a, b in (('tf', 'fixed3'), ('tf', 'fixed1'), ('tfc', 'tf'), ('tf_narrow', 'tf'), ('tf', '2d'), ('tf_narrow', '2d')):
         dm = _arr(mc, a, 'missed') - _arr(mc, b, 'missed')
         print(f'  missed mines {a} vs {b}: fewer {int(np.sum(dm < 0))} / equal {int(np.sum(dm == 0))} / more '
               f'{int(np.sum(dm > 0))}; mean diff {dm.mean():+.2f}')
@@ -573,11 +574,11 @@ def plot_trajectory_3d(res, out):
     ax.plot_surface(X, Y, ter.H[::5, ::5], cmap='terrain', alpha=0.35, linewidth=0, zorder=0)
     tr = np.array(m.traj3)
     al = np.array(m.agl_log)
-    agl = np.concatenate([[tr[0, 2] - ter.h(*tr[0, :2])], al[:, 1]])
+    agl = al[:, 1]                       # agl_log[i] <-> traj3[i] (both start at t = 0)
     sc = ax.scatter(tr[::3, 0], tr[::3, 1], tr[::3, 2], c=agl[::3], cmap='viridis', s=1, vmin=0.8, vmax=1.6,
                     depthshade=False, zorder=2)
     fig.colorbar(sc, ax=ax, shrink=0.55, label='AGL (m)')
-    det = np.concatenate([[False], al[:, 5].astype(bool)])
+    det = al[:, 5].astype(bool)
     ax.scatter(tr[det, 0], tr[det, 1], tr[det, 2], color='orange', s=4, depthshade=False, zorder=3,
                label='confirmation descents / hovers')
     st = r['mine_status']
@@ -707,15 +708,16 @@ def plot_confirmation(res, out):
 
 def plot_mc(res, out):
     mc = res['mc']
-    cols = STRATS + ['tf_narrow']
-    fig, axes = plt.subplots(1, 4, figsize=(20, 4.5))
+    cols = STRATS + ['tf_narrow', '2d']
+    fig, axes = plt.subplots(1, 4, figsize=(22, 4.5))
     for ax, (k, lab, sc) in zip(axes, (('missed', 'mines missed per field', 1), ('coverage', 'coverage C (%)', 100),
                                        ('time', 'mission time (s)', 1), ('fa_unresolved', 'unresolved false alarms', 1))):
         for i, s_ in enumerate(cols):
             v = sc * _arr(mc, s_, k)
-            ax.bar(i, v.mean(), color=COLORS.get(s_, '#17BECF'), alpha=0.8)
+            ax.bar(i, v.mean(), color={'tf_narrow': '#17BECF', '2d': '#9467BD'}.get(s_, COLORS.get(s_)), alpha=0.8)
             ax.scatter(np.full(len(v), i), v, color='k', s=8, zorder=3)
-        ax.set_xticks(range(len(cols)), ['fixed\n+3 m', 'fixed\n+1 m', 'TF', 'TF +\nconfirm', 'TF\nnarrow'])
+        ax.set_xticks(range(len(cols)), ['fixed\n+3 m\n(3D GPR)', 'fixed\n+1 m\n(3D GPR)', 'TF', 'TF +\nconfirm',
+                                         'TF\nnarrow', 'card\nbaseline\n(2D S054)'], fontsize=8)
         ax.set_title(lab); ax.grid(axis='y', alpha=0.3)
     fig.suptitle(f'S054 3D Monte Carlo ({N_MC} fields; bars = mean, dots = fields)')
     _save(fig, out, 'mc_comparison.png')
@@ -772,7 +774,7 @@ def save_animation(res, out):
         ground.set_data(yy, ter.h(np.full_like(yy, x), yy))
         lo = max(0, k - 400)
         if k > 0:
-            seg = al[lo:k]
+            seg = al[lo + 1:k + 1]
             ys = tr[lo + 1:k + 1, 1]
             act.set_data(ys, seg[:, 3]); cmd.set_data(ys, seg[:, 4] + seg[:, 2])
         d2.set_data([tr[k, 1]], [tr[k, 2]])

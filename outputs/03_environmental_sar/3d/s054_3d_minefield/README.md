@@ -91,7 +91,7 @@ The 3D mission subclasses the 2D `Mission`, replacing sensing (3D GPR) and motio
 | Coverage $C$ | 0.00 % | 21.11 % | 95.00 % | 95.00 % | 95.00 % |
 | Mines confirmed / missed | 0 / 15 | 1 / 14 | 13 / 2 | 13 / 2 | 12 / 3 |
 | $D_{confirm}$ | 0 % | 6.67 % | 86.67 % | 86.67 % | 80.00 % |
-| False alarms raised / unresolved | 0 / 0 | 1 / 1 | 29 / 20 | 29 / **0** | 29 / 17 |
+| False alarms raised / unresolved | (0 / 0) | (1 / 1) | 29 / 20 | 29 / **0** | 29 / 17 |
 | Confirmation detours (time) | — | — | — | 29 (280 s) | — |
 | AGL range | 3.020–7.981 m | 1.020–5.981 m | 0.879–1.115 m | 0.879–1.500 m | — |
 | Mean / max \|AGL error\| (survey) | 0 / 0 m | 0 / 0 m | 0.015 / 0.121 m | 0.017 / 0.300 m | — |
@@ -113,11 +113,11 @@ All 29 confirmation detours in the showcase go to false alarms: every real mine 
 
 Fields meeting $C \ge 0.95$ and $D_{confirm} \ge 0.90$: TF narrow 10/10 and 10/10; TF and TF + confirmation 10/10 and 0/10; fixed altitudes 0/10 and 0/10; card baseline (2D) 10/10 and 3/10.
 
-Unresolved false alarms of the fixed-altitude runs are in brackets: they are not a comparison. A false alarm is an alarm, so it is only raised where the GPR can exceed $\theta_{alarm}$ at the current AGL (below 2.192 m); the fixed planes are mostly too high to raise any (raised 0.00 and 2.60 per field) and equally too high to clear them.
+False alarms of the fixed-altitude runs (both tables) are in brackets: they are not a comparison. A false alarm is an alarm, so it is only raised where the GPR can exceed $\theta_{alarm}$ at the current AGL (below 2.192 m); the fixed planes are mostly too high to raise any (raised 0.00 and 2.60 per field) and equally too high to clear them.
 
 **Key findings**
 
-- **Against the card's literal baseline, TF does not win.** The 2D S054 sweep, which assumes flat ground and an altitude-independent GPR, misses 2.40 mines per field; 3D TF with the card's 8 m strips misses 3.40 (more in 6/10 fields, never fewer), because the 3D GPR's alarm radius at 1 m AGL is 3.074 m against 3.397 m for the 2D model, so the seams between strips are wider. Only narrow strips beat it (0.70). The 2D number, however, is unreachable in the 3D world: the same sweep flown at a fixed altitude over the 5 m relief with the 3D sensor detects almost nothing (next point).
+- **Against the card's literal baseline, TF does not win.** The 2D S054 sweep, which assumes flat ground and an altitude-independent GPR, misses 2.40 mines per field; 3D TF with the card's 8 m strips misses 3.40 (more in 6/10 fields, never fewer), because the 3D GPR's alarm radius at 1 m AGL is 3.074 m against 3.397 m for the 2D model, so the seams between strips are wider. Only narrow strips beat it: 0.70 missed, fewer than the card baseline in 9/10 fields and equal in 1 (mean −1.70). The 2D number, however, is unreachable in the 3D world: the same sweep flown at a fixed altitude over the 5 m relief with the 3D sensor detects almost nothing (next point).
 - **At the 2D altitude the card's 3D GPR detects nothing.** At 3 m AGL the single-step $P_d$ directly below a mine is 0.201, so no alarm can ever be raised: the highest single-step $P_d$ on any mine in the showcase is 0.037. Flown at 3 m above the *highest* ground (the only safe fixed altitude over 5 m relief), the 2D baseline reaches 0 % coverage and misses every mine in 10/10 fields.
 - **Terrain following is what makes the sensor work.** TF misses fewer mines than either fixed altitude in 10/10 fields (−13.10 vs +3 m, −11.90 vs +1 m). Even the fixed plane with only 1 m clearance at the top fails: over lower ground its AGL rises to 6 m, where the GPR is blind (coverage 7.82 %). **Relief sweep**: with flat ground the fixed plane and TF are identical (both 3.70 missed, 95 %). With 2.5 m of relief the fixed plane misses 11.60 mines (39.65 % coverage), and with 10 m 15.80 (2.76 %). TF stays at 3.40–3.50 missed for every relief. The terrain causes the difference, through the AGL.
 - **The optimal survey altitude is the 1 m lower bound, not 2.5 m.** **Survey-altitude sweep** (TF): 3.40 mines missed at 1.0 m, 5.30 at 1.5 m, 8.80 at 2.0 m, 15.10 at 2.5 m (the card's $z^*$; coverage 27.37 %) and 16.30 at 3.0 m. Above 2.192 m AGL no alarm is possible at all; only mines right under the track can still be confirmed by accumulating several weak readings. The altitude ends on the bound because the card's GPR model degrades monotonically with height. This was derived from $\eta$ and confirmed by the sweep; no tuning was involved.
