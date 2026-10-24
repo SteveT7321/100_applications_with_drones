@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this project, please cite it as below."
+type: software
+title: "100 Drone Simulation Applications"
+abstract: >-
+  A systematic study of 100 drone simulation scenarios across five domains
+  (pursuit and evasion, logistics and delivery, environmental monitoring and
+  search and rescue, industry and agriculture, special operations and
+  entertainment), each with a scenario card, a Python implementation and
+  Matplotlib 3D visualisations.
+authors:
+  - family-names: Tsai
+    given-names: Yun-Hsiu
+    alias: SteveT7321
+repository-code: "https://github.com/SteveT7321/100_applications_with_drones"
+url: "https://github.com/SteveT7321/100_applications_with_drones"
+keywords:
+  - drones
+  - UAV
+  - simulation
+  - multi-agent systems
+  - path planning
+  - Python
+date-released: 2026-10-24

@@ -228,6 +228,7 @@ drones/
 ├── docs/                              # Technical reference docs
 ├── MATH_FOUNDATIONS.md                # Shared mathematical foundations
 ├── PROGRESS.md                        # Progress tracker (100 scenarios)
+├── CITATION.cff                       # Citation metadata ("Cite this repository")
 └── SETUP.md                           # Environment setup guide
 ```
 
@@ -247,6 +248,41 @@ drones/
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
+
+---
+
+## Citation
+
+If you use this project in your work, please cite it. The citation metadata is in [CITATION.cff](CITATION.cff), and GitHub's **"Cite this repository"** button in the sidebar generates APA and BibTeX from it.
+
+**BibTeX**
+
+```bibtex
+@misc{tsai2026drones,
+  author       = {Tsai, Yun-Hsiu},
+  title        = {100 Drone Simulation Applications},
+  year         = {2026},
+  publisher    = {GitHub},
+  howpublished = {\url{https://github.com/SteveT7321/100_applications_with_drones}},
+  note         = {Software}
+}
+```
+
+**APA (7th ed.)**
+
+> Tsai, Y.-H. (2026). *100 Drone Simulation Applications* [Computer software]. GitHub. https://github.com/SteveT7321/100_applications_with_drones
+
+**IEEE**
+
+> Y.-H. Tsai, "100 Drone Simulation Applications," GitHub, 2026. [Online]. Available: https://github.com/SteveT7321/100_applications_with_drones
+
+**MLA (9th ed.)**
+
+> Tsai, Yun-Hsiu. *100 Drone Simulation Applications*. GitHub, 2026, github.com/SteveT7321/100_applications_with_drones.
+
+**Chicago (author-date)**
+
+> Tsai, Yun-Hsiu. 2026. "100 Drone Simulation Applications." Software. GitHub. https://github.com/SteveT7321/100_applications_with_drones.
 
 ---
 
