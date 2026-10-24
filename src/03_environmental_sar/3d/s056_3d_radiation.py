@@ -75,12 +75,15 @@ DEMO_SOURCE = np.array([175.0, 310.0, 13.0])
 N_BOOT     = 1000
 SEED_BASE  = 56000
 
-STRATS = ['eig3d', 'eigfix', 'lawn', 'eig2d', 'lawn15']
+STRATS = ['eig3d', 'eigfix', 'lawn', 'eig2d50', 'eig2d', 'lawn15']
 LABELS = {'eig3d': '3D EIG', 'eigfix': 'Fixed-altitude EIG (15 m)',
-          'lawn': 'Altitude-sweep lawnmower', 'eig2d': '2D baseline (S056 model)',
+          'lawn': 'Altitude-sweep lawnmower', 'eig2d': '2D-model baseline, 25x25 grid',
+          'eig2d50': 'S056 model, 50x50 grid', 'eig3d_no3': '3D EIG without 3 m (probe)',
           'lawn15': 'Lawnmower at 15 m (S056 8 x 10)',
           'eig3d_l0': '3D EIG, lambda0 = 0', 'eig3d_l0.5': '3D EIG, lambda0 = 0.5'}
-COLORS = {'eig3d': '#D62728', 'eigfix': '#1F77B4', 'lawn': '#7F7F7F', 'eig2d': '#9467BD', 'lawn15': '#BCBD22'}
+COLORS = {'eig3d': '#D62728', 'eigfix': '#1F77B4', 'lawn': '#7F7F7F', 'eig2d': '#C5B0D5', 'eig2d50': '#9467BD',
+          'lawn15': '#BCBD22'}
+N_BOOT_RATIO = 2000                    # bootstrap resamples for RMS ratios (added)
 
 XS = (np.arange(NXY) + 0.5) * VOX_XY
 ZS = (np.arange(NZ) + 0.5) * VOX_Z
@@ -111,6 +114,7 @@ def dz_gradient(rho, dz, A=A_SOURCE):
 
 
 MODELS = {}
+FLOORS = {}
 
 
 def model(name):
@@ -120,6 +124,14 @@ def model(name):
             cand, hyp = CAND3, VOX
         elif name == 'fix':
             cand, hyp = CAND15, VOX
+        elif name == '3d_no3':
+            cand, hyp = CAND3[CAND3[:, 2] > Z_SET[0]], VOX
+        elif name == '2d50':                                  # S056 as written: 50 x 50 cells of 10 m
+            x50 = (np.arange(50) + 0.5) * 10.0
+            g1, g2 = np.meshgrid(x50, x50, indexing='ij')
+            xy50 = np.stack([g1.ravel(), g2.ravel()], axis=-1)
+            cand = np.column_stack([xy50, np.full(len(xy50), H_FIX)])
+            hyp = np.column_stack([xy50, np.zeros(len(xy50))])
         else:
             cand, hyp = CAND15, HYP2D
         D = dose_rate(cand[:, None, :], hyp[None, :, :])
@@ -207,8 +219,10 @@ LAWN15 = lawn15_points()
 # ── Mission ───────────────────────────────────────────────────────────────────
 
 def run_mission(strategy, src, noise, sigma0, lam0=LAMBDA_0, record=False):
-    mname = {'eig3d': '3d', 'eigfix': 'fix', 'lawn': '3d', 'eig2d': '2d', 'lawn15': 'fix'}[strategy]
+    mname = {'eig3d': '3d', 'eigfix': 'fix', 'lawn': '3d', 'eig2d': '2d', 'lawn15': 'fix',
+             'eig2d50': '2d50', 'eig3d_no3': '3d_no3'}[strategy]
     cand, hyp, D, D2 = model(mname)
+    z_ok = set(np.round(cand[:, 2], 6).tolist()) | {round(H_FIX, 6)}
     pos = LAUNCH.copy()
     path = [pos.copy()]
     d_true = float(dose_rate(pos, src))
@@ -242,7 +256,8 @@ def run_mission(strategy, src, noise, sigma0, lam0=LAMBDA_0, record=False):
             if len(recent) > N_COOLDOWN:
                 recent.pop(0)
         new = cand[idx].copy()
-        assert 0 <= new[0] <= AREA_SIZE and 0 <= new[1] <= AREA_SIZE and new[2] >= Z_SET[0] - 1e-9
+        assert 0 <= new[0] <= AREA_SIZE and 0 <= new[1] <= AREA_SIZE and round(float(new[2]), 6) in z_ok
+        d_before = dacc
         dl, L = leg_dose(pos, new, src)
         path_len += L
         pos = new
@@ -251,6 +266,7 @@ def run_mission(strategy, src, noise, sigma0, lam0=LAMBDA_0, record=False):
         d_true = float(dose_rate(pos, src))
         n_floor += int(slant(pos, src) < R_MIN)
         dacc += dl + d_true * DT_INT / 3600.0
+        assert dl >= 0.0 and dacc > d_before, 'absorbed dose must grow on every leg and dwell'
         z = d_true + sigma0 * np.sqrt(d_true) * noise[k]
         logb = bayes_update(logb, z, D[idx], sigma0)
         b = normalise(logb)
@@ -262,8 +278,6 @@ def run_mission(strategy, src, noise, sigma0, lam0=LAMBDA_0, record=False):
         if record:
             hist['beliefs'].append(b.copy())
     path = np.array(path)
-    seg = np.linalg.norm(np.diff(path, axis=0), axis=1)
-    assert abs(seg.sum() - path_len) < 1e-6                          # no teleport: path = flown legs
     assert np.all(path[:, 2] > 0) and np.isfinite(dacc) and dacc >= 0
     est = hyp[int(np.argmax(b))]
     true_vox = int(np.argmin(np.sum((hyp - src) ** 2, axis=1)))
@@ -367,11 +381,24 @@ def rth_paths(start, est, src):
 # ── Simulation ────────────────────────────────────────────────────────────────
 
 def trial_draw(t, on_grid=False):
+    """on_grid: False (continuous source), 'full' (moved to its voxel centre), 'xy' (only x, y moved:
+    vertical mismatch remains) or 'z' (only z moved: horizontal mismatch remains)."""
     rng = np.random.default_rng(SEED_BASE + t)               # per-seed CRN
     src = np.array([rng.uniform(0, AREA_SIZE), rng.uniform(0, AREA_SIZE), rng.uniform(0, Z_SRC_MAX)])
-    if on_grid:                                              # ablation: no voxel-model mismatch
-        src = VOX[int(np.argmin(np.sum((VOX - src) ** 2, axis=1)))].copy()
+    own = VOX[int(np.argmin(np.sum((VOX - src) ** 2, axis=1)))]
+    if on_grid == 'full':                                    # ablation: no voxel-model mismatch
+        src = own.copy()
+    elif on_grid == 'xy':
+        src = np.array([own[0], own[1], src[2]])
+    elif on_grid == 'z':
+        src = np.array([src[0], src[1], own[2]])
     return src, rng.standard_normal(N_MEAS_MAX + 1)
+
+
+def floor_rms(draws):
+    """RMS distance from each source to its own voxel centre: the error of a perfect voxel estimate."""
+    d = [np.linalg.norm(VOX[int(np.argmin(np.sum((VOX - src) ** 2, axis=1)))] - src) for src, _ in draws]
+    return rms(d)
 
 
 def run_simulation():
@@ -383,10 +410,14 @@ def run_simulation():
         for lam in LAMBDA_ABL:
             mc[(f'eig3d_l{lam:g}', m)] = [run_mission('eig3d', src, nz, SIGMA_0 * m, lam0=lam)
                                          for (src, nz) in draws]
-    grid_draws = [trial_draw(t, on_grid=True) for t in range(N_TRIALS)]
-    for m in SIGMA_MULT:
-        for s in ('eig3d', 'eigfix'):
-            mc[(s + '_grid', m)] = [run_mission(s, src, nz, SIGMA_0 * m) for (src, nz) in grid_draws]
+        mc[('eig3d_no3', m)] = [run_mission('eig3d_no3', src, nz, SIGMA_0 * m) for (src, nz) in draws]
+    for mode, tag in (('full', '_grid'), ('xy', '_xyon'), ('z', '_zon')):
+        gd = [trial_draw(t, on_grid=mode) for t in range(N_TRIALS)]
+        FLOORS[tag] = floor_rms(gd)
+        for m in SIGMA_MULT:
+            for s in ('eig3d', 'eigfix', 'eig3d_no3'):
+                mc[(s + tag, m)] = [run_mission(s, src, nz, SIGMA_0 * m) for (src, nz) in gd]
+    FLOORS['off'] = floor_rms(draws)
     rth = {m: [rth_paths(r['path'][-1], r['est'], draws[t][0]) for t, r in enumerate(mc[('eig3d', m)])]
            for m in SIGMA_MULT}
     demo_noise = np.random.default_rng(42).standard_normal(N_MEAS_MAX + 1)
@@ -416,6 +447,18 @@ def rms_band(err, rng):
 
 def rms(v):
     return float(np.sqrt(np.mean(np.asarray(v) ** 2)))
+
+
+def boot_ratio(ea, eb, seed):
+    """95 % paired-bootstrap interval of rms(ea) / rms(eb) (seeded, deterministic)."""
+    rng = np.random.default_rng(seed)
+    n = len(ea)
+    r = np.empty(N_BOOT_RATIO)
+    for b in range(N_BOOT_RATIO):
+        i = rng.integers(0, n, n)
+        na_, nb_ = rms(ea[i]), rms(eb[i])
+        r[b] = na_ / nb_ if nb_ > 0 else (np.inf if na_ > 0 else 1.0)
+    return float(np.percentile(r, 2.5)), float(np.percentile(r, 97.5))
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -543,11 +586,11 @@ def plot_curves(mc, out_dir):
     k = np.arange(1, N_MEAS_MAX + 1)
     for row, m in enumerate(SIGMA_MULT):
         for s in STRATS:
-            if s != 'eig2d':
+            if not s.startswith('eig2d'):
                 axes[row, 0].plot(k, curve(mc[(s, m)], 'H').mean(axis=0), color=COLORS[s], label=LABELS[s])
             err = curve(mc[(s, m)], 'err')
             rr, lo, hi = rms_band(err, rng)
-            axes[row, 1].plot(k, rr, color=COLORS[s], label=LABELS[s] + (' (z = 0 assumed)' if s == 'eig2d' else ''))
+            axes[row, 1].plot(k, rr, color=COLORS[s], label=LABELS[s] + (' (z = 0 assumed)' if s.startswith('eig2d') else ''))
             axes[row, 1].fill_between(k, lo, hi, color=COLORS[s], alpha=0.18)
         axes[row, 0].set_ylabel('mean voxel entropy H_k (nats)')
         axes[row, 0].set_title(f'Entropy (3125-voxel posteriors), σ0 = {SIGMA_0 * m:g}', fontsize=10)
@@ -673,7 +716,7 @@ def report(draws, mc, rth, demo, demo_rth):
         sig = SIGMA_0 * m
         print(f'\n  ---- Monte Carlo, sigma0 = {sig:g} ({N_TRIALS} sources uniform in the volume, same draws) ----')
         res = {}
-        for s in STRATS + [f'eig3d_l{l:g}' for l in LAMBDA_ABL]:
+        for s in STRATS + [f'eig3d_l{l:g}' for l in LAMBDA_ABL] + ['eig3d_no3']:
             runs = mc[(s, m)]
             a = {k: np.array([r[k] for r in runs], dtype=float)
                  for k in ('n_meas', 'converged', 'err3', 'errh', 'errz', 'err_mean', 'path_len',
@@ -694,7 +737,8 @@ def report(draws, mc, rth, demo, demo_rth):
             print(f"    {LABELS[s]:28s} gross errors (> 30 m) {big}; median posterior on the source's own "
                   f"cell {mean_ptrue:.2e}; distinct altitudes used (mean) {res[s]['n_alt'].mean():.2f}")
         # head-to-head
-        for a, bname in [('eig3d', 'eigfix'), ('eig3d', 'lawn'), ('eigfix', 'eig2d'), ('lawn', 'lawn15')]:
+        for a, bname in [('eig3d', 'eigfix'), ('eig3d', 'lawn'), ('eigfix', 'eig2d50'), ('eigfix', 'eig2d'),
+                         ('lawn', 'lawn15'), ('eig3d_no3', 'eig3d'), ('eig3d_no3', 'eigfix')]:
             ea, eb = res[a]['err3'], res[bname]['err3']
             ha, hb = res[a]['errh'], res[bname]['errh']
             na, nb = res[a]['n_meas'], res[bname]['n_meas']
@@ -704,6 +748,13 @@ def report(draws, mc, rth, demo, demo_rth):
                   f"higher {int(np.sum(ha > hb + 1e-9))}; fewer readings {int(np.sum(na < nb))} / "
                   f"equal {int(np.sum(na == nb))} / more {int(np.sum(na > nb))}; "
                   f"RMS 3D ratio {rms(ea) / rms(eb):.2f}, mean-readings ratio {na.mean() / nb.mean():.2f}")
+            lo, hi = boot_ratio(ea, eb, 5600 + int(m))
+            ka, kb = np.sort(ea)[:-2], np.sort(eb)[:-2]
+            print(f"      RMS 3D ratio 95 % bootstrap CI [{lo:.2f}, {hi:.2f}] ({N_BOOT_RATIO} paired resamples); "
+                  f"median 3D error {np.median(ea):.2f} vs {np.median(eb):.2f} m; RMS without each side's worst 2 "
+                  f"trials {rms(ka):.2f} vs {rms(kb):.2f} m; gross errors (> 30 m) {int(np.sum(ea > 30))} vs "
+                  f"{int(np.sum(eb > 30))}; worst {np.sort(ea)[-1]:.1f}, {np.sort(ea)[-2]:.1f} vs "
+                  f"{np.sort(eb)[-1]:.1f}, {np.sort(eb)[-2]:.1f} m")
         # vertical mirror probe
         for s in ['eig3d', 'eigfix', 'lawn']:
             est_z = np.array([r['est'][2] for r in mc[(s, m)]])
@@ -734,6 +785,30 @@ def report(draws, mc, rth, demo, demo_rth):
               f"more {int(np.sum(na > nb))}; mean-readings ratio {na.mean() / nb.mean():.2f}; lower 3D error "
               f"{int(np.sum(g3['eig3d']['err3'] < g3['eigfix']['err3'] - 1e-9))} / higher "
               f"{int(np.sum(g3['eig3d']['err3'] > g3['eigfix']['err3'] + 1e-9))}")
+        print(f"    SPLIT MISMATCH PROBES (quantisation floor = RMS distance of the sources to their own voxel "
+              f"centre: continuous {FLOORS['off']:.2f} m, x-y moved {FLOORS['_xyon']:.2f} m, z moved "
+              f"{FLOORS['_zon']:.2f} m, fully moved {FLOORS['_grid']:.2f} m)")
+        for tag, lab in (('', 'continuous sources (both mismatches)'),
+                         ('_xyon', 'x-y on the voxel centre (vertical mismatch only)'),
+                         ('_zon', 'z on the voxel centre (horizontal mismatch only)'),
+                         ('_grid', 'fully on the voxel centre (no mismatch)')):
+            parts = []
+            E = {}
+            for s in ('eig3d', 'eigfix', 'eig3d_no3'):
+                rs = mc[(s + tag, m)]
+                e3 = np.array([r['err3'] for r in rs])
+                E[s] = e3
+                alts = np.concatenate([r['path'][1:, 2] for r in rs]) if s != 'eigfix' else np.array([H_FIX])
+                parts.append(f"{s} RMS {rms(e3):.2f} m (median {np.median(e3):.2f}, gross > 30 m {int(np.sum(e3 > 30))}, "
+                             f"readings {np.mean([r['n_meas'] for r in rs]):.1f}, share at 3 m "
+                             f"{np.mean(np.isclose(alts, Z_SET[0])):.2f})")
+            if tag == '_grid':                                # errors are mostly exactly 0: no ratio
+                ci = 'ratio not meaningful (errors mostly 0)'
+            else:
+                lo, hi = boot_ratio(E['eig3d'], E['eigfix'], 5700 + int(m))
+                ci = f"eig3d/eigfix RMS ratio {rms(E['eig3d']) / rms(E['eigfix']):.2f} CI [{lo:.2f}, {hi:.2f}]"
+            print(f"      {lab}: " + ' | '.join(parts) + f"; {ci}, eig3d lower error in {int(np.sum(E['eig3d'] < E['eigfix'] - 1e-9))}, "
+                  f"higher in {int(np.sum(E['eig3d'] > E['eigfix'] + 1e-9))}")
         Hs = {s: curve(mc[(s, m)], 'H') for s in ['eig3d', 'eigfix', 'lawn', 'lawn15']}
         for kk in (1, 2, 3, 5, 10):
             print(f'    mean voxel entropy after {kk} reading(s): ' + ', '.join(
