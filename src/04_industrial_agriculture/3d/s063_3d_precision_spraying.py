@@ -536,16 +536,48 @@ N_BOOT_PAIR = 10000              # paired bootstrap resamples (added)
 BOOT_SEED = 6301                 # fixed rng seed for every paired bootstrap (deterministic)
 
 
+def _signs(n):
+    """All 2^n sign vectors as a (2^n, n) array of +-1."""
+    k = np.arange(2 ** n, dtype=np.int64)[:, None]
+    return 1.0 - 2.0 * ((k >> np.arange(n)) & 1)
+
+
+def perm_p(d):
+    """Exact two-sided paired sign-flip permutation test of mean(d) = 0. Zero differences contribute
+    nothing; all 2^k sign flips of the k non-zero differences are enumerated (split in two halves)."""
+    d = np.asarray(d, float)
+    d = d[np.abs(d) > 1e-12]
+    k = len(d)
+    if k == 0:
+        return 1.0
+    h = k // 2
+    a = _signs(h) @ d[:h] if h > 0 else np.zeros(1)
+    b = _signs(k - h) @ d[h:]
+    tot = np.abs(a[:, None] + b[None, :])
+    obs = abs(d.sum())
+    return float(np.mean(tot >= obs - 1e-9 * max(1.0, obs)))
+
+
+def binom_p(x, y):
+    """Exact two-sided binomial test of x vs y successes at p = 0.5 (sign test / McNemar on discordant pairs)."""
+    n = x + y
+    if n == 0:
+        return 1.0
+    from scipy.stats import binom
+    return float(min(1.0, 2.0 * binom.cdf(min(x, y), n, 0.5)))
+
+
 def pc(a, b):
-    """Paired comparison a - b over the same seeds: mean difference, 95 % bootstrap interval of the
-    mean difference, per-seed higher/equal/lower, and whether the interval excludes 0."""
+    """Paired comparison a - b over the same seeds: mean difference, descriptive 95 % bootstrap interval,
+    per-seed higher/equal/lower, exact sign-flip permutation p-value; 'resolved' only if p < 0.05."""
     a, b = np.asarray(a, float), np.asarray(b, float)
     d = a - b
     idx = np.random.default_rng(BOOT_SEED).integers(0, len(d), (N_BOOT_PAIR, len(d)))
     lo, hi = np.percentile(d[idx].mean(axis=1), [2.5, 97.5])
     w = wins(a, b)
-    tag = 'resolved' if (lo > 0 or hi < 0) else 'unresolved'
-    return f'{d.mean():+.3f} [{lo:+.3f}, {hi:+.3f}] {tag}, {w[0]}/{w[1]}/{w[2]}'
+    pv = perm_p(d)
+    tag = 'resolved' if pv < 0.05 else 'not resolved'
+    return f'{d.mean():+.3f} (boot [{lo:+.3f}, {hi:+.3f}]), {w[0]}/{w[1]}/{w[2]}, p {pv:.4f} {tag}'
 
 
 def report(res):
@@ -571,6 +603,8 @@ def report(res):
     print(f'  Floor barrier: plans with {A_BRAKE:.2f} m/s^2 braking (A_MAX {A_MAX:.1f} - worst downwash {DW_WORST:.2f} - 0.05); '
           f'highest speed that full braking can stop from z = {Z_MIN:.1f} m before z = 0: '
           f'{math.sqrt(2 * (A_MAX - F_DW) * Z_MIN):.2f} m/s')
+    print('  Statistics: paired comparisons over the same seeds; resolved = exact two-sided sign-flip permutation p < 0.05; '
+          'bootstrap intervals are descriptive only. Many comparisons are printed, so a few nominal p < 0.05 are expected by chance.')
     print('  Scoring rule: a mission with any crown contact is a collision; its safe C_eff is 0. '
           'C_eff (dose only) is reported beside it. Main rule: point drone, zero clearance.')
     print(f'  Broken-loop check: the barrier may override the vertical command in at most {100 * BARRIER_SHARE_MAX:.0f} % '
@@ -618,12 +652,12 @@ def report(res):
                 parts.append(f'r_d {rd:.1f} m / m_z {mz:.2f} m: {int(free.sum())}/{len(rs)}, {np.mean(c * free):.3f}')
             print(f'      {LABELS[s]:26s} ' + ' | '.join(parts))
         for i, (rd, mz) in enumerate(CLEARANCES):
-            print(f'      paired safe C_eff at r_d {rd:.1f} / m_z {mz:.2f} (diff [95 % CI], higher/equal/lower): '
+            print(f'      paired safe C_eff at r_d {rd:.1f} / m_z {mz:.2f} (diff (descriptive bootstrap 95 % interval), higher/equal/lower, exact p): '
                   f"adaptive - fixedsafe {pc(sfc[('adaptive', i)], sfc[('fixedsafe', i)])}; "
                   f"adaptive - fixed15 {pc(sfc[('adaptive', i)], sfc[('fixed15', i)])}")
         for a_, b_ in [('adaptive', 'fixed15'), ('adaptive', 'fixedsafe'), ('adaptive', 'tf'), ('tf', 'fixed15'),
                        ('fixedsafe', 'fixed15'), ('fixedsafe', 'tf')]:
-            print(f'    {LABELS[a_]} - {LABELS[b_]} (diff [95 % CI], higher/equal/lower): C_eff {pc(ce[a_], ce[b_])}; '
+            print(f'    {LABELS[a_]} - {LABELS[b_]} (diff (descriptive bootstrap 95 % interval), higher/equal/lower, exact p): C_eff {pc(ce[a_], ce[b_])}; '
                   f'safe C_eff {pc(sa[a_], sa[b_])}')
     ca = {g: np.array([dose_eval(r)['ceff'] for r in res[('adaptive', g, SIGMA_H)]]) for g in GAINS}
     print(f"\n  adaptive C_eff, Tight - Tuned gains (same seeds): {pc(ca['Tight'], ca['Tuned'])}")
@@ -648,7 +682,7 @@ def report(res):
                 out[s] = (c, sf, nfree, np.mean([r['contact_plants'] for r in rs]))
             print(f'    R_crown {rc:.2f} m, {g}: ' + ', '.join(
                 f'{s} {out[s][0].mean():.3f} / {out[s][2]}/{N_SWEEP_SEEDS} / {out[s][1].mean():.3f} / {out[s][3]:.2f}' for s in out))
-            print(f"      paired (diff [95 % CI], higher/equal/lower): C_eff tf - fixed15 {pc(out['tf'][0], out['fixed15'][0])}; "
+            print(f"      paired (diff (descriptive bootstrap 95 % interval), higher/equal/lower, exact p): C_eff tf - fixed15 {pc(out['tf'][0], out['fixed15'][0])}; "
                   f"C_eff adaptive - tf {pc(out['adaptive'][0], out['tf'][0])}; safe adaptive - fixedsafe "
                   f"{pc(out['adaptive'][1], out['fixedsafe'][1])}; safe adaptive - tf {pc(out['adaptive'][1], out['tf'][1])}; "
                   f"safe tf - fixed15 {pc(out['tf'][1], out['fixed15'][1])}")
@@ -667,10 +701,16 @@ def report(res):
                   f"descent/level leg {np.mean([r['contact_own_descent'] for r in rs]):.2f}), other plants "
                   f"{np.mean([r['contact_other'] for r in rs]):.2f}, z min {min(r['zmin'] for r in rs):.2f} m, "
                   f"C_eff {c.mean():.3f}, collision-free {nfree}/{len(rs)}, safe C_eff {sf.mean():.3f}")
+        oc1 = np.array([r['contact_other'] for r in res[('adaptive', g, SIGMA_H)]], float)
+        oc2 = np.array([r['contact_other'] for r in res[('adaptive', g, SIGMA_H, R_CROWN, KDZ_PROBE)]], float)
+        tc1 = np.array([r['contact_own'] for r in res[('adaptive', g, SIGMA_H)]], float)
+        tc2 = np.array([r['contact_own'] for r in res[('adaptive', g, SIGMA_H, R_CROWN, KDZ_PROBE)]], float)
+        print(f'      paired x{KDZ_PROBE:g} - x1: other-plant contacts per mission {pc(oc2, oc1)}; '
+              f'target-plant contacts {pc(tc2, tc1)}')
         f1, f2 = st[1.0][2], st[KDZ_PROBE][2]
         print(f'      paired x{KDZ_PROBE:g} - x1 (same seeds): safe C_eff {pc(st[KDZ_PROBE][1], st[1.0][1])}; '
               f'collision-free in both {int(np.sum(f1 & f2))}, only with x{KDZ_PROBE:g} {int(np.sum(f2 & ~f1))}, '
-              f'only with x1 {int(np.sum(f1 & ~f2))}')
+              f'only with x1 {int(np.sum(f1 & ~f2))}, McNemar exact p {binom_p(int(np.sum(f2 & ~f1)), int(np.sum(f1 & ~f2))):.4f}')
     print(f'\n  --- probe: dose without the standoff factor (drift and hover error only), sigma_h = {SIGMA_H}, {N_SEEDS} seeds ---')
     for g in GAINS:
         vals = {s: np.array([dose_eval(r, alt_factor=False)['ceff'] for r in res[(s, g, SIGMA_H)]]) for s in STRATS}
@@ -690,7 +730,7 @@ def report(res):
               f"{pc(S['adaptive'][1], S['fixed15'][1])}; safe adaptive - fixedsafe {pc(S['adaptive'][1], S['fixedsafe'][1])}; "
               f"safe fixed15 - fixedsafe {pc(S['fixed15'][1], S['fixedsafe'][1])}")
     print(f'\n  --- low height spread sigma_h = {SIGMA_H_LOW}, {N_SEEDS} seeds (0-{N_SEEDS - 1}): per seed and per clearance '
-          f'(collision-free missions, safe C_eff; paired diff [95 % CI], higher/equal/lower) ---')
+          f'(collision-free missions, safe C_eff; paired diff (descriptive bootstrap 95 % interval), higher/equal/lower, exact p) ---')
     for g in GAINS:
         rsd = {s: res[(s, g, SIGMA_H_LOW)] for s in STRATS}
         assert all(len(v) == N_SEEDS for v in rsd.values())
@@ -704,10 +744,13 @@ def report(res):
                 f"{s} {int(fr[s].sum())}/{N_SEEDS} {sf[s].mean():.3f}" for s in STRATS) +
                 f"; adaptive - fixed15 {pc(sf['adaptive'], sf['fixed15'])}; adaptive - fixedsafe "
                 f"{pc(sf['adaptive'], sf['fixedsafe'])}; fixed15 - fixedsafe {pc(sf['fixed15'], sf['fixedsafe'])}")
+            oa, of_ = int(np.sum(~fr['adaptive'] & fr['fixed15'])), int(np.sum(fr['adaptive'] & ~fr['fixed15']))
+            dose_w = wins(cd['adaptive'], cd['fixed15'])
             print(f"      adaptive vs fixed15: mean margin in adaptive's wins {d[win].mean() if win.any() else float('nan'):+.3f}, "
-                  f"in its losses {d[loss].mean() if loss.any() else float('nan'):+.3f}; seeds where only adaptive collides "
-                  f"{int(np.sum(~fr['adaptive'] & fr['fixed15']))}, only fixed15 {int(np.sum(fr['adaptive'] & ~fr['fixed15']))}, "
-                  f"both {int(np.sum(~fr['adaptive'] & ~fr['fixed15']))}, neither {int(np.sum(fr['adaptive'] & fr['fixed15']))}")
+                  f"in its losses {d[loss].mean() if loss.any() else float('nan'):+.3f}; sign test on the safe-score counts "
+                  f"p {binom_p(int(win.sum()), int(loss.sum())):.4f}; seeds where only adaptive collides {oa}, only fixed15 {of_}, "
+                  f"both {int(np.sum(~fr['adaptive'] & ~fr['fixed15']))}, neither {int(np.sum(fr['adaptive'] & fr['fixed15']))}; "
+                  f"McNemar exact p {binom_p(oa, of_):.4f}; dose-only C_eff adaptive vs fixed15 {dose_w[0]}/{dose_w[1]}/{dose_w[2]}")
     print('\n  --- floor barrier over EVERY job group (asserts: z >= Z_MIN, z > 0, thrust acceleration <= A_MAX) ---')
     nb = 0
     for key in sorted(res, key=str):
