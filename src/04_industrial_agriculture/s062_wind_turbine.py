@@ -253,9 +253,13 @@ def simulate(strategy, seed, wind_sigma=WIND_SIGMA, keep_log=False):
             break
 
         # ── controller ──
-        v_cmd = v_ref.copy()
+        # Feed-forward = exact plan displacement over the next step, so that Euler
+        # integration of the feed-forward alone reproduces the plan (no discretisation drift)
+        v_ff = (reference(t + DT)[0] - p_ref) / DT
+        v_cmd = v_ff.copy()
         if strategy != 'open':
             meas = pos + gps[k]
+            # rate term uses the true ground velocity (incl. wind), assumed measured noise-free
             fb = KP * (p_ref - meas) + KD * (v_ref - v_true)
             if strategy == 'pll_safe':
                 d_m, near_m = blade_dists(meas, t)
@@ -535,6 +539,18 @@ if __name__ == '__main__':
     print(f'  Planned mission time: {T_MISSION:.1f} s (T_max {T_MAX:.0f} s)')
     vmax_plan = max(np.linalg.norm(reference(t)[1]) for t in np.arange(0, T_MISSION, DT))
     print(f'  Max planned ground speed: {vmax_plan:.2f} m/s (limit {V_MAX:.0f} m/s)')
+    p_chk = reference(0.0)[0].copy()
+    dev_ff, dev_an = 0.0, 0.0
+    p_an = p_chk.copy()
+    for kk in range(int(T_MISSION / DT)):
+        t = kk * DT
+        p_now, v_now = reference(t)[:2]
+        p_chk = p_chk + (reference(t + DT)[0] - p_now)
+        p_an = p_an + v_now * DT
+        dev_ff = max(dev_ff, float(np.linalg.norm(p_chk - reference(t + DT)[0])))
+        dev_an = max(dev_an, float(np.linalg.norm(p_an - reference(t + DT)[0])))
+    print(f'  Plan self-consistency (no lag, no wind): Euler on the step feed-forward drifts '
+          f'{dev_ff:.2e} m; Euler on the analytic reference velocity would drift {dev_an:.2f} m')
     print(f'  Monte Carlo: {N_SEEDS} seeds, gust sigma {WIND_SIGMA} m/s, GPS {GPS_SIGMA} m')
     for s in STRATS:
         R = mc[s]

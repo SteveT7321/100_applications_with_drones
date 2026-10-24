@@ -46,9 +46,11 @@ Error margins at the sweep geometry: an in-plane error of 0.614 m towards the bl
 
 ### Controllers
 
-$$\mathbf v_{cmd} = \mathbf v_{ref} \quad\text{(open-loop)}$$
+$$\mathbf v_{ff}(t) = \frac{\mathbf p_{ref}(t + \Delta t) - \mathbf p_{ref}(t)}{\Delta t},\qquad \mathbf v_{cmd} = \mathbf v_{ff} \quad\text{(open-loop)}$$
 
-$$\mathbf v_{cmd} = \mathbf v_{ref} + K_p(\mathbf p_{ref} - \tilde{\mathbf p}) + K_d(\mathbf v_{ref} - \mathbf v) \quad\text{(phase-locked)}$$
+$$\mathbf v_{cmd} = \mathbf v_{ff} + K_p(\mathbf p_{ref} - \tilde{\mathbf p}) + K_d(\mathbf v_{ref} - \mathbf v) \quad\text{(phase-locked)}$$
+
+The feed-forward is the plan's exact displacement over the next step. Euler integration of it alone reproduces the plan (drift 2.19e-12 m), whereas integrating the analytic $\mathbf v_{ref}$ with Euler at Δt = 0.05 s would drift 0.74 m from the plan along the curved co-rotating path. In the rate term, $\mathbf v$ is the drone's **true** ground velocity, including the wind, and is assumed to be measured without noise.
 
 $$\mathbf v_{cmd} \mathrel{+}= K_{safe}\,(d_{warn} - \tilde d_i)\,\hat n_i \quad\text{for each blade with } \tilde d_i < d_{warn} = 1.8\text{ m (safety)}$$
 
@@ -118,27 +120,34 @@ Runtime ≈ 2.7 min (measured with other simulations running in parallel).
 
 | Controller | Coverage | Coverage, speed test ignored | Steps below $d_{safe}$ | Runs with 0 violations | Crashes | Min clearance | Mean clearance while imaging |
 |---|---:|---:|---:|:-:|:-:|---:|---:|
-| Open-loop | 1.1 ± 1.5 % | 8.8 ± 7.0 % | 24.2 ± 24.2 | 7/20 | 15/20 (5 blade, 8 tower, 2 ground) | 1.63 ± 1.98 m (worst 0.22 m) | 6.81 ± 2.96 m |
-| Phase-locked | 80.6 ± 10.4 % | 87.4 ± 7.2 % | 13.9 ± 12.7 (0.71 % of flight) | 6/20 | 0/20 | 1.47 ± 0.08 m (worst 1.35 m) | 2.10 ± 0.07 m |
-| **Phase-locked + safety** | **80.3 ± 10.2 %** | 87.3 ± 7.2 % | **0.0 ± 0.0** | **20/20** | 0/20 | **1.60 ± 0.04 m** (worst 1.51 m) | 2.12 ± 0.06 m |
+| Open-loop | 1.6 ± 2.4 % | 9.6 ± 8.5 % | 31.8 ± 43.1 | 7/20 | 14/20 (4 blade, 8 tower, 2 ground) | 1.57 ± 1.86 m (worst 0.11 m) | 6.82 ± 2.86 m |
+| Phase-locked | 80.7 ± 10.6 % | 88.8 ± 7.7 % | 14.9 ± 13.0 (0.76 % of flight) | 5/20 | 0/20 | 1.47 ± 0.08 m (worst 1.35 m) | 2.09 ± 0.07 m |
+| **Phase-locked + safety** | **80.7 ± 10.6 %** | 88.7 ± 7.6 % | **0.0 ± 0.0** | **20/20** | 0/20 | **1.60 ± 0.04 m** (worst 1.51 m) | 2.11 ± 0.06 m |
 
-Per seed, the safety controller has fewer violation steps than phase-locked in 14 of 20 seeds, the same number in 6 (both zero) and more in none. Coverage is equal in 18 seeds and lower in 2. The repulsion is active for 162.8 ± 64.3 steps per flight.
+Per seed, the safety controller has fewer violation steps than phase-locked in 15 of 20 seeds, the same number in 5 (both zero) and more in none. Coverage is equal in all 20 seeds. The repulsion is active for 167.3 ± 65.6 steps per flight.
 
 **Key findings**:
 
-- **Without feedback the drone cannot inspect a turning rotor.** Open-loop images 1.1 % of the segments. 15 of 20 flights crash (mean end time 53.3 s): 5 by blade strike, 8 into the tower and 2 into the ground. Gusts alone are not the cause: with no wind at all, the open-loop drone still covers only 22.2 % and spends 23.69 % of the flight below $d_{safe}$. Each velocity step in the plan leaves a position error of about $\tau\,\Delta v$ through the 0.2 s velocity lag, and nothing corrects it.
-- **Phase-locking does the inspection; the safety layer removes the violations.** Both closed-loop controllers reach about 80 % coverage. Phase-locked alone dips below $d_{safe}$ in 14 of 20 runs (worst 1.35 m). With the safety layer, every run stays above 1.5 m (worst 1.51 m). The safety layer costs almost no coverage: 80.3 % against 80.6 %, lower in only 2 seeds.
-- **The card's ≥ 90 % coverage target is not met at σ_w = 0.5 m/s.** Ignoring the speed test raises coverage only to 87.3 %. The rest is lost to position errors that carry the drone beyond the 2.2 m imaging distance (an outward error of only 0.228 m is enough). The speed test takes it from 87.3 % down to 80.3 %: gusts push the speed relative to the blade above 1.0 m/s, on top of the 0.8 m/s sweep. The gust sweep shows coverage falling with wind for both closed-loop controllers. The 90 % target holds at σ_w = 0.25 m/s (94.0 ± 5.6 %):
+- **Without feedback the drone cannot inspect a turning rotor.** Open-loop images 1.6 % of the segments. 14 of 20 flights crash (mean end time 57.4 s): 4 by blade strike, 8 into the tower and 2 into the ground.
+  - Gusts alone are not the cause. With no wind at all, the open-loop drone still covers only 26.7 % and spends 21.64 % of the flight below $d_{safe}$.
+  - The feed-forward is integrated exactly, so this is not a discretisation artefact (an earlier version that integrated the analytic reference velocity lost a further 0.74 m to Euler error).
+  - What remains is the 0.2 s velocity lag: each velocity step in the plan leaves a position error of about $\tau\,\Delta v$, and nothing corrects it.
+- **Phase-locking does the inspection; the safety layer removes the violations.** Both closed-loop controllers reach 80.7 % coverage. Phase-locked alone dips below $d_{safe}$ in 15 of 20 runs (worst 1.35 m). With the safety layer, every run stays above 1.5 m (worst 1.51 m), and coverage is identical seed by seed.
+- **The card's ≥ 90 % coverage target is not met at σ_w = 0.5 m/s.**
+  - Ignoring the speed test raises coverage only to 88.7 %. The rest is lost to position errors that carry the drone beyond the 2.2 m imaging distance; an outward error of only 0.228 m is enough.
+  - The speed test takes coverage from 88.7 % down to 80.7 %: gusts push the speed relative to the blade above 1.0 m/s, on top of the 0.8 m/s sweep.
+  - The gust sweep shows coverage falling with wind for both closed-loop controllers. The 90 % target holds at σ_w = 0.25 m/s (94.2 ± 5.1 %):
 
 | Gust σ_w | Open-loop coverage / below $d_{safe}$ / crashes | Phase-locked | Phase-locked + safety |
 |---|---|---|---|
-| 0.00 m/s | 22.2 % / 23.69 % / 0/10 | 100.0 % / 0.00 % / 0/10 | 100.0 % / 0.00 % / 0/10 |
-| 0.25 m/s | 4.7 % / 6.49 % / 5/10 | 94.0 % / 0.00 % / 0/10 | 94.0 % / 0.00 % / 0/10 |
-| 0.50 m/s | 1.3 % / 4.42 % / 6/10 | 82.0 % / 0.79 % / 0/10 | 81.6 % / 0.00 % / 0/10 |
-| 1.00 m/s | 0.0 % / 0.60 % / 7/10 | 68.9 % / 7.62 % / 0/10 | 68.9 % / 2.28 % / 0/10 |
+| 0.00 m/s | 26.7 % / 21.64 % / 0/10 | 100.0 % / 0.00 % / 0/10 | 100.0 % / 0.00 % / 0/10 |
+| 0.25 m/s | 5.3 % / 8.13 % / 5/10 | 94.2 % / 0.00 % / 0/10 | 94.2 % / 0.00 % / 0/10 |
+| 0.50 m/s | 2.2 % / 3.94 % / 5/10 | 82.4 % / 0.85 % / 0/10 | 82.4 % / 0.00 % / 0/10 |
+| 1.00 m/s | 0.0 % / 0.53 % / 7/10 | 69.3 % / 7.81 % / 0/10 | 69.1 % / 2.36 % / 0/10 |
 
-  At σ_w = 1.0 m/s the safety layer no longer prevents every violation (min clearance 1.21 m), but it cuts them from 7.62 % (phase-locked alone, min clearance 0.71 m) to 2.28 %. Open-loop spends less time below $d_{safe}$ at higher wind only because it crashes or drifts away earlier.
-- **Card clearance expectations**: mean clearance during transit is 6.22 m, not 2.5–3.5 m, because the transit orbit is outside the tips. While imaging it is 2.12 m, not 1.2 m, because 1.2 m would be inside $d_{safe}$ (see Deviations).
+  - At σ_w = 1.0 m/s the safety layer no longer prevents every violation (min clearance 1.21 m), but it cuts them from 7.81 % (phase-locked alone, min clearance 0.71 m) to 2.36 %.
+  - Open-loop spends less time below $d_{safe}$ at higher wind only because it crashes or drifts away earlier.
+- **Card clearance expectations**: mean clearance during transit is 6.16 m, not 2.5–3.5 m, because the transit orbit is outside the tips. While imaging it is 2.11 m, not 1.2 m, because 1.2 m would be inside $d_{safe}$ (see Deviations).
 
 ### 3D Trajectory
 
@@ -154,7 +163,7 @@ The same flights in the co-rotating frame, where the blades are static. The clos
 
 ### Clearance over Time
 
-Seed 0, with the imaging sweeps shaded green. Phase-locked dips to 1.36 m during the B2 sweep (26 steps below $d_{safe}$); the safety controller holds the same sweep above 1.5 m (minimum 1.56 m). Open-loop never comes within 1.5 m in this seed (minimum 1.55 m) but images only 2.2 %:
+Seed 0, with the imaging sweeps shaded green. Phase-locked dips to 1.36 m during the B2 sweep (26 steps below $d_{safe}$); the safety controller holds the same sweep above 1.5 m (minimum 1.56 m). Open-loop never comes within 1.5 m in this seed (minimum 1.59 m) but images only 2.2 %:
 
 ![Clearance Comparison](./clearance_comparison.png)
 
@@ -182,13 +191,14 @@ Phase-locked + safety, seed 0: the rotating blades (blue), the drone (red) and i
 |------|----------------|--------|
 | $d_{inspect} = 1.0$ m (code: 0.5 m) with $d_{safe} = 1.5$ m | $d_{inspect} = 2.0$ m | Imaging at 1.0 m would break the hard 1.5 m safety margin every time. Card corrected. |
 | Drone circles on $r_{orbit} = 17$ m, 60° ahead of the blades | 17 m orbit used for transit only. Imaging is done by co-rotating with each blade and sliding from tip to root, 2.0 m from the blade line | On the 17 m orbit at $y = 1$ m the drone is never closer than 2.236 m to a blade: no segment can be imaged (needs ≤ 2.2 m) and $d_{safe}$ can never be violated, so the card's comparison could not show anything. Card corrected. |
+| Feed-forward along the analytic orbit velocity | Feed-forward = exact plan displacement per step | Euler integration of the analytic velocity drifts 0.74 m off the plan over the mission (beyond the 0.228 m imaging margin); the step displacement drifts 2.19e-12 m. |
 | Disturbance: GPS noise only | Adds OU wind gusts ($\sigma_w$ = 0.5 m/s, $\tau_w$ = 2 s) and a 0.2 s velocity lag; gust sweep 0–1 m/s | Without disturbance, the open-loop orbit at $\dot\theta = \omega$ would track the plan exactly and match the phase-locked one. |
 | $v_{drone} \le 1.0$ m/s while inspecting | Speed **relative to the segment** ≤ 1.0 m/s | Co-rotating at r = 17 m already means 8.5 m/s over the ground; motion blur depends on relative speed. Card corrected. |
 | Phase-lock law $\dot\theta_{cmd} = \omega + K_p e_\theta + K_d \dot e_\theta$ | Cartesian $\mathbf v_{ref} + K_p(\mathbf p_{ref} - \tilde{\mathbf p}) + K_d(\mathbf v_{ref} - \mathbf v)$ with the card's $K_p$, $K_d$ | The reference now has radial motion as well as phase; the angular law is the special case with fixed radius. |
 | Safety trigger at $d_{seg} < d_{safe}$; push away from the tip with $K_{safe} = 3$ m/s² | Trigger at $\tilde d < d_{safe} + 0.3$ m (the warning zone in the card's text); velocity push $K_{safe}(d_{warn} - \tilde d)$ away from the **nearest blade point**; inward feedback removed | Triggering only after the violation cannot prevent it. Near the root the tip is 14 m away and the wrong direction to push. |
 | Distances use the true position for the safety trigger (card code) | Safety trigger uses the GPS-measured position; violations and coverage use the true position | The drone cannot know its true position. |
 | Mission horizon 120 s | Plan takes 97.9 s; the flight ends at mission completion or at a crash (blade < 0.3 m, tower, ground) | X4: no flying through blades or terrain. |
-| Coverage ≥ 90 %, zero violations, clearance ≈ 1.2 m imaging / 2.5–3.5 m transit (expected) | 80.3 %, zero violations (20/20), 2.12 m / 6.22 m | See Key findings; reported as measured, not tuned. |
+| Coverage ≥ 90 %, zero violations, clearance ≈ 1.2 m imaging / 2.5–3.5 m transit (expected) | 80.7 %, zero violations (20/20), 2.11 m / 6.16 m | See Key findings; reported as measured, not tuned. |
 | GIF `inspection_animation.gif`, 10 fps, trail 60 frames | `animation.gif`, 10 fps, trail of the last ≈ 10 s | Repository naming convention. |
 
 ---
@@ -196,7 +206,7 @@ Phase-locked + safety, seed 0: the rotating blades (blue), the drone (red) and i
 ## Extensions
 
 1. **Variable rotor speed**: $\omega(t) = \omega_0 + \Delta\omega\sin(0.05t)$, with a Kalman filter estimating ω from the SCADA encoder.
-2. **Gust-aware sweep speed**: slow the sweep when the measured gust grows, trading mission time for coverage; the gust sweep shows the speed test costing about 7 points at σ_w = 0.5 m/s.
+2. **Gust-aware sweep speed**: slow the sweep when the measured gust grows, trading mission time for coverage; at σ_w = 0.5 m/s the speed test lowers coverage from 88.7 % to 80.7 %.
 3. **Both blade sides**: sweep the leading side too, entering from the root when the next blade is far away.
 4. **Tower shadow**: add a velocity disturbance when the drone passes the tower wake.
 5. **Wind farm**: assign drones to turbines (Hungarian algorithm) and schedule the inspections.

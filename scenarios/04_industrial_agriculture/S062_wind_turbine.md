@@ -24,12 +24,12 @@ section** during an active inspection pass must satisfy $v_{rel} \leq v_{max,ins
 > - A drone that only orbits at $r_{orbit} = 17$ m with $y_{offset} = 1$ m is never closer than
 >   $\sqrt{2^2 + 1^2} = 2.24$ m to any blade, so it can neither violate $d_{safe}$ nor image any
 >   segment. And because $\phi_{offset} = 60°$ is exactly midway between two blades, an open-loop
->   orbit at $\dot	heta = \omega$ is identical to the phase-locked one unless something disturbs
+>   orbit at $\dot\theta = \omega$ is identical to the phase-locked one unless something disturbs
 >   the drone. The implemented mission therefore **co-rotates** with each blade in turn: it holds
 >   1.73 m behind the blade's trailing edge (2.0 m from the blade line at $y = 1$ m), slides from
 >   tip ($r = 17$ m) to root ($r = 1$ m) at 0.8 m/s relative to the blade, returns to $r = 17$ m at
 >   3 m/s and moves along the 17 m orbit to the next blade. The orbit and the 60° start phase are
->   kept for the transit. A wind-gust disturbance (OU, $\sigma = 0.5$ m/s, $	au = 2$ s) is added
+>   kept for the transit. A wind-gust disturbance (OU, $\sigma = 0.5$ m/s, $\tau = 2$ s) is added
 >   so the three controllers can differ.
 > - Motion blur depends on the speed relative to the blade, not on ground speed: co-rotating at
 >   $r = 17$ m already means 8.5 m/s over the ground.
@@ -176,336 +176,67 @@ to evaluate inspection coverage and safety violations.
 ## Implementation
 
 ```python
+# Implementation sketch of the corrected (co-rotating) design.
+# Full script: src/04_industrial_agriculture/s062_wind_turbine.py
 import numpy as np
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.animation as animation
 
-# ── Domain constants ──────────────────────────────────────────────────────────
-INSPECTION_SPEED = 1.0          # m/s  — v_max_inspect
-INSPECTION_DIST  = 2.0          # m    — target standoff from blade surface (was 0.5)
-GPS_ERROR        = 0.1          # m    — isotropic GPS noise std dev
-
-# ── Turbine geometry ──────────────────────────────────────────────────────────
-HUB_HEIGHT    = 30.0            # m
-BLADE_LENGTH  = 15.0            # m
-OMEGA         = 0.5             # rad/s  (period ≈ 12.57 s)
-N_BLADES      = 3
-BLADE_PHASES  = np.array([2 * np.pi * i / N_BLADES for i in range(N_BLADES)])
-
-# ── Drone orbit ───────────────────────────────────────────────────────────────
-R_ORBIT       = 17.0            # m   hub-centred orbit radius
-Y_OFFSET      = 1.0             # m   lateral offset from rotor plane
-PHI_OFFSET    = np.deg2rad(60)  # rad phase lead ahead of blade tip
-D_SAFE        = 1.5             # m   hard safety margin from blade surface
-D_INSPECT     = 2.0             # m   target inspection standoff (was 1.0 < D_SAFE)
-EPS_INSPECT   = 0.2             # m   inspection distance tolerance
-N_SEG         = 15              # blade inspection segments
-
-# ── Controller gains ──────────────────────────────────────────────────────────
-KP            = 2.0             # rad/(rad·s)
-KD            = 0.3             # s
-K_SAFE        = 3.0             # m/s²  safety repulsion gain
-
-# ── Simulation ────────────────────────────────────────────────────────────────
-DT            = 0.05            # s
-T_MAX         = 120.0           # s  (≈ 9.5 rotor revolutions)
-
-P_HUB = np.array([0.0, 0.0, HUB_HEIGHT])
-
-
-def blade_tip(t, i):
-    """3-D position of blade i tip at time t."""
-    ang = OMEGA * t + BLADE_PHASES[i]
-    return P_HUB + BLADE_LENGTH * np.array([np.cos(ang), 0.0, np.sin(ang)])
-
-
-def blade_point(t, i, s):
-    """Point at fractional arc-length s in [0,1] along blade i."""
-    ang = OMEGA * t + BLADE_PHASES[i]
-    return P_HUB + s * BLADE_LENGTH * np.array([np.cos(ang), 0.0, np.sin(ang)])
-
-
-def dist_to_blade_segment(p, t, i):
-    """Minimum distance from point p to the full line segment of blade i."""
-    tip = blade_tip(t, i)
-    # Blade vector from hub to tip
-    blade_vec = tip - P_HUB
-    blade_len_sq = np.dot(blade_vec, blade_vec)
-    dp = p - P_HUB
-    s_clamp = np.clip(np.dot(dp, blade_vec) / blade_len_sq, 0.0, 1.0)
-    closest = P_HUB + s_clamp * blade_vec
-    return np.linalg.norm(p - closest)
-
-
-def nearest_blade(theta, t):
-    """Index of blade whose angular position is closest to theta."""
-    blade_angles = OMEGA * t + BLADE_PHASES
-    diffs = np.abs(((theta - blade_angles + np.pi) % (2 * np.pi)) - np.pi)
-    return int(np.argmin(diffs))
-
-
-def drone_position(theta):
-    """Cartesian position of drone given orbital angle theta."""
-    return P_HUB + np.array([R_ORBIT * np.cos(theta),
-                              Y_OFFSET,
-                              R_ORBIT * np.sin(theta)])
-
-
-def phase_lock_controller(theta, theta_dot, t, i_near):
-    """PD phase-lock angular rate command."""
-    theta_target = OMEGA * t + BLADE_PHASES[i_near] + PHI_OFFSET
-    e_theta = ((theta_target - theta + np.pi) % (2 * np.pi)) - np.pi
-    e_dot   = OMEGA - theta_dot      # target rate minus current rate
-    return OMEGA + KP * e_theta + KD * e_dot
-
-
-def safety_repulsion(p_drone, t):
-    """Emergency lateral repulsion force when inside warning zone."""
-    f_rep = np.zeros(3)
-    for i in range(N_BLADES):
-        d = dist_to_blade_segment(p_drone, t, i)
-        if d < D_SAFE:
-            tip = blade_tip(t, i)
-            direction = p_drone - tip
-            norm = np.linalg.norm(direction) + 1e-9
-            f_rep += K_SAFE * direction / norm
-    return f_rep
-
-
-def run_simulation(strategy="phase_locked_safety", seed=42):
-    """
-    strategy: "open_loop" | "phase_locked" | "phase_locked_safety"
-    Returns time array, drone positions, safety violations, inspection log.
-    """
-    rng = np.random.default_rng(seed)
-
-    theta     = PHI_OFFSET          # initial orbital angle
-    theta_dot = OMEGA               # initial angular rate
-
-    steps   = int(T_MAX / DT)
-    times   = np.zeros(steps)
-    pos_log = np.zeros((steps, 3))
-    dist_log = np.zeros((steps, N_BLADES))
-    safety_violations = 0
-    inspected = np.zeros((N_BLADES, N_SEG), dtype=bool)
-
-    for k in range(steps):
-        t = k * DT
-        times[k] = t
-
-        # True and measured drone position
-        p_true = drone_position(theta)
-        noise  = rng.normal(0, GPS_ERROR, 3)
-        p_meas = p_true + noise
-        pos_log[k] = p_true
-
-        # Nearest blade index (uses measured position)
-        meas_theta = np.arctan2(p_meas[2] - HUB_HEIGHT, p_meas[0])
-        i_near = nearest_blade(meas_theta, t)
-
-        # Record distances to all blade segments
-        for i in range(N_BLADES):
-            dist_log[k, i] = dist_to_blade_segment(p_true, t, i)
-
-        # Safety violation check (uses true position)
-        if dist_log[k].min() < D_SAFE:
-            safety_violations += 1
-
-        # ── Angular rate command ──────────────────────────────────────────────
-        if strategy == "open_loop":
-            theta_dot_cmd = OMEGA
-
-        elif strategy == "phase_locked":
-            theta_dot_cmd = phase_lock_controller(theta, theta_dot, t, i_near)
-
-        else:   # phase_locked_safety
-            theta_dot_cmd = phase_lock_controller(theta, theta_dot, t, i_near)
-            # Safety repulsion in Cartesian, project back to angular
-            f_safe = safety_repulsion(p_true, t)
-            # Tangent vector at current theta
-            tangent = np.array([-R_ORBIT * np.sin(theta), 0.0, R_ORBIT * np.cos(theta)])
-            theta_dot_cmd += np.dot(f_safe, tangent) / (R_ORBIT ** 2 + 1e-9)
-
-        # Speed cap during close-approach inspection
-        min_blade_dist = dist_log[k].min()
-        v_linear = np.abs(theta_dot_cmd) * R_ORBIT
-        if min_blade_dist <= D_INSPECT + EPS_INSPECT and v_linear > INSPECTION_SPEED:
-            theta_dot_cmd *= INSPECTION_SPEED / (v_linear + 1e-9)
-
-        # Euler integration
-        theta_dot = theta_dot_cmd
-        theta    += theta_dot * DT
-
-        # ── Inspection coverage update ────────────────────────────────────────
-        for i in range(N_BLADES):
-            for seg in range(N_SEG):
-                s_mid = (seg + 0.5) / N_SEG
-                p_seg = blade_point(t, i, s_mid)
-                d_seg = np.linalg.norm(p_true - p_seg)
-                v_now = np.abs(theta_dot) * R_ORBIT
-                if d_seg <= D_INSPECT + EPS_INSPECT and v_now <= INSPECTION_SPEED * 1.05:
-                    inspected[i, seg] = True
-
-    coverage = inspected.sum() / (N_BLADES * N_SEG) * 100.0
-    return times, pos_log, dist_log, safety_violations, coverage, inspected
-
-
-def plot_results():
-    from mpl_toolkits.mplot3d import Axes3D   # noqa: F401 — required for 3D projection
-
-    strategies = ["open_loop", "phase_locked", "phase_locked_safety"]
-    labels     = ["Open-Loop Orbit", "Phase-Locked", "Phase-Locked + Safety"]
-    colors     = ["tab:gray", "tab:orange", "tab:blue"]
-
-    results = {s: run_simulation(s) for s in strategies}
-
-    # ── Plot 1: 3D inspection trajectory (proposed strategy) ─────────────────
-    fig1 = plt.figure(figsize=(10, 8))
-    ax = fig1.add_subplot(111, projection='3d')
-
-    times, pos, dist, viols, cov, inspected = results["phase_locked_safety"]
-
-    # Turbine tower
-    tower_z = np.linspace(0, HUB_HEIGHT, 50)
-    ax.plot(np.zeros(50), np.zeros(50), tower_z, color='gray', lw=3, label='Tower')
-
-    # Rotor disk outline (circle in xz at hub height)
-    theta_ring = np.linspace(0, 2 * np.pi, 200)
-    rx = BLADE_LENGTH * np.cos(theta_ring)
-    rz = BLADE_LENGTH * np.sin(theta_ring) + HUB_HEIGHT
-    ax.plot(rx, np.zeros(200), rz, color='silver', lw=1, linestyle='--', label='Rotor disk')
-
-    # Blade snapshots at three equally-spaced times
-    for snap_t in [0.0, T_MAX / 3, 2 * T_MAX / 3]:
-        for i in range(N_BLADES):
-            tip = blade_tip(snap_t, i)
-            ax.plot([P_HUB[0], tip[0]], [P_HUB[1], tip[1]], [P_HUB[2], tip[2]],
-                    color='dimgray', lw=1.5, alpha=0.4)
-
-    # Drone trajectory (colour-coded by minimum blade distance)
-    min_dist = dist.min(axis=1)
-    for k in range(len(times) - 1):
-        c = 'red' if min_dist[k] < D_SAFE else ('gold' if min_dist[k] < D_SAFE + 0.5 else 'tab:blue')
-        ax.plot(pos[k:k+2, 0], pos[k:k+2, 1], pos[k:k+2, 2], color=c, lw=1.0)
-
-    ax.scatter(*pos[0], color='green', s=60, zorder=5, label='Start')
-    ax.scatter(*pos[-1], color='red', s=60, zorder=5, label='End')
-
-    ax.set_xlabel('X (m)');  ax.set_ylabel('Y (m)');  ax.set_zlabel('Z (m)')
-    ax.set_title(f'S062 Wind Turbine Blade Inspection — Drone Trajectory\n'
-                 f'Coverage: {cov:.1f}%  |  Safety violations: {viols} steps')
-    ax.legend(loc='upper left', fontsize=8)
-    plt.tight_layout()
-    plt.savefig('outputs/04_industrial_agriculture/s062_wind_turbine/trajectory_3d.png', dpi=150)
-    plt.show()
-
-    # ── Plot 2: Blade clearance distance over time for all three strategies ───
-    fig2, axes = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
-    for ax, strategy, label, color in zip(axes, strategies, labels, colors):
-        t_arr, _, d_arr, viols, cov, _ = results[strategy]
-        min_d = d_arr.min(axis=1)
-        ax.plot(t_arr, min_d, color=color, lw=1.2, label=label)
-        ax.axhline(D_SAFE, color='red', linestyle='--', lw=1.0, label=f'd_safe = {D_SAFE} m')
-        ax.axhline(D_INSPECT, color='orange', linestyle=':', lw=1.0,
-                   label=f'd_inspect = {D_INSPECT} m')
-        ax.fill_between(t_arr, 0, D_SAFE, alpha=0.08, color='red')
-        ax.set_ylabel('Min clearance (m)')
-        ax.set_title(f'{label}  —  Coverage: {cov:.1f}%  |  Violations: {viols} steps')
-        ax.legend(fontsize=8, loc='upper right')
-        ax.set_ylim(0, None)
-    axes[-1].set_xlabel('Time (s)')
-    fig2.suptitle('S062 — Minimum Blade Clearance Comparison', fontsize=13)
-    plt.tight_layout()
-    plt.savefig('outputs/04_industrial_agriculture/s062_wind_turbine/clearance_comparison.png',
-                dpi=150)
-    plt.show()
-
-    # ── Plot 3: Inspection coverage heatmap ───────────────────────────────────
-    fig3, axes3 = plt.subplots(1, 3, figsize=(13, 4))
-    for ax, strategy, label in zip(axes3, strategies, labels):
-        _, _, _, _, _, insp = results[strategy]
-        im = ax.imshow(insp.astype(float), aspect='auto', cmap='RdYlGn',
-                       vmin=0, vmax=1, origin='lower',
-                       extent=[0.5, N_SEG + 0.5, -0.5, N_BLADES - 0.5])
-        ax.set_xlabel('Blade segment (1 m each)')
-        ax.set_ylabel('Blade index')
-        ax.set_yticks([0, 1, 2]);  ax.set_yticklabels(['Blade 0', 'Blade 1', 'Blade 2'])
-        coverage_val = insp.sum() / (N_BLADES * N_SEG) * 100
-        ax.set_title(f'{label}\nCoverage: {coverage_val:.1f}%')
-        plt.colorbar(im, ax=ax, fraction=0.04, label='Inspected')
-    fig3.suptitle('S062 — Blade Inspection Coverage Heatmap', fontsize=13)
-    plt.tight_layout()
-    plt.savefig('outputs/04_industrial_agriculture/s062_wind_turbine/coverage_heatmap.png',
-                dpi=150)
-    plt.show()
-
-
-def animate_inspection():
-    """Top-down (XZ) animation of drone orbiting the rotor plane."""
-    from mpl_toolkits.mplot3d import Axes3D   # noqa: F401
-
-    times, pos, dist, _, _, _ = run_simulation("phase_locked_safety")
-    subsample = 4   # animate every 4th step (DT_anim ≈ 0.2 s)
-    frames = range(0, len(times), subsample)
-
-    fig = plt.figure(figsize=(7, 7))
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlim(-25, 25);  ax.set_ylim(-3, 3);  ax.set_zlim(10, 55)
-    ax.set_xlabel('X (m)');  ax.set_ylabel('Y (m)');  ax.set_zlabel('Z (m)')
-    ax.set_title('S062 Wind Turbine Inspection — Animation')
-
-    # Static elements
-    tower_z = np.linspace(0, HUB_HEIGHT, 30)
-    ax.plot(np.zeros(30), np.zeros(30), tower_z, color='gray', lw=3)
-    theta_ring = np.linspace(0, 2 * np.pi, 200)
-    ax.plot(BLADE_LENGTH * np.cos(theta_ring),
-            np.zeros(200),
-            BLADE_LENGTH * np.sin(theta_ring) + HUB_HEIGHT,
-            color='silver', lw=1, linestyle='--')
-
-    blade_lines = [ax.plot([], [], [], color='steelblue', lw=3)[0]
-                   for _ in range(N_BLADES)]
-    drone_dot,  = ax.plot([], [], [], 'ro', ms=8)
-    trail_line, = ax.plot([], [], [], color='tomato', lw=1.0, alpha=0.5)
-    time_text   = ax.text2D(0.02, 0.96, '', transform=ax.transAxes, fontsize=10)
-
-    trail_x, trail_y, trail_z = [], [], []
-    TRAIL_LEN = 60   # frames
-
-    def update(frame_idx):
-        k = list(frames)[frame_idx]
-        t = times[k]
-        p = pos[k]
-
-        trail_x.append(p[0]);  trail_y.append(p[1]);  trail_z.append(p[2])
-        if len(trail_x) > TRAIL_LEN:
-            trail_x.pop(0);  trail_y.pop(0);  trail_z.pop(0)
-
-        for i, line in enumerate(blade_lines):
-            tip = blade_tip(t, i)
-            line.set_data([P_HUB[0], tip[0]], [P_HUB[1], tip[1]])
-            line.set_3d_properties([P_HUB[2], tip[2]])
-
-        drone_dot.set_data([p[0]], [p[1]])
-        drone_dot.set_3d_properties([p[2]])
-        trail_line.set_data(trail_x, trail_y)
-        trail_line.set_3d_properties(trail_z)
-        time_text.set_text(f't = {t:.1f} s  |  min clearance = {dist[k].min():.2f} m')
-        return blade_lines + [drone_dot, trail_line, time_text]
-
-    ani = animation.FuncAnimation(fig, update, frames=len(list(frames)),
-                                  interval=100, blit=False)
-    ani.save('outputs/04_industrial_agriculture/s062_wind_turbine/inspection_animation.gif',
-             writer='pillow', fps=10)
-    plt.show()
-
-
-if __name__ == '__main__':
-    import os
-    os.makedirs('outputs/04_industrial_agriculture/s062_wind_turbine', exist_ok=True)
-    plot_results()
-    animate_inspection()
+HUB = np.array([0.0, 0.0, 30.0]); R_BLADE = 15.0; OMEGA = 0.5
+PHASES = 2 * np.pi * np.arange(3) / 3
+Y_OFF, D_SAFE, D_WARN, D_INSPECT, EPS = 1.0, 1.5, 1.8, 2.0, 0.2
+LAT = np.sqrt(D_INSPECT**2 - Y_OFF**2)          # 1.732 m behind the trailing edge
+R_ORBIT, R_IN = 17.0, 1.0
+V_SWEEP, V_RETURN, V_TRANSFER = 0.8, 3.0, 4.0   # m/s relative to the blade
+KP, KD, K_SAFE, TAU, V_MAX = 2.0, 0.3, 3.0, 0.2, 15.0
+DT = 0.05
+
+e_r = lambda a: np.array([np.cos(a), 0.0, np.sin(a)])
+e_t = lambda a: np.array([-np.sin(a), 0.0, np.cos(a)])
+
+def reference(t, plan):
+    """Plan = list of phases (transfer on the 17 m orbit, sweep_in 17->1 m, sweep_out 1->17 m)
+    expressed in the frame of the blade being inspected; returns the world position."""
+    kind, b, t0, dur, par = active_phase(plan, t)
+    phi = OMEGA * t + PHASES[b]
+    if kind == 'transfer':                        # move around the orbit, outside the tips
+        rel0, rel1, r_o = par
+        ang = phi + rel0 + (rel1 - rel0) * min(t - t0, dur) / dur
+        return HUB + r_o * e_r(ang) + Y_OFF * np.array([0, 1, 0])
+    a0, a1 = par                                  # radial sweep, co-rotating with the blade
+    a = a0 + (a1 - a0) * min(t - t0, dur) / dur
+    return HUB + a * e_r(phi) - LAT * e_t(phi) + Y_OFF * np.array([0, 1, 0])
+
+def blade_dists(p, t):
+    ang = OMEGA * t + PHASES
+    U = np.stack([np.cos(ang), np.zeros(3), np.sin(ang)], axis=1)
+    s = np.clip(U @ (p - HUB), 0.0, R_BLADE)
+    near = HUB + s[:, None] * U
+    return np.linalg.norm(p - near, axis=1), near
+
+def step(strategy, t, pos, v_air, wind, gps, plan):
+    p_ref = reference(t, plan)
+    v_ff = (reference(t + DT, plan) - p_ref) / DT  # exact plan displacement per step
+    v_cmd = v_ff.copy()
+    if strategy != 'open_loop':
+        meas = pos + gps                          # GPS-measured position
+        v_true = v_air + wind                     # ground velocity, assumed measured exactly
+        fb = KP * (p_ref - meas) + KD * (v_ff - v_true)
+        if strategy == 'phase_locked_safety':
+            d, near = blade_dists(meas, t)
+            for i in np.where(d < D_WARN)[0]:
+                n = (meas - near[i]) / d[i]
+                fb -= min(fb @ n, 0.0) * n        # drop feedback that pushes towards the blade
+                v_cmd += K_SAFE * (D_WARN - d[i]) * n
+        v_cmd += fb
+    sp = np.linalg.norm(v_cmd)
+    if sp > V_MAX:
+        v_cmd *= V_MAX / sp
+    v_air = v_air + (v_cmd - v_air) * DT / TAU    # 0.2 s velocity lag
+    pos = pos + (v_air + wind) * DT               # wind: OU gust, sigma 0.5 m/s, tau 2 s
+    return pos, v_air
+
+# Segment k of blade i is inspected when |p - m_ik| <= D_INSPECT + EPS, the speed relative to
+# the segment is <= 1 m/s and the segment lies inside the 30 deg camera cone. A distance below
+# 0.3 m to a blade (strike), contact with the tower or the ground ends the flight.
 ```
 
 ---
@@ -538,6 +269,8 @@ if __name__ == '__main__':
 
 ## Expected Output
 
+- **Rotor-frame path plot**: drone path in the co-rotating frame (blades static), one panel per
+  controller.
 - **3D trajectory plot**: rotor plane cross-section showing tower (grey vertical bar), rotor disk
   outline (dashed silver circle), three blade positions at three snapshot times (translucent grey
   segments), and the drone's full orbital trajectory colour-coded by minimum blade clearance (blue
@@ -556,10 +289,12 @@ if __name__ == '__main__':
   fraction of mission), mean blade clearance, and minimum observed clearance.
 
 Expected quantitative results for the proposed strategy over $T_{max} = 120$ s:
-- Coverage $\geq 90\%$ across all three blades
+- Coverage $\geq 90\%$ across all three blades (target; the implementation reports how far gusts
+  pull it below this)
 - Zero hard safety violations ($d < d_{safe}$)
-- Mean blade clearance $\approx 2.5$–$3.5$ m during transit, dropping to $\approx 1.2$ m during
-  active inspection passes
+- Mean blade clearance $\approx d_{inspect} = 2.0$ m during the imaging sweeps (the original
+  $\approx 1.2$ m would lie inside $d_{safe}$); during transit on the 17 m orbit the clearance never
+  drops below $\sqrt{2^2 + 1^2} = 2.24$ m
 
 ---
 
