@@ -50,6 +50,7 @@ Metrics: $\varepsilon_{RMS} = \sqrt{\overline{\|\mathbf e_k\|^2}}$, $\varepsilon
 | Monte Carlo (added) | 100 wind seeds (seed 83), shared by all configurations |
 | Settling cut for the "after 5 s" metrics (added) | 5 s |
 | Wind sweep (added) | $\sigma_w$ = 0, 0.1, 0.2, 0.3, 0.5, 1.0 m/s², 30 seeds each |
+| Wind hold-time sweep (added) | each wind sample held 0.05 (card), 0.10, 0.20 s; flying start, 30 seeds |
 | Acceleration sanity bound (asserted) | 15 m/s² |
 | `odeint` tolerances | rtol 1e-7, atol 1e-8 |
 
@@ -66,7 +67,7 @@ conda activate drones
 python src/05_special_entertainment/s083_light_show_single.py
 ```
 
-Runtime ≈ 4–6 min on a heavily loaded machine (about 10 other simulations running in parallel); most of it is the 18 wind-sweep batches.
+Runtime ≈ 2–5 min on a heavily loaded machine (about 10 other simulations running in parallel); most of it is the 18 wind-sweep batches.
 
 ---
 
@@ -87,7 +88,7 @@ Per seed: PID + FF has a lower RMS than PID-only in 100/100 seeds (full and afte
 Seed 0 (figures): PID-only RMS 48.59 cm (FAIL), PID + FF 36.45 cm (FAIL), flying start 11.20 cm (FAIL).
 
 **Key findings**:
-- **No configuration meets the 10 cm spec at the card's wind level.** With the card's start from rest, PID-only and PID + FF fail in every seed. Even the flying start, which removes the launch, passes in only 11/100 seeds (mean 10.92 cm): $\sigma_w = 0.5$ m/s² of white-noise wind alone produces about 11 cm of error with these gains.
+- **No configuration meets the 10 cm spec at the card's wind level.** With the card's start from rest, PID-only and PID + FF fail in every seed. Even the flying start, which removes the launch, passes in only 11/100 seeds (mean 10.92 cm): $\sigma_w = 0.5$ m/s² of white-noise wind alone produces about 11 cm of error with these gains. This number depends on how long each wind sample is held, which the card fixes only implicitly through the 0.05 s step: the same $\sigma_w$ held for longer carries more low-frequency energy. With the flying start (30 seeds) the RMS is 10.87 cm for a 0.05 s hold, 15.45 cm for 0.10 s and 21.78 cm for 0.20 s, i.e. it grows as $\sqrt{\text{hold time}}$ (ratios 1.42 and 2.00 vs $\sqrt{2} = 1.41$ and $\sqrt{4} = 2.00$). The pass/fail verdicts in this README hold for the card's 0.05 s re-sampling only.
 - **The launch dominates the card's full-mission metric.** The drone starts at rest while the script starts at 4.68 m/s, so in seed 0 the error grows to 221.3 cm (PID-only) and 223.5 cm (PID + FF) after 1 s. This sets the maximum error (≈ 2.2 m for both) and most of the full-mission RMS. Feedforward does not help here; the flying start keeps the error at 1.4 / 2.0 / 3.9 cm at t = 0.5 / 1 / 2 s.
 - **The launch error decays slowly because of the integral term.** Without wind, PID + FF has an RMS of 118.86 cm in the first 5 s, then 19.70, 5.80, 3.54, 1.92 and 0.90 cm in the windows 5–10, 10–20, 20–30, 30–45 and 45–60 s. This matches the slow closed-loop pole at −0.051 s⁻¹ (19.6 s time constant). The flying start has 0.00 cm in every window: with feedforward and no wind the spline is tracked exactly.
 - **Feedforward removes the curvature lag.** Without wind, PID-only never settles: its window RMS after the launch is 42.05 / 25.51 / 32.71 / 32.54 / 31.70 cm, and its error peaks (bottom panel of the error plot) are close to the steady lag $a_{ref}/K_p = 0.891/2.0 = 0.446$ m expected at the most curved part of the path. After 5 s with wind, PID + FF reduces the RMS from 34.05 to 12.93 cm and raises completion from 91.99 % to 100.00 %.
@@ -112,7 +113,7 @@ Reference (green) and the three drone paths for seed 0. At this scale the 10–5
 
 ### Tracking Error vs Time
 
-Top: seed 0 with wind. Bottom: the same configurations without wind, which isolates the launch transient and its slow decay (log scale):
+Top: seed 0 with wind. Bottom: the same configurations without wind, which isolates the launch transient and its slow decay (log scale). Without wind the flying start tracks the spline almost exactly (max 0.0020 cm), so its curve is drawn at the 0.002 cm floor of the axis:
 
 ![Error Time Series](./error_timeseries.png)
 

@@ -45,6 +45,7 @@ SEED = 83
 T_SETTLE = 5.0            # s — metrics are also reported after this launch transient
 SIGMA_SWEEP = [0.0, 0.1, 0.2, 0.3, 0.5, 1.0]
 N_SWEEP = 30              # seeds per sweep point
+HOLD_SWEEP = [0.05, 0.10, 0.20]   # s — how long each wind sample is held (flying start, PID + FF)
 A_LIMIT = 15.0            # m/s^2 — sanity bound on the commanded acceleration (card ext. 3)
 ANIM_STEP = 5             # sim steps per GIF frame (0.25 s)
 TRAIL_S = 5.0             # s — trailing path in the animation
@@ -151,7 +152,15 @@ def run_simulation():
     # Wind-free runs: how the launch transient decays (integral mode)
     calm = np.zeros((1, N_STEPS, 3))
     decay = {v: simulate(v != 'pid', calm, ref, v == 'fly')['err'][:, 0] for v in VARIANTS}
-    return ref, results, sweep, decay
+
+    # Wind hold time: the same sigma_w held for longer carries more energy at low frequency
+    hold = []
+    for h in HOLD_SWEEP:
+        m = int(round(h / DT))
+        w = np.repeat(unit_wind[:N_SWEEP, ::m], m, axis=1)[:, :N_STEPS]
+        r = simulate(True, SIGMA_W * w, ref, True)
+        hold.append((h, r['rms'].mean(), r['rms'].std(), int(np.sum(r['rms'] <= RMS_SPEC))))
+    return ref, results, sweep, decay, hold
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -184,9 +193,10 @@ def plot_error_timeseries(results, decay, out_dir, seed=0):
     series = [(axes[0], {v: results[v]['err'][:, seed] for v in VARIANTS},
                f'With wind σ_w = {SIGMA_W} (seed {seed})'),
               (axes[1], decay, 'Without wind: launch transient only')]
+    floor_cm = 2e-3                     # errors below this are drawn at this level
     for ax, errs, title in series:
         for v in VARIANTS:
-            ax.plot(T_GRID, 100 * np.maximum(errs[v], 1e-4), color=COLORS[v], lw=1.1,
+            ax.plot(T_GRID, np.maximum(100 * errs[v], floor_cm), color=COLORS[v], lw=1.4,
                     label=LABELS[v])
         ax.axhline(100 * RMS_SPEC, color='k', ls='--', lw=1.3,
                    label=f'RMS spec {100 * RMS_SPEC:.0f} cm')
@@ -194,10 +204,14 @@ def plot_error_timeseries(results, decay, out_dir, seed=0):
                    label=f'Path threshold {100 * PASS_THRESHOLD:.0f} cm')
         ax.axvline(T_SETTLE, color='k', ls='-.', lw=0.8, label=f'settling cut {T_SETTLE:.0f} s')
         ax.set_yscale('log')
-        ax.set_ylim(1e-2, 400)
+        ax.set_ylim(1e-3, 400)
         ax.set_ylabel('Position error (cm, log)')
         ax.set_title(title)
         ax.grid(True, which='both', alpha=0.3)
+    fly_max = 100 * decay['fly'].max()
+    axes[1].annotate(f'flying start: max {fly_max:.4f} cm, drawn at the {floor_cm} cm floor',
+                     xy=(30, floor_cm), xytext=(30, 0.05), color=COLORS['fly'], fontsize=9,
+                     ha='center', arrowprops=dict(arrowstyle='->', color=COLORS['fly']))
     axes[0].legend(fontsize=8, ncol=3, loc='lower left')
     axes[1].set_xlabel('Time (s)')
     fig.suptitle('S083 Tracking error vs time')
@@ -321,7 +335,7 @@ def save_animation(results, out_dir, seed=0):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    ref, results, sweep, decay = run_simulation()
+    ref, results, sweep, decay, hold = run_simulation()
     cs, d1, d2, wp = ref
 
     t_fine = np.linspace(0, T_TOTAL, 6001)
@@ -376,6 +390,12 @@ if __name__ == '__main__':
             sel = (T_GRID >= t0) & (T_GRID < t1)
             vals.append(f'{100 * np.sqrt(np.mean(decay[v][sel] ** 2)):.2f}')
         print(f'    {LABELS[v]:<24}' + ' / '.join(vals))
+    print(f"  Wind-free flying start: max error over the mission {100 * decay['fly'].max():.4f} cm")
+    print(f'  Wind hold-time sweep (PID + FF, flying start, sigma_w = {SIGMA_W}, {N_SWEEP} seeds): '
+          'hold -> RMS full mission (cm), seeds passing 10 cm')
+    for h, m_, s_, npass in hold:
+        print(f'    {h:.2f} s: {100 * m_:.2f} ± {100 * s_:.2f} cm ({npass}/{N_SWEEP}); '
+              f'ratio to 0.05 s {m_ / hold[0][1]:.2f} (sqrt(hold/0.05) = {np.sqrt(h / 0.05):.2f})')
     print(f'  Wind sweep ({N_SWEEP} seeds): sigma_w -> RMS full / after {T_SETTLE:.0f} s (cm), '
           f'seeds passing 10 cm (full / after {T_SETTLE:.0f} s)')
     for j, sig in enumerate(SIGMA_SWEEP):
