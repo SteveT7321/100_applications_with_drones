@@ -32,6 +32,7 @@ Usage:
 import os
 import math
 import numpy as np
+import sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -42,6 +43,9 @@ from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '..', '..', '..'))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, '..'))
+import s064_greenhouse as base_s064                     # noqa: E402  (2D base, equivalence check only)
+
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, 'outputs', '04_industrial_agriculture', '3d',
                           's064_3d_greenhouse')
 
@@ -56,6 +60,8 @@ WIRE_R = 0.01                      # wire radius (card)
 WIRE_X = (1.0, 39.0)               # wires absent at x < 1 and x > 39 (card)
 HALF = (0.15, 0.15, 0.075)         # drone half-extents of the 0.3 x 0.3 x 0.15 m body
 LAYOUT_SPAN = {'headland': (2.0, 38.0), 'full': (0.0, 40.0)}
+HEAD_W = 2.0                       # base headland width (rows x = 2-38 m); swept 2.0 / 1.5 / 1.0 m
+HEAD_SWEEP = [2.0, 1.5, 1.0]
 
 V_FWD = 1.0
 V_LAT_MAX = 1.0                    # base: lateral speed limit of the tracking law in aisles
@@ -116,12 +122,14 @@ def canopy(seed, seg_len=SEG_LEN):
 
 
 class World:
-    def __init__(self, heights, layout):
+    def __init__(self, heights, layout, head_w=None):
         self.H = heights
         self.n_seg = heights.shape[1]
         self.seg_len = GH_X / self.n_seg
         self.layout = layout
         self.x0, self.x1 = LAYOUT_SPAN[layout]
+        if layout == 'headland' and head_w is not None:
+            self.x0, self.x1 = head_w, GH_X - head_w
         self.wx0, self.wx1 = (max(WIRE_X[0], self.x0), min(WIRE_X[1], self.x1))
 
     def present(self, x):
@@ -234,12 +242,13 @@ def noise(seed, n):
 
 def simulate(seed, layout='full', turn='over', alt_rule='fixed', z_aisle=Z_AISLE,
              z_cross=Z_CROSS, beta=BETA, gate_z=GATE_Z, v_lat_turn=V_LAT_TURN,
-             seg_len=SEG_LEN, keep_log=False):
+             seg_len=SEG_LEN, head_w=HEAD_W, k_alt=K_ALT, start=START, keep_log=False):
     n = int(round(T_MAX / DT))
     eta_t, eta_e, rn, eta_ez, tofn = noise(seed, n)
-    world = World(canopy(seed, seg_len), layout)
+    world = World(canopy(seed, seg_len), layout, head_w)
     za = aisle_altitudes(world, alt_rule, z_aisle)
-    x, y, z = START
+    x_end = [head_w / 2, GH_X - head_w / 2] if layout == 'headland' else X_END
+    x, y, z = start
     y_hat, z_hat = y, z
     y_pure, z_pure = y, z          # parallel pure dead-reckoning integrators (logging only)
     k_aisle, mode = 0, 'leg'
@@ -258,7 +267,7 @@ def simulate(seed, layout='full', turn='over', alt_rule='fixed', z_aisle=Z_AISLE
     for step in range(n):
         t = step * DT
         yc = AISLE_Y[k_aisle]
-        xf = X_END[1] if k_aisle % 2 == 0 else X_END[0]
+        xf = x_end[1] if k_aisle % 2 == 0 else x_end[0]
         y_next = AISLE_Y[k_aisle + 1] if k_aisle + 1 < N_AISLE else yc
         # ── sensing (true state) ──
         dl_t, dr_t = world.ranges(x, y, z)
@@ -285,7 +294,7 @@ def simulate(seed, layout='full', turn='over', alt_rule='fixed', z_aisle=Z_AISLE
             z_tgt = {'side': za[k_aisle], 'climb': z_cross, 'translate': z_cross,
                      'descend': za[min(k_aisle + 1, N_AISLE - 1)]}[mode]
             turn_steps += 1
-        vz = K_ALT * (z_tgt - z_hat)
+        vz = k_alt * (z_tgt - z_hat)
         # repulsion from measured ranges (lateral, base) and the ToF clearance (vertical)
         if zl is not None and zl - HALF[1] < D_SAFE:
             vy += K_REP * (D_SAFE - (zl - HALF[1])) / D_SAFE
@@ -397,6 +406,10 @@ def simulate(seed, layout='full', turn='over', alt_rule='fixed', z_aisle=Z_AISLE
 
 def _job(args):
     seed, kw = args
+    if kw.get('__base__'):                         # the 2D S064 base itself (equivalence check)
+        r = base_s064.simulate('fusion', seed)
+        return {'mean_lat': r['mean_err'], 'max_lat': r['max_err'], 'time': r['time'],
+                'complete': r['complete']}
     return simulate(seed, **kw)
 
 
@@ -434,19 +447,36 @@ def run_simulation(workers=6):
             for sd in SWEEP_SEEDS:
                 jobs.append((sd, kw))
                 slots.append((name, val, sd))
+    for hw in HEAD_SWEEP[1:]:                      # headland width of the 2D arm (2.0 m = main '2d')
+        for sd in SEEDS:
+            jobs.append((sd, dict(layout='headland', turn='side', head_w=hw)))
+            slots.append(('head', hw, sd))
+    for sd in SEEDS:                               # 2D arm with the base's K_alt, start and turn speed
+        jobs.append((sd, dict(layout='headland', turn='side', k_alt=1.2, start=(1.0, 1.0, 1.0),
+                              v_lat_turn=1.0)))
+        slots.append(('equiv', 'arm', sd))
+        jobs.append((sd, {'__base__': True}))
+        slots.append(('equiv', 'base', sd))
     with ProcessPoolExecutor(max_workers=workers) as ex:
         results = list(ex.map(_job, jobs, chunksize=4))
-    out = {'main': {k: {} for k in ('2d', '3d', 'card', '2d_full')}, 'sweep': {}}
+    out = {'main': {k: {} for k in ('2d', '3d', 'card', '2d_full')}, 'sweep': {}, 'head': {},
+           'equiv': {}}
     for key, _, layout, turn, rule in MAIN:      # plotted seed with logs, in this process
         out['main'][key][PLOT_SEED] = simulate(PLOT_SEED, layout, turn, rule, keep_log=True)
     for (a, b, sd), r in zip(slots, results):
         if a == 'main':
             out['main'][b][sd] = r
+        elif a in ('head', 'equiv'):
+            out[a].setdefault(b, {})[sd] = r
         else:
             out['sweep'].setdefault(a, {}).setdefault(b, {})[sd] = r
     for key in out['main']:
         d = out['main'][key]
         out['main'][key] = [d[sd] for sd in sorted(d)]
+    for grp in ('head', 'equiv'):
+        for key in out[grp]:
+            out[grp][key] = [out[grp][key][sd] for sd in sorted(out[grp][key])]
+    out['head'][HEAD_W] = out['main']['2d']
     alias = {'z_aisle': '3d', 'z_cross': '3d', 'beta': '3d', 'gate_z': '3d'}
     sw = out['sweep']
     for name in SWEEPS:
@@ -821,6 +851,43 @@ def report(out):
           f'(+{100 * ((t3 / t2).mean() - 1):.1f} %), longer in {int(np.sum(t3 > t2))}/{N_SEEDS}')
     print(f'    Card rule vs 3D z=1.0: mean lateral error higher in {int(np.sum(ac > a3))}/{N_SEEDS}, '
           f'ratio of means {ac.mean() / a3.mean():.3f}')
+    print(f'  Headland width of the 2D arm ({N_SEEDS} seeds; turn line at the headland centre): '
+          'width -> row length, complete, crashes, runs with steps < d_safe, mean steps < d_safe, '
+          'worst clearance, mission time, mean / peak |y_hat - y|, full-length gain')
+    safe = []
+    for hw in HEAD_SWEEP:
+        R = out['head'][hw]
+        L = GH_X - 2 * hw
+        ok = all(r['complete'] for r in R) and all(r['viol'] == 0 for r in R)
+        if ok:
+            safe.append(hw)
+        print(f"    {hw:.1f} m: {L:.0f} m, {sum(r['complete'] for r in R)}/{N_SEEDS}, "
+              f"{sum(r['crash'] for r in R)}, {sum(r['viol'] > 0 for r in R)}/{N_SEEDS}, "
+              f"{np.mean([r['viol'] for r in R]):.1f}, {np.min([r['min_clear'] for r in R]):.3f} m, "
+              f"{np.mean([r['time'] for r in R]):.1f} s, {np.mean([r['mean_lat'] for r in R]):.4f} / "
+              f"{np.mean([r['max_lat'] for r in R]):.4f} m, +{100 * (GH_X / L - 1):.1f} %"
+              f"{'' if ok else '  (unsafe: d_safe violated or incomplete)'}")
+    hw = min(safe)
+    R = out['head'][hw]
+    tn = np.array([r['time'] for r in R])
+    an = np.array([r['mean_lat'] for r in R])
+    pn = np.array([r['max_lat'] for r in R])
+    print(f'  Narrowest safe headland in the sweep: {hw:.1f} m -> full-length gain '
+          f'+{100 * (GH_X / (GH_X - 2 * hw) - 1):.1f} % row length; 3D vs this 2D arm: mission time '
+          f'{(t3 - tn).mean():+.1f} ± {(t3 - tn).std():.1f} s, longer in {int(np.sum(t3 > tn))}/{N_SEEDS}; '
+          f'mean lateral error lower in {int(np.sum(a3 < an))}/{N_SEEDS} (ratio {a3.mean() / an.mean():.3f}); '
+          f'peak lower in {int(np.sum(p3 < pn))}/{N_SEEDS} (ratio {p3.mean() / pn.mean():.3f})')
+    ea = np.array([r['mean_lat'] for r in out['equiv']['arm']])
+    eb = np.array([r['mean_lat'] for r in out['equiv']['base']])
+    pa = np.array([r['max_lat'] for r in out['equiv']['arm']])
+    pb = np.array([r['max_lat'] for r in out['equiv']['base']])
+    print(f"  Equivalence with the 2D S064 base: 2D arm with the base's K_alt 1.2, start z 1.0 m and 1.0 m/s "
+          f"turns (z still estimated): mean |y_hat - y| {ea.mean():.4f} vs base {eb.mean():.4f} m, "
+          f"max per-seed difference {np.max(np.abs(ea - eb)):.4f} m; peak {pa.mean():.4f} vs {pb.mean():.4f} m; "
+          f"time {np.mean([r['time'] for r in out['equiv']['arm']]):.1f} vs "
+          f"{np.mean([r['time'] for r in out['equiv']['base']]):.1f} s; complete "
+          f"{sum(r['complete'] for r in out['equiv']['arm'])} / {sum(r['complete'] for r in out['equiv']['base'])}"
+          f" of {N_SEEDS}")
     sw = out['sweep']
     ns = len(SWEEP_SEEDS)
     print(f'  Sweep: aisle altitude (full-length rows, {ns} seeds): z -> lateral fix %, mean / peak '

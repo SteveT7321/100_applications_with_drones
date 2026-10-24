@@ -181,11 +181,13 @@ $$\bar{E}_{lat} = \frac{1}{N_t}\sum_t E_{lat}(t), \qquad
 ## Key 3D Additions
 
 - **Non-uniform canopy heights**: per-row $h_k \sim \mathcal{U}(1.0, 1.6)$ m; cruise altitude
-  computed per-aisle to stay above trellis wires and below canopy tops.
+  computed per-aisle to stay above trellis wires and below canopy tops (corrected: that band is empty, see
+  the correction under Altitude Selection; the implementation flies the aisles at 1.0 m, below every canopy).
 - **Trellis wire obstacles**: cylindrical obstacles at $z = 0.6$ m and $z = 1.2$ m along each
   row; 3D repulsion applied in the $\pm Z$ direction when within $d_{safe}$.
 - **Three-phase row-turn manoeuvre**: climb-translate-descend sequence at each end of the
-  greenhouse; altitude during crossing is $z_{cross} = 1.9$ m, above all canopies.
+  greenhouse; altitude during crossing is $z_{cross} = 1.9$ m, above all canopies (corrected to 2.0 m; 1.9 m leaves
+  less than $d_{safe}$ over a 1.6 m canopy).
 - **Downward ToF altitude sensor**: fusion gain $\beta = 0.75$; $\sigma_{tof} = 0.03$ m;
   corrects barometric/IMU vertical drift alongside the lateral ultrasonic correction.
 - **Full 3D repulsive field**: obstacles on all three axes; repulsion gain identical to S064
