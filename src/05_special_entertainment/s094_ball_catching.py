@@ -157,17 +157,17 @@ def sat(u, lim):
     return np.where(n > lim, u * (lim / np.maximum(n, 1e-12)), u)
 
 
-def altitude_guard(pd, vd, u):
+def altitude_guard(pd, vd, u, a_max=A_MAX, z_hi=Z_HI):
     """Velocity barrier: keep |v_z| below sqrt(2 A_GUARD d) towards each altitude limit,
     then rescale the horizontal command so that |u| <= A_MAX still holds."""
     d_lo = np.maximum(pd[:, 2] - Z_LO, 0.0)
-    d_hi = np.maximum(Z_HI - pd[:, 2], 0.0)
+    d_hi = np.maximum(z_hi - pd[:, 2], 0.0)
     uz_min = (-np.sqrt(2 * A_GUARD * d_lo) - vd[:, 2]) / DT
     uz_max = (np.sqrt(2 * A_GUARD * d_hi) - vd[:, 2]) / DT
-    uz = np.clip(np.clip(u[:, 2], uz_min, uz_max), -A_MAX, A_MAX)
+    uz = np.clip(np.clip(u[:, 2], uz_min, uz_max), -a_max, a_max)
     uh = u[:, :2]
     hn = _norm(uh)
-    hmax = np.sqrt(np.maximum(A_MAX**2 - uz**2, 0.0))
+    hmax = np.sqrt(np.maximum(a_max**2 - uz**2, 0.0))
     scale = np.where(hn > hmax, hmax / np.maximum(hn, 1e-12), 1.0)
     return np.column_stack([uh * scale[:, None], uz])
 
@@ -355,8 +355,9 @@ def run_ekf(th, sigma):
 
 
 # ── Closed-loop simulation (vectorised over throws) ───────────────────────────
-def simulate(strategy, th, est=None, record=False):
-    """est: output of run_ekf (ignored by the oracle strategies, which use the truth)."""
+def simulate(strategy, th, est=None, record=False, a_max=A_MAX, z_hi=Z_HI):
+    """est: output of run_ekf (ignored by the oracle strategies, which use the truth).
+    a_max / z_hi are overridden only by the PN diagnostic probes."""
     truth, n_end, pd0 = th['truth'], th['n_end'], th['pd0']
     B = len(pd0)
     pd, vd = pd0.copy(), np.zeros((B, 3))
@@ -390,8 +391,8 @@ def simulate(strategy, th, est=None, record=False):
         elif strategy == 'pp':
             r = xb[:, :3] - pn_
             v_des = V_MAX * r / np.maximum(_norm(r), 1e-9)[:, None]
-            u = sat(K_V * (v_des - vd), A_MAX)
-        elif strategy == 'pn':
+            u = sat(K_V * (v_des - vd), a_max)
+        elif strategy in ('pn', 'apn'):
             r = xb[:, :3] - pn_
             vr = xb[:, 3:] - vd
             rn = np.maximum(_norm(r), 1e-9)
@@ -399,8 +400,12 @@ def simulate(strategy, th, est=None, record=False):
             omega = np.cross(r, vr) / (rn**2)[:, None]
             vc = -np.einsum('ij,ij->i', r, vr) / rn
             u_pn = PN_N * vc[:, None] * np.cross(omega, r_hat)
+            if strategy == 'apn':   # augmented PN: + N/2 * estimated ball accel normal to LOS
+                a_b = ball_deriv(xb)[:, 3:]
+                a_perp = a_b - np.einsum('ij,ij->i', a_b, r_hat)[:, None] * r_hat
+                u_pn = u_pn + 0.5 * PN_N * a_perp
             u_pp = K_V * (V_MAX * r_hat - vd)
-            u = sat(np.where((vc > 0)[:, None], u_pn, u_pp), A_MAX)
+            u = sat(np.where((vc > 0)[:, None], u_pn, u_pp), a_max)
         else:   # pcp / oracle
             if (n - REACT_STEP) % REPLAN_EVERY == 0:
                 q, cpt, tgo, j, hv, md = plan_catch(xb, pd, vd, n,
@@ -422,7 +427,7 @@ def simulate(strategy, th, est=None, record=False):
                     rec['plans'].append(plan)
             u = np.where((mode == 0)[:, None], goto_accel(pd, vd, target),
                          intercept_accel(pd, vd, target, t_tgt - t))
-        u = altitude_guard(pd, vd, u)
+        u = altitude_guard(pd, vd, u, a_max, z_hi)
         # 3) drone integration with speed saturation (semi-implicit Euler)
         vd_new = sat(vd + u * DT, V_MAX)
         u_app = (vd_new - vd) / DT
@@ -433,8 +438,8 @@ def simulate(strategy, th, est=None, record=False):
         u_app = np.where(a_, u_app, 0.0)
         # invariants (X4)
         assert np.all(_norm(vd_new) <= V_MAX * (1 + 1e-9)), 'speed limit violated'
-        assert np.all(_norm(u_app) <= A_MAX * (1 + 1e-6)), 'acceleration limit violated'
-        assert np.all(pd_new[:, 2] >= Z_LO - 1e-3) and np.all(pd_new[:, 2] <= Z_HI + 1e-3), \
+        assert np.all(_norm(u_app) <= a_max * (1 + 1e-6)), 'acceleration limit violated'
+        assert np.all(pd_new[:, 2] >= Z_LO - 1e-3) and np.all(pd_new[:, 2] <= z_hi + 1e-3), \
             'altitude window violated'
         assert np.all(np.isfinite(pd_new)), 'non-finite state'
         # 4) catch check: closest approach of ball and net segments in [t_n, t_n+1]
@@ -456,7 +461,7 @@ def simulate(strategy, th, est=None, record=False):
         v_rel_catch = np.where(new_c, _norm(truth[:, n, 3:] - vd_new), v_rel_catch)
         effort += np.where(pre, np.sum(u_app**2, axis=1) * DT, 0.0)
         v_peak = np.maximum(v_peak, np.where(pre, _norm(vd_new), 0.0))
-        at_limit |= pre & ((pd_new[:, 2] < Z_LO + 0.01) | (pd_new[:, 2] > Z_HI - 0.01))
+        at_limit |= pre & ((pd_new[:, 2] < Z_LO + 0.01) | (pd_new[:, 2] > z_hi - 0.01))
         pd, vd = pd_new, vd_new
         # the flight (and the closest-approach metric d_miss) continues after a catch, as if
         # the ball passed through the cup, so that d_miss is not fixed at r_c for catches
@@ -561,6 +566,16 @@ def run_simulation():
     res['ablation'] = {s: simulate(s, th0, est0)['caught'] for s in ['pcp_hold', 'oracle_hold']}
     for c in res['ablation'].values():
         assert not np.any(c & ~reach0), 'catch outside the bound'
+    # PN diagnostic probes (seed 0, same estimates): which cause explains PN's failures?
+    # Not checked against the reachability bound, which assumes a_max = 10 and z <= 4 m.
+    res['pn_probes'] = [
+        ('PN, a_max = 10 m/s^2 (main run)', res['main']['pn']['caught']),
+        ('PN, a_max = 30 m/s^2', simulate('pn', th0, est0, a_max=30.0)['caught']),
+        ('PN, a_max = 100 m/s^2', simulate('pn', th0, est0, a_max=100.0)['caught']),
+        ('Augmented PN, a_max = 10 m/s^2', simulate('apn', th0, est0)['caught']),
+        ('Augmented PN, a_max = 30 m/s^2', simulate('apn', th0, est0, a_max=30.0)['caught']),
+        ('PN, no 4 m ceiling', simulate('pn', th0, est0, z_hi=1000.0)['caught']),
+    ]
     res['reach_check'] = validate_reach_model()
     return res
 
@@ -839,7 +854,10 @@ def report(res, k_rep):
           f'{100 * res["card_like0"].mean():.1f}%')
     print('  Reach-model check (PCP tracker from rest, time to within 0.05 m):')
     for D, tm, ta in zip(*res['reach_check']):
-        print(f'    D = {D:5.1f} m: model {tm:.3f} s, simulated {ta:.3f} s')
+        print(f'    D = {D:5.1f} m: model {tm:.3f} s, simulated {ta:.3f} s, '
+              f'model - simulated {tm - ta:+.3f} s')
+    dd = res['reach_check'][1] - res['reach_check'][2]
+    print(f'  Reach model conservative by {dd.min():.3f} to {dd.max():.3f} s')
     print(f'\n  Main run: seed 0, {n} common throws, sigma_z = {SIGMA_Z} m')
     print(f'  {"strategy":<22}{"catch":>7}{"rate":>8}{"95% Wilson":>17}{"eta_bound":>11}'
           f'{"eta_oracle":>12}')
@@ -861,6 +879,11 @@ def report(res, k_rep):
               f'max {vr.max():.2f} m/s')
     print(f'  PN vs a constant target acceleration g needs up to N/(N-2) g = '
           f'{PN_N / (PN_N - 2) * G:.2f} m/s^2 (a_max = {A_MAX:.0f} m/s^2)')
+    print('  PN diagnostic probes (seed 0, same throws and estimates):')
+    base = int(res['pn_probes'][0][1].sum())
+    for lab, c in res['pn_probes']:
+        print(f'    {lab:<34} {int(c.sum()):3d}/{n} = {100 * c.mean():5.1f}%  '
+              f'(change vs main PN {int(c.sum()) - base:+d})')
     for s in STRATS:
         miss = ~m[s]['caught']
         print(f'  {LABEL[s]} misses: {int(np.sum(miss & ~res["reach0"]))} unreachable (outside '

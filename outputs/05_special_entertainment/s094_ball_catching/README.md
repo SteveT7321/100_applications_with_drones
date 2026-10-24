@@ -54,7 +54,8 @@ A catch is the first step with $d \le r_c = 0.15$ m, $v_{b,z}(s^*) < 0$ and $z_b
 ### Strategies
 
 - **PP**: $\mathbf{u} = \mathrm{sat}_{a_{max}}\big(K_v(v_{max}\hat{\mathbf{r}} - \mathbf{v}_d)\big)$ with $\mathbf{r} = \hat{\mathbf{p}}_b - \mathbf{p}_n$ and $K_v = 8$ s⁻¹.
-- **PN**: $\boldsymbol{\Omega} = \mathbf{r}\times\mathbf{v}_r/\|\mathbf{r}\|^2$, $V_c = -\mathbf{r}\cdot\mathbf{v}_r/\|\mathbf{r}\|$, $\mathbf{u} = N V_c\,\boldsymbol{\Omega}\times\hat{\mathbf{r}}$ when $V_c > 0$, otherwise the PP command. Against a target with constant acceleration $g$, PN with $N = 3$ needs up to $N/(N-2)\,g = 29.43$ m/s², three times $a_{max}$.
+- **PN**: $\boldsymbol{\Omega} = \mathbf{r}\times\mathbf{v}_r/\|\mathbf{r}\|^2$, $V_c = -\mathbf{r}\cdot\mathbf{v}_r/\|\mathbf{r}\|$, $\mathbf{u} = N V_c\,\boldsymbol{\Omega}\times\hat{\mathbf{r}}$ when $V_c > 0$, otherwise the PP command. Against a target with constant acceleration $g$, PN with $N = 3$ needs up to $N/(N-2)\,g = 29.43$ m/s², three times $a_{max}$. The diagnostic probes below show that this acceleration budget explains only part of PN's failures.
+- **Augmented PN** (diagnostic probe only, the card's extension 2): $\mathbf{u} = N V_c\,\boldsymbol{\Omega}\times\hat{\mathbf{r}} + \tfrac{N}{2}\,\hat{\mathbf{a}}_{b,\perp}$, where $\hat{\mathbf{a}}_{b}$ is the ball acceleration (gravity + drag) evaluated at the EKF estimate and $\perp$ is the component normal to the line of sight. Same PP fallback when $V_c \le 0$.
 - **PCP** (re-plan every 50 ms, from $t_{react}$):
   1. Propagate the estimate for 2.5 s in 0.02 s steps. Candidate catch times $t_j$ are those where the predicted ball height is in [0.5, 4.0] m, the ball is descending, and it has not yet fallen below $z_{min}$.
   2. For each candidate, estimate two reach times with a line-of-sight model. $\mathbf{e} = \mathbf{q}_j - \mathbf{p}_d$ is the vector to the drone target $\mathbf{q}_j = \hat{\mathbf{p}}_b(t_j) - [0,0,0.1]^\top$, and $v_\parallel$, $v_\perp$ are the drone velocity components along and across $\mathbf{e}$:
@@ -117,7 +118,7 @@ conda activate drones
 python src/05_special_entertainment/s094_ball_catching.py
 ```
 
-The script runs in about 2–5 minutes, depending on machine load. The Monte Carlo is vectorised across throws.
+The script runs in about 1 minute (41–46 s in two runs with `OMP_NUM_THREADS=1`; up to about 4.5 minutes when the machine is heavily loaded). The Monte Carlo is vectorised across throws.
 
 ---
 
@@ -222,6 +223,19 @@ At the first plan ($t = t_{react}$), PCP chose hold mode for 98 throws (98 caugh
 
 **Ablation**, restricting the planner to arrive-and-stop (hold) plans: PCP catches 182/300 = 60.7 % and the oracle planner 183/300 = 61.0 %.
 
+### PN diagnostic probes
+
+To find out why PN fails, the script re-runs PN on the seed-0 throws with the same EKF estimates and changes one thing at a time. These probes break the drone limits on purpose, so they are not checked against the reachability bound:
+
+| Variant | Catches | Rate | Change vs main PN |
+|---------|--------:|-----:|------:|
+| PN, $a_{max}$ = 10 m/s² (main run) | 17/300 | 5.7 % | +0 |
+| PN, $a_{max}$ = 30 m/s² | 75/300 | 25.0 % | +58 |
+| PN, $a_{max}$ = 100 m/s² | 75/300 | 25.0 % | +58 |
+| Augmented PN, $a_{max}$ = 10 m/s² | 134/300 | 44.7 % | +117 |
+| Augmented PN, $a_{max}$ = 30 m/s² | 157/300 | 52.3 % | +140 |
+| PN, no 4 m ceiling | 10/300 | 3.3 % | −7 |
+
 ### Key findings
 
 - **Hypothesis 1 (PCP highest and close to the oracle): holds.**
@@ -235,9 +249,12 @@ At the first plan ($t = t_{react}$), PCP chose hold mode for 98 throws (98 caugh
 - **Hypothesis 3 (PN beats PP but loses to PCP): holds.**
   - PN beats PP: 5.7 % vs 1.7 %, 17 wins / 5 losses, p = 0.017.
   - PN loses to PCP on 267 throws and never wins.
-  - Gravity is the unmodelled target acceleration: PN with $N = 3$ would need up to 29.43 m/s², but the drone has 10 m/s².
-  - PN has no notion of the altitude window either: it touches a limit in 12.7 % of throws.
-  - Even so, PN's absolute catch rate is so low that "beats PP" is a statement about two failing strategies.
+  - The card's two proposed reasons do not hold up equally (see the PN diagnostic probes):
+    - **The missing gravity term in the guidance law is the main cause.** Augmented PN, which adds $\tfrac{N}{2}$ times the estimated ball acceleration normal to the line of sight, catches 134/300 with the same 10 m/s² drone (+117 over PN).
+    - **The acceleration budget explains only a smaller part.** Plain PN would need up to 29.43 m/s² against a gravity-accelerating target. Giving it 30 m/s² adds 58 catches (75/300), and 100 m/s² adds nothing more (still 75/300). So the budget explains about 58 of PN's 272 strategy failures; plain PN fails on most throws even with unlimited acceleration.
+    - **The altitude window is not a cause.** PN touches a limit in 12.7 % of throws, but removing the 4 m ceiling makes it worse (10/300 instead of 17/300).
+  - Even augmented PN with 30 m/s² (157/300 = 52.3 %) stays well below PCP (284/300), so the ranking stands.
+  - PN's absolute catch rate is so low that "beats PP" is a statement about two failing strategies.
 - **Hypothesis 4 (PCP degrades gracefully with $\sigma_z$ up to 0.05 m): holds, and is stronger than stated.**
   - Graceful was defined in advance as a drop of no more than 10 pp from the $\sigma_z$ = 0.005 m value.
   - PCP goes from 94.7 % to 94.3 % at both 0.05 m and 0.1 m.
@@ -293,13 +310,14 @@ Throw #0 in 3D, with all four drones overlaid. The ball is blue and the green st
 | Arena $20 \times 20 \times 6$ m | $20 \times 20 \times 8$ m (card updated) | The card's throw distribution reaches 7.08 m (v0 = 13 m/s, elevation 60°), and 4.0 % of the seed-0 throws peak above 6 m. A 6 m ceiling would block them. No ceiling is modelled. |
 | Flight time ≈ 1.1–2.1 s | ≈ 1.0–2.2 s to $z_{min}$ (card updated) | The extreme throws take 1.01 s and 2.23 s; seed 0 spans 1.03–2.18 s. |
 | Drag changes the landing point by "tens of centimetres" | 0.38–3.67 m, mean 1.58 m (card updated) | Measured by the script on the seed-0 throws (drag-free vs drag crossing of $z_{min}$). The card's conclusion (drag cannot be ignored) is unchanged. |
-| Reach time: per-axis bang–coast–bang bound | Line-of-sight 1D bang–coast–bang ($a$ = 10 m/s² to accelerate, 7 m/s² to brake, ≤ 8 m/s), starting at $v_\parallel$, plus $\|v_\perp\|/a_{max}$, in a stop and a free-arrival version | Matches the tracker, which flies straight lines. The script checks it from rest: the model is conservative by 0.09–0.13 s (for example, 1.971 s model vs 1.840 s simulated at 8 m). |
+| Reach time: per-axis bang–coast–bang bound | Line-of-sight 1D bang–coast–bang ($a$ = 10 m/s² to accelerate, 7 m/s² to brake, ≤ 8 m/s), starting at $v_\parallel$, plus $\|v_\perp\|/a_{max}$, in a stop and a free-arrival version | Matches the tracker, which flies straight lines. The script checks it from rest: the model is conservative by 0.093 to 0.131 s (for example, 1.971 s model vs 1.840 s simulated at 8 m). |
 | Track a time-parameterised trajectory (e.g. minimum-jerk) to arrive at $t_j$; if nothing is feasible, take the least-late $t_j$ | Three tiers: earliest **hold** point (arrive early, stop, wait on the predicted path), else earliest **intercept** point (constant-speed line timed to arrive at $t_j$), else **late** (least-late intercept) | A first version with arrive-and-stop plans only caught 60.7 % (oracle 61.0 %; still printed as an ablation), far below the 96.3 % bound, because stopping is much slower than flying through the point. The tiered planner is a direct reading of the card's "arrive at $t_j$" and keeps the robust hold plan whenever there is time. |
 | Oracle gives "the fraction of throws reachable at all" | Two references: the oracle planner (PCP with the true trajectory, as the card defines it) and a strict reachability bound; $\eta$ is reported against both | A planner, even with perfect information, is not a bound. The analytic relaxation is, and the script asserts that no catch falls outside it. |
 | $d_{miss} = \min_t \|\mathbf{p}_b - \mathbf{p}_n\|$ | Minimum over the whole descending flight above $z_{min}$, with the ball treated as passing through the cup after a catch; effort and peak speed are counted up to the catch | If the flight stopped at the catch, every catch would have $d_{miss}$ just below $r_c$ (seen in a first version), so the metric would not distinguish strategies. |
 | Altitude limited to [0.3, 4.0] m (no mechanism given) | Velocity barrier (6 m/s²) applied to every strategy's command | Keeps the limits without teleporting or exceeding $a_{max}$; asserted every step. |
 | Gains, EKF tuning and estimator initialisation not specified | $K_v$ = 8 s⁻¹, braking 7 m/s², final-approach gain 8 s⁻¹, $q$ = 0.1 m²/s³, two-point initialisation, 2.5 s prediction horizon | Added parameters, listed in the table above. |
 | One Monte Carlo of 300 throws | Seed 0 (the card's 300 throws) for all detailed results, plus 4 more seeds × 300 for replication | Shows the ranking and rates are not specific to one draw. |
+| Augmented PN listed as an extension; reasons for PN's failure stated as hypotheses | PN diagnostic probes: PN with $a_{max}$ = 30 and 100 m/s², augmented PN with 10 and 30 m/s², PN without the 4 m ceiling (seed 0 only) | Tests the card's explanation of hypothesis 3 instead of asserting it. Only the main PN run counts in the strategy comparison. |
 | "Catch rate vs throw speed (binned)" | Three 2 m/s bins | Bins not specified; about 100 throws per bin. |
 | Feasibility "about 92 %" | Strict bound 96.3 % (seed 0) and 94.7 ± 1.5 % (5 seeds); a card-style estimate gives 93.7 % | Computed as the card requires. The card's figure is close to the card-style estimate. |
 
