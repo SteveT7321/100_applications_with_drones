@@ -13,7 +13,8 @@
 **Questions studied**:
 1. **Nominal mission**: the card's plan and seeds, with a 0.1 m horizontal position error (the card's `GPS error` parameter).
 2. **Strip overlap**: coverage and detection for 0 %, 10 %, 20 % and 30 % overlap, as a 50-seed Monte Carlo with common random numbers (same cracks, same position-error and noise sequences for every overlap).
-3. **Safety margin**: how much rangefinder noise the 0.2 m ceiling margin tolerates, with and without the card's emergency-descent override (20 seeds, common random numbers).
+3. **Correlation time of the position error**: the overlap result for τ = 2, 20 and 100 s (20 seeds, common random numbers).
+4. **Safety margin**: how much rangefinder noise the 0.2 m ceiling margin tolerates, with the card's emergency-descent override, without it (PD only), and two probes: the override plus the PD damping term, and the override triggered by the rangefinder instead of the true height (20 seeds, common random numbers).
 
 ---
 
@@ -41,7 +42,9 @@ Without GPS under the deck, the drone's horizontal estimate drifts. The true pos
 
 $$\mathbf{e}_{k+1} = \phi\,\mathbf{e}_k + \sigma_{nav}\sqrt{1 - \phi^2}\;\boldsymbol{\xi}_k, \qquad \phi = e^{-\Delta t/\tau}$$
 
-Coverage and detection use the true position. The crack log uses the estimated position (true minus $\mathbf{e}$), so each logged crack is off by $\|\mathbf{e}(t_{det})\|$.
+Coverage and detection use the true position. The crack log uses the estimated position (true minus $\mathbf{e}$), so each logged crack is off by $\|\mathbf{e}(t_{det})\|$. The card gives no correlation time; τ = 20 s is our choice, and the sensitivity study below shows that it is close to the worst case for this plan (a pass lasts 50 s).
+
+Because the increments $\boldsymbol\xi_k$ are white, the true path inherits a small step-to-step jitter: in the nominal run the true horizontal speed has mean 1.009 m/s, 99th percentile 1.33 m/s and maximum 1.60 m/s, while the commanded speed is 1.0 m/s. The script asserts that every true step stays within the planned step plus 6 standard deviations of the 2D drift increment (2.20 m/s for τ = 20 s). This jitter is a property of the discrete drift model (a real position loop would smooth it), not a commanded speed.
 
 ### Detection and coverage
 
@@ -71,7 +74,8 @@ A crack is inside the footprint when $|x - x_i| \le h_{strip}$ and $|y - y_i| \l
 | Nominal seeds | cracks 7, noise 42 (card) |
 | Horizontal error $\sigma_{nav}$ / $\tau$ (added) | 0.1 m / 20 s |
 | Overlap study (added) | ρ ∈ {0, 10, 20, 30} %, 50 seeds (1000–1049) |
-| Noise stress test (added) | $\sigma_{range}$ ∈ {0.02, 0.10, 0.20, 0.30, 0.35, 0.40} m, 20 seeds (1000–1019), override on/off |
+| Correlation-time study (added) | τ ∈ {2, 20, 100} s, overlap 10 % and 20 %, 20 seeds (1000–1019) |
+| Noise stress test (added) | $\sigma_{range}$ ∈ {0.02, 0.10, 0.20, 0.30, 0.35, 0.40, 0.45} m, 20 seeds (1000–1019); card override, PD only, override + damping, rangefinder-triggered override |
 
 ---
 
@@ -86,7 +90,7 @@ conda activate drones
 python src/04_industrial_agriculture/s071_bridge_inspection.py
 ```
 
-Runtime ≈ 45 s (measured while other simulations shared the machine).
+Runtime ≈ 2 min (measured while other simulations shared the machine).
 
 ---
 
@@ -120,23 +124,48 @@ Paired coverage comparison against 10 % overlap (same seed): 0 % loses on all 50
 
 Share of the unseen cells that lie in the 0.5 m border band along the deck edges (the band is 11.8 % of the deck): 0 % → 17 %, 10 % → 37 %, 20 % → 68 %, 30 % → 90 %. In the nominal run it is 52.4 %.
 
+### Correlation time of the position error (20 seeds, common random numbers)
+
+| τ | Overlap | Coverage mean ± std | Seeds with C ≥ 99 % |
+|---:|---:|---|---:|
+| 2 s | 10 % | 99.48 ± 0.14 % | 20/20 |
+| 2 s | 20 % | 99.73 ± 0.10 % | 20/20 |
+| **20 s** | 10 % | 98.57 ± 0.67 % | 5/20 |
+| **20 s** | 20 % | 99.32 ± 0.39 % | 14/20 |
+| 100 s | 10 % | 98.95 ± 0.64 % | 12/20 |
+| 100 s | 20 % | 99.50 ± 0.50 % | 15/20 |
+
 ### Safety stress test (20 seeds per noise level, 559 s mission)
 
-| $\sigma_{range}$ | Override | Violation steps, mean (runs with any) | Highest z, mean | Deck strikes |
-|---:|:--:|---|---:|---:|
-| 0.02 m | on / off | 0.0 (0/20) / 0.0 (0/20) | 7.5155 / 7.5155 m | 0 / 0 |
-| 0.10 m | on / off | 0.0 (0/20) / 0.0 (0/20) | 7.5777 / 7.5777 m | 0 / 0 |
-| 0.20 m | on / off | 0.0 (0/20) / 0.0 (0/20) | 7.6555 / 7.6555 m | 0 / 0 |
-| 0.30 m | on / off | 0.0 (0/20) / 0.0 (0/20) | 7.7332 / 7.7332 m | 0 / 0 |
-| 0.35 m | on / off | 1.8 (3/20) / 0.3 (3/20) | 7.7828 / 7.7721 m | 0 / 0 |
-| 0.40 m | on / off | 13.0 (15/20) / 2.2 (15/20) | 7.8685 / 7.8109 m | 1/20 / 0 |
+Violation steps per mission (mean over 20 seeds), mean highest point, deck strikes, and the paired count against PD only (seeds with more / fewer / equal violation steps). Up to σ = 0.20 m every variant has 0 violations and 0 deck strikes; the rangefinder-triggered probe already reaches a higher mean peak there (7.6852 vs 7.6555 m at 0.20 m).
+
+| $\sigma_{range}$ | Variant | Violation steps | Highest z | Deck strikes | vs PD only: more / fewer / equal |
+|---:|---|---:|---:|---:|---|
+| 0.30 m | card override | 0.0 | 7.7332 m | 0/20 | 0 / 0 / 20 |
+| 0.30 m | PD only | 0.0 | 7.7332 m | 0/20 | — |
+| 0.30 m | override + damping | 0.0 | 7.7332 m | 0/20 | 0 / 0 / 20 |
+| 0.30 m | rangefinder trigger | 0.2 | 7.7793 m | 0/20 | 3 / 0 / 17 |
+| 0.35 m | card override | 1.8 | 7.7828 m | 0/20 | 3 / 0 / 17 |
+| 0.35 m | PD only | 0.3 | 7.7721 m | 0/20 | — |
+| 0.35 m | override + damping | 6.1 | 7.7744 m | 0/20 | 3 / 0 / 17 |
+| 0.35 m | rangefinder trigger | 7.7 | 7.8277 m | 0/20 | 18 / 0 / 2 |
+| 0.40 m | card override | 13.0 | 7.8685 m | 1/20 | 15 / 0 / 5 |
+| 0.40 m | PD only | 2.2 | 7.8109 m | 0/20 | — |
+| 0.40 m | override + damping | 23.9 | 7.8232 m | 0/20 | 15 / 0 / 5 |
+| 0.40 m | rangefinder trigger | 37.8 | 7.8854 m | 0/20 | 20 / 0 / 0 |
+| 0.45 m | card override | 43.9 | 7.9525 m | 3/20 | 17 / 2 / 1 |
+| 0.45 m | PD only | 12.1 | 7.8498 m | 0/20 | — |
+| 0.45 m | override + damping | 85.8 | 7.8569 m | 0/20 | 19 / 0 / 1 |
+| 0.45 m | rangefinder trigger | 89.8 | 7.9337 m | 0/20 | 20 / 0 / 0 |
+
+The true-height override (card and damped) acts only after the first violation, so these two variants have violations in exactly the seeds where PD only has one; only the number of violation steps, the peak and the deck strikes can differ. The rangefinder-triggered probe can switch on before the true height crosses the ceiling, and it already produces violations at 0.30 m where PD only has none.
 
 **Key findings**:
-- **Coverage misses the card's 99 % target at the card's 10 % overlap once the position is uncertain.** With a perfect position the plan covers 100 % by construction. With a 0.1 m position error, the nominal mission covers 97.59 % and only 11 of 50 seeds reach 99 %. The 10 % overlap is 0.1 m, the same size as the position error, so two adjacent passes that drift apart leave a gap (the white lines in the coverage map).
+- **With a 0.1 m position error that drifts on the time scale of a pass (τ = 20 s), coverage misses the card's 99 % target at the card's 10 % overlap.** With a perfect position the plan covers 100 % by construction. With τ = 20 s the nominal mission covers 97.59 % and only 11 of 50 seeds reach 99 %. The 10 % overlap is 0.1 m, the same size as the position error, so two adjacent passes that drift apart leave a gap (the white lines in the coverage map). **This conclusion depends on τ**: with a fast-varying error (τ = 2 s) the drift averages out within a pass and 10 % overlap reaches 99 % in 20/20 seeds (99.48 %); with a slow error (τ = 100 s) adjacent passes drift together and 12/20 seeds reach 99 % (98.95 %). τ = 20 s is close to the worst case here because it is comparable to the 50 s duration of a pass (5/20 seeds in the τ study).
 - **Crack detection meets the card's 90 % target** (96.7 % nominal, 99.3 ± 1.7 % over 50 seeds at 10 % overlap). Detection follows coverage exactly, because a covered crack is seen for at least 20 timesteps.
-- **20 % overlap is the knee of the trade-off.** Going from 10 % to 20 % overlap adds 2 passes (559.0 → 659.0 s) and raises mean coverage by 0.80 pp, winning on 48 of 50 seeds; 37/50 seeds then reach 99 %. Going on to 30 % (709.0 s) lifts mean coverage only from 99.32 % to 99.49 %. At 30 % overlap, 90 % of the remaining unseen cells are in the border band: the edge passes are centred exactly 0.5 m from the deck edge, so any outward drift of the drone pulls the footprint off the edge, and more overlap between passes cannot fix that. Pushing the two edge passes outward (or widening their footprint) would be the next step.
-- **Height hold is far inside the margin.** With $\sigma_{range}$ = 0.02 m, z has a standard deviation of 4.54 mm and the highest point is 7.5161 m, so the 0.2 m margin is never approached and the violation count is zero for every overlap and seed. This metric only becomes informative under stress: violations first appear at $\sigma_{range}$ = 0.35 m (3 of 20 runs), against the card's 0.02 m sensor noise.
-- **The card's emergency override makes violations worse, not better.** Under the same noise, the override raises the mean violation count from 0.3 to 1.8 steps at 0.35 m and from 2.2 to 13.0 steps at 0.40 m, and causes the only deck strike. Two reasons, both from the card's formula: (1) it is weaker than the PD law it replaces. Without noise and at $\dot z = 0$, the two restoring accelerations are equal only at z = 8.143 m, above the deck; at z = 7.9 m the override gives −3.0 m/s² against −6.4 m/s² for the PD law. (2) It has no damping term, so an upward velocity is not braked.
+- **For τ = 20 s, 20 % overlap is the knee of the trade-off.** Going from 10 % to 20 % overlap adds 2 passes (559.0 → 659.0 s) and raises mean coverage by 0.80 pp, winning on 48 of 50 seeds; 37/50 seeds then reach 99 %. For τ = 2 s the extra passes are not needed (10 % already gives 20/20 seeds ≥ 99 %); for τ = 100 s even 20 % reaches 99 % in only 15/20 seeds. Going on to 30 % (709.0 s) lifts mean coverage only from 99.32 % to 99.49 %. At 30 % overlap, 90 % of the remaining unseen cells are in the border band: the edge passes are centred exactly 0.5 m from the deck edge, so any outward drift of the drone pulls the footprint off the edge, and more overlap between passes cannot fix that. Pushing the two edge passes outward (or widening their footprint) would be the next step.
+- **Height hold is far inside the margin.** With $\sigma_{range}$ = 0.02 m, z has a standard deviation of 4.54 mm and the highest point is 7.5161 m, so the 0.2 m margin is never approached and the violation count is zero for every overlap and seed. This metric only becomes informative under stress: with the card's true-height override or PD only, violations first appear at $\sigma_{range}$ = 0.35 m (mean 1.8 and 0.3 steps), against the card's 0.02 m sensor noise.
+- **The card's emergency override makes violations worse, not better.** Under the same noise, the override raises the mean violation count from 0.3 to 1.8 steps at 0.35 m, from 2.2 to 13.0 at 0.40 m and from 12.1 to 43.9 at 0.45 m (more violation steps than PD only in 15 of 20 seeds at 0.40 m and 17 of 20 at 0.45 m), and it causes all deck strikes (1/20 at 0.40 m, 3/20 at 0.45 m; none with PD only). The cause is its restoring gain: without noise and at $\dot z = 0$ the override and the PD law it replaces give equal restoring accelerations only at z = 8.143 m, above the deck; at z = 7.9 m the override gives −3.0 m/s² against −6.4 m/s². So once above the ceiling the drone is pushed back more weakly than by the normal controller. The missing damping term is **not** the cause: adding the PD damping $-K_d\dot z$ to the override (probe) removes the deck strikes and lowers the peak (7.8569 vs 7.9525 m at 0.45 m), but slows the return further and roughly doubles the violation steps (23.9 at 0.40 m, 85.8 at 0.45 m). Triggering the override from the rangefinder instead of the true height is worse still (37.8 and 89.8 steps), so our true-height trigger favours the card's override.
 - **Crack positions are logged with about 0.12 m error** (mean 122 mm nominal; 123–126 mm in the overlap study), which matches the mean magnitude of a 2D error with σ = 0.1 m per axis (analytic value $0.1\sqrt{\pi/2} \approx 0.125$ m, not printed by the script). The overlap does not change it.
 
 ### 3D Flight Path
@@ -171,9 +200,15 @@ Coverage and detection rate over 50 seeds for each overlap (red dashed: card tar
 
 ### Safety Sweep
 
-Left: mean violation steps per mission (symmetric log scale). Right: mean highest point reached. Red: with the card's emergency override; blue: PD only:
+Left: mean violation steps per mission (symmetric log scale). Right: mean highest point reached. Red: the card's override (true height); blue: PD only; orange: override plus damping (probe); purple: override triggered by the rangefinder (probe):
 
 ![Safety sweep](./safety_sweep.png)
+
+### Correlation-Time Sensitivity
+
+Coverage (left) and the number of seeds reaching 99 % (right) for 10 % and 20 % overlap at τ = 2, 20 and 100 s:
+
+![Tau sensitivity](./tau_sensitivity.png)
 
 ### Animation
 
@@ -187,9 +222,9 @@ Top-down view of the nominal mission (113 frames, one every 5 s of flight). The 
 |------|----------------|--------|
 | $N_{pass} = \lceil W/\Delta y \rceil = 12$, $y_k = \Delta y/2 + (k-1)\Delta y$ | 11 edge-aligned passes, $y_k = 0.5 + 0.9(k-1)$ m | The card's 12th pass is at y = 10.35 m, 0.35 m outside the deck, where the upward rangefinder has nothing to range on. Edge-aligned passes give the same 100 % coverage (both printed as 100.00 % without position error) with one pass fewer: 559.0 m instead of 609.9 m. Card updated with a note. |
 | Card code `state[5] = uz * DT` | $v_z \mathrel{+}= u_z\,\Delta t$ | $u_z$ is an acceleration; the card's line replaces the velocity by one step's velocity increment instead of integrating it. Card code corrected. |
-| Horizontal motion is error-free; "GPS error (horizontal) 0.1 m" is listed but not used | Gauss–Markov horizontal error, σ = 0.1 m per axis, τ = 20 s (added parameter) | Without it, coverage is 100 % and detection is 100 % by construction (both printed), so the card's coverage and detection metrics could not discriminate anything. τ is our choice; the card gives none. |
+| Horizontal motion is error-free; "GPS error (horizontal) 0.1 m" is listed but not used | Gauss–Markov horizontal error, σ = 0.1 m per axis, τ = 20 s (added parameter), with τ = 2 and 100 s as sensitivity cases | Without it, coverage is 100 % and detection is 100 % by construction (both printed), so the card's coverage and detection metrics could not discriminate anything. τ is our choice; the card gives none, and the overlap conclusion depends on it. |
 | Waypoint follower with a 0.1 m arrival tolerance | Constant-speed sampling of the waypoint polyline | Same path, without the tolerance shortening each pass. |
-| Emergency override triggered by $z(t) > z_{max}$ | Same, using the true z | The card does not say which sensor triggers it; we assume an ideal height reading for the trigger, which favours the override. It still does worse (see findings). |
+| Emergency override triggered by $z(t) > z_{max}$ | Same, using the true z; a rangefinder-triggered variant and a damped variant are reported as probes | The card does not say which sensor triggers it; the ideal height reading favours the override (the rangefinder trigger gives more violations). It still does worse than PD only (see findings). |
 | Strip chart "12 bars" | 11 bars | One bar per pass of the 11-pass plan. |
 | Single nominal run | Nominal run plus a 50-seed overlap study and a 20-seed noise stress test, all with common random numbers | Needed to show whether the card targets hold beyond one seed and whether the zero-violation result has any margin. |
 | Crack radius r ∈ U(0.05, 0.20) m | Drawn but not used | The card's footprint test uses the crack centre only; kept as in the card. |
@@ -202,7 +237,7 @@ Top-down view of the nominal mission (113 frames, one every 5 s of flight). The 
 1. **GPS-denied lateral drift with visual odometry**: replace the stationary 0.1 m error by a random walk (σ_drift = 0.05 m/√s) and use detected cracks as landmarks to bound the drift.
 2. **Edge-pass offset**: shift the two edge passes outward by about 2σ_nav (still under the deck) to remove the border-band loss that dominates at 20–30 % overlap.
 3. **Cambered deck**: $z_{deck}(x) = 8.0 + 0.1\sin(\pi x/L)$; the controller must follow a slowly varying ceiling.
-4. **Damped emergency override**: add a $-K_d\dot z$ term and a stronger gain, and repeat the stress test.
+4. **Stronger emergency override**: a restoring gain above the PD law's (the probe shows that damping alone does not help), and a trigger with a filtered height estimate.
 5. **Size-dependent detection**: detection probability as a function of crack radius (as in S044), with detection rate per size bin.
 6. **Two drones**: split the width in two halves to halve the inspection time.
 

@@ -5,12 +5,14 @@ A drone flies boustrophedon passes 0.5 m below a 50 x 10 m bridge deck (z = 8 m)
 holding its upward clearance with a PD controller fed by a noisy upward rangefinder.
 An upward camera (45 deg half-angle -> 1 m wide square footprint) looks for 30 seeded
 cracks. The script reports coverage, crack detection rate and safety-ceiling violations
-for the card's plan, then asks two questions the card's targets raise:
+for the card's plan, then asks the questions the card's targets raise:
 
   1. Coverage vs. strip overlap when the horizontal position has a 0.1 m error
-     (card GPS_ERROR), with common random numbers over a Monte Carlo of seeds.
+     (card GPS_ERROR), with common random numbers over a Monte Carlo of seeds, and
+     how that result depends on the error's correlation time.
   2. Safety margin: how much rangefinder noise the 0.2 m ceiling margin tolerates,
-     with and without the card's emergency-descent override.
+     with and without the card's emergency-descent override (plus two probes:
+     a damped override and a rangefinder-triggered override).
 
 Usage:
     conda activate drones
@@ -53,8 +55,18 @@ TAU_NAV      = 20.0     # s  correlation time of the horizontal error (Gauss-Mar
 N_MC         = 50       # Monte Carlo seeds for the overlap study
 MC_SEED0     = 1000     # first Monte Carlo seed
 OVERLAPS     = [0.0, 0.1, 0.2, 0.3]
-SIGMA_SWEEP  = [0.02, 0.10, 0.20, 0.30, 0.35, 0.40]   # m rangefinder noise stress test
+SIGMA_SWEEP  = [0.02, 0.10, 0.20, 0.30, 0.35, 0.40, 0.45]   # m rangefinder noise stress test
 N_SIGMA_MC   = 20       # seeds per sigma value
+# Ceiling-protection variants of the stress test:
+#   card   - card override  u = -K_emg (z - z_max) when the true z > z_max
+#   off    - PD only
+#   damped - card override plus the PD damping term -K_d z_dot (probe)
+#   noisy  - card override triggered and driven by the rangefinder height (probe)
+OVERRIDE_MODES = ['card', 'off', 'damped', 'noisy']
+TAU_SWEEP    = [2.0, 20.0, 100.0]   # s nav-error correlation times (sensitivity)
+TAU_OVERLAPS = [0.1, 0.2]
+N_TAU_MC     = 20       # seeds per (tau, overlap)
+K_SIGMA_STEP = 6.0      # asserted bound on a nav-error increment, in increment std devs
 ANIM_STEP    = 100      # simulation steps per GIF frame
 
 # ── Derived geometry ──────────────────────────────────────────────────────────
@@ -138,9 +150,9 @@ def draw_noise(seed, n_steps):
     return dict(range=range_noise, nav_xi=nav_xi, nav_e0=nav_e0, u_det=u_det)
 
 
-def nav_error(noise, n, sigma=SIGMA_NAV):
-    """First-order Gauss-Markov horizontal error, stationary std sigma, corr. time TAU_NAV."""
-    phi = np.exp(-DT / TAU_NAV)
+def nav_error(noise, n, sigma=SIGMA_NAV, tau=TAU_NAV):
+    """First-order Gauss-Markov horizontal error, stationary std sigma, corr. time tau."""
+    phi = np.exp(-DT / tau)
     q = sigma * np.sqrt(1.0 - phi ** 2)
     e = np.empty((n, 2))
     e[0] = noise['nav_e0'] * (sigma / SIGMA_NAV)
@@ -151,8 +163,9 @@ def nav_error(noise, n, sigma=SIGMA_NAV):
 
 
 # ── Vertical (inverse surface-following) controller ───────────────────────────
-def fly_height(n, range_noise, sigma_range=SIGMA_RANGE, override=True):
-    """PD on the noisy upward range, double-integrator z. Returns z, vz, flags."""
+def fly_height(n, range_noise, sigma_range=SIGMA_RANGE, mode='card'):
+    """PD on the noisy upward range, double-integrator z. Returns z, vz, flags.
+    mode selects the ceiling protection (see OVERRIDE_MODES)."""
     z = np.empty(n)
     vz = np.empty(n)
     viol = np.zeros(n, dtype=bool)
@@ -163,8 +176,14 @@ def fly_height(n, range_noise, sigma_range=SIGMA_RANGE, override=True):
         d_meas = (Z_DECK - zk) + sigma_range * range_noise[k - 1]
         ez = d_meas - D_TARGET
         uz = KP * ez + KD * (-vk)                 # de_z/dt = -z_dot
-        if override and zk > Z_MAX:
+        if mode in ('card', 'damped') and zk > Z_MAX:
             uz = -K_EMG * (zk - Z_MAX)
+            if mode == 'damped':
+                uz -= KD * vk
+        elif mode == 'noisy':
+            z_meas = Z_DECK - d_meas
+            if z_meas > Z_MAX:
+                uz = -K_EMG * (z_meas - Z_MAX)
         vk = vk + uz * DT
         zk = zk + vk * DT
         z[k], vz[k] = zk, vk
@@ -214,19 +233,28 @@ def detect_cracks(xy_true, nav_err, cracks, u_det):
 
 # ── One mission ───────────────────────────────────────────────────────────────
 def run_mission(overlap, cracks, noise, with_nav_error=True, sigma_range=SIGMA_RANGE,
-                override=True, ys=None):
+                mode='card', ys=None, tau=TAU_NAV):
     if ys is None:
         ys = pass_centres(overlap)
     wps = build_waypoints(ys)
     xy_plan, pass_end = sample_path(wps)
     n = len(xy_plan)
-    e = nav_error(noise, n) if with_nav_error else np.zeros((n, 2))
+    e = nav_error(noise, n, tau=tau) if with_nav_error else np.zeros((n, 2))
     xy_true = xy_plan + e
-    z, vz, viol, crashed = fly_height(n, noise['range'], sigma_range, override)
+    z, vz, viol, crashed = fly_height(n, noise['range'], sigma_range, mode)
     assert crashed < 0, 'drone struck the deck in a nominal mission'
     # Physical invariants (X4)
     step_plan = np.linalg.norm(np.diff(xy_plan, axis=0), axis=1)
     assert step_plan.max() <= V_CRUISE * DT + 1e-9, 'planned speed above V_CRUISE'
+    # The true path adds the drifting position error to the plan; its step-to-step
+    # increments raise the instantaneous true speed above V_CRUISE (bounded, asserted).
+    # The drift model's increments are white, so they add step-to-step jitter to the true
+    # speed. Assert that each true step is the planned step plus at most K_SIGMA_STEP
+    # standard deviations of the 2D drift increment (no teleporting).
+    v_true = np.linalg.norm(np.diff(xy_true, axis=0), axis=1) / DT
+    q = SIGMA_NAV * np.sqrt(1.0 - np.exp(-2 * DT / tau)) if with_nav_error else 0.0
+    step_bound = V_CRUISE * DT + K_SIGMA_STEP * np.sqrt(2) * q
+    assert v_true.max() * DT <= step_bound + 1e-12, 'true step above the model bound'
     assert np.all(z < Z_DECK), 'drone above deck underside'
     assert np.all(np.abs(xy_true[:, 1] - xy_plan[:, 1]) < 10 * SIGMA_NAV + 1e-9)
     grid = coverage_grid(xy_true)
@@ -246,7 +274,9 @@ def run_mission(overlap, cracks, noise, with_nav_error=True, sigma_range=SIGMA_R
                 frames_in=frames_in, det_rate=detected.mean(), n_viol=int(viol.sum()),
                 path_len=polyline_length(wps), t_flight=(n - 1) * DT,
                 pass_end=pass_end, cum_cov=np.array(cum_cov), cracks=cracks,
-                border_share=border_share, border_frac=border.mean())
+                border_share=border_share, border_frac=border.mean(),
+                v_true_max=v_true.max(), v_true_mean=v_true.mean(),
+                v_true_p99=np.percentile(v_true, 99), v_true_bound=step_bound / DT)
 
 
 def run_simulation():
@@ -276,20 +306,33 @@ def run_simulation():
         for k in mc[o]:
             mc[o][k] = np.array(mc[o][k])
 
-    # Safety stress test: rangefinder noise sweep, override on/off (CRN per seed)
+    # Sensitivity of the overlap result to the nav-error correlation time (CRN per seed)
+    tau_mc = {}
+    for tau in TAU_SWEEP:
+        for o in TAU_OVERLAPS:
+            cov = []
+            for s in range(N_TAU_MC):
+                seed = MC_SEED0 + s
+                r = run_mission(o, seed_cracks(N_CRACKS, seed), draw_noise(seed, max_steps),
+                                tau=tau)
+                cov.append(r['coverage'])
+            tau_mc[(tau, o)] = np.array(cov)
+
+    # Safety stress test: rangefinder noise sweep, ceiling-protection variants (CRN per seed)
     n_nom = len(nominal['z'])
+    range_noise = [draw_noise(MC_SEED0 + s, max_steps)['range'] for s in range(N_SIGMA_MC)]
     sweep = {}
     for sig in SIGMA_SWEEP:
-        for ov in (True, False):
+        for mode in OVERRIDE_MODES:
             nv, crash, zmax = [], 0, []
             for s in range(N_SIGMA_MC):
-                noise = draw_noise(MC_SEED0 + s, max_steps)
-                z, _, viol, c = fly_height(n_nom, noise['range'], sig, ov)
+                z, _, viol, c = fly_height(n_nom, range_noise[s], sig, mode)
                 nv.append(int(viol.sum()))
                 zmax.append(z.max())
                 crash += int(c >= 0)
-            sweep[(sig, ov)] = dict(n_viol=np.array(nv), crashes=crash, zmax=np.array(zmax))
-    return dict(nominal=nominal, ideal=ideal, card_ideal=card_ideal, mc=mc, sweep=sweep)
+            sweep[(sig, mode)] = dict(n_viol=np.array(nv), crashes=crash, zmax=np.array(zmax))
+    return dict(nominal=nominal, ideal=ideal, card_ideal=card_ideal, mc=mc, sweep=sweep,
+                tau_mc=tau_mc)
 
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
@@ -446,10 +489,12 @@ def plot_overlap_study(mc, out_dir):
 def plot_safety_sweep(sweep, out_dir):
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     sig = np.array(SIGMA_SWEEP)
-    for ov, c, lab in [(True, 'red', 'with emergency override'),
-                       (False, 'tab:blue', 'PD only')]:
-        mv = [sweep[(s, ov)]['n_viol'].mean() for s in SIGMA_SWEEP]
-        zm = [sweep[(s, ov)]['zmax'].mean() for s in SIGMA_SWEEP]
+    for mode, c, lab in [('card', 'red', 'card override (true z)'),
+                         ('off', 'tab:blue', 'PD only'),
+                         ('damped', 'tab:orange', 'card override + damping (probe)'),
+                         ('noisy', 'tab:purple', 'card override, rangefinder trigger (probe)')]:
+        mv = [sweep[(s, mode)]['n_viol'].mean() for s in SIGMA_SWEEP]
+        zm = [sweep[(s, mode)]['zmax'].mean() for s in SIGMA_SWEEP]
         axes[0].plot(sig, mv, 'o-', color=c, label=lab)
         axes[1].plot(sig, zm, 'o-', color=c, label=lab)
     axes[0].set_yscale('symlog', linthresh=1)
@@ -466,6 +511,35 @@ def plot_safety_sweep(sweep, out_dir):
         ax.legend(fontsize=8)
     plt.tight_layout()
     path = os.path.join(out_dir, 'safety_sweep.png')
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {path}')
+
+
+def plot_tau_sensitivity(tau_mc, out_dir):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
+    for o, c in zip(TAU_OVERLAPS, ['tab:green', 'tab:purple']):
+        m = [100 * tau_mc[(t, o)].mean() for t in TAU_SWEEP]
+        sd = [100 * tau_mc[(t, o)].std() for t in TAU_SWEEP]
+        k = [int((tau_mc[(t, o)] >= 0.99).sum()) for t in TAU_SWEEP]
+        axes[0].errorbar(TAU_SWEEP, m, yerr=sd, fmt='o-', color=c, capsize=4,
+                         label=f'overlap {int(100 * o)}%')
+        axes[1].plot(TAU_SWEEP, k, 'o-', color=c, label=f'overlap {int(100 * o)}%')
+    axes[0].axhline(99, color='red', ls='--', lw=1, label='card target 99%')
+    axes[0].set_ylabel('coverage (%), mean ± std')
+    axes[1].set_ylabel(f'seeds with coverage >= 99% (of {N_TAU_MC})')
+    axes[1].set_ylim(0, N_TAU_MC + 1)
+    for ax in axes:
+        ax.set_xscale('log')
+        ax.set_xticks(TAU_SWEEP)
+        ax.set_xticklabels([f'{t:g}' for t in TAU_SWEEP])
+        ax.set_xlabel('nav-error correlation time tau (s)')
+        ax.grid(alpha=0.3)
+        ax.legend(fontsize=8)
+    axes[0].set_title(f'Coverage vs tau (sigma = {SIGMA_NAV} m, {N_TAU_MC} seeds, CRN)')
+    axes[1].set_title('How often the card target is met')
+    plt.tight_layout()
+    path = os.path.join(out_dir, 'tau_sensitivity.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
     plt.close(fig)
     print(f'Saved: {path}')
@@ -561,6 +635,10 @@ if __name__ == '__main__':
     print(f"    Flight time:          {nom['t_flight']:.1f} s")
     print(f"    Path length:          {nom['path_len']:.1f} m")
     print(f"    Max |nav error|:      {1000 * np.linalg.norm(nom['nav_err'], axis=1).max():.0f} mm")
+    print(f"    True horizontal speed (plan + nav error): mean {nom['v_true_mean']:.3f} m/s, "
+          f"99th percentile {nom['v_true_p99']:.2f} m/s, max {nom['v_true_max']:.2f} m/s "
+          f"(asserted <= {nom['v_true_bound']:.2f} m/s = cruise + {K_SIGMA_STEP:.0f} std of "
+          f"the drift increment; commanded speed {V_CRUISE:.1f} m/s)")
     print(f'  [Overlap study: {N_MC} seeds, CRN; nav error sigma {SIGMA_NAV} m, '
           f'tau {TAU_NAV:.0f} s]')
     print('    overlap passes time(s)  coverage mean±std (min)   detect mean±std   '
@@ -583,15 +661,28 @@ if __name__ == '__main__':
         print(f"      {100 * o:3.0f}% vs 10%: wins {int((d > 0).sum())}, "
               f"ties {int((d == 0).sum())}, losses {int((d < 0).sum())}; "
               f"mean diff {100 * d.mean():+.2f} pp")
+    tm = res['tau_mc']
+    print(f'  [Nav-error correlation time sensitivity: {N_TAU_MC} seeds, CRN, sigma {SIGMA_NAV} m]')
+    print('    tau(s)  overlap  coverage mean±std   seeds >= 99%')
+    for t in TAU_SWEEP:
+        for o in TAU_OVERLAPS:
+            c = tm[(t, o)]
+            print(f'    {t:6.0f}  {100 * o:5.0f}%   {100 * c.mean():6.2f} ± {100 * c.std():4.2f}'
+                  f'      {int((c >= 0.99).sum()):2d}/{N_TAU_MC}')
     print(f'  [Safety stress test: {N_SIGMA_MC} seeds per sigma, CRN, '
           f'{nom["t_flight"]:.0f} s mission]')
-    print('    sigma(m)  override  viol steps mean (runs with >0)  max z mean   deck strikes')
+    print('    sigma(m)  mode     viol steps mean   max z mean   deck strikes   '
+          'paired vs PD only (more / fewer / equal violations)')
     for s in SIGMA_SWEEP:
-        for ov in (True, False):
-            r = sweep[(s, ov)]
-            print(f"    {s:6.2f}    {'on ' if ov else 'off'}       "
-                  f"{r['n_viol'].mean():9.1f} ({int((r['n_viol'] > 0).sum()):2d}/{N_SIGMA_MC})"
-                  f"         {r['zmax'].mean():.4f}     {r['crashes']}/{N_SIGMA_MC}")
+        for mode in OVERRIDE_MODES:
+            r = sweep[(s, mode)]
+            line = (f"    {s:6.2f}    {mode:<7}  {r['n_viol'].mean():9.1f}        "
+                    f"{r['zmax'].mean():.4f}       {r['crashes']:2d}/{N_SIGMA_MC}")
+            if mode != 'off':
+                d = r['n_viol'] - sweep[(s, 'off')]['n_viol']
+                line += (f"          {int((d > 0).sum()):2d} / {int((d < 0).sum()):2d} / "
+                         f"{int((d == 0).sum()):2d}")
+            print(line)
     z_eq = (K_EMG * Z_MAX - KP * Z_NOM) / (K_EMG - KP)
     print(f'  Override vs PD restoring acceleration: equal at z = {z_eq:.3f} m '
           f'(above the deck), so the override is weaker for all z < {Z_DECK} m '
@@ -606,4 +697,5 @@ if __name__ == '__main__':
     plot_strip_coverage(nom, out)
     plot_overlap_study(mc, out)
     plot_safety_sweep(sweep, out)
+    plot_tau_sensitivity(res['tau_mc'], out)
     save_animation(nom, out)
