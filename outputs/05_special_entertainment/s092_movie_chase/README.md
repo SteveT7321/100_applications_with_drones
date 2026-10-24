@@ -87,7 +87,7 @@ conda activate drones
 python src/05_special_entertainment/s092_movie_chase.py
 ```
 
-All 222 runs go through a process pool of 6 workers. Results are collected in input order, so the output does not depend on scheduling. Runtime ≈ 1 min (54, 55 and 79 s measured in three runs).
+All 222 runs (printed: 72 variant runs, 150 sweep runs) go through a process pool of 6 workers. Results are collected in input order, so the output does not depend on scheduling. Runtime ≈ 1–2 min (76, 95 and 116 s measured in the latest three runs while other jobs shared the CPU).
 
 ---
 
@@ -117,28 +117,28 @@ Speed: the proposed controller reaches 15.41 m/s in magnitude while each axis st
 
 Offset = distance of each pillar from the desired camera path. Clearance is measured on the integrated path, 10 points per 0.05 s:
 
-| Offset | Constraints | Steady RMS | Min clearance (worst) | Runs inside a pillar | Slack-active solves |
-|---:|---|---:|---:|---:|---:|
-| 0.5 m | every 0.05 s | 3.578 ± 0.064 m | 1.482 ± 0.012 m (1.457) | **0/10** | 3.8 ± 1.9 |
-| 0.5 m | knots only | 3.704 ± 0.162 m | 1.122 ± 0.072 m (0.946) | 0/10 | 6.4 ± 1.3 |
-| 1.0 m | every 0.05 s | 3.772 ± 0.085 m | 1.474 ± 0.012 m (1.454) | **0/10** | 5.2 ± 1.5 |
-| 1.0 m | knots only | 3.942 ± 0.239 m | 0.801 ± 0.202 m (0.638) | 0/10 | 6.7 ± 1.8 |
-| 1.5 m | every 0.05 s | 3.943 ± 0.072 m | 1.469 ± 0.010 m (1.454) | **0/10** | 4.4 ± 1.8 |
-| 1.5 m | knots only | 4.137 ± 0.189 m | 0.611 ± 0.151 m (0.432) | **5/10** | 9.0 ± 1.7 |
-| 2.0 m | every 0.05 s | 4.164 ± 0.100 m | 1.473 ± 0.012 m (1.453) | **0/10** | 5.9 ± 1.6 |
-| 2.0 m | knots only | 4.286 ± 0.223 m | 0.639 ± 0.181 m (0.364) | **5/10** | 7.9 ± 1.7 |
-| 3.0 m | every 0.05 s | 4.648 ± 0.096 m | 1.468 ± 0.020 m (1.439) | **0/10** | 6.9 ± 1.8 |
-| 3.0 m | knots only | 4.898 ± 0.157 m | 1.018 ± 0.269 m (0.338) | **1/10** | 5.5 ± 1.7 |
+| Offset | Constraints | Steady RMS | Min clearance on the fine path (worst) | Worst at the 0.05 s instants | Runs inside a pillar | Slack-active solves |
+|---:|---|---:|---:|---:|---:|---:|
+| 0.5 m | every 0.05 s | 3.578 ± 0.064 m | 1.482 ± 0.012 m (1.457) | 1.4668 m | **0/10** | 3.8 ± 1.9 |
+| 0.5 m | knots only | 3.704 ± 0.162 m | 1.122 ± 0.072 m (0.946) | 0.9595 m | 0/10 | 6.4 ± 1.3 |
+| 1.0 m | every 0.05 s | 3.772 ± 0.085 m | 1.474 ± 0.012 m (1.454) | 1.4644 m | **0/10** | 5.2 ± 1.5 |
+| 1.0 m | knots only | 3.942 ± 0.239 m | 0.801 ± 0.202 m (0.638) | 0.6377 m | 0/10 | 6.7 ± 1.8 |
+| 1.5 m | every 0.05 s | 3.943 ± 0.072 m | 1.469 ± 0.010 m (1.454) | 1.4574 m | **0/10** | 4.4 ± 1.8 |
+| 1.5 m | knots only | 4.137 ± 0.189 m | 0.611 ± 0.151 m (0.432) | 0.4316 m | **5/10** | 9.0 ± 1.7 |
+| 2.0 m | every 0.05 s | 4.164 ± 0.100 m | 1.473 ± 0.012 m (1.453) | 1.4581 m | **0/10** | 5.9 ± 1.6 |
+| 2.0 m | knots only | 4.286 ± 0.223 m | 0.639 ± 0.181 m (0.364) | 0.3643 m | **5/10** | 7.9 ± 1.7 |
+| 3.0 m | every 0.05 s | 4.648 ± 0.096 m | 1.468 ± 0.020 m (1.439) | 1.4476 m | **0/10** | 6.9 ± 1.8 |
+| 3.0 m | knots only | 4.898 ± 0.157 m | 1.018 ± 0.269 m (0.338) | 0.3375 m | **1/10** | 5.5 ± 1.7 |
 
 ### Velocity-weight sensitivity (proposed, offset 0.5 m, 10 seeds each)
 
-| $Q_v$ | Steady RMS | Within 1 m | Worst min clearance | Runs inside a pillar |
-|---:|---:|---:|---:|---:|
-| 1 | 8.824 ± 0.795 m | 1.9 ± 0.7 % | 1.489 m | 0/10 |
-| 3 | 6.171 ± 1.054 m | 5.7 ± 1.8 % | 1.484 m | 0/10 |
-| **10** | **3.578 ± 0.064 m** | **13.8 ± 0.6 %** | 1.457 m | 0/10 |
-| 30 | 3.897 ± 0.117 m | 12.6 ± 1.6 % | 1.395 m | 0/10 |
-| 100 | 5.016 ± 0.301 m | 4.3 ± 2.3 % | 1.061 m | 0/10 |
+| $Q_v$ | Steady RMS | Within 1 m | Worst min clearance (fine path) | Worst at the 0.05 s instants | Runs inside a pillar |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 8.824 ± 0.795 m | 1.9 ± 0.7 % | 1.489 m | 1.5000 m | 0/10 |
+| 3 | 6.171 ± 1.054 m | 5.7 ± 1.8 % | 1.484 m | 1.4993 m | 0/10 |
+| **10** | **3.578 ± 0.064 m** | **13.8 ± 0.6 %** | 1.457 m | 1.4668 m | 0/10 |
+| 30 | 3.897 ± 0.117 m | 12.6 ± 1.6 % | 1.395 m | 1.4036 m | 0/10 |
+| 100 | 5.016 ± 0.301 m | 4.3 ± 2.3 % | 1.061 m | 1.0623 m | 0/10 |
 
 ### Offline optimum (reference point)
 
@@ -147,11 +147,11 @@ With the true future over the whole mission, the card's $Q$/$R$ weights at the 0
 **Key findings**:
 - **Prediction is essential.** Holding the current estimate leaves the drone 13.094 m RMS behind its target; the KF-predicted reference cuts this to 3.578 m, in every seed. The 2-s constant-velocity prediction itself is poor on this road (10.85 m RMS, up to 16.97 m, because a straight-line extrapolation over a fifth of a 10 s wave misses the curve), but the near end of the horizon, which drives the first control move, is accurate.
 - **The card's MPC cost is the main weakness.** With position-only cost and a 2 s horizon, even perfect knowledge of the future (oracle, card cost) gives 7.209 m steady RMS: the controller builds up speed toward the reference and cannot brake in time. Adding velocity tracking lowers the oracle to 1.930 m and the KF version from 10.010 to 3.578 m. $Q_v = 10$ is the best of the five tested weights: 1 or 3 still lag (8.824 / 6.171 m), 30 or 100 over-weight the velocity reference (3.897 / 5.016 m).
-- **Pillar constraints must hold between knots.** With constraints only at the 0.2 s knots, only the planned positions every 0.2 s are held at $r_{safe}$. At the drone's speeds (up to 15.41 m/s) consecutive knots can be up to about 3 m apart, and the path between them cuts the corner around the pillar. With pillars 1.5 or 2.0 m from the camera path the drone then passes **inside a pillar in 5/10 runs** (closest 0.432 / 0.364 m from the centre, pillar radius 0.6 m), and in 1/10 at 3.0 m. Imposing the same half-plane at every 0.05 s instant removes every pillar entry (0/10 at every offset and every $Q_v$). The minimum clearance stays at 1.439–1.489 m, just under $r_{safe}$ because the soft constraint gives way by a few centimetres (3.8–6.9 slack-active solves per run).
-- **The 1.5 m margin is met to within 6.1 cm**, not exactly. The worst case over all offsets is 1.439 m. The residual comes from the slack, and from the chord between two 0.05 s instants that each keep 1.5 m: at up to 15.4 m/s a 0.05 s chord is about 0.8 m long and can dip a few centimetres closer to the pillar. Without any constraints the drone passes through a pillar in 4/10 runs (closest 0.210 m).
+- **Pillar constraints must hold between knots.** With constraints only at the 0.2 s knots, only the planned positions every 0.2 s are held at $r_{safe}$. At the drone's speeds (up to 15.41 m/s) consecutive knots can be up to about 3 m apart, and the path between them cuts the corner around the pillar. With pillars 1.5 or 2.0 m from the camera path the drone then passes **inside a pillar in 5/10 runs** (closest 0.432 / 0.364 m from the centre, pillar radius 0.6 m), and in 1/10 at 3.0 m. Imposing the same half-plane at every 0.05 s instant removes every pillar entry (0/10 at every offset and at every tested $Q_v$). With $Q_v = 10$ the worst fine-path clearance over the offset sweep is 1.439–1.457 m.
+- **At $Q_v = 10$ the 1.5 m margin is met to within 6.1 cm, not exactly.** Most of the shortfall is the soft constraint giving way at the constrained instants themselves: the worst clearance at the 0.05 s instants is 1.4476–1.4668 m across the offsets (slack up to 5.2 cm). The chord between two instants adds about 1 cm more (fine path 1.439–1.457 m). The margin depends on $Q_v$: at $Q_v$ = 1 the instants hold 1.5000 m, while a large velocity weight lets the slack give way much more, to 1.4036 m at $Q_v$ = 30 and **1.0623 m at $Q_v$ = 100 (0.44 m inside $r_{safe}$)**, still without touching a pillar. Without any constraints the drone passes through a pillar in 4/10 runs (closest 0.210 m).
 - **Detours cost tracking accuracy.** Pillars on the camera path raise the steady RMS from 2.075 m (no constraints) to 3.578 m (offset 0.5 m), and it rises further, to 4.648 m, when the pillars stand 3.0 m from the path: the drone stays farther out for longer.
 - **The card's linearisation is too conservative.** One normal per pillar from the current position blocks the whole half-space beyond the pillar, so the drone hangs back: 5.644 m steady RMS, 41.7 slack-active solves per run and 9 non-converged QPs, yet still below $r_{safe}$ in 5/10 runs.
-- **The card's pillar layout never tests avoidance.** Those pillars are 4.61–14.99 m from the desired camera path; the run is identical to the run without constraints (2.075 m), and the clearance never drops below 2.817 m.
+- **The card's pillar layout never tests avoidance.** Those pillars are 4.61–14.99 m from the desired camera path; the run is practically identical to the run without constraints (steady RMS 2.075 ± 0.051 vs 2.075 ± 0.050 m), and the clearance never drops below 2.817 m.
 
 **Card targets**:
 
@@ -159,7 +159,7 @@ With the true future over the whole mission, the card's $Q$/$R$ weights at the 0
 |-------------|-------------------|
 | Framing score ≥ 0.80 (20–40 % band) | 0.0 % for every variant: unreachable at 9.43 m (needs 3.53–7.14 m). With the corrected 10–20 % band: 89.6 ± 0.1 % |
 | RMS tracking error ≤ 1.5 m | Not met: 3.834 ± 0.057 m. The oracle reaches 2.518 m and the offline optimum reference point 1.876 m over the whole mission; the start from rest and the 9.79 m/s² lateral demand exceed the 6 m/s² limit |
-| Min obstacle clearance ≥ 1.5 m | Not met exactly: 1.482 ± 0.012 m (worst 1.457 m; 1.439 m over all pillar offsets), within 6.1 cm of the margin, and never inside a pillar |
+| Min obstacle clearance ≥ 1.5 m | Not met exactly: at $Q_v = 10$, 1.482 ± 0.012 m (worst 1.457 m; 1.439 m over all pillar offsets), within 6.1 cm of the margin, and never inside a pillar. With $Q_v = 100$ the soft margin gives way to 1.061 m |
 | Max drone speed ≤ 12 m/s | Met per axis (12.00 m/s, the card's ∞-norm bound); the speed magnitude reaches 15.41 m/s |
 
 ### 3D Trajectory
@@ -170,7 +170,7 @@ Seed 0, proposed controller: road (blue), desired camera path (green dashed), dr
 
 ### Tracking Error
 
-Seed 0, log scale. Grey bands mark the car within 15 m of a pillar. The card-cost variants (pink, grey) swing up to about 10 m every half wave; the proposed controller stays at a few metres:
+Seed 0, log scale. Grey bands mark the car within 15 m of a pillar. The card-cost variants (pink, grey) swing to large errors every half wave (printed maxima 14.57 m and 14.52 m); the proposed controller stays at a few metres:
 
 ![Tracking error](./tracking_error.png)
 
@@ -212,7 +212,7 @@ Seed 0, proposed controller, top view in a window that follows the car: car (blu
 | Pillars at (40, 8), (90, −10), (150, 12), (210, −6), (260, 9) | Same x stations, moved onto the camera path (0.5 m to the side, swept to 3.0 m); card layout kept as a variant | The card's pillars are 4.61–14.99 m from the camera path, so the constraint never binds (shown by the card-layout variant). Card note added. |
 | Obstacle constraints at the MPC knots ($i = 1..N$) | At every 0.05 s instant of the horizon (40 points); knots-only kept as a variant | Knots-only lets the path cut the corner between knots 2–3 m apart; with pillars 1.5–2.0 m from the path the drone enters a pillar in 5/10 runs. |
 | Obstacle normals from the current position $\mathbf{p}_0$ for all steps | One normal per constraint point from the previous plan; card form kept as a variant | The card form over-constrains and degrades tracking (5.644 vs 3.578 m). |
-| Hard obstacle constraints | Soft, one slack per pillar ($w_q = 10^4$, $w_l = 10^3$) | Keeps the QP feasible when the acceleration limit cannot avoid the margin in time; the margin is then missed by up to 6.1 cm. |
+| Hard obstacle constraints | Soft, one slack per pillar ($w_q = 10^4$, $w_l = 10^3$) | Keeps the QP feasible when the acceleration limit cannot avoid the margin in time; the margin is then missed by up to 6.1 cm at $Q_v = 10$ (up to 0.44 m at $Q_v = 100$). |
 | MPC cost: positions and accelerations only | Added velocity tracking $Q_v = 10$; card cost kept as two variants; $Q_v$ sweep 1–100 printed | The card cost overshoots and lags (10.010 m RMS with the KF, 7.209 m even with the oracle). $Q_v$ was first picked from {1, 3, 10} on seed 0; the 10-seed sweep confirms 10 as the best tested value. |
 | Speed limit 12 m/s | Per axis, as in the card's constraint $\|\mathbf{v}_i\|_\infty \le 12$ | The magnitude reaches 15.41 m/s; a norm bound is not modelled. |
 | cvxpy + OSQP | Own dense interior-point QP solver | cvxpy is not installed in the `drones` environment. |

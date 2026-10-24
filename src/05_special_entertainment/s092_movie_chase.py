@@ -398,6 +398,7 @@ def simulate(variant, seed, keep=False, lateral=PILLAR_LATERAL, q_vel=None):
         'f_card': float(np.mean((f_h >= BAND_CARD[0]) & (f_h <= BAND_CARD[1]))),
         'f_fixed': float(np.mean((f_h >= BAND_FIXED[0]) & (f_h <= BAND_FIXED[1]))),
         'min_clear': float(clear_f.min()),
+        'min_clear_inst': float(clear.min()),      # at the 0.05 s (constrained) instants
         'hit_run': bool(pillar_hits > 0),
         'max_speed': float(np.linalg.norm(log['v'], axis=1).max()),
         'max_speed_inf': vmax_inf,
@@ -447,7 +448,8 @@ def offline_floor(a_max):
 
 SUMMARY_KEYS = ('rms', 'rms_steady', 'in_ball', 'in_ball_steady', 'f_card', 'f_fixed',
                 'min_clear', 'max_speed', 'max_speed_inf', 'max_err', 'pred_rms', 'pred_max',
-                'kf_rms', 'n_solves', 'n_fail', 'n_slack', 'pillar_hits', 'hit_run')
+                'kf_rms', 'n_solves', 'n_fail', 'n_slack', 'pillar_hits', 'hit_run',
+                'min_clear_inst')
 
 
 def _job(args):
@@ -474,6 +476,8 @@ def run_simulation():
             jobs.append((('qv', qv), 'kf_mpc', ('kf_mpc', seed, False, PILLAR_LATERAL, qv)))
     with ProcessPoolExecutor(max_workers=min(N_WORKERS, os.cpu_count() or 1)) as ex:
         results = list(ex.map(_job, [j[2] for j in jobs], chunksize=1))
+    print(f'  Simulation runs: {len(jobs)} ({sum(j[0] == "main" for j in jobs)} variant runs, '
+          f'{sum(j[0] != "main" for j in jobs)} sweep runs)')
     main, mc, sweep = {}, {v: [] for v in VARIANTS}, {}
     for (tag, var, args), r in zip(jobs, results):
         if tag == 'main':
@@ -805,14 +809,17 @@ if __name__ == '__main__':
                   f'{_ms([x["min_clear"] for x in rows])} m (worst {min(x["min_clear"] for x in rows):.3f} m), '
                   f'runs < r_safe {sum(x["min_clear"] < R_SAFE for x in rows)}/{len(rows)}, '
                   f'runs inside a pillar {sum(x["hit_run"] for x in rows)}/{len(rows)}, '
-                  f'slack-active solves {_ms([x["n_slack"] for x in rows], "{:.1f}")}')
+                  f'slack-active solves {_ms([x["n_slack"] for x in rows], "{:.1f}")}, '
+                  f'worst clearance at the 0.05 s instants '
+                  f'{min(x["min_clear_inst"] for x in rows):.4f} m')
     print(f'\n  Velocity-weight sensitivity (proposed, pillars {PILLAR_LATERAL} m from the path, '
           f'{N_MC} seeds each):')
     for qv in QV_SWEEP:
         rows = sweep[('qv', qv)]
         print(f'    Q_v = {qv:5.1f}: steady RMS {_ms([x["rms_steady"] for x in rows])} m, '
               f'within 1 m {_ms([x["in_ball"] for x in rows], "{:.1f}", 100)} %, '
-              f'min clearance worst {min(x["min_clear"] for x in rows):.3f} m, '
+              f'min clearance worst {min(x["min_clear"] for x in rows):.3f} m '
+              f'(at the 0.05 s instants {min(x["min_clear_inst"] for x in rows):.4f} m), '
               f'runs inside a pillar {sum(x["hit_run"] for x in rows)}/{len(rows)}')
     print('\n  Offline optimum (one QP over the whole 37.5 s with the true reference: minimises the '
           'card-weighted position/control cost at the 0.2 s knots, same speed and acceleration '
