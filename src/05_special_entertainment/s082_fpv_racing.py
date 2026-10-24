@@ -67,7 +67,7 @@ R_SEARCH    = 2.0            # m    a gate visit starts when the path comes this
 END_RADIUS  = 0.5            # m    lap ends when back within this distance of the start
 T_PAD       = 4.0            # s    simulated time after the reference ends
 GUP         = np.array([0.0, 0.0, G])
-RATE_SENS   = 40.0           # rad/s rate-setpoint clip used in the sensitivity run
+RATE_SENS   = [40.0, 1000.0]  # rad/s rate-setpoint clips of the sensitivity runs (1000 = none)
 MAX_TILT    = np.radians(89.0)  # racing: no practical tilt limit (preset default is 70 deg)
 
 STRATS = ['minsnap', 'scaled', 'topp']
@@ -530,9 +530,11 @@ def run_simulation():
             res[(st, mo)] = [metrics(sims[(st, mo)], b, *layouts[s], refs[(st, mo)][b]['T_ref'])
                              for b, s in enumerate(MC_SEEDS)]
     # sensitivity: TOPP on the rigid body with the rate-setpoint clip raised 15 -> 40 rad/s
-    sim40 = simulate('rb', refs[('topp', 'rb')], max_rate=RATE_SENS)
-    res['topp_rate40'] = [metrics(sim40, b, *layouts[s], refs[('topp', 'rb')][b]['T_ref'])
-                          for b, s in enumerate(MC_SEEDS)]
+    for rc in RATE_SENS:
+        simr = simulate('rb', refs[('topp', 'rb')], max_rate=rc)
+        res[('topp_rate', rc)] = [
+            metrics(simr, b, *layouts[s], refs[('topp', 'rb')][b]['T_ref'])
+            for b, s in enumerate(MC_SEEDS)]
     return layouts, splines, refs, sims, res
 
 
@@ -894,12 +896,15 @@ if __name__ == '__main__':
         n_out = sum(r['out_of_arena'] for r in res[k])
         print(f"  [{S_LABEL[k[0]]}, {M_LABEL[k[1]]}] layouts leaving the 20x20x10 m arena: "
               f"{n_out}/{len(MC_SEEDS)}")
-    r40 = res['topp_rate40']
-    h40 = np.array([r['hits'] for r in r40])
-    print(f"  [Time-optimal (TOPP), rigid body, rate clip {RATE_SENS:.0f} rad/s] mean hits "
-          f"{h40.mean():.2f}, all 8 hit on {np.sum(h40 == N_GATES)}/{len(r40)}, finished "
-          f"{sum(r['finished'] for r in r40)}/{len(r40)}, crashed {sum(r['crashed'] for r in r40)}"
-          f"; mean miss {100 * np.mean(np.concatenate([r['miss'] for r in r40])):.1f} cm")
+    for rc in [default_gains('fpv_5inch')['max_rate'][0]] + RATE_SENS:
+        r40 = res[('topp', 'rb')] if rc not in RATE_SENS else res[('topp_rate', rc)]
+        h40 = np.array([r['hits'] for r in r40])
+        print(f"  [Time-optimal (TOPP), rigid body, rate clip {rc:.0f} rad/s] mean hits "
+              f"{h40.mean():.2f}, all 8 hit on {np.sum(h40 == N_GATES)}/{len(r40)}, finished "
+              f"{sum(r['finished'] for r in r40)}/{len(r40)}, crashed "
+              f"{sum(r['crashed'] for r in r40)}; mean miss "
+              f"{100 * np.mean(np.concatenate([r['miss'] for r in r40])):.1f} cm; peak |omega| "
+              f"{max(r['rate_max'] for r in r40):.1f} rad/s")
     tm = np.array([r['tilt_max'] for r in res[('topp', 'rb')]])
     print(f"  [rigid body, time-optimal] max tilt over layouts {tm.min():.1f}-{tm.max():.1f} deg")
 

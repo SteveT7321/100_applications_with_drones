@@ -94,7 +94,7 @@ conda activate drones
 python src/05_special_entertainment/s082_fpv_racing.py
 ```
 
-Runtime ≈ 150–240 s with about 10 other simulations sharing the 12-thread machine (measured 149–237 s here, 161–187 s by the reviewer). This includes the extra rate-clip sensitivity run.
+Runtime ≈ 150–240 s with about 10 other simulations sharing the 12-thread machine (measured 127–237 s here, 161–187 s by the reviewer). This includes the two extra rate-clip sensitivity runs.
 
 ---
 
@@ -146,7 +146,15 @@ Crashes (ground contact): min-snap only, point mass, seed 48 at 10.88 s. TOPP, r
 
 **Key findings**:
 - **On the card's point-mass model, TOPP wins clearly.** It is faster than min-snap only on all 18 layouts both finished (lap-time ratio 0.857 ± 0.049). It is faster than the uniformly scaled min-snap on all 20 layouts (ratio 0.695 ± 0.031), and it still hits 7.95 of 8 gates on average. The bang-bang profile keeps $\|\mathbf{u}\|$ above 90 % of $a_{max}$ for 99.0 % of the seed-42 lap.
-- **On the rigid body, the same TOPP reference is not flyable.** It hits 1.15 of 8 gates on average and no layout hits all 8. Mean miss rises from 4.3 cm to 126.2 cm, the miss is larger at 159 of 160 gates, and only 11 of 20 laps finish (2 crashes, 3 layouts leave the arena). The script prints the reason. The TOPP reference is bang-bang, so its thrust direction jumps by 50.2–137.2° between consecutive 2 ms reference samples. The controller's 15 rad/s rate-setpoint clip allows 1.7° per sample. Raising that clip to 40 rad/s does not help: mean hits 1.20, all 8 hit on 0/20 layouts, 11/20 finished, 4 crashes, mean miss 162.4 cm. So the reference, not the controller gains, is the cause. The reference also points the thrust downward for 7.2 % of the time, with a maximum thrust tilt of 70–178°. A point mass can redirect $\mathbf{u}$ instantly; a quadrotor must rotate its whole body first. On the seed-42 lap the airframe reaches 93.7° tilt, 19.53 rad/s and 98.9 % rotor speed.
+- **On the rigid body, the same TOPP reference is not flyable.** It hits 1.15 of 8 gates on average and no layout hits all 8. Mean miss rises from 4.3 cm to 126.2 cm, the miss is larger at 159 of 160 gates, and only 11 of 20 laps finish (2 crashes, 3 layouts leave the arena). The script prints the reason. The TOPP reference is bang-bang, so its thrust direction jumps by 50.2–137.2° between consecutive 2 ms reference samples. The controller's 15 rad/s rate-setpoint clip allows 1.7° per sample. Changing that clip does not help (all 20 layouts each):
+
+| Rate-setpoint clip | Mean hits | All 8 hit | Finished | Crashed | Mean miss | Peak $\|\omega\|$ |
+|---|---:|---:|---:|---:|---:|---:|
+| 15 rad/s (default) | 1.15 | 0/20 | 11/20 | 2 | 126.2 cm | 25.1 rad/s |
+| 40 rad/s | 1.20 | 0/20 | 11/20 | 4 | 162.4 cm | 46.8 rad/s |
+| 1000 rad/s (effectively unclipped) | 1.10 | 0/20 | 10/20 | 4 | 157.9 cm | 46.2 rad/s |
+
+So the failure is caused by the reference, not by the rate clip. The other controller gains were not varied. The reference also points the thrust downward for 7.2 % of the time, with a maximum thrust tilt of 70–178°. A point mass can redirect $\mathbf{u}$ instantly; a quadrotor must rotate its whole body first. On the seed-42 lap the airframe reaches 93.7° tilt, 19.53 rad/s and 98.9 % rotor speed.
 - **The smooth references transfer almost unchanged.** With uniform scaling, the rigid body hits 8/8 gates on all 20 layouts, mean miss 2.0 cm against 1.8 cm on the point mass, with an equal number of hits on every layout. Its thrust direction changes by at most 0.2–0.3° per 2 ms sample. So the rigid-body model adds nothing to a dynamically smooth plan, but it rejects a plan that is only feasible for a point mass.
 - **The card's "min-snap only" timing is not conservative.** At 5 m/s per segment the reference needs a peak $\|\mathbf{u}\|$ of 18.0–21.9 m/s², above $a_{max}$ on 20/20 layouts. The MPC saturates and the drone cuts corners on both models: 3.60 and 2.80 mean hits. Making it feasible needs a uniform slow-down of $k$ = 1.168–1.474. TOPP is then 0.905 ± 0.051 of the (infeasible) min-snap reference time.
 - **The card's expected table holds only partly.** Point-mass TOPP laps (10.05 s) fall in the expected 10–14 s range. Min-snap only (11.69 s) is not the expected 18–22 s, and it hits 2–4 gates instead of 8/8. On the rigid body none of the expected TOPP numbers holds.
@@ -214,7 +222,7 @@ The seed-42 TOPP reference over $T_{ref}$ + 1 s, flown by the point mass (black,
 - **Drag**: coast-down or wind-tunnel data. Above about 10 m/s the drag of a 5-inch quad is closer to quadratic than linear.
 - **Maximum sustained body rate** and the rate-loop bandwidth, from logged step inputs.
 
-The key result, that TOPP fails on the rigid body, does not hinge on the controller's rate clip: raising it from 15 to 40 rad/s gives the same picture. How badly a real airframe misses still depends on its body-rate capability and motor lag, so measure those two first.
+The key result, that TOPP fails on the rigid body, does not hinge on the controller's rate clip: raising it from 15 to 40 rad/s, or removing it (1000 rad/s), gives the same picture. How badly a real airframe misses still depends on its body-rate capability and motor lag, so measure those two first.
 
 **Path to PX4 / Betaflight SITL.**
 1. Export the planner: the minimum-snap spline (and, if used, a jerk-limited TOPP) as a time-stamped setpoint table $(\mathbf{p}, \mathbf{v}, \mathbf{a}, \text{yaw})$.
