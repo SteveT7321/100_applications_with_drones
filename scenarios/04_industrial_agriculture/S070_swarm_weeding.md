@@ -1,6 +1,6 @@
 # S070 Swarm Weeding Task
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Hungarian Task Assignment + PID Precision Hover | **Dimension**: 2D
 
 ---
@@ -124,7 +124,28 @@ $$P_{success} \approx 0.85 \times 0.997 \approx 0.847$$
 
 Expected number of weeds treated: $\mathbb{E}[W_{treated}] = W \cdot P_{success} \approx 25.4$.
 
+> **Corrected (2026-10, implementation review; 200-trial Monte Carlo).**
+> (1) $1 - \exp(-0.15^2 / (2 \cdot 0.06^2)) = 0.956$, not 0.997.
+> (2) The stated $\sigma_{hover}$ formula does not hold for the given loop. With the card's code
+> (velocity command $\mathbf p \mathrel{+}= \mathbf u\,\Delta t$, derivative of the noisy error,
+> 0.3 m arrival offset), the RMS over the 2 s dwell is 0.191 m (0.110 m over the last second).
+> Only 33.3 % of hovers meet 0.15 m; dropping the derivative term gives 0.137 m and 61.5 %.
+> The simulated number of weeds treated is 8.6 per trial, not 25.4.
+> (3) The card's code places passes with `arange(y_min + 1.5, y_max, 3.0)`, which gives 4 passes and
+> leaves a 1.33 m unswept band (10 % of each strip). The formula
+> $\lceil L_{strip}/\delta_s \rceil = 5$ passes, evenly spaced at 2.67 m, covers the strip.
+> (4) The card's code draws a Bernoulli trial every 0.05 s while a weed is in range, which makes the
+> detection probability about 1.0; the per-pass model in the text (one draw per encounter) gives
+> 86.1 %.
+
 ### Phase 2 Travel Cost Comparison
+
+> **Note (2026-10 review).** The Hungarian cost uses only the distance from each drone's
+> end-of-sweep position, while the travel is a sequential route. It therefore does not minimise the
+> route length: the greedy baseline is 12 % shorter on average ($\rho = 0.877$; $\rho \ge 1$ in only
+> 8 of 200 trials). Because of its $K_{max}$ load cap, Hungarian does give a much shorter makespan
+> (90.6 s against 136.5 s). Visiting the weeds in the solver's output order, as the card's code
+> does, doubles the distance.
 
 Define the total Phase 2 travel distance for assignment strategy $s$:
 
