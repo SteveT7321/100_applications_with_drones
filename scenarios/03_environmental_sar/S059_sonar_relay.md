@@ -1,6 +1,6 @@
 # S059 Underwater Target Sonar Marking (Surface Cooperative Localization)
 
-**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental Monitoring & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
@@ -89,7 +89,7 @@ $$f_i(\mathbf{p}) = \Delta \hat{d}_{i1} - \bigl(\|\mathbf{p}_i - \mathbf{p}\| - 
 
 The Jacobian $\mathbf{H} \in \mathbb{R}^{(N-1) \times 3}$ is:
 
-$$H_{ij} = \frac{\partial f_i}{\partial p_j}
+$$H_{ij} = -\frac{\partial f_i}{\partial p_j} = \frac{\partial (r_i - r_1)}{\partial p_j}
   = \frac{(p_{1j} - p_j)}{\|\mathbf{p}_1 - \mathbf{p}\|}
   - \frac{(p_{ij} - p_j)}{\|\mathbf{p}_i - \mathbf{p}\|}$$
 
@@ -110,14 +110,24 @@ $k = K_{max} = 200$ iterations. The final estimate is $\hat{\mathbf{p}}_T = \mat
 
 ### Fisher Information Matrix and CRLB
 
-The measurement covariance matrix for the $(N-1) = 3$ independent TDOA pairs is:
+The three TDOA pairs all contain the reference buoy's clock error $\epsilon_1$, so they are
+correlated: $\text{Cov}(\nu_{i1}, \nu_{j1}) = \sigma_t^2$ for $i \neq j$ and $2\sigma_t^2$ for $i = j$.
+The measurement covariance matrix in range units is:
 
-$$\boldsymbol{\Sigma} = 2\sigma_t^2 c_s^2 \, \mathbf{I}_{3 \times 3} = \sigma_d^2 \, \mathbf{I}$$
+$$\boldsymbol{\Sigma} = \sigma_t^2 c_s^2 \left(\mathbf{I}_{3 \times 3} + \mathbf{1}\mathbf{1}^T\right)$$
+
+with diagonal $\sigma_d^2 = 2\sigma_t^2 c_s^2$ and correlation 0.5 between pairs.
 
 The Fisher information matrix (FIM) for the target position $\mathbf{p}_T$ is:
 
-$$\mathbf{F}(\mathbf{p}_T) = \mathbf{H}^T \boldsymbol{\Sigma}^{-1} \mathbf{H}
-  = \frac{1}{\sigma_d^2} \mathbf{H}^T \mathbf{H}$$
+$$\mathbf{F}(\mathbf{p}_T) = \mathbf{H}^T \boldsymbol{\Sigma}^{-1} \mathbf{H}$$
+
+> Correction (S059 implementation): an earlier version used $\boldsymbol{\Sigma} = 2\sigma_t^2 c_s^2 \mathbf{I}$
+> (independent pairs), so $\mathbf{F} = \mathbf{H}^T\mathbf{H}/\sigma_d^2$ and $\text{tr}(\mathbf{F}^{-1}) =
+> \sigma_d^2\,\text{tr}[(\mathbf{H}^T\mathbf{H})^{-1}]$. With per-buoy clock noise that bound does not match the
+> Monte Carlo error: for the tetrahedral layout it predicts 100.0 cm RMS, the correlated model 73.5 cm,
+> and 1000 Gauss-Newton fixes give 73.8 cm. The two expressions below hold for the old $\boldsymbol{\Sigma}$;
+> with the correct one replace $\sigma_d^2 (\mathbf{H}^T\mathbf{H})^{-1}$ by $(\mathbf{H}^T \boldsymbol{\Sigma}^{-1} \mathbf{H})^{-1}$.
 
 The CRLB states that any unbiased estimator $\hat{\mathbf{p}}_T$ satisfies:
 
@@ -212,7 +222,8 @@ def tdoa_measurements(buoys, p_target, sigma_t, rng):
     """
     ranges = np.linalg.norm(buoys - p_target, axis=1)      # (N,)
     true_tdoa = (ranges[1:] - ranges[0]) / C_SOUND         # (N-1,)
-    noise = rng.normal(0.0, np.sqrt(2) * sigma_t, size=N_BUOYS - 1)
+    eps = rng.normal(0.0, sigma_t, size=N_BUOYS)          # per-buoy clock error
+    noise = eps[1:] - eps[0]                              # pairs share eps_1 (correlated)
     return true_tdoa + noise
 
 def tdoa_residuals(p, buoys, delta_d_meas):
