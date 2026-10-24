@@ -50,7 +50,7 @@ The smoothstep's peak slope is 1.5, so the card's $\tau = |\Delta z|/v_{z,max}$ 
 - Phase 3 sensor model $|\mathbf x - \mathbf p_D| \le r_s + \kappa|\Delta z|$: the horizontal footprint radius is 3.00 m at $\Delta z = 0$, at most 3.27 m at $\Delta z$ = 1.43 m, and zero beyond 4.99 m. Flying higher shrinks it, against the card's claim, and a scout at 8 m would not see a survivor on the ground (card note added).
 - Thrust-to-weight: A, E 2.04; B, C 1.70; D 1.59. The card's thrust-ratio allocation rule uses an undefined $\tau_{climb,max}$ and cannot separate the two identical couriers.
 
-**Reproduction**: the S100 configuration (waypoints at 5 m, star 25 m, no climb cost, ε 0.15 m, $r_{safe}$ 1.2 m) through this script's loop gives the same scores and phase end times as the S100 loop in all 100 missions (score 3.74 ± 0.82 at ×1).
+**Reproduction**: the S100 configuration (waypoints at 5 m, star 25 m, no climb cost, ε 0.15 m, $r_{safe}$ 1.2 m) through this script's loop gives the same scores and phase end times as the S100 loop in all 100 missions (score 3.74 ± 0.82 at ×1; this is the S100 code on these 100 missions; the S100 README reports 3.81 ± 0.92 over its 200 missions).
 
 ---
 
@@ -68,6 +68,7 @@ The smoothstep's peak slope is 1.5, so the card's $\tau = |\Delta z|/v_{z,max}$ 
 | $c_{fly}$ / $c_{hover}$ / reserve / failsafe margin | 0.004 m⁻¹ / 0.003 s⁻¹ / 15 % / 3 % (S100) |
 | Capacity multipliers (added, as S100) | ×1, 1.5, 2, 3, 5 |
 | Show-altitude sweep (added) | 10, 15, 25, 40, 55 m (2D geometry, ×1 and ×3) |
+| Factorial (added) | star 10, 25, 40, 55 m × 2D waypoints / bands × ×1.25, 1.5, 1.75; direct ascent; first 50 missions |
 | Phases 1 and 3, speeds, PID gains, communication | as S100 |
 | Monte Carlo | 100 missions, seeds 0–99 (S100: 200; reduced for runtime) |
 
@@ -84,7 +85,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s100_3d_grand_challenge.py
 ```
 
-Runtime: 5.3–7.5 min (318, 363 and 452 s over three runs; other simulations were running on the machine at the same time). The Monte Carlo was cut from 200 to 100 missions to stay below 8 min. Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading. The asserts of S100 are kept (speed ≤ 8 m/s, acceleration ≤ 10 m/s², inside the arena including the 60 m ceiling, battery ≥ 0), plus the reproduction of S100.
+Runtime: 6.1–6.9 min (411, 383 and 368 s over three runs; other simulations were running on the machine at the same time). The Monte Carlo was cut from 200 to 100 missions, and the factorial to 50 missions per cell, to stay below 8 min. Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading. The asserts of S100 are kept (speed ≤ 8 m/s, acceleration ≤ 10 m/s², inside the arena including the 60 m ceiling, battery ≥ 0), plus the reproduction of S100.
 
 ---
 
@@ -135,6 +136,24 @@ Paired per mission: 3D card against the 2D baseline is worse in 100/100 missions
 
 With the climb cost, no fixed show altitude, not even 10 m, lets courier B (25.94 % after Phase 2) reach its tip and still keep its landing reserve at ×1; at ×3 every altitude works. The altitude still changes the result through the search: the scout's trigger reserves the climb to the star, so a higher show leaves less time to search (P3 at ×3: 47.0 % at 10 m, 39.0 % at 55 m; at ×1: 9.0 % to 0.0 %).
 
+### Show altitude × waypoint geometry × battery (where the threshold comes from)
+
+The table above compares a 25 m star (2D baseline) with a 55 m star (3D), so its ×1.5 against ×2 contrast mixes two altitude changes. This factorial separates them (direct ascent, the first 50 of the 100 missions, same seeds; 50 missions per cell to keep the runtime below 8 min). Each cell gives Phase 4 formed / 50 and the mean score; Phase 2 delivered all three packages in every cell:
+
+| Waypoints, battery | Star 10 m | Star 25 m | Star 40 m | Star 55 m |
+|---|---|---|---|---|
+| 2D (all 5 m), ×1.25 | 50/50, 7.60 | 0/50, 3.98 | 0/50, 3.62 | 0/50, 3.50 |
+| 2D (all 5 m), ×1.5 | 50/50, 7.90 | 50/50, 7.78 | 50/50, 7.60 | 0/50, 3.62 |
+| 2D (all 5 m), ×1.75 | 50/50, 8.08 | 50/50, 7.90 | 50/50, 7.78 | 50/50, 7.60 |
+| bands 5/12/20 m, ×1.25 | 50/50, 7.60 | 0/50, 3.98 | 0/50, 3.62 | 0/50, 3.50 |
+| bands 5/12/20 m, ×1.5 | 50/50, 7.90 | 50/50, 7.78 | **0/50**, 4.10 | 0/50, 3.62 |
+| bands 5/12/20 m, ×1.75 | 50/50, 8.08 | 50/50, 7.90 | 50/50, 7.78 | **0/50**, 4.10 |
+
+Lowest battery multiplier (of ×1.25, ×1.5, ×1.75) at which every formation completes: 2D waypoints ×1.25 / ×1.5 / ×1.5 / ×1.75 for a 10 / 25 / 40 / 55 m star; bands ×1.25 / ×1.5 / ×1.75 / more than ×1.75.
+
+- The show altitude sets most of the battery requirement: with the 2D waypoints it rises from ×1.25 (10 m) to ×1.75 (55 m).
+- The altitude bands make no difference for a star at 10 or 25 m (identical cells), but at 40 and 55 m they push the requirement up by one step (×1.5 → ×1.75 at 40 m, ×1.75 → above ×1.75 at 55 m). At ×1 they also cost a package (B aborts the 20 m waypoint, see Phase 2).
+
 ### Phase 4: stratified against direct ascent
 
 | Variant (Phase 4) | Battery | Formed | Duration | Min separation (mean) | ORCA ticks | Peak $\lvert v_z\rvert$ | Peak altitude |
@@ -152,8 +171,8 @@ At ×5 the stratified ascent gives a larger minimum separation in 100/100 missio
 
 **Key findings**:
 
-- **Altitude decides the battery outcome, and the 3D mission needs about twice the card's battery.** With the card's climb cost, the 2D baseline forms the star from ×1.5 on; both 3D variants need ×2 (0/100 at ×1.5, courier B lands on its failsafe in all 100). With the card's battery (×1) the 3D mission fails Phase 2 as well (B cannot afford the 20 m waypoint) and scores 2.50 in every mission, against 3.62 for the 2D baseline and 3.74 for S100.
-- **Lowering the show does not rescue the card's battery.** At ×1 the 2D baseline fails Phase 4 at every fixed show altitude from 10 to 55 m, because B arrives with 25.94 % and the climb cost plus the reserve exceed it. A higher show mainly costs search time (P3 47.0 → 39.0 % at ×3 from 10 to 55 m).
+- **Altitude decides the battery outcome, and most of it is the show altitude.** With the card's climb cost, the 2D baseline (25 m star) forms the star from ×1.5 on, while both 3D variants (55 m star, bands) need ×2 (0/100 at ×1.5, courier B lands on its failsafe in all 100). The factorial shows that this gap comes mainly from the higher star: with the 2D waypoints alone, a 55 m star already needs ×1.75. The bands add one more step only for high stars (40 and 55 m), and at ×1 they make the 3D mission fail Phase 2 as well (B cannot afford the 20 m waypoint): 2.50 in every mission, against 3.62 for the 2D baseline and 3.74 for the S100 code on the same 100 missions.
+- **Lowering the show does not rescue the card's battery (×1), but it lowers the battery needed.** At ×1 the 2D baseline fails Phase 4 at every fixed show altitude from 10 to 55 m, because B arrives with 25.94 % and the climb cost plus the reserve exceed it; a 10 m star already works at ×1.25. At ×3 every altitude works and a higher show mainly costs search time (P3 47.0 → 39.0 % from 10 to 55 m).
 - **The card's stratified ascent solves a problem that does not occur here.** The Hungarian assignment already keeps the drones 7.36 m apart in the direct ascent (4.87 m in the 2D baseline); ORCA never acts. Stratification raises the separation to 8.25 m but, combined with the card's PID, makes Phase 4 take 71.3 s instead of 25.8 s, and at ×5 only 52/100 formations finish by 300 s (score 7.50 against 8.71). The PD probe shows that the integral term, not the profile itself, causes the delay.
 - **The card's 60 m show altitude does not fit its own 60 m arena** (overshoot above 60 m in 100/100 missions); 55 m was used.
 - **Phases 1 and 3 are as in S100**: Phase 1 succeeds in 100/100 missions (catcher battery 16.08 % used); Phase 3 success depends on the battery and the show altitude through the scout's trigger.
@@ -194,7 +213,7 @@ Mission 0 at ×5: 2D baseline (left) and 3D card (right).
 |------|----------------|--------|
 | Show altitude 60 m in a 60 m arena | 55 m; card corrected | The overshoot leaves the arena (above 60 m in 100/100 missions, printed) |
 | $\tau_k = \lvert\Delta z\rvert/v_{z,max} + k\,\delta t$ | $1.5\,\lvert\Delta z\rvert/v_{z,max} + k\,\delta t$; card corrected | The smoothstep's peak slope 1.5 gives 4.5 m/s otherwise |
-| Phase 1: 10 m mast, wind on the ball, tilt-aware cup, altitude-choosing catch planner | Not implemented; Phase 1 is S100's (S094) | Phase 1 succeeds in 100/100 missions and uses 16 % of A's battery, so it does not drive the mission result; the 3D catching model belongs to the S094 3D upgrade; runtime |
+| Phase 1: 10 m mast, wind on the ball, tilt-aware cup, altitude-choosing catch planner | Not implemented; Phase 1 is S100's (S094) | Scope and runtime: the 3D catching model (wind, tilt-aware cup, thrust-limited catcher) is the subject of the S094 3D upgrade, and the S100 run is already close to the 8 min limit. Its effect on this mission is therefore not tested here; the card's harder Phase 1 could lower P1 below the 100/100 of S100's Phase 1 |
 | Phase 3: volumetric 3D belief and altitude-optimised scout | Not implemented; Phase 3 is S100's at 8 m | The card's sensor model is not a cone: its footprint shrinks with height and vanishes beyond 4.99 m (printed), so the claimed trade-off does not exist; card note added |
 | Heterogeneous battery capacities (Wh) and max speeds | Not used; masses and thrusts are used through the climb cost | The card gives no consumption in Wh; the normalised S100 battery (×1 = card) keeps the comparison with S100; S100's operating speeds are within the card's maxima |
 | Thrust-ratio task allocation | Not used | $\tau_{climb,max}$ undefined; both couriers identical (1.70); card note added |
@@ -202,7 +221,7 @@ Mission 0 at ×5: 2D baseline (left) and 3D card (right).
 | E's figure-eight orbit at 15–20 m | Station-keeping at 15 m (S100) | Orbit not specified |
 | Climb energy for Phase 2 only | Charged for every drone in every 10 Hz phase, and in the courier and scout triggers | One battery model for the whole mission (S100 principle) |
 | 3D TSP | Energy-cost nearest-neighbour split (card); it equals the distance split here | One package per trip from each courier's pad (S100) |
-| 200 missions (S100) | 100 missions | Runtime target < 8 min |
+| 200 missions (S100) | 100 missions; 50 per cell in the show-altitude × geometry × battery factorial | Runtime target < 8 min |
 | — | 2D baseline with the same energy model and tolerances, show-altitude sweep, capacity sweep, PD probe | Fair 2D baseline (X5); added-parameter sweeps; causal probe for the Phase 4 delay |
 
 ---

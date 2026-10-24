@@ -73,6 +73,9 @@ EPS_FORM3, R_SAFE3 = 0.20, 1.5
 N_SEEDS = 100
 KAPPAS3 = [1.0, 1.5, 2.0, 3.0, 5.0]
 ZSHOW_SWEEP = [10.0, 15.0, 25.0, 40.0, 55.0]
+N_FACT = 50                       # missions per factorial cell (reduced for runtime)
+FACT_KAPPAS = [1.25, 1.5, 1.75]
+FACT_Z = [10.0, 25.0, 40.0, 55.0]
 STRAT_F = 1.5                     # smoothstep peak slope: tau = 1.5 dz / v_z,max keeps v_z <= 3 m/s
 GIF_EVERY = 15
 
@@ -747,6 +750,25 @@ def main():
             print(mline(f'z_show {z:4.0f} m, x{k:g}', r))
             print(f'      B battery at Phase 4 start {ms(100 * r["E_p4"][:, 1])} %, at the end '
                   f'{ms(100 * r["E_final"][:, 1])} %; P3 {100 * r["s3"].mean():.1f} %')
+    print(f'\nShow altitude x waypoint geometry x battery factorial (direct ascent, first {N_FACT} '
+          f'missions, same seeds):')
+    fseeds = seeds[:N_FACT]
+    p1f = slice_p1(p1, list(range(N_FACT)))
+    F = {}
+    for geo, wps in (('2D waypoints (5 m)', m2d.DELIVERY_WPS), ('bands (5/12/20 m)', WPS3)):
+        for k in FACT_KAPPAS:
+            row = []
+            for z in FACT_Z:
+                r = run_simulation(p1f, fseeds, dict(CFG_3DD, wps=wps, z_show=z), kappa=k)
+                F[(geo, k, z)] = r
+                row.append(f'z {z:2.0f} m: P4 {int(r["s4"].sum()):3d}/{N_FACT}, P2 3/3 '
+                           f'{int(np.sum(r["sc2"] == 3)):3d}, score {np.mean(r["score"]):.2f}')
+            print(f'  {geo:19s} x{k:<5g} ' + '; '.join(row))
+    print('  lowest battery multiplier (of ' + ', '.join(f'x{k:g}' for k in FACT_KAPPAS)
+          + ') with all formations completed: ' + '; '.join(
+              f'{geo} z {z:.0f} m -> ' + next((f'x{k:g}' for k in FACT_KAPPAS
+                                              if F[(geo, k, z)]['s4'].all()), 'none')
+              for geo in ('2D waypoints (5 m)', 'bands (5/12/20 m)') for z in FACT_Z))
     print('\nPaired comparisons (per mission):')
     for k in KAPPAS3:
         a, b, c = M[('3d', k)]['score'], M[('2d', k)]['score'], M[('3dd', k)]['score']
