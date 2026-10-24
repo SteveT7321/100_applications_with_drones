@@ -1,6 +1,6 @@
 # S088 Formation Geometric Shape Morphing
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Shape Interpolation + ORCA Collision Avoidance | **Dimension**: 3D
 
 ---
@@ -21,8 +21,10 @@ $r_{coll} = 0.5$ m.
 **Roles**:
 - **Drones** ($N = 20$): homogeneous quadrotors, each tracking a linearly interpolated target
   position while running a local ORCA velocity filter to avoid neighbours.
-- **Shape library**: four canonical 3D point clouds, each normalised so that the mean inter-point
-  spacing equals $d_{form} = 2.0$ m; generated analytically at initialisation.
+- **Shape library**: four canonical 3D point clouds generated analytically at initialisation from
+  the radii below. They are **not** rescaled to a common spacing: the mean nearest-neighbour
+  spacings are 2.72 m (sphere), 3.00 m (cube), 1.11 m (helix) and 2.26 m (star);
+  $d_{form} = 2.0$ m is only a reference value.
 - **Hungarian assignment**: at each shape transition a one-shot assignment optimisation maps the
   current drone positions to the incoming shape's keypoints so as to minimise the total travel
   distance and reduce cross-trajectory collisions during the morph.
@@ -61,21 +63,28 @@ $$\mathbf{p}_k^{sphere} = R \begin{pmatrix} \sin\theta_k \cos\phi_k \\ \sin\thet
 
 where $\varphi = (1 + \sqrt{5})/2$ is the golden ratio and $k = 0, \ldots, N{-}1$.
 
-**Cube** — $N = 20$ points distributed uniformly across the six faces of a cube with half-side
-$a = 3.0$ m; 3–4 points per face, placed on a regular sub-grid:
+**Cube** — $N = 20$ points on the surface of a cube with half-side $a = 3.0$ m: the 8 corners
+plus the 12 edge midpoints (every face carries 4 corners and 4 edge midpoints; adjacent points are
+$a = 3.0$ m apart):
 
-$$\mathbf{p}_k^{cube} \in \{\pm a\} \times [-a, a]^2 \cup [-a,a]^2 \times \{\pm a\}$$
+$$\mathbf{p}_k^{cube} \in \{\pm a\}^3 \;\cup\; \{\text{permutations of } (0, \pm a, \pm a)\}$$
 
-**Helix** — $N$ turns along a right-handed helix with radius $R_h = 3.0$ m and vertical pitch
-$h = 0.6$ m per drone:
+(The earlier sub-grid code below generated 24 face points and kept the first 20, which left the
+$+z$ face empty.)
+
+**Helix** — one full turn of a right-handed helix (angle step $2\pi/N$) with radius
+$R_h = 3.0$ m and vertical rise $h = 0.6$ m per drone (total height 11.4 m; adjacent drones
+1.11 m apart):
 
 $$\mathbf{p}_k^{helix} = \begin{pmatrix} R_h \cos(2\pi k / N) \\ R_h \sin(2\pi k / N) \\ h\,k - h(N-1)/2 \end{pmatrix}, \quad k = 0, \ldots, N{-}1$$
 
-**Star** — alternating inner/outer vertices of a 10-pointed star extruded along $z$ to two altitude
-layers (10 points per layer). Outer radius $R_{out} = 4.5$ m, inner radius $R_{in} = 1.8$ m,
-layer offsets $z \in \{-1.2, +1.2\}$ m:
+**Star** — the 10 alternating outer/inner vertices of a five-pointed star outline, extruded along
+$z$ to two altitude layers (10 points per layer). Outer radius $R_{out} = 4.5$ m, inner radius
+$R_{in} = 1.8$ m, layer offsets $z \in \{-1.2, +1.2\}$ m, $k = 0, \ldots, 9$ within each layer:
 
-$$\mathbf{p}_k^{star} = \begin{pmatrix} R_k \cos\!\left(\pi k / 10\right) \\ R_k \sin\!\left(\pi k / 10\right) \\ z_{layer(k)} \end{pmatrix}, \quad R_k = \begin{cases} R_{out} & k \text{ even} \\ R_{in} & k \text{ odd} \end{cases}$$
+$$\mathbf{p}_k^{star} = \begin{pmatrix} R_k \cos\!\left(2\pi k / 10\right) \\ R_k \sin\!\left(2\pi k / 10\right) \\ z_{layer(k)} \end{pmatrix}, \quad R_k = \begin{cases} R_{out} & k \text{ even} \\ R_{in} & k \text{ odd} \end{cases}$$
+
+(An angle of $\pi k/10$ would place the 10 vertices on a half circle only.)
 
 ### Hungarian Assignment
 
