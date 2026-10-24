@@ -34,15 +34,15 @@ $$f_{w}(t) = A_w\sin(2\pi t/T_w + \varphi) + \mathcal N(0, \sigma_w^2)\quad\text
 
 ### Stability of the gain sets
 
-The error dynamics have the characteristic polynomial $s^3 + K_d s^2 + K_p s + K_i$. By Routh, it is stable only if $K_p K_d > K_i$. The PD part has $\omega_n = \sqrt{K_p}$ and $\zeta = K_d/(2\sqrt{K_p})$. The steady amplitude of the response to the sinusoidal gust (PD part, integral ignored) is
+The error dynamics have the characteristic polynomial $s^3 + K_d s^2 + K_p s + K_i$. By Routh, it is stable only if $K_p K_d > K_i$. The damping of the full PID loop is read from its dominant complex pole pair $\lambda$, as $\zeta = -\mathrm{Re}\,\lambda/|\lambda|$; the PD-only values ($\omega_n = \sqrt{K_p}$, $\zeta = K_d/(2\sqrt{K_p})$, integral ignored) are shown for reference. The steady amplitude of the response to the sinusoidal gust (full PID) is
 
-$$|e| = \frac{A_w}{\left|K_p - \omega_w^2 + jK_d\omega_w\right|},\qquad \omega_w = 2\pi/T_w = 1.571\text{ rad/s}$$
+$$|e| = A_w\left|\frac{j\omega_w}{(j\omega_w)^3 + K_d(j\omega_w)^2 + K_p\,j\omega_w + K_i}\right|,\qquad \omega_w = 2\pi/T_w = 1.571\text{ rad/s}$$
 
-| Gain set | $K_pK_d - K_i$ | $\omega_n$ | $\zeta$ | Gust amplitude |
-|---|---:|---:|---:|---:|
-| Loose (0.5, 0.05, 0.1) | 0.000 (marginal) | 0.707 rad/s | 0.071 | 15.2 cm |
-| Tuned (2.0, 0.2, 0.5) | 0.800 | 1.414 rad/s | 0.177 | 32.8 cm |
-| Tight (5.0, 0.5, 1.0) | 4.500 | 2.236 rad/s | 0.224 | 10.1 cm |
+| Gain set | $K_pK_d - K_i$ | PID poles | $\zeta$ (PID) | Gust amplitude (PID) | $\zeta$ / amplitude, PD only |
+|---|---:|---|---:|---:|---:|
+| Loose (0.5, 0.05, 0.1) | 0.000 (marginal) | ±0.707j, −0.100 | 0.000 | 15.2 cm | 0.071 / 15.2 cm |
+| Tuned (2.0, 0.2, 0.5) | 0.800 | −0.199 ± 1.386j, −0.102 | 0.142 | 37.2 cm | 0.177 / 32.8 cm |
+| Tight (5.0, 0.5, 1.0) | 4.500 | −0.449 ± 2.170j, −0.102 | 0.203 | 10.6 cm | 0.224 / 10.1 cm |
 
 ### Arrival, hover error and dose
 
@@ -113,8 +113,8 @@ $C_{eff}$ against turbulence (10 seeds each):
 **Key findings**:
 
 - **Tight is the only gain set that sprays accurately.** Every one of its 400 plant visits gets more than 90 % of the dose ($C_{eff}$ = 0.978). It is also the fastest mission, 262.4 s against about 333 s, because it settles within the 10 s window at most plants. The card's "risk of actuator saturation" barely shows: 0.26 % of steps hit the 3 m/s² limit.
-- **"Tuned" is not well tuned.** Its damping ratio is 0.177, not critical, and its natural frequency of 1.414 rad/s sits near the 1.571 rad/s gust, so the gust is amplified to 32.8 cm, against 15.2 cm for Loose and 10.1 cm for Tight. The hover RMS is 40.2 cm and $C_{eff}$ = 0.722, below the 0.8 failure line. The drone almost never meets the settle test (395 of 400 visits time out).
-- **"Loose" is unstable in practice.** $K_pK_d = K_i$ puts it exactly on the Routh stability boundary. Its oscillation never decays, and the hover error grows from plant to plant. In seed 0 the hover RMS rises from 1.55–1.91 m at the first three plants to 18.41–22.06 m at the last three. With the acceleration and speed limits removed it still reaches 10.27–14.63 m, so the gains are the cause, not saturation. Mean hover RMS is 740.6 cm and $C_{eff}$ = 0.002.
+- **"Tuned" is not well tuned.** Its closed-loop damping ratio is 0.142, not critical. Its dominant poles (−0.199 ± 1.386j) sit near the 1.571 rad/s gust, so the gust is amplified to 37.2 cm, against 15.2 cm for Loose and 10.6 cm for Tight. That is close to the measured hover RMS of 40.2 cm. and $C_{eff}$ is 0.722, below the 0.8 failure line. The drone almost never meets the settle test (395 of 400 visits time out).
+- **"Loose" is unstable in practice.** $K_pK_d = K_i$ puts it exactly on the Routh stability boundary. Its oscillation never decays, and the hover error grows from plant to plant. In seed 0 the hover RMS rises from 1.55–1.91 m at the first three plants to 18.41–22.06 m at the last three. With the acceleration and speed limits removed it still reaches 10.27–14.63 m, so the gains are the cause, not saturation. Mean hover RMS is 740.6 cm and $C_{eff}$ = 0.002. Marginal stability explains the growth but not the whole failure: with $K_i = 0$ (a stable PD loop) Loose still reaches only $C_{eff}$ = 0.225 ± 0.018. Its PD part alone is too soft and too lightly damped ($\zeta$ = 0.071) to hold the drone over the plant.
 - **Turbulence hardly matters; the sinusoidal gust dominates.** Raising $\sigma_w$ from 0 to 0.5 m/s² moves Tuned only from 0.724 to 0.711. Tight stays at 0.977–0.979. The white-noise turbulence is drawn independently at every 0.02 s step, so its effect on position averages out. The 0.3 m/s² gust at a 4 s period is what separates the gain sets. The card's trade-off curve is therefore flat for all three, and the ranking Tight > Tuned > Loose holds at every $\sigma_w$.
 
 ### Field Overview
@@ -156,7 +156,7 @@ Tuned PID, seed 0. The drone (red) flies the tour; a blue disc of radius $\sigma
 | Hover starts exactly on the plant with zero velocity; transit moves the drone kinematically | One continuous closed-loop flight: the PID tracks a reference moving at 1.0 m/s, then holds the plant; spraying starts after a settle test (0.3 m, 0.1 m/s, 0.2 s; 10 s time-out) | Starting each hover at a perfect state hides arrival transients, which are what separates the gain sets. The settle test and time-out are added parameters. |
 | GPS error 0.1 m listed but unused | GPS noise on the position the PID sees; the hover error uses the true position | The card lists it as a sensor property. |
 | "Tight: risk of actuator saturation" without a limit | 3 m/s² per-axis acceleration limit and 10 m/s speed limit, enforced with asserts | Saturation needs a limit to be measurable (X4). |
-| Loose "under-damped, high steady-state error"; Tuned "critically damped" | Loose is marginally stable ($K_pK_d = K_i$); Tuned has $\zeta$ = 0.177 | Derived above and confirmed by the simulation. Card labels corrected. |
+| Loose "under-damped, high steady-state error"; Tuned "critically damped" | Loose is marginally stable ($K_pK_d = K_i$); Tuned has closed-loop $\zeta$ = 0.142 (0.177 for the PD part alone) | Derived above and confirmed by the simulation. Card labels corrected. |
 | Sweep with 20 $\sigma_w$ values and one run per value | 6 values × 10 seeds, mean ± std, common random numbers | Multi-seed results are needed to separate gain sets from noise (X2); runtime. |
 | NN "within 20–25 % of optimum" | NN is 6.8 % longer than 2-opt on this layout | Printed for reference; the true optimum is not computed. |
 | Field-overview marker size scaled by dose | Marker colour and size both follow the dose (colour scale 0.6–1.0) | Readability. |

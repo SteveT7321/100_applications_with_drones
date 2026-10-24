@@ -246,7 +246,8 @@ def plot_field_overview(plants, tour, mc, out_dir):
     sc = ax.scatter(plants[:, 0], plants[:, 1], c=dose_by_plant, cmap='RdYlGn', vmin=0.6,
                     vmax=1.0, s=60 + 140 * dose_by_plant, edgecolors='k', zorder=5)
     for n, p in enumerate(tour):
-        ax.annotate(str(n + 1), plants[p], xytext=(6, 6), textcoords='offset points',
+        ax.annotate(str(n + 1), plants[p], xytext=(6, 6) if n % 2 == 0 else (-16, -14),
+                    textcoords='offset points',
                     fontsize=8, zorder=7,
                     bbox=dict(boxstyle='round,pad=0.1', fc='white', ec='none', alpha=0.7))
     ax.plot(*DEPOT, 's', color='k', ms=10, label='depot')
@@ -425,6 +426,14 @@ if __name__ == '__main__':
               f"(> 0 needed for stability)")
         print(f"  {c}: omega_n = {wn:.3f} rad/s, zeta (PD part) = {zeta:.3f}, "
               f"steady gust amplitude (PD, no I) = {100 * amp:.1f} cm at omega_w = {w:.3f} rad/s")
+        poles = np.roots([1.0, g['kd'], g['kp'], g['ki']])
+        cplx = poles[np.abs(poles.imag) > 1e-9]
+        dom = cplx[np.argmax(cplx.real)] if len(cplx) else poles[np.argmax(poles.real)]
+        zeta3 = round(-dom.real / abs(dom), 6) + 0.0
+        jw = 1j * w
+        amp3 = A_WIND * abs(jw / (jw ** 3 + g['kd'] * jw ** 2 + g['kp'] * jw + g['ki']))
+        print(f"  {c}: full PID loop poles " + ', '.join(f'{z.real:.3f}{z.imag:+.3f}j' for z in poles)
+              + f"; dominant zeta = {zeta3:.3f}; steady gust amplitude (PID) = {100 * amp3:.1f} cm")
     print(f'  Monte Carlo: {N_SEEDS} seeds, sigma_w = {SIGMA_W_BASE} m/s^2, CRN across gain sets')
     for c in CFG:
         R = mc[c]
@@ -459,6 +468,10 @@ if __name__ == '__main__':
           f"{np.round(r_l['rms'][:3], 2).tolist()} / {np.round(r_l['rms'][-3:], 2).tolist()}; "
           f"without limits {np.round(r_nl['rms'][:3], 2).tolist()} / "
           f"{np.round(r_nl['rms'][-3:], 2).tolist()}")
+    pd_loose = [run_mission(plants, tour, dict(PID_CONFIGS['Loose'], ki=0.0), SIGMA_W_BASE, s)['c_eff']
+                for s in SEEDS]
+    print(f"  Loose with Ki = 0 (PD only, stable): C_eff {np.mean(pd_loose):.3f} ± {np.std(pd_loose):.3f} "
+          f"over {N_SEEDS} seeds")
     rm = mc[MAIN][PLOT_SEED]
     print(f"  Seed {PLOT_SEED} {MAIN}: C_eff {rm['c_eff']:.3f}, mean RMS "
           f"{100 * rm['rms'].mean():.1f} cm, mission {rm['time']:.1f} s, worst visit "
