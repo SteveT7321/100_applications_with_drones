@@ -1,6 +1,6 @@
 # S057 3D Upgrade — Wildlife Census
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S057 original](../S057_wildlife.md)
 
 ---
@@ -20,9 +20,12 @@ This 3D upgrade introduces:
 1. **Terrain-following flight** — the drone adjusts its barometric altitude at each
    waypoint so that its AGL height stays at the commanded survey altitude $h_{AGL}$,
    reading ground elevation from a Digital Elevation Model (DEM) grid.
-2. **Altitude-dependent camera footprint** — because AGL height is now truly constant,
-   the strip width $w = 2 h_{AGL}\tan(\theta_{FOV})$ is uniform per pass and the
-   strip-transect correction remains valid.
+2. **Altitude-dependent camera footprint** — because the nadir AGL height is now nearly
+   constant, the strip width $w = 2 h_{AGL}\tan(\theta_{FOV})$ is nearly uniform per pass and
+   the strip-transect correction remains approximately valid. (Not exactly: on a side
+   slope the ground rises or falls across the track, so the footprint edge on the ground
+   moves even at constant nadir AGL; the implementation finds 0.2–1.3 % of the area left
+   uncovered with perfect tracking.)
 3. **Multi-altitude strip overlap** — three altitude tiers ($h_{AGL} \in \{8, 20, 40\}$ m)
    are compared; the overlap fraction between adjacent passes is computed from the actual
    footprint width, and double-count probability is derived exactly.
@@ -81,6 +84,11 @@ $$z_{terrain}(x, y) = \frac{\Delta z_{max}}{K} \sum_{k=1}^{K}
 with $K = 5$ harmonics, wavelengths $\lambda \in [80, 300]$ m, and random phase offsets
 $\phi \in [0, 2\pi)$.  The DEM is evaluated on a $100 \times 100$ grid and bilinearly
 interpolated at arbitrary $(x, y)$.
+
+**Relief correction**: with amplitude $\Delta z_{max}/K$ per harmonic the sum spans
+$\pm\Delta z_{max}$, i.e. up to 60 m peak-to-valley, not 30 m (the implementation measured
+27.4–53.6 m over 30 random phase sets). The raw sum is therefore shifted and rescaled to
+exactly $[0, \Delta z_{max}]$ = [0, 30] m.
 
 ### Terrain-Following Altitude Command
 
