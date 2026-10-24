@@ -124,7 +124,7 @@ def gains():
 
 # ── Simulation (vectorised over trials) ───────────────────────────────────────
 
-def simulate(ctrl, seeds, tau=TAU_PRED, keep=False, land=True):
+def simulate(ctrl, seeds, tau=TAU_PRED, keep=False, land=True, glide=GLIDE):
     """land=False: track the deck for the whole horizon (no touchdown, no strike check) to
     measure how often all three landing conditions hold after T_AVAIL0."""
     Ad, Bd, _, K, _ = gains()
@@ -146,7 +146,7 @@ def simulate(ctrl, seeds, tau=TAU_PRED, keep=False, land=True):
         t = k * DT
         zp = platform_z(t)
         # glide slope: approach from above, descend onto the deck as the drone centres over it
-        h_off = GLIDE * np.hypot(x[:, 0] - X_TARGET, x[:, 1] - Y_TARGET)
+        h_off = glide * np.hypot(x[:, 0] - X_TARGET, x[:, 1] - Y_TARGET)
         # --- controller ---
         if ctrl == 'pid':
             ref = np.column_stack([np.full(n, X_TARGET), np.full(n, Y_TARGET), zp + h_off])
@@ -231,7 +231,8 @@ def run_simulation():
     track = {c: simulate(c, seeds, land=False) for c in CTRL}
     track_single = {c: simulate(c, [SEED], land=False, keep=True) for c in CTRL}
     sweep = [simulate('lqr_look', list(range(N_SWEEP)), tau=tau) for tau in TAU_SWEEP]
-    return single, mc, sweep, track, track_single
+    noglide = {c: simulate(c, seeds, glide=0.0) for c in CTRL}     # ablation: no glide slope
+    return single, mc, sweep, track, track_single, noglide
 
 
 def steady_state_errors(K):
@@ -414,7 +415,7 @@ def save_animation(single, out_dir):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    single, mc, sweep, track, track_single = run_simulation()
+    single, mc, sweep, track, track_single, noglide = run_simulation()
     Ad, Bd, Kc, Kd, rho = gains()
     ss = steady_state_errors(Kd)
     print('=== S079 Offshore Wind Farm Installation Assistance — Results ===')
@@ -464,6 +465,9 @@ if __name__ == '__main__':
     print(f'  Paired first-window outcome, acceleration FF vs LQR: both {int(np.sum(a & b))}, '
           f'only acc-FF {int(np.sum(a & ~b))}, only LQR {int(np.sum(~a & b))}, neither '
           f'{int(np.sum(~a & ~b))}')
+    print(f'  Ablation without the glide slope ({N_TRIALS} trials): ' + '; '.join(
+        f'{LABELS[c]}: first window {100 * noglide[c]["first"].mean():.1f}%, deck strike '
+        f'{100 * noglide[c]["crashed"].mean():.1f}%' for c in CTRL))
     print(f'  Look-ahead sweep ({N_SWEEP} trials): ' + ', '.join(
         f'{t:.2f} s -> first {100 * r["first"].mean():.0f}% / strike {100 * r["crashed"].mean():.0f}%'
         for t, r in zip(TAU_SWEEP, sweep)))
