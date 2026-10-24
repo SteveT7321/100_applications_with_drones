@@ -21,10 +21,11 @@ All five drones use one battery model in every phase and must never fly on an em
 
 **Compared variants**. All variants fly the same 200 missions: the throws, the mocap noise, the survivor positions and the sensor draws depend only on the seed (common random numbers).
 
-1. **Phase 1 guidance law**: predictive catch point (PCP, the chosen law) vs proportional navigation (PN, the card's original law).
-2. **Battery capacity**: the card's battery (×1) and capacity multipliers ×1.25, ×1.5, ×2, ×3 and ×5.
+1. **Phase 1 guidance law**: predictive catch point (PCP, the card's law) vs proportional navigation (PN, the card's comparison law).
+2. **Battery capacity**: the card's battery (×1) and capacity multipliers ×1.05, ×1.1, ×1.25, ×1.5, ×2, ×3 and ×5.
 3. **Phase 2 split**: the card's nearest-neighbour heuristic vs an exhaustive minimum-makespan split.
-4. **Probes**: no landing reserve (×1), sequential instead of joint SAR search (×5), and Phase 4 ablations (no ORCA, identity assignment, the card's PID without anti-windup, PD only).
+4. **×1 factorial probe**: Phase 2 split {NN, exhaustive} × Phase 4 controller {card PID with anti-windup, PD only} × hover accounting {hover costs $c_{hover}$ (main), the card code's accounting (only $c_{fly}\|\mathbf{v}\|$ while flying, plus the delivery dwell)}, and the failsafe margin (0.03, 0.01, 0.005).
+5. **Other probes**: no landing reserve (×1), sequential instead of joint SAR search (×5), and Phase 4 ablations (no ORCA, identity assignment, the card's PID without anti-windup, PD only).
 
 ---
 
@@ -103,7 +104,8 @@ Drones are linked when they are at most 80 m apart. Connectivity to Drone E is t
 | Start positions A, B, C, D, E | (50, 90, 2), (45, 92, 2), (55, 92, 2), (50, 88, 2), (50, 86, 15) m; E holds by hovering |
 | Communication range | 80 m, multi-hop relay, sequencer on E |
 | Battery c_fly / c_hover / reserve | 0.004 m⁻¹ / 0.003 s⁻¹ / 15 %; failsafe margin 0.03 above $c_{fly} z$ |
-| Capacity multiplier κ | 1 (card), 1.25, 1.5, 2, 3, 5 |
+| Capacity multiplier κ | 1 (card), 1.05, 1.1, 1.25, 1.5, 2, 3, 5 |
+| Failsafe margin probe | 0.03 (main), 0.01, 0.005 |
 | Fleet acceleration limit / go-to braking | 10 m/s² / 5 m/s² (phases 2–4) |
 | Phase 1 catch-zone centre / launcher radius | (80, 80, 0) m / 8 m |
 | Phase 1 throws | S094: U(7, 13) m/s, U(35°, 60°), ±30°, release 1.5 m |
@@ -134,7 +136,7 @@ conda activate drones
 python src/05_special_entertainment/s100_grand_challenge.py
 ```
 
-Runtime ≈ 4.5 min (271 s when run alone; 343–344 s when three runs share the CPU). The 200 missions are vectorised. Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading.
+Runtime ≈ 6–8 min (373 s on an otherwise idle machine; 466 s while another job loaded the CPU). The 200 missions are vectorised. Stdout and every output file are byte-identical across two single-threaded runs and one run with default threading.
 
 ---
 
@@ -148,6 +150,8 @@ Runtime ≈ 4.5 min (271 s when run alone; 343–344 s when three runs share the
 | PN, battery ×1 | 23.5 % | 100.0 % | 10.5 % | 0.0 % | 0/200 | 0/200 | 2.29 ± 1.23 |
 | PCP, ×1, exhaustive Phase 2 | 100.0 % | 100.0 % | 10.5 % | 0.0 % | 0/200 | 0/200 | 3.81 ± 0.92 |
 | PCP, ×1, no landing reserve (probe) | 100.0 % | 100.0 % | 10.5 % | 100.0 % | 200/200 | 21/200 | 7.32 ± 0.92 |
+| PCP, battery ×1.05 | 100.0 % | 100.0 % | 13.5 % | 0.0 % | 0/200 | 0/200 | 3.90 ± 1.03 |
+| PCP, battery ×1.1 | 100.0 % | 100.0 % | 14.0 % | 100.0 % | 200/200 | 28/200 | 7.42 ± 1.04 |
 | PCP, battery ×1.25 | 100.0 % | 100.0 % | 16.0 % | 100.0 % | 200/200 | 32/200 | 7.48 ± 1.10 |
 | PCP, battery ×1.5 | 100.0 % | 100.0 % | 19.0 % | 100.0 % | 200/200 | 38/200 | 7.57 ± 1.18 |
 | PCP, battery ×2 | 100.0 % | 100.0 % | 28.0 % | 100.0 % | 200/200 | 56/200 | 7.84 ± 1.35 |
@@ -160,17 +164,28 @@ Score distributions: ×1 PCP gives 3.5 in 179 missions and 6.5 in 21. ×5 PCP gi
 
 ### Key findings
 
-- **With the card's battery, no mission completes.**
-  - Every one of the 200 missions fails Phase 4 and runs to 330 s, so the score is 3.81 ± 0.92 (3.5 in 179 missions, 6.5 in 21).
+- **With the card's battery and the card's Phase 2 heuristic, no mission completes.**
+  - With the main configuration (card NN split, card PID with anti-windup, hover costs $c_{hover}$), every one of the 200 missions fails Phase 4 and runs to 330 s, so the score is 3.81 ± 0.92 (3.5 in 179 missions, 6.5 in 21).
   - **The first drone to give up is always courier B**, in all 200 missions, 7.60 s after Phase 4 starts. Its two trips in Phase 2 (171.5 m) leave it 29.5 %. The climb to its 25 m star tip then reaches the point where it can just still land ($c_{fly} z + 3$ %).
-  - **Probe**: without the landing reserve, all 200 formations converge (21 perfect scores). But B then ends the show with 3.9 % on average (minimum 3.5 %), less than the 10.0 % it needs to land from 25 m.
-  - So with the card's numbers the show is only possible if the drones may finish it unable to land. The card's 0.004 m⁻¹ cruise cost (a 250 m range) is too small for a 100 m arena flown in four phases.
-  - The exhaustive Phase 2 split leaves B 36.1 % instead of 29.5 %, but Phase 4 still converges in 0/200 missions.
+  - **The cause is the combination of three choices, not the card's battery alone.** The ×1 factorial probe (200 missions each; Phase 4 converged, courier B's final battery mean / min):
+
+    | Phase 2 split | Phase 4 controller | Hover costs $c_{hover}$ (main) | Card-code accounting |
+    |------|------|------:|------:|
+    | Card NN | Card PID + anti-windup | 0/200 | 0/200 |
+    | Card NN | PD only | 0/200 | 0/200 |
+    | Exhaustive | Card PID + anti-windup | 0/200 | **200/200** (B 16.1 % / 16.1 %) |
+    | Exhaustive | PD only | **200/200** (B 15.8 % / 15.7 %) | **200/200** (B 16.3 % / 16.3 %) |
+
+    - With the card's NN split, B fails in every combination tried: it flies 171.5 m in Phase 2 and lands with 29.5 %.
+    - With the exhaustive split (B flies 154.8 m, 36.1 % left), the mission completes in all 200 missions if either the formation converges fast (PD: 11.9 s instead of 29.3 s, so B hovers less at its tip) or hovering is free as in the card's code. Only the main configuration, which has both the integral term's slow tail and the hover charge, fails. Every converged combination scores 7.32 ± 0.92 (21 perfect), and B ends above the 15 % reserve.
+    - The failsafe margin matters for the exhaustive split with the card PID: margin 0.01 still gives 0/200, margin 0.005 gives 143/200 (B lands on its failsafe in 57).
+  - **Probe**: without the landing reserve, all 200 NN-split formations converge (21 perfect scores). But B then ends the show with 3.9 % on average (minimum 3.5 %), less than the 10.0 % it needs to land from 25 m.
+  - **Capacity threshold** (main configuration): ×1.05 still gives 0/200 formed, ×1.1 gives 200/200. The card's battery is about 5–10 % short for the card's NN split with the card's PID.
 - **The battery also limits the search.**
   - At ×1 the scout ends Phase 3 with a battery abort in 179 of 200 missions, after a search path of 142.32 ± 17.93 m. It locates both survivors in 21 missions (10.5 %).
-  - Phase 3 success rises with capacity: 10.5 → 16.0 → 19.0 → 28.0 → 44.0 → 51.0 % for ×1 … ×5.
+  - Phase 3 success rises with capacity: 10.5 → 13.5 → 14.0 → 16.0 → 19.0 → 28.0 → 44.0 → 51.0 % for ×1, ×1.05, ×1.1, ×1.25, ×1.5, ×2, ×3, ×5.
   - At ×5 no battery rule binds: the scout ends with 60.27 ± 17.66 % and no drone needs a failsafe landing. The 240 s deadline then ends the search in 98 of 200 missions (102 find both).
-  - Phase 4 converges in every mission from ×1.25 on.
+  - Phase 4 converges in every mission from ×1.1 on (main configuration).
 - **PCP is the right Phase 1 law.**
   - Per throw, PCP catches 91.4 % (914/1000, 95 % CI [89.5, 93.0]) and PN 7.3 % (73/1000), on the same 1000 throws. That is PCP only 841, neither or both 159, PN only 0.
   - These rates match S094 (93.5 ± 1.6 % and 6.7 ± 1.3 %).
@@ -184,7 +199,7 @@ Score distributions: ×1 PCP gives 3.5 in 179 missions and 6.5 in 21. ×5 PCP gi
 - **The card's PID integral slows Phase 4; ORCA does not engage.**
   - With the Hungarian assignment, the closest two drones ever get in Phase 4 is 4.87 m, and the 1.2 m ORCA zone is never entered. Removing ORCA changes nothing.
   - **Probe**: the PD controller ($K_i = 0$) converges in 11.9 s, against 29.3 s with the card's PID plus anti-windup. The integral term overshoots the show plane by 0.155 m and decays slowly.
-  - Without anti-windup (the card's PID as written), only 94/200 formations converge (in 105.5 s), with a 3.93 m overshoot and pairs as close as 0.75 m.
+  - Without anti-windup (the card's PID as written), 94/200 formations converge, after 105.5 ± 0.3 s (max 108.2 s), with a 3.93 m overshoot and pairs as close as 0.75 m. The other 106 do not diverge: they are cut off by the standalone horizon (330 s minus the end of Phase 3, 90.74 ± 2.73 s, at most 103.7 s), which is shorter than the slowest convergence; none with a longer horizon failed.
 - **The Hungarian assignment prevents near-collisions that the identity assignment creates, and ORCA-lite does not fix them.**
   - With the identity assignment, paths cross: 25 of 200 missions bring a pair within 1.2 m.
   - ORCA-lite barely changes this. In those 25 missions it raises the minimum separation in 16 and lowers it in 1, but the mean only moves from 0.76 m to 0.77 m. Pairs closer than 0.5 m: 4 missions without ORCA, 4 with it. The overall minimum even drops from 0.26 m to 0.19 m.
@@ -214,7 +229,7 @@ Left: mission 0 — A takes off from the deck, settles on its station and catche
 | Card nearest-neighbour | WP1, WP3 | WP2 | 43.3 s / 247.2 m | 45.9 s | 171.5 / 75.7 m | 29.5 / 68.8 % |
 | Exhaustive min-makespan | WP1, WP2 | WP3 | 40.0 s / 263.2 m | 42.7 s | 154.8 / 108.4 m | 36.1 / 55.7 % |
 
-The card heuristic minimises total distance (247.2 m) but gives B two trips totalling 171.5 m. The exhaustive split flies 16.0 m more in total, finishes 3.2 s earlier and leaves B 6.6 percentage points more battery. In the full mission at ×1 this does not change the outcome (Phase 4 still fails in all 200).
+The card heuristic minimises total distance (247.2 m) but gives B two trips totalling 171.5 m. The exhaustive split flies 16.0 m more in total, finishes 3.2 s earlier and leaves B 6.6 percentage points more battery. In the full mission at ×1 with the main configuration this alone does not change the outcome (Phase 4 still fails in all 200), but combined with a PD controller or the card code's hover accounting it does (all 200 converge; see the factorial probe in the key findings).
 
 The battery trigger is exercised by the c_fly sweep (Phase 2 alone):
 
@@ -237,7 +252,7 @@ Left: routes (solid NN, dashed exhaustive). Centre: battery during Phase 2. Righ
 
 At ×5, 245 survivors were located by a confirmed hit and 11 by the 3 × 3 patch rule. All 11 patch declarations put the survivor more than r_s = 3 m from its true position (up to 24.58 m). The belief rule can therefore declare a survivor at the wrong place, and the sequencer cannot tell. A confirmed hit is within 3 m by construction (the estimate is the scout position). The scout sees 19.73 ± 11.80 false alarms per mission at ×5.
 
-Top: final belief maps of mission 0 at ×5 (log colour scale) with the scout's path, the LKP (cyan ×), the true survivor (green ○) and the declared location (blue +). Bottom left: entropy of the belief of the survivors not yet found, for mission 0 at ×1 and ×5 (dotted lines: detections). Bottom right: how Phase 3 ends for each capacity:
+Top: final belief maps of mission 0 at ×5 (log colour scale) with the scout's path, the LKP (cyan ×), the true survivor (green ○) and the declared location (blue +). Bottom left: entropy of the belief of the survivors not yet found, for mission 0 at ×1 and ×5, logged every 1 s while the scout is searching (dotted lines: detections). The curve stops when the search ends, so it does not drop to 0 after the last detection. Bottom right: how Phase 3 ends for each capacity:
 
 ![Phase 3](./phase3_sar.png)
 
@@ -280,17 +295,17 @@ Mission 0 at ×1 (left) and ×5 (right) side by side, one frame per 1.5 s of mis
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| Phase 1: PNG intercept of a rogue drone | Aerial ball catching with S094's predictive catch point; PN kept only as a comparison (card revised in a separate commit) | User decision. S094 found PCP catches 93.5 % and PN 6.7 % of throws. |
+| Phase 1: aerial ball catching with S094's predictive catch point, PN as the comparison law | As in the card (Phase 1 was revised to ball catching by user decision in a separate commit before this build) | — |
 | Show altitude $z_{show} = 50$ m | 25 m (card fixed) | The arena ceiling is 30 m. |
 | SAR zone "the southern half of the arena, $y \in [0, 50]$" | $x, y \in [0, 50]$ m, the south-west quadrant (card fixed) | The card's own grid is 50 × 50 m, a quarter of the arena. |
 | $r_{comm} = 80$ m "effectively the entire arena" | Multi-hop 80 m links; events wait for a connection to E (card fixed) | The arena diagonal is 141 m. The scout leaves E's range in 80/200 missions at ×5. |
-| $c_{fly}$ in s⁻¹m⁻¹; battery described for Phase 2 only; E holds with no energy cost in the card code | $c_{fly}$ in m⁻¹; one model $\max(c_{hover}, c_{fly}\|\mathbf{v}\|)$ for every drone in every phase, hover costs energy (card fixed) | Units; the card's code also drains the other drones but never checks them. A drone must not fly on an empty battery. |
+| $c_{fly}$ in s⁻¹m⁻¹; battery described for Phase 2 only; the card code charged only $c_{fly}\|\mathbf{v}\|$ to the scout and the formation and nothing to E's hover | $c_{fly}$ in m⁻¹; one model $\max(c_{hover}, c_{fly}\|\mathbf{v}\|)$ for every drone in every phase, hover costs energy (card text and code fixed); the card code's accounting is kept as a probe | Units; hovering is not free, and a drone must not fly on an empty battery. The choice is decisive at ×1 with the exhaustive split (0/200 vs 200/200). |
 | One package per courier per leg, but the card code delivers several packages per route without reloading, and both couriers land on one base point | One package per trip, round trips from each courier's own pad, 3 s reload (card fixed) | Capacity limit (X4) and no two drones landing on the same spot. |
 | NN heuristic "alternating assignments" | Global nearest (waypoint, courier) pair; with round trips this is nearest pad | "Alternating" is not defined, and the card code does not alternate. |
 | Phase 2 binary in the card code, prorated in the text | Prorated: 1 point per package delivered by 160 s (card code fixed) | Follows the text and $w_2 = 3$. |
 | FSM ends Phase 4 on the mean error $\varepsilon_f \le 0.15$ | All five within 0.15 m (card fixed) | The text and the card code use all five. |
 | No battery rule for the scout | Card's battery trigger with "home" = farthest star tip plus the landing (card updated) | Otherwise the card's 80 s search alone would use 1.28 of a battery at 4 m/s. |
-| — | Battery failsafe: land when $E < c_{fly} z + 0.03$; probe without it | Every drone must be able to land. The probe shows that the ×1 result depends on this rule. |
+| — | Battery failsafe: land when $E < c_{fly} z + 0.03$; probes without it and with margins 0.01 and 0.005 | Every drone must be able to land. The ×1 result depends on this rule (no reserve: 200/200 converge with NN; margin 0.005: 143/200 with the exhaustive split). |
 | PID as written | Conditional-integration anti-windup and no derivative kick (as in S085); card PID and PD only printed as ablations | Without anti-windup only 94/200 formations converge, with 3.93 m overshoot. |
 | "Holding orbit" for E | Station-keeping hover at (50, 86, 15) m | The orbit is not specified; hovering costs $c_{hover}$. |
 | Velocity-only kinematics | Fleet acceleration limit 10 m/s², braking-curve go-to, descent limited near the ground; Phase 1 at S094's 2 ms | No unbounded acceleration or ground penetration (X4); S094's catch model needs 2 ms. |
@@ -304,7 +319,7 @@ Mission 0 at ×1 (left) and ×5 (right) side by side, one frame per 1.5 s of mis
 
 ## Extensions
 
-1. **Energy-aware task allocation across phases**: choose the Phase 2 split, the Phase 4 assignment and the scout's search budget jointly, so that the drone with the least battery gets the nearest star tip; at ×1 this is the only way to keep B in the show.
+1. **Energy-aware task allocation across phases**: choose the Phase 2 split, the Phase 4 assignment and the scout's search budget jointly, so that the drone with the least battery gets the nearest star tip. At ×1 the exhaustive split combined with a faster formation controller already keeps B in the show; a joint optimisation could also leave the scout more search time.
 2. **Re-planning after a failure**: when a drone lands on its failsafe, re-solve the assignment for a four-drone figure instead of failing Phase 4.
 3. **Better search policies**: a coverage pattern or expected-information-gain policy instead of the greedy maximum, and a guard against the patch rule's wrong declarations (11 of 256 at ×5).
 4. **Formation tuning**: PD or a smaller $K_i$ halves the time spent in Phase 4 (11.9 s vs 29.3 s).

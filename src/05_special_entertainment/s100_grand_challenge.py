@@ -123,7 +123,8 @@ FAILSAFE_MARGIN = 0.03       # battery fraction kept for braking + a vertical la
 
 # ── Monte Carlo ───────────────────────────────────────────────────────────────
 N_SEEDS = 200
-KAPPAS = [1.0, 1.25, 1.5, 2.0, 3.0, 5.0]   # battery capacity multiplier sweep
+KAPPAS = [1.0, 1.05, 1.1, 1.25, 1.5, 2.0, 3.0, 5.0]   # battery capacity multiplier sweep
+MARGIN_SWEEP = [0.01, 0.005]   # failsafe margin probe (exhaustive split, card PID)
 C_FLY_SWEEP = [0.004, 0.0045, 0.005, 0.0055, 0.006, 0.008]
 RELOAD_SWEEP = [2.0, 5.0, 10.0, 15.0, 20.0, 25.0]
 SEED_P1, SEED_P3 = 1001, 3001
@@ -315,6 +316,7 @@ def assemble_phase1(balls):
     K1 = int(k_track.max())
     track_ticks = np.zeros((S, K1 + 1, 3))
     e_ticks = np.zeros((S, K1 + 1))
+    e_fly = np.zeros((S, K1 + 1))
     p1_len = np.zeros(S)
     for s in range(S):
         m = int(k_track[s] * SUB - cut_step[s])
@@ -329,6 +331,9 @@ def assemble_phase1(balls):
         assert np.all(spd <= V1 * (1 + 1e-9))
         rate = np.maximum(C_HOVER, C_FLY * spd)            # battery model (all phases)
         cum = np.concatenate([[0.0], np.cumsum(rate * DT1)])
+        cum_f = np.concatenate([[0.0], np.cumsum(C_FLY * spd * DT1)])   # no hover charge
+        e_fly[s, :k_track[s] + 1] = cum_f[::SUB]
+        e_fly[s, k_track[s] + 1:] = cum_f[-1]
         tt = tr[::SUB]
         track_ticks[s, :k_track[s] + 1] = tt
         track_ticks[s, k_track[s] + 1:] = tt[-1]
@@ -342,7 +347,7 @@ def assemble_phase1(balls):
             B = balls[first[s]]
             t_event[s] = float(B['launch'][s]) * DT1 + float(B['t_catch'][s])
     return dict(S=S, k1_end=tick, k_track=k_track, success=success, first=first,
-                track=track_ticks, e_used=e_ticks, t_event=t_event, path_len=p1_len,
+                track=track_ticks, e_used=e_ticks, e_fly=e_fly, t_event=t_event, path_len=p1_len,
                 tracks_2ms=tracks)
 
 
@@ -609,7 +614,9 @@ def connectivity(pos):
 # ═════════════════════════════════════════════════════════════════════════════
 def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
                 assignment='hungarian', anti_windup=True, policy='greedy', failsafe_on=True,
-                log=False, phase2_only=False):
+                ki=KI, hover_cost=True, margin=FAILSAFE_MARGIN, log=False, phase2_only=False):
+    """hover_cost=False is the card code's accounting: only c_fly * |v| while flying
+    (hovering free), plus c_hover * tau_deliver for each delivery dwell."""
     S = len(seeds)
     plan = plan if plan is not None else nn_plan()
     cfly, chov = c_fly / kappa, C_HOVER / kappa
@@ -708,7 +715,7 @@ def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
         mp = act[:, None] & (mode == PID)
         if mp.any():
             p_p, v_p, integ, e_prev, close = formation_step(pos, vel, goal, integ, e_prev, mp,
-                                                            orca, anti_windup)
+                                                            orca, anti_windup, ki)
             orca_steps += np.any(close & mp[:, :, None], axis=(1, 2))
             new_v[mp] = v_p[mp]
             new_p[mp] = p_p[mp]
@@ -730,11 +737,11 @@ def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
         p3_path += np.where(act & (dst == 1), spd[:, 3] * DT, 0.0)
         a_peak = np.maximum(a_peak, np.where(moved, acc, 0.0))
         # battery
-        rate = np.maximum(chov, cfly * spd)
+        rate = np.maximum(chov, cfly * spd) if hover_cost else cfly * spd
         drain = act[:, None] & air & (mode != TRACK)
         E = E - np.where(drain, rate * DT, 0.0)
         if on_track.any():
-            E[on_track, 0] = 1.0 - p1['e_used'][on_track, k] / kappa
+            E[on_track, 0] = 1.0 - p1['e_used' if hover_cost else 'e_fly'][on_track, k] / kappa
         assert np.all(E >= -1e-12), 'flying on an empty battery'
         pos, vel = new_p, new_v
         # Phase 1 handover: the catcher has stopped (2 ms brake); it lands below its hold
@@ -829,6 +836,8 @@ def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
                     w = plan[c][ptr[s, c]]
                     delivered[s, w] = True
                     t_deliver[s, w] = t
+                if not hover_cost:
+                    E[m3d, d] -= chov * TAU_DELIVER      # card code: dwell charged once
                 ptr[m3d, c] += 1
                 cst[m3d, c] = 4
                 target[m3d, d] = PADS[c]
@@ -881,7 +890,7 @@ def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
                         Dtgt_log[go, k] = txy
         # battery failsafe: land vertically while a landing is still affordable
         fs = (act[:, None] & air & ~failsafe & (mode != TRACK) & failsafe_on
-              & (E < cfly * pos[..., 2] + FAILSAFE_MARGIN))
+              & (E < cfly * pos[..., 2] + margin))
         if fs.any():
             failsafe |= fs
             t_fs[fs] = t
@@ -1010,7 +1019,7 @@ def run_mission(p1, seeds, kappa=1.0, plan=None, c_fly=C_FLY, orca=True,
                p3_delay=p3_delay, orca_steps=orca_steps, p4_path=p4_path,
                p4_start=p4_start_pos, p4_vel=p4_start_vel, v_peak=v_peak, a_peak=a_peak, k_last=k_last,
                k3_start=k3_start, kappa=kappa, p3_switch=p3_switch, p3_path=p3_path,
-               belief=(unpad(Braw, Zb) if Braw is not None else None))
+               belief=(unpad(Braw, Zb) if (Braw is not None and log) else None))
     if log:
         out.update(pos_log=pos_log, E_log=E_log, ph_log=ph_log, H_log=H_log, Dtgt_log=Dtgt_log)
     return out
@@ -1045,6 +1054,20 @@ def run_simulation():
     M['pn1'] = run_mission(pn, seeds, kappa=1.0)
     M['exh1'] = run_mission(pc, seeds, kappa=1.0, plan=plans['exh'])
     M['nofs1'] = run_mission(pc, seeds, kappa=1.0, failsafe_on=False)
+    # x1 factorial probe: Phase 2 split x Phase 4 controller x hover accounting
+    for sp in ['nn', 'exh']:
+        for ct in ['aw', 'pd']:
+            for hv in ['hov', 'nohov']:
+                key = f'x1_{sp}_{ct}_{hv}'
+                if key == 'x1_nn_aw_hov':
+                    M[key] = M['k1']
+                elif key == 'x1_exh_aw_hov':
+                    M[key] = M['exh1']
+                else:
+                    M[key] = run_mission(pc, seeds, kappa=1.0, plan=plans[sp],
+                                         ki=(KI if ct == 'aw' else 0.0), hover_cost=(hv == 'hov'))
+    for mg in MARGIN_SWEEP:
+        M[f'x1_exh_aw_m{mg:g}'] = run_mission(pc, seeds, kappa=1.0, plan=plans['exh'], margin=mg)
     for kap in KAPPAS[1:]:
         M[f'k{kap:g}'] = run_mission(pc, seeds, kappa=kap, log=(kap == KAPPAS[-1]))
     M['pn5'] = run_mission(pn, seeds, kappa=KAPPAS[-1])
@@ -1256,6 +1279,20 @@ def report(R):
         + f'; courier B battery after Phase 2: NN {100 * R["p2"]["nn"]["E_final"][0, 1]:.1f}%, '
         f'exhaustive {100 * R["p2"]["exh"]["E_final"][0, 1]:.1f}%; x1 Phase 4 converged NN '
         f'{int(r1["conv_ok"].sum())}, exhaustive {int(M["exh1"]["conv_ok"].sum())}')
+    print('  x1 factorial probe (Phase 4 converged / perfect / score / courier B final battery mean, min):')
+    for sp, spn in [('nn', 'card NN split'), ('exh', 'exhaustive split')]:
+        for ct, ctn in [('aw', 'card PID + anti-windup'), ('pd', 'PD only (K_i = 0)')]:
+            for hv, hvn in [('hov', 'hover costs c_hover'), ('nohov', 'card-code accounting')]:
+                r = M[f'x1_{sp}_{ct}_{hv}']
+                fsb = int(np.sum(r['failsafe'][:, 1]))
+                print(f'    {spn:<16} {ctn:<23} {hvn:<21} P4 {int(r["conv_ok"].sum()):3d}/{S}, perfect '
+                      f'{int(np.sum(np.abs(r["score"] - 10) < 1e-9)):3d}, score {_ms(r["score"])}, B '
+                      f'{100 * r["E_final"][:, 1].mean():.1f}% / {100 * r["E_final"][:, 1].min():.1f}%, '
+                      f'B failsafe {fsb}')
+    for mg in MARGIN_SWEEP:
+        r = M[f'x1_exh_aw_m{mg:g}']
+        print(f'    exhaustive split, card PID + AW, hover cost, failsafe margin {mg:g}: P4 '
+              f'{int(r["conv_ok"].sum())}/{S}, B failsafe {int(np.sum(r["failsafe"][:, 1]))}')
     print(f'  Card numbers: an 80 s search at {V_SCOUT:.0f} m/s costs {C_FLY * V_SCOUT * 80:.2f} of a battery; '
           f'arena diagonal {np.hypot(ARENA[0], ARENA[1]):.0f} m vs r_comm {R_COMM:.0f} m')
     print('  Battery capacity sweep (PCP): ' + '; '.join(
@@ -1277,6 +1314,13 @@ def report(R):
               f'(missions < r_safe: {int(np.sum(f["minsep"] < R_SAFE))}), ORCA ticks '
               f'{int(f["orca_ticks"].sum())}, path {f["path"].mean():.1f} m, max height above the '
               f'show plane {f["z_over"].mean():.3f} m (mean of per-mission maxima)')
+    f = F['noaw']
+    nc = f['k_conv'] < 0
+    tmax = f['k_conv'][~nc].max() * DT
+    print(f'  Card PID without anti-windup: {int(nc.sum())} missions not converged, all stopped by the '
+          f'standalone horizon (330 s - Phase 3 end): horizon {_ms(R["F_nmax"][nc] * DT)} s, max '
+          f'{R["F_nmax"][nc].max() * DT:.1f} s; missions not converged although their horizon exceeds the '
+          f'slowest convergence ({tmax:.1f} s): {int(np.sum(nc & (R["F_nmax"] * DT > tmax)))}')
     a_, b_ = F['ident']['minsep'], F['ident_noorca']['minsep']
     close = b_ < R_SAFE
     print(f'  ORCA effect with identity assignment, {int(close.sum())} missions where a pair comes within '
@@ -1464,7 +1508,7 @@ def plot_phase3(R, out_dir):
             if rr['found'][s, v]:
                 ax.axvline(rr['t_found'][s, v] - k0 * DT, color=col, ls=':', lw=1)
     ax.set_xlabel('Time since Phase 3 start (s)'); ax.set_ylabel('Entropy of unfound-survivor belief (nats)')
-    ax.set_title(f'Mission {s}: search entropy (dotted: detections; drops to 0 when both found)')
+    ax.set_title(f'Mission {s}: search entropy (1 s log while searching; dotted: detections)', fontsize=10)
     ax.legend(fontsize=8); ax.grid(True, alpha=0.3)
     ax = axes[1, 1]
     labs = [f'x{k:g}' for k in KAPPAS]

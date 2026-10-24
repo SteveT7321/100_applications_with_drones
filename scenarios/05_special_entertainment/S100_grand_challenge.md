@@ -599,7 +599,7 @@ def run_mission(seed=42):
                         balls_lost += 1
                         ball, t_next_throw = None, t_sub + T_RELOAD
                         station = next_station(rng)
-                energy[0] -= C_FLY * np.linalg.norm(vel[0]) * DT_CATCH
+                energy[0] -= max(C_HOVER, C_FLY * np.linalg.norm(vel[0])) * DT_CATCH
                 t_sub += DT_CATCH
             if balls_caught > 0:
                 phase_complete[1] = True
@@ -675,10 +675,11 @@ def run_mission(seed=42):
 
             direction = wp_3d - pos[3]
             dist_wp = np.linalg.norm(direction)
+            step = 0.0
             if dist_wp > 0.1:
-                step = V_SCOUT * DT
-                pos[3] += direction / dist_wp * min(step, dist_wp)
-            energy[3] -= C_FLY * V_SCOUT * DT
+                step = min(V_SCOUT * DT, dist_wp)
+                pos[3] += direction / dist_wp * step
+            energy[3] -= max(C_HOVER, C_FLY * step / DT) * DT   # hovering is not free
 
             # Phase 3 completion
             if all(survivor_found) or t >= T_PHASE[3]:
@@ -706,13 +707,19 @@ def run_mission(seed=42):
                     u_total = u_total / spd * V_FORM
                 pos[k] += u_total * DT
                 pid_prev_err[k] = err
-                energy[k] -= C_FLY * np.linalg.norm(u_total) * DT
+                energy[k] -= max(C_HOVER, C_FLY * np.linalg.norm(u_total)) * DT
                 max_err = max(max_err, np.linalg.norm(err))
 
             if max_err <= CONV_THRESH or t >= T_TOTAL + 30.0:
                 phase_complete[4] = max_err <= CONV_THRESH and t <= T_TOTAL
                 phase_end_t[4] = t
                 state = Phase.DONE
+
+        # Drone E holds by hovering during Phases 1-3 (and every airborne drone that is
+        # waiting pays the same hover rate)
+        if state in (Phase.PHASE1, Phase.PHASE2, Phase.PHASE3):
+            energy[4] -= C_HOVER * DT
+        assert np.all(energy >= 0.0), 'flying on an empty battery'
 
         # ── Logging ───────────────────────────────────────────────────────────
         combined_sar = (sar_beliefs[0] * (not survivor_found[0]) +
@@ -1151,13 +1158,13 @@ if __name__ == "__main__":
 | Courier cruise speed | $V_{B,C}$ | 2 | 5.0 m/s |
 | Energy consumption rate (all drones) | $c_{fly}$ | All | 0.004 m$^{-1}$ |
 | Courier pads / reload time | — | 2 | (45, 92, 2) m and (55, 92, 2) m / 3 s |
-| Hover energy rate | $c_{hover}$ | 2 | 0.003 s$^{-1}$ |
+| Hover energy rate (all drones) | $c_{hover}$ | All | 0.003 s$^{-1}$ |
 | Delivery dwell time | $\tau_{deliver}$ | 2 | 3.0 s |
 | Battery safety reserve | $E_{reserve}$ | 2 | 15 % |
 | Number of delivery waypoints | $M$ | 2 | 3 |
 | Phase 2 time budget | $T_2$ | 2 | 100 s |
 | **Phase 3 — SAR** | | | |
-| SAR search zone | — | 3 | $50 \times 50$ m (south half) |
+| SAR search zone | — | 3 | $50 \times 50$ m, $x, y \in [0, 50]$ m (south-west quadrant) |
 | SAR grid resolution | — | 3 | 0.5 m/cell ($100 \times 100$) |
 | Scout cruise speed | $V_D$ | 3 | 4.0 m/s |
 | Sensor footprint radius | $r_s$ | 3 | 3.0 m |
