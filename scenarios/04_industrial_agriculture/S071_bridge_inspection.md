@@ -1,6 +1,6 @@
 # S071 Bridge Underside Structural Inspection
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 
 ---
 
@@ -91,6 +91,12 @@ $$N_{pass} = \left\lceil \frac{W_y}{\Delta y} \right\rceil = \left\lceil \frac{1
 Pass centre y-coordinates:
 
 $$y_k = \frac{\Delta y}{2} + (k-1)\,\Delta y, \qquad k = 1, \ldots, N_{pass}$$
+
+> **Implementation note.** With this formula pass 12 is centred at y = 10.35 m, 0.35 m outside
+> the deck edge, where the upward rangefinder has no deck to range on. Edge-aligned passes
+> $y_k = h_{strip} + (k-1)\,\Delta y$ (last one clamped to $W_y - h_{strip}$) cover the same
+> 100 % with $N_{pass} = \lceil (W_y - w_{strip})/\Delta y \rceil + 1 = \lceil 9/0.9 \rceil + 1 = 11$
+> passes (559 m instead of 609.9 m). The simulation flies the 11-pass edge-aligned plan.
 
 ### Boustrophedon (Lawnmower) Waypoints
 
@@ -201,7 +207,7 @@ def simulate(waypoints, cracks):
         if state[2] > Z_MAX:            # safety override
             uz = -K_EMG * (state[2] - Z_MAX)
             violations += 1
-        state[5] = uz * DT
+        state[5] += uz * DT             # integrate the acceleration command
         state[:3] += state[3:] * DT
 
         traj.append(state[:3].copy())
@@ -246,7 +252,7 @@ def coverage_fraction(traj, res=0.1):
 | Strip width w_strip | 1.0 m |
 | Strip overlap | 10 % |
 | Lateral step Delta_y | 0.9 m |
-| Number of passes N_pass | 12 |
+| Number of passes N_pass | 12 with the y_k formula above; 11 edge-aligned (used in the simulation) |
 | Cruise speed | 1.0 m/s |
 | PD gains (Kp, Kd) height | 16, 8 s^-2, s^-1 |
 | Emergency descent gain K_emg | 30 s^-2 |
