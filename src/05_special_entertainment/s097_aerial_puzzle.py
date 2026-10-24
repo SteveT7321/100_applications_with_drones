@@ -523,7 +523,9 @@ if __name__ == '__main__':
                                               for s in ('indep', 'consensus')}
         print(f'  bias {1000 * b:4.1f} mm: ' + '; '.join(
             f'{LABELS[s]} gap {1000 * np.mean(sweep[b][s]["hold_gap_max"]):.2f}, '
-            f'slot {1000 * np.mean(sweep[b][s]["hold_err_max"]):.2f}'
+            f'slot {1000 * np.mean(sweep[b][s]["hold_err_max"]):.2f} (max '
+            f'{1000 * np.max(sweep[b][s]["hold_err_max"]):.2f}), fit to 5 mm in '
+            f'{np.isfinite(sweep[b][s]["fit_time"]).sum()}/{N_MC}'
             for s in ('indep', 'consensus')))
 
     print('\nWind sweep with no position bias (mean over seeds of the worst value, mm):')

@@ -100,7 +100,7 @@ conda activate drones
 python src/05_special_entertainment/s097_aerial_puzzle.py
 ```
 
-Runtime: 4.1–5.8 min, measured while other simulations shared the machine (the independent review measured 1.7 min before the wind sweep was added). The script asserts that every altitude stays above 0 and every speed below 10 m/s.
+Runtime: 2.8–3.9 min, measured while other simulations shared the machine. The script asserts that every altitude stays above 0 and every speed below 10 m/s.
 
 ---
 
@@ -141,14 +141,16 @@ Per seed, error consensus had the smaller worst edge gap in **20/20** seeds (mea
 |---|---|---|
 | 0 / 0 m/s² | 0.28 / 0.19 (0.20) mm / 20/20 | 0.00 / 0.06 (0.11) mm / 20/20 |
 | 0.01 / 0.003 m/s² | 0.61 / 1.79 (2.19) mm / 20/20 | 0.26 / 1.64 (2.26) mm / 20/20 |
-| 0.03 / 0.01 m/s² (nominal) | 1.68 / 5.63 mm | 0.88 / 5.03 mm |
+| 0.03 / 0.01 m/s² (nominal) | 1.68 / 5.63 (7.02) mm / 20/20 | 0.88 / 5.03 (6.86) mm / 20/20 |
+
+"Fit reached" counts seeds in which the worst slot error touches 5 mm at least once during the 10 s hold. The gap and slot values are the worst over the scored last 8 s, so in the nominal row the fit reaches 5 mm briefly in every seed but does not stay there.
 
 **Strong-wind check** (common gust σ = 0.2 m/s², individual 0.05 m/s², seed 0): neither strategy reaches the 50 mm switch within 90 s (independent 384.5 mm, error consensus 359.4 mm at 90 s). The consensus phase has a stiffness of only $10\alpha = 1.0$ s⁻², so a 0.2 m/s² gust alone holds a 0.20 m error.
 
 **Key findings**:
 
 - **The card's consensus law does not assemble the puzzle.** Absolute-position consensus pulls the drones toward each other, and its fixed point is a hexagon of radius 0.6667 m. In simulation the drones settle at 0.6661 m and never reach the fitting phase. Running consensus on slot errors fixes this.
-- **Whether the 5 mm absolute target is reachable depends on two added disturbance assumptions.** With the nominal 5 mm-class absolute bias, each drone's slot error cannot fall below its own bias, so the worst of six is about 11–16 mm. With no bias, the nominal light wind (0.03 m/s² common gust) still keeps the worst slot error at 5.03–5.63 mm. With a third of that wind (0.01 / 0.003 m/s²) both strategies stay below 2.3 mm in every seed, and without disturbances below 0.2 mm. The card's target is met easily in calm air with unbiased positioning, and missed with RTK-class bias or a 0.03 m/s² gust.
+- **Whether the 5 mm absolute target is reachable depends on two added disturbance assumptions.** With the nominal 5 mm-class absolute bias, each drone's slot error cannot fall below its own bias, so the worst of six is about 11–16 mm. With no bias, the nominal light wind (0.03 m/s² common gust) still keeps the worst slot error at 5.03–5.63 mm. With a third of that wind (0.01 / 0.003 m/s²) both strategies stay below 2.3 mm in every seed, and without disturbances at or below 0.20 mm. The card's target is met easily in calm air with unbiased positioning, and missed with RTK-class bias or a 0.03 m/s² gust.
 - **Consensus mainly helps the fit between pieces.** Neighbour coupling uses relative measurements, which are not biased. It cuts the worst edge gap by about half (12.49 → 5.67 mm; 20/20 seeds) and raises the time with every gap within 5 mm from 18.3% to 68.6%. It also lowers the peak contact force (0.994 → 0.228 N, both below extension 6's 2 N limit). This is the physically meaningful puzzle metric: a rigid assembly that is offset as a whole by a few millimetres still fits.
 - **Consensus also converges faster** (17.98 vs 28.29 s). The coupling stiffens the non-common modes ($1 + 0.5\lambda$ s⁻²), while the independent law has only 1 s⁻² for every mode.
 - **Separation is never an issue**: adjacent slots are 1 m apart, and the minimum separation was 0.978 m or more against $d_{min} = 0.3$ m. In the card law the shrunken hexagon brings the drones to 0.652 m.
