@@ -75,7 +75,7 @@ conda activate drones
 python src/03_environmental_sar/s056_radiation.py
 ```
 
-Runtime ≈ 11 s.
+Runtime ≈ 15–25 s (measured with other simulations running in parallel).
 
 ---
 
@@ -89,55 +89,56 @@ Runtime ≈ 11 s.
 | Greedy max belief | 3 | 1.000 | (175, 315) | 5.0 m | 168 m | 36 s |
 | Lawnmower | 25 | 0.925 | (175, 315) | 5.0 m | 1481 m | 310 s |
 
-With σ0 = 0.4, greedy EIG needs 7 readings (peak 0.996, error 5.0 m, path 210 m). The 5.0 m error is the distance from the source to the nearest cell centre, the best any grid estimate can do.
+With σ0 = 0.4, greedy EIG needs 23 readings (peak 0.969, error 5.0 m, path 3821 m). The 5.0 m error is the distance from the source to the nearest cell centre, the best any grid estimate can do.
 
 ### Monte Carlo (50 sources)
 
 | σ0 | Strategy | RMS MAP error | Median / max | ≤ 10 m | Error > 20 m | Readings | Converged | Path | Time |
 |----|----------|------:|------:|:---:|:---:|------:|:---:|------:|------:|
-| 0.04 | Greedy EIG | 15.0 m | 4.9 / 65.3 m | 42/50 | 4 | 5.0 ± 1.6 | 50/50 | 720 ± 506 m | 115 s |
+| 0.04 | Greedy EIG | 16.6 m | 4.4 / 76.1 m | 43/50 | 5 | 5.1 ± 1.5 | 50/50 | 760 ± 544 m | 121 s |
 | 0.04 | Greedy max belief | 14.2 m | 4.5 / 76.1 m | 43/50 | 4 | 5.2 ± 1.3 | 50/50 | 740 ± 495 m | 118 s |
 | 0.04 | **Lawnmower** | **8.1 m** | 5.0 / 37.9 m | 43/50 | 1 | 41.8 ± 20.2 | 49/50 | 2344 ± 1036 m | 502 s |
-| 0.4 | Greedy EIG | 5.4 m | 5.0 / 9.3 m | 50/50 | 0 | 15.2 ± 7.3 | 50/50 | 2639 ± 2023 m | 406 s |
+| 0.4 | Greedy EIG | 5.3 m | 4.9 / 9.3 m | 50/50 | 0 | 15.6 ± 7.7 | 50/50 | 2700 ± 2132 m | 415 s |
 | 0.4 | **Greedy max belief** | **5.0 m** | 4.5 / 11.7 m | 49/50 | 0 | 15.5 ± 8.3 | 50/50 | 2800 ± 2637 m | 428 s |
 | 0.4 | Lawnmower | 12.1 m | 8.7 / 36.1 m | 30/50 | 4 | 80.0 ± 0.0 | 0/50 | 4291 m | 936 s |
 
-The posterior-mean RMS errors are 14.9 / 14.1 / 7.9 m (σ0 = 0.04) and 5.2 / 4.9 / 10.7 m (σ0 = 0.4) for EIG / max belief / lawnmower.
+The posterior-mean RMS errors are 16.4 / 14.1 / 7.9 m (σ0 = 0.04) and 5.1 / 4.9 / 10.7 m (σ0 = 0.4) for EIG / max belief / lawnmower.
 
 Per-trial comparison of EIG against max belief:
 
 | σ0 | EIG fewer readings | Equal | EIG more | Shortest path: EIG / belief / lawnmower / ties |
 |----|---:|---:|---:|---|
-| 0.04 | 19 | 15 | 16 | 24 / 22 / 2 / 2 |
-| 0.4 | 22 | 4 | 24 | 24 / 22 / 4 / 0 |
+| 0.04 | 17 | 18 | 15 | 23 / 22 / 2 / 3 |
+| 0.4 | 24 | 4 | 22 | 25 / 20 / 5 / 0 |
 
 Mean entropy (nats) after $k$ readings:
 
 | σ0 | Strategy | k = 1 | 2 | 3 | 5 |
 |----|----------|---:|---:|---:|---:|
-| 0.04 | Greedy EIG | 6.28 | **4.92** | **3.31** | 0.86 |
+| 0.04 | Greedy EIG | 6.28 | **5.03** | **3.40** | 1.18 |
 | 0.04 | Greedy max belief | 6.28 | 5.15 | 3.43 | **0.62** |
 | 0.04 | Lawnmower | 6.28 | 5.84 | 5.62 | 5.01 |
-| 0.4 | Greedy EIG | 7.51 | **7.20** | **6.76** | **5.68** |
+| 0.4 | Greedy EIG | 7.51 | **7.33** | **6.82** | **5.64** |
 | 0.4 | Greedy max belief | 7.51 | 7.38 | 6.93 | 5.92 |
 | 0.4 | Lawnmower | 7.51 | 7.46 | 7.42 | 7.29 |
 
 **Key findings**:
-- **With the card's detector noise, the greedy strategies stop too early and miss the 10 m target.** σ0 = 0.04 makes each reading very precise: the noise is 1.3 % of the dose above the source, while moving 5 m changes the dose by 10 %. As few as two readings can push the posterior peak over 0.90. Both greedy strategies converge after 5.0–5.2 readings on average, but in 4 of 50 trials each they converge on the wrong cell, up to 65.3 m (EIG) and 76.1 m (max belief) away. The worst cases stop after only 2 readings with a peak of 0.980 and 0.996, while the cell that contains the source has posterior 3.07 × 10⁻³ and 3.89 × 10⁻⁵. The model assumes the source sits at a cell centre; the real source does not, so near-perfect readings rule out the correct cell. As a result the RMS error is 15.0 m (EIG) and 14.2 m (max belief), above the 10 m target, even though the median is below 5 m.
-- **The lawnmower is the only strategy that meets the RMS target at σ0 = 0.04 (8.1 m)**, at about 8× the readings (41.8) and 3× the path (2344 m). Its readings are spread over the whole zone, so a few inconsistent readings cannot lock the posterior so early. It still has one trial above 20 m.
-- **With a 10× noisier detector the ranking flips.** The greedy strategies need about 15 readings, never make a gross error (maximum 9.3 m for EIG, 11.7 m for max belief) and reach 5.4 m and 5.0 m RMS. The lawnmower never reaches the 0.90 peak within 80 readings and ends at 12.1 m RMS.
-- **EIG reduces entropy fastest early on, but this does not save readings.** EIG has the lowest entropy after 2 and 3 readings at both noise levels, and after 5 readings at σ0 = 0.4 (card's expectation holds there). At σ0 = 0.04, max belief is lower after 5 readings (0.62 vs 0.86). Per trial, EIG uses fewer readings than max belief in 19 of 50 trials and more in 16 (σ0 = 0.04), and 22 vs 24 at σ0 = 0.4. Neither greedy rule dominates on readings, path length or error.
-- **Path length is dominated by the noise level.** The greedy missions fly 720–740 m on average with the card's detector and 2639–2800 m with the noisier one, with a large spread (± 495 m to ± 2637 m), because both rules sometimes jump across the zone between hypotheses. The lawnmower always flies its fixed route (2344 m on average, until it stops; 4291 m when it uses all 80 points).
+- **With the card's detector noise, the greedy strategies stop too early and miss the 10 m target.** σ0 = 0.04 makes each reading very precise: the noise is 1.3 % of the dose above the source, while moving 5 m changes the dose by 9.9 %. As few as two readings can push the posterior peak over 0.90. Both greedy strategies converge after 5.1–5.2 readings on average, but they end on the wrong cell (error > 20 m) in 5 (EIG) and 4 (max belief) of 50 trials, up to 76.1 m away. The worst case for both is the same trial: it stops after only 2 readings with a peak of 0.996, while the cell that contains the source has posterior 3.89 × 10⁻⁵. The model assumes the source sits at a cell centre; the real source does not, so near-perfect readings rule out the correct cell. As a result the RMS error is 16.6 m (EIG) and 14.2 m (max belief), above the 10 m target, even though the median is below 5 m.
+- **The lawnmower is the only strategy that meets the RMS target at σ0 = 0.04 (8.1 m)**, at 8.1× the readings (41.8) and 3.1× the path (2344 m) of the greedy strategies. Its readings are spread over the whole zone, so a few inconsistent readings cannot lock the posterior so early. It still has one trial above 20 m.
+- **With a 10× noisier detector the ranking flips.** The greedy strategies need about 15.5 readings, never make a gross error (maximum 9.3 m for EIG, 11.7 m for max belief) and reach 5.3 m and 5.0 m RMS. The lawnmower never reaches the 0.90 peak within 80 readings and ends at 12.1 m RMS.
+- **EIG reduces entropy fastest early on, but this does not save readings.** EIG has the lowest entropy after 2 and 3 readings at both noise levels, and after 5 readings at σ0 = 0.4 (card's expectation holds there). At σ0 = 0.04, max belief is lower after 5 readings (0.62 vs 1.18). Per trial, EIG uses fewer readings than max belief in 17 of 50 trials and more in 15 (σ0 = 0.04), and 24 vs 22 at σ0 = 0.4. Neither greedy rule dominates on readings, path length or error.
+- **Path length is dominated by the noise level.** The greedy missions fly 740–760 m on average with the card's detector and 2700–2800 m with the noisier one, with a large spread (± 495 m to ± 2637 m), because both rules jump across the zone between hypotheses (see the σ0 = 0.4 demo below, 23 readings and 3821 m). The lawnmower flies its fixed route (2344 m on average until it stops; 4291 m when it uses all 80 points).
+- **Ties are common and must be broken deterministically.** After the launch reading the belief is a ring around (250, 250), and the EIG map is exactly symmetric. Without a tie-break, `argmax` picks among equal scores by floating-point rounding, which changed with the BLAS thread count. Scores within 10⁻⁹ (relative) are now ties, broken by distance from the drone and then by cell index; results are identical single- and multi-threaded.
 
 ### Belief Maps
 
-Posterior after successive readings for greedy EIG on the demo source; top σ0 = 0.04, bottom σ0 = 0.4. The first reading at the launch point leaves a ring of possible positions; the second reading cuts it to two arcs; one or two more pick the right one. The missions stop after 4 and 7 readings, so the card's snapshots at $k$ = 20 and 50 do not exist:
+Posterior after successive readings for greedy EIG on the demo source; top σ0 = 0.04, bottom σ0 = 0.4. The first reading at the launch point leaves a ring of possible positions; the second reading cuts it to two arcs; one or two more pick the right one. With σ0 = 0.4 a single reading only shows that the source is not close to the drone; that mission needs 23 readings. The card's snapshots at $k$ = 20 and 50 do not exist for the card's noise level (4 readings):
 
 ![Belief Sequence](./belief_sequence.png)
 
 ### EIG Map
 
-EIG before reading 7 of the σ0 = 0.4 demo. Information is highest around the remaining hypotheses near the source. The red square is the overall maximum; the star is the next waypoint, which is the best cell outside the 5-cell cooldown:
+EIG before reading 11 of the σ0 = 0.4 demo. Information is lowest near the cells already measured (where the readings already exclude a source) and highest in the unvisited parts of the zone. The red square is the overall maximum; the star is the next waypoint, the best cell outside the 5-cell cooldown (here the same cell):
 
 ![EIG Map](./eig_map.png)
 
@@ -167,7 +168,7 @@ Dose surface (5 log₁₀ µSv/h) with the σ0 = 0.4 EIG path at 15 m:
 
 ### Animation
 
-Greedy EIG with σ0 = 0.4 on the demo source, one frame per reading (7 frames); the title shows the reading $z_k$:
+Greedy EIG with σ0 = 0.4 on the demo source, one frame per reading (23 frames); the title shows the reading $z_k$:
 
 ![Animation](./animation.gif)
 
@@ -175,7 +176,8 @@ Greedy EIG with σ0 = 0.4 on the demo source, one frame per reading (7 frames); 
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| $\sigma_{rad} = \sigma_0\sqrt{D + D_{bg}}$ (also in $\hat\sigma$ and $\bar\sigma^2$) | $\sigma_0\sqrt{D}$ | $D$ already contains $D_{bg}$; the card's own code uses $\sigma_0\sqrt{D}$. Card corrected. |
+| $\sigma_{rad} = \sigma_0\sqrt{D + D_{bg}}$ (also in $\hat\sigma$, $\bar\sigma^2$ and the card's `eig_map` code) | $\sigma_0\sqrt{D}$ | $D$ already contains $D_{bg}$; the card's `measure` code uses $\sigma_0\sqrt{D}$. Card text and `eig_map` code corrected. |
+| Next waypoint = `argmax` of the score | Scores within 10⁻⁹ (relative) are ties, broken by distance from the drone, then by cell index | Exact symmetric ties occur (first EIG choice after the launch reading); plain `argmax` settled them by rounding that depended on the BLAS thread count (X1). |
 | Card code chooses the first waypoint before any reading (from a uniform belief) | First reading at the launch point (250, 250) m for every strategy | With a uniform belief, max belief would pick cell 0 by index order; a common first reading keeps the comparison fair. |
 | Lawnmower: boustrophedon over the grid | 8 × 10 lattice (62.5 × 50 m) flown boustrophedon | A sweep over all 2500 cells would cover only the first 1.6 rows in 80 readings, which would cripple the baseline. |
 | Belief maps at $k$ = 1, 5, 20, 50; EIG map at $k$ = 10 | $k$ = 1, 2, 3 and the final reading; EIG map before reading 7 of the σ0 = 0.4 demo | Missions stop after 3–7 readings on the demo source. |

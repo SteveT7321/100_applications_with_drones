@@ -106,6 +106,19 @@ def eig_map(b, sigma0):
     return 0.5 * np.log1p(var_model / noise)
 
 
+def pick_max(score, pos):
+    """Deterministic argmax: scores equal to 1e-9 (relative) are ties, broken by distance
+    from the drone, then by cell index. Without this, exact symmetric ties (e.g. the first EIG
+    choice after the launch reading) are settled by BLAS rounding and depend on the thread count."""
+    finite = np.isfinite(score)
+    scale = np.abs(score[finite]).max()
+    q = np.full(score.shape, -np.inf)
+    q[finite] = np.round(score[finite] / (scale if scale > 0 else 1.0) * 1e9)
+    cand = np.flatnonzero(q == q.max())
+    d = np.round(np.sum((CELLS[cand] - pos) ** 2, axis=1), 6)
+    return int(cand[np.lexsort((cand, d))[0]])
+
+
 def lawn_points():
     xs = (np.arange(LAWN_NX) + 0.5) * AREA_SIZE / LAWN_NX
     ys = (np.arange(LAWN_NY) + 0.5) * AREA_SIZE / LAWN_NY
@@ -155,7 +168,7 @@ def run_mission(strategy, src, noise, sigma0, record=False):
         else:
             if recent:
                 score[recent] = -np.inf
-            idx = int(np.argmax(score))
+            idx = pick_max(score, pos)
             recent.append(idx)
             if len(recent) > N_COOLDOWN:
                 recent.pop(0)
@@ -409,6 +422,9 @@ if __name__ == '__main__':
           f'(noise sigma {SIGMA_0 * np.sqrt(float(dose_rate([250.0, 0.0], [0.0, 0.0]))):.4f})')
     print(f'  Dose 5 m off-centre at 15 m altitude: {float(dose_rate([5.0, 0.0], [0.0, 0.0])):.2f} uSv/h; '
           f'7.07 m: {float(dose_rate([5.0, 5.0], [0.0, 0.0])):.2f} uSv/h')
+    d5 = float(dose_rate([5.0, 0.0], [0.0, 0.0]))
+    print(f'  Noise / dose above the source: {100 * SIGMA_0 / np.sqrt(d0):.1f} %; '
+          f'dose drop 5 m off-centre: {100 * (d0 - d5) / d0:.1f} %')
     print(f'  Initial entropy ln(2500) = {np.log(2500):.2f} nats')
     for s in STRATS:
         r = demo[s]
@@ -434,6 +450,10 @@ if __name__ == '__main__':
                   f"converged {int(a['converged'].sum())}/{N_TRIALS}, "
                   f"path {a['path_len'].mean():.0f} +- {a['path_len'].std():.0f} m, "
                   f"time {a['time'].mean():.0f} s")
+        g = 0.5 * (res['eig']['n_meas'].mean() + res['belief']['n_meas'].mean())
+        gp = 0.5 * (res['eig']['path_len'].mean() + res['belief']['path_len'].mean())
+        print(f"    lawnmower / greedy (mean of EIG and max belief): readings "
+              f"{res['lawn']['n_meas'].mean() / g:.1f}x, path {res['lawn']['path_len'].mean() / gp:.1f}x")
         nm = np.array([res[s]['n_meas'] for s in STRATS])
         pl = np.array([res[s]['path_len'] for s in STRATS])
         fewest = np.argmin(nm, axis=0)

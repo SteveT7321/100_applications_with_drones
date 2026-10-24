@@ -247,7 +247,7 @@ def eig_map(belief, A=A_SOURCE):
     var_model = (belief[np.newaxis, :] * (d_pred - z_bar[:, np.newaxis])**2
                  ).sum(axis=1)                               # (N_c,)
     sigma_noise_sq = (SIGMA_0**2 * (belief[np.newaxis, :]
-                      * (d_pred + D_BG)).sum(axis=1))        # (N_c,)
+                      * d_pred).sum(axis=1))                 # (N_c,) d_pred already includes D_BG
     eig = 0.5 * np.log1p(var_model / (sigma_noise_sq + 1e-9))
     return eig                                               # (N_c,)
 
