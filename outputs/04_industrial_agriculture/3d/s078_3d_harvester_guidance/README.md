@@ -31,9 +31,11 @@
 
 **Terrain and crop** (card): $z = A[\sin(2\pi x/200) + 0.5\sin(2\pi y/100)] + A$; $h_{crop} = 0.3 + 0.9\exp(-(x-100)^2/2\cdot 60^2 - (y-25)^2/2\cdot 15^2)$.
 
-**Harvester speed** (card, corrected to the signed slope along the heading $\hat{\mathbf u}$): $\phi = \arctan(\nabla z\cdot\hat{\mathbf u})$, $v = v_0\cos\phi\,\eta(\phi)$ with $\eta = 1$ for $|\phi| \le 3°$, $\max(0.4, 1 - 5(\phi - 3°))$ uphill, $\min(1.3, 1 - 5(\phi + 3°))$ downhill. At the steepest slope $\eta$ = 0.819 uphill and 1.181 downhill.
+**Harvester speed** (card, corrected to the signed slope along the heading $\hat{\mathbf u}$): $\phi = \arctan(\nabla z\cdot\hat{\mathbf u})$, $v = v_0\cos\phi\,\eta(\phi)$ with $\eta = 1$ for $|\phi| \le 3°$, $\max(0.4, 1 - 5(\phi - 3°))$ uphill, $\min(1.3, 1 - 5(\phi + 3°))$ downhill. At the field's steepest slope $\eta$ would be 0.819 uphill and 1.181 downhill; on the harvester tracks of all Monte Carlo runs the slope along the heading is only −3.62 to 3.60°, so the speed stays between 1.419 and 1.578 m/s (0.946–1.052 × $v_0$).
 
 **Scout altitude** (card command, corrected tracking law): $\dot z = \mathrm{clip}(\dot z_{cmd} + K_p(z_{cmd} - z), \pm 1.5\ \text{m/s})$, $K_p$ = 2 s⁻¹.
+
+**Canopy safety**: the scout's clearance above the canopy is asserted to stay positive (minimum printed per configuration).
 
 **Detection**: obstacle $j$ is detected when $\|(\mathbf p_{drone} + \boldsymbol\epsilon_{GPS}) - (x_j, y_j, z_{terrain} + 0.5)\| \le 2.5 - 0.1$ m (horizontal GPS noise, as in the 2D base).
 
@@ -75,7 +77,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s078_3d_harvester_guidance.py
 ```
 
-Runtime 127–143 s over three runs (measured while other simulations shared the machine). Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
+Runtime 51–53 s over three runs. Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
 
 ---
 
@@ -142,7 +144,7 @@ The fixed MSL altitudes exceed the 8 m ceiling from $A_{dem}$ = 3 m (10.45 and 8
 - **The scout's height above the obstacles, not the slope, decides safety.** Flying low over the canopy (0.5 m) and following the terrain gives 0.42 collisions per run and 93.7 % timely detections of on-track obstacles; the card's 2.0 m ACL gives 1.80 collisions and misses 92.4 %, because 2 m above a 1.2 m crop the obstacle tops are 2.70 m below the drone, outside the 2.5 m sensor sphere. The 2D base's flat-world assumption (a 2D detection disc) hides this.
 - **The card's ACL is the problem even on flat ground.** At $A_{dem}$ = 0 both 2.0 m plans fail (1.93–2.20 collisions, 91–100 % missed), while both 0.5 m plans give 0.40. The clearance sweep shows the threshold: 0.3–0.5 m keeps 93.9 % timely, 1.0 m 78.8 %, 2.0 m 9.1 %.
 - **Terrain following matters once the clearance is low.** A fixed altitude low enough to clear the hilltop by 0.5 m is several metres above the valley canopy: its collisions grow with relief (0.40 → 1.07 → 1.33 → 1.53 → 1.73 for $A_{dem}$ = 0–4 m), while terrain-following at 0.5 m stays at 0.40–0.53. On the card's field it has fewer collisions than the fixed low plan in 18 of 40 seeds and more in none.
-- **Slope barely changes the mission.** The harvester's speed varies between 0.819 and 1.181 × nominal only where the slope exceeds 3°, and the uphill and downhill halves cancel: the oracle takes 133.8 s on the card's DEM against 133.6 s on flat ground; even at $A_{dem}$ = 4 m (10.08°) it takes 141.9 s. The card's expected degradation from terrain-induced altitude mismatch comes from the vertical sensor offset, not from slope.
+- **Slope barely changes the mission.** Along its track the harvester meets at most 3.60° uphill and 3.62° downhill, so its speed stays within 0.946–1.052 × nominal (it changes only where the slope exceeds 3°), and the uphill and downhill halves cancel: the oracle takes 133.8 s on the card's DEM against 133.6 s on flat ground; even at $A_{dem}$ = 4 m (10.08°) it takes 141.9 s. The card's expected degradation from terrain-induced altitude mismatch comes from the vertical sensor offset, not from slope.
 - **Safety margin to the crop**: the low terrain-following plan keeps at least 0.42 m above the canopy (0.22 m at 0.3 m commanded).
 - **Remaining collisions** of the best plan (0.42 per run) include the 6.3 % of on-track obstacles it misses; its horizontal detection radius (2.08–2.38 m) is smaller than the 2.5 m on-track band, as in the 2D base. Whether the rest come from detours into unscanned ground, as the 2D base found, was not probed here.
 

@@ -276,6 +276,7 @@ def simulate(seed, plan='acl_card', a=A_DEM, c_min=C_MIN, oracle=False, keep=Fal
     log = dict(t=[0.0], h=[harv.copy()], d=[np.r_[drone, dz]], v=[0.0])
     threat = np.abs(oy - Y_TRACK) < R_INFLATE
     min_lead = np.inf
+    v_rng, phi_rng = (np.inf, -np.inf), (np.inf, -np.inf)
     zmax_seen = -np.inf
     for k in range(MAX_STEPS):
         if not route_done:
@@ -294,6 +295,7 @@ def simulate(seed, plan='acl_card', a=A_DEM, c_min=C_MIN, oracle=False, keep=Fal
             assert dz >= Z_BOUNDS[0] - 1e-9, 'below the lower altitude bound'
             zmax_seen = max(zmax_seen, dz)
             canopy_clear = min(canopy_clear, dz - ground - float(crop(drone[0], drone[1])))
+            assert canopy_clear > 0.0, 'scout in the crop canopy'
             mx, my = drone + noise[k]
             d3 = np.sqrt((ox - mx) ** 2 + (oy - my) ** 2 + (oz - dz) ** 2)
             hit = (~detected) & (d3 <= r_det)
@@ -325,7 +327,9 @@ def simulate(seed, plan='acl_card', a=A_DEM, c_min=C_MIN, oracle=False, keep=Fal
             j = min(int(np.searchsorted(cum_h, s_h, side='right')) - 1, len(P_h) - 2)
             seg = P_h[j + 1] - P_h[j]
             u = seg / max(np.hypot(*seg), 1e-12)
-            v, _ = harv_speed(harv, u, a)
+            v, phi_h = harv_speed(harv, u, a)
+            v_rng = (min(v_rng[0], v), max(v_rng[1], v))
+            phi_rng = (min(phi_rng[0], phi_h), max(phi_rng[1], phi_h))
             s_h = min(s_h + v * DT, cum_h[-1])
             harv = np.array([np.interp(s_h, cum_h, P_h[:, 0]), np.interp(s_h, cum_h, P_h[:, 1])])
             step = np.hypot(*(harv - prev))
@@ -353,7 +357,8 @@ def simulate(seed, plan='acl_card', a=A_DEM, c_min=C_MIN, oracle=False, keep=Fal
     res = dict(cls=cls, threat=threat, n_coll=int(collided.sum()), collided=collided,
                n_det=int(detected.sum()), n_replan=n_replan, t_mission=t, t_start=t_start,
                extra=driven - FIELD_X, ground3=driven3, canopy_clear=canopy_clear,
-               dz_det=dz_obs_det, vzmax=vzmax, min_lead=min_lead, obs=obs, oz=oz, zmax=zmax_seen)
+               dz_det=dz_obs_det, vzmax=vzmax, min_lead=min_lead, obs=obs, oz=oz, zmax=zmax_seen,
+               v_rng=v_rng, phi_rng=phi_rng)
     if keep:
         res.update({k: np.array(v) for k, v in log.items()})
         res['path'] = np.array(path)
@@ -416,9 +421,11 @@ def plot_field_3d(main, out_dir):
     det = r['cls'] != 'missed'
     ax.scatter(r['obs'][:, 0], r['obs'][:, 1], r['oz'], c=np.where(det, 'darkorange', '0.4'), s=30,
                depthshade=False, label='obstacles (orange = detected in acl_low run)')
-    ax.set_xlabel('x (m)')
-    ax.set_ylabel('y (m)')
-    ax.set_zlabel('z (m)')
+    ax.set_xlabel('x (m)', labelpad=12)
+    ax.set_ylabel('y (m)', labelpad=8)
+    ax.set_zlabel('z (m)', labelpad=4)
+    ax.set_zticks([0, 4, 8])
+    ax.set_xticks([0, 40, 80, 120, 160, 200])
     ax.set_box_aspect((200, 50, 25))
     ax.view_init(elev=25, azim=-70)
     ax.legend(fontsize=8, loc='upper left')
@@ -586,7 +593,13 @@ def report(main, mc, csweep, asweep):
             dzz = hc + c - H_OBS
             print(f'    clearance {c:.1f} m over {hc:.1f} m crop: dz to obstacle top {dzz:.2f} m, horizontal '
                   f'detection radius {np.sqrt(max(rd ** 2 - dzz ** 2, 0)):.2f} m')
-    print(f'  Harvester speed factor: eta at the max slope uphill/downhill '
+    vr = [r['v_rng'] for rs in mc.values() for r in rs]
+    pr = [r['phi_rng'] for rs in mc.values() for r in rs]
+    vmin, vmax = min(v[0] for v in vr), max(v[1] for v in vr)
+    print(f'  On the harvester tracks of all {N_MC}-seed runs: slope along the heading '
+          f'{np.rad2deg(min(p[0] for p in pr)):.2f} .. {np.rad2deg(max(p[1] for p in pr)):.2f} deg, speed '
+          f'{vmin:.3f} .. {vmax:.3f} m/s = {vmin / V0_HARV:.3f} .. {vmax / V0_HARV:.3f} x v0')
+    print(f'  Harvester speed factor: eta at the field-wide max slope uphill/downhill '
           f'{eta_slope(np.arctan(np.hypot(gx, gy).max())):.3f} / {eta_slope(-np.arctan(np.hypot(gx, gy).max())):.3f}')
     print(f'  [Seed {SEED}]')
     for p in PLANS + ['oracle']:
