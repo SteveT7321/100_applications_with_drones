@@ -1,6 +1,6 @@
 # S073 Solar Panel Thermal Imaging Inspection
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐ | **Status**: `[x]` Complete
 **Algorithm**: Lawnmower Sweep + Thermal Anomaly Detection | **Dimension**: 2D
 
 ---
@@ -74,6 +74,12 @@ where $L = 80$ m is the along-track farm length. Total path length is:
 
 $$L_{total} = N_{strips} \cdot L + (N_{strips} - 1) \cdot d$$
 
+> **Implementation note.** With $y_i = (i + \tfrac12)d$ the 19th strip is centred at
+> y = 61.30 m, 1.30 m outside the farm. Edge-aligned strips $y_i = w_{foot}/2 + i\,d$ (last one
+> clamped to $W - w_{foot}/2$) cover the same 60 m with
+> $N = \lceil (W - w_{foot})/d \rceil + 1 = 18$ strips (1495.9 m instead of 1579.6 m). The
+> simulation flies the card's 19-strip plan and compares it with the 18-strip plan.
+
 ### Thermal Map and Hot Spot Model
 
 The simulated thermal map $T(x, y)$ is the sum of the nominal background temperature and
@@ -95,7 +101,15 @@ $(x_p, y_p)$ is considered **within the sensor footprint** if:
 
 $$|x_d - x_p| \leq \frac{L_{panel}}{2} \quad \text{and} \quad |y_d - y_p| \leq \frac{w_{foot}}{2}$$
 
-where $L_{panel}$ is the along-track panel length. Detection is triggered when both the
+where $L_{panel}$ is the along-track panel length.
+
+> **Implementation note.** $L_{panel}/2$ = 3.33 m is wider than the camera's along-track
+> half-footprint $w_{foot}/2$ = 2.07 m (square footprint assumed), so this test would count a
+> hot spot as seen while it is still outside the image. The simulation uses
+> $|x_d - x_h| \le w_{foot}/2$ and $|y_d - y_h| \le w_{foot}/2$ for the hot-spot position
+> $(x_h, y_h)$.
+
+Detection is triggered when both the
 temperature condition and the blur condition are satisfied simultaneously:
 
 $$\text{detected} \iff T(x_p, y_p) > T_{nominal} + \Delta T_{thresh} \quad \text{AND} \quad b < b_{max}$$
