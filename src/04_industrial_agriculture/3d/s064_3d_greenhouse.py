@@ -61,8 +61,10 @@ WIRE_X = (1.0, 39.0)               # wires absent at x < 1 and x > 39 (card)
 HALF = (0.15, 0.15, 0.075)         # drone half-extents of the 0.3 x 0.3 x 0.15 m body
 LAYOUT_SPAN = {'headland': (2.0, 38.0), 'full': (0.0, 40.0)}
 HEAD_W = 2.0                       # base headland width (rows x = 2-38 m); swept 2.0 / 1.5 / 1.0 m
-HEAD_SWEEP = [2.0, 1.5, 1.375, 1.25, 1.125, 1.0]
+HEAD_SWEEP = [2.0, 1.5, 1.375, 1.25, 1.2, 1.125, 1.0]
 HEAD_SEEDS = list(range(100))       # safety verdict of the headland sweep (seeds 0-99)
+HEAD_EXTRA = [1.5, 1.375, 1.25]     # widths re-checked on fresh seeds 100-299 (rare-event check)
+HEAD_SEEDS_EXTRA = list(range(100, 300))
 TURN_PROBES = [(1.0, 0.4), (1.0, 0.45), (1.5, 1.0)]   # (headland width, turn line x) geometry probes
 
 V_FWD = 1.0
@@ -472,6 +474,10 @@ def run_simulation(workers=6):
                 continue                           # identical to the main '2d' runs
             jobs.append((sd, dict(layout='headland', turn='side', head_w=hw)))
             slots.append(('head', hw, sd))
+    for hw in HEAD_EXTRA:
+        for sd in HEAD_SEEDS_EXTRA:
+            jobs.append((sd, dict(layout='headland', turn='side', head_w=hw)))
+            slots.append(('headx', hw, sd))
     for hw, xt in TURN_PROBES:                     # turn-line geometry probes (30 seeds)
         for sd in SEEDS:
             jobs.append((sd, dict(layout='headland', turn='side', head_w=hw, x_turn=xt)))
@@ -485,13 +491,13 @@ def run_simulation(workers=6):
     with ProcessPoolExecutor(max_workers=workers) as ex:
         results = list(ex.map(_job, jobs, chunksize=4))
     out = {'main': {k: {} for k in ('2d', '3d', 'card', '2d_full')}, 'sweep': {}, 'head': {},
-           'equiv': {}, 'turnp': {}}
+           'equiv': {}, 'turnp': {}, 'headx': {}}
     for key, _, layout, turn, rule in MAIN:      # plotted seed with logs, in this process
         out['main'][key][PLOT_SEED] = simulate(PLOT_SEED, layout, turn, rule, keep_log=True)
     for (a, b, sd), r in zip(slots, results):
         if a == 'main':
             out['main'][b][sd] = r
-        elif a in ('head', 'equiv', 'turnp'):
+        elif a in ('head', 'equiv', 'turnp', 'headx'):
             out[a].setdefault(b, {})[sd] = r
         else:
             out['sweep'].setdefault(a, {}).setdefault(b, {})[sd] = r
@@ -500,7 +506,7 @@ def run_simulation(workers=6):
         out['main'][key] = [d[sd] for sd in sorted(d)]
     for sd in SEEDS:
         out['head'].setdefault(HEAD_W, {})[sd] = out['main']['2d'][sd]
-    for grp in ('head', 'equiv', 'turnp'):
+    for grp in ('head', 'equiv', 'turnp', 'headx'):
         for key in out[grp]:
             out[grp][key] = [out[grp][key][sd] for sd in sorted(out[grp][key])]
     alias = {'z_aisle': '3d', 'z_cross': '3d', 'beta': '3d', 'gate_z': '3d'}
@@ -898,6 +904,15 @@ def report(out):
               f"{HEAD_W} m), {np.mean([r['mean_lat'] for r in R]):.4f} / "
               f"{np.mean([r['max_lat'] for r in R]):.4f} m, +{100 * (GH_X / L - 1):.1f} %"
               f"{'' if ok else '  (unsafe: d_safe violated or incomplete)'}")
+    print(f'  Rare-event check on fresh seeds {HEAD_SEEDS_EXTRA[0]}-{HEAD_SEEDS_EXTRA[-1]}: width -> runs '
+          'with steps < d_safe, worst clearance, steps below d_safe in the violating runs; all seeds 0-299 combined')
+    for hw_ in HEAD_EXTRA:
+        Rx = out['headx'][hw_]
+        bad = [(sd, r['viol'], r['min_clear']) for sd, r in zip(HEAD_SEEDS_EXTRA, Rx) if r['viol'] > 0]
+        tot = sum(r['viol'] > 0 for r in out['head'][hw_]) + len(bad)
+        print(f"    {hw_:.3f} m: {len(bad)}/{len(Rx)}, {np.min([r['min_clear'] for r in Rx]):.3f} m, "
+              + (', '.join(f'seed {sd}: {v} steps (min {c:.3f} m)' for sd, v, c in bad) or 'none')
+              + f"; seeds 0-299: {tot}/{len(Rx) + len(out['head'][hw_])} runs violate")
     print('  Turn-line geometry probes (30 seeds): width, turn line x -> runs with steps < d_safe, worst '
           'clearance, mission time')
     for (hw_, xt), R in out['turnp'].items():
@@ -910,9 +925,9 @@ def report(out):
     pn = np.array([r['max_lat'] for r in R])
     print(f'  Narrowest safe headland in the sweep: {hw:.3f} m -> full-length gain '
           f'+{100 * (GH_X / (GH_X - 2 * hw) - 1):.1f} % row length; 3D vs this 2D arm (seeds 0-29): mission '
-          f'time {(t3 - tn).mean():+.1f} ± {(t3 - tn).std():.1f} s, longer in {int(np.sum(t3 > tn))}/{N_SEEDS}, '
-          f'of which the 2D arm\'s longer legs at {hw:.3f} m account for {np.mean(tn - t2):+.1f} s '
-          f'(its time vs the {HEAD_W} m arm on the same seeds); '
+          f'time {(t3 - tn).mean():+.1f} ± {(t3 - tn).std():.1f} s, longer in {int(np.sum(t3 > tn))}/{N_SEEDS} '
+          f'(against the {HEAD_W} m arm it is {(t3 - t2).mean():+.1f} s: the narrow arm\'s longer legs make it '
+          f'{np.mean(tn - t2):+.1f} s slower, which shrinks the gap); '
           f'mean lateral error lower in {int(np.sum(a3 < an))}/{N_SEEDS} (ratio {a3.mean() / an.mean():.3f}); '
           f'peak lower in {int(np.sum(p3 < pn))}/{N_SEEDS} (ratio {p3.mean() / pn.mean():.3f})')
     ea = np.array([r['mean_lat'] for r in out['equiv']['arm']])
