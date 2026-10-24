@@ -1,24 +1,29 @@
 # S093 Earthquake Rubble Search and Rescue
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: 3D Voxel Mapping + Frontier Exploration + Acoustic Detection | **Dimension**: 3D
 
 ---
 
 ## Problem Definition
 
-**Setup**: A post-earthquake rubble field measuring $20 \times 20 \times 5$ m is populated with
-random voxel obstacles at a **40 % fill rate** — chunks of concrete, rebar, and debris that block
-line-of-sight and physical passage. No GPS signal penetrates the rubble; the drone must navigate
+**Setup**: A post-earthquake rubble field measuring $20 \times 20 \times 5$ m is filled to
+**40 % of its volume** with random box-shaped chunks of concrete (sides 1.0–3.0 m) that block
+line-of-sight and physical passage. (Filling individual 0.1 m voxels independently at 40 % would
+leave no passage at all: a 0.25 m-radius ball of 0.1 m voxels contains 81 voxels and is entirely
+free with probability $0.6^{81} \approx 10^{-18}$.) No GPS signal penetrates the rubble; the drone must navigate
 entirely from onboard sensors. The environment contains **3 buried victims**, each broadcasting a
 low-power acoustic beacon that can be detected within a nominal range of $r_{acoustic} = 2$ m.
-A micro-drone equipped with a short-range **LiDAR** (range $r_{lidar} = 3$ m, 360° horizontal,
-$N_{beams} = 120$ beams) and a directional **acoustic sensor** ($\sigma_a = 0.8$ m) enters the
+A micro-drone equipped with a short-range **LiDAR** (range $r_{lidar} = 3$ m; the implementation
+uses a spherical 2400-beam pattern, because a single horizontal ring of 120 beams never observes
+voxels above or below the drone's own layer, so 3D frontiers cannot be resolved) and a directional **acoustic sensor** ($\sigma_a = 0.8$ m) enters the
 rubble pile from a safe perimeter point and explores autonomously.
 
-Structural clearance is the central challenge: randomly collapsed debris leaves narrow passages
-with a minimum clearance of $0.4$ m. The drone body radius is $0.15$ m, requiring the path planner
-to operate on obstacle-inflated voxels with an inflation radius of $r_{inf} = 0.25$ m. Exploration
+Structural clearance is the central challenge: randomly collapsed debris leaves narrow passages.
+The drone body radius is $0.15$ m, and the path planner operates on obstacle-inflated voxels with
+an inflation radius of $r_{inf} = 0.25$ m, so a passage must be wider than
+$2 r_{inf} = 0.5$ m (plus one voxel) to be usable. (A 0.4 m minimum passage, as stated earlier,
+would be closed by this inflation.) Exploration
 follows a **3D frontier policy** — any voxel classified as unknown that borders at least one free
 voxel is a frontier candidate — with 3D A* used to route the drone through tight passages toward
 the selected frontier.
@@ -35,7 +40,8 @@ the selected frontier.
 
 **Objective**: Locate all 3 victims within the mission time $T_{max} = 300$ s. Report:
 
-1. **Victims found** $N_{found}$ — count of victims detected with $P_{detect} \geq 0.9$.
+1. **Victims found** $N_{found}$ — count of victims confirmed by the $K_{conf}$-in-$T_{win}$ rule
+   below. ($P_{detect} \geq 0.9$ would require flying within 0.367 m of a buried victim.)
 2. **Volume coverage** $\xi = V_{explored} / V_{total\_free} \times 100\%$ — fraction of
    free voxels visited.
 3. **Mission time** $T_{mission}$ (s) — time elapsed when the last victim is confirmed, or
@@ -137,9 +143,10 @@ At each timestep the acoustic sensor produces a binary observation:
 
 $$z_i \sim \mathrm{Bernoulli}\!\bigl(P_{detect,i}(\mathbf{p})\bigr)$$
 
-Victim $i$ is **confirmed found** when the cumulative detection count exceeds threshold
-$K_{conf} = 3$ positive observations within a sliding window of $T_{win} = 5$ s. Equivalently,
-the simplified instantaneous model used for expected-value analysis is:
+Victim $i$ is **confirmed found** when at least $K_{conf} = 3$ positive observations occur within
+a sliding window of $T_{win} = 5$ s. The simplified instantaneous model used for the analytic
+expected value below is **not** equivalent: it counts a victim as found after a single positive
+detection, so it overestimates the confirmation probability. Single-detection model:
 
 $$z_i = \mathbf{1}\!\left[U_i < P_{detect,i}\right], \quad U_i \sim \mathcal{U}(0,1)$$
 
