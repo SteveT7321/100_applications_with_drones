@@ -131,7 +131,7 @@ Acceleration FF beats plain LQR in 192 of 200 paired trials, ties in 1 and loses
 | 2.0 | 23.5 / 76.5 | 81.5 / 1.5 | 5.0 / 91.0 | 90.0 / 1.0 |
 | 4.0 | 0.0 / 100.0 | 0.0 / 100.0 | 0.0 / 100.0 | 0.0 / 100.0 |
 
-The ranking — LQR and LQR + acceleration FF far ahead of PID and the 0.5 s look-ahead — holds for glide slopes from 0.25 to 2.0. Without a glide slope it holds for the LQR variants, but PID drops from 42.5 % to 0.0 %. At 2.0 the LQR variants start to miss (81.5 % and 90.0 %). At 4.0 the approach is so steep that every controller strikes the deck, so that setting cannot rank them.
+The ranking — LQR and LQR + acceleration FF far ahead of PID and the 0.5 s look-ahead — holds for every glide slope from 0 to 2.0; without a glide slope the LQR variants are unchanged while PID drops from 42.5 % to 0.0 %. At 2.0 the LQR variants start to miss (81.5 % and 90.0 %). At 4.0 the approach is so steep that every controller strikes the deck, so that setting cannot rank them.
 
 ### 3D Approach Trajectories (gust seed 0)
 
