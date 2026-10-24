@@ -1,6 +1,6 @@
 # S081 Selfie Follow Mode
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Kalman Filter Tracking + Orbit PD Control | **Dimension**: 3D
 
 ---
@@ -50,14 +50,18 @@ the PD controller.
 
 ### Target Trajectory (Figure-8)
 
-The figure-8 path is parameterised by arc-length parameter $\lambda(t) = v_{target}\, t / L$,
-where $L$ is the total path length. In Cartesian coordinates:
+The figure-8 curve is
 
-$$x_{tgt}(t) = R \sin\!\bigl(2\pi\lambda(t)\bigr)$$
+$$x_{tgt} = R \sin s, \qquad y_{tgt} = \frac{R}{2} \sin 2s, \qquad z_{tgt} = 0, \qquad s \in [0, 2\pi)$$
 
-$$y_{tgt}(t) = \frac{R}{2} \sin\!\bigl(4\pi\lambda(t)\bigr)$$
+and the curve parameter $s(t)$ is chosen so that the arc length walked by time $t$ equals
+$v_{target}\, t$ (modulo the path length $L$). This arc-length reparametrisation gives a truly
+constant ground speed. For $R = 8$ m, $L = 48.78$ m, one lap takes 32.52 s, and the tightest
+turn (at the lobe tips) has a radius of curvature of 1.67 m.
 
-$$z_{tgt} = 0$$
+> **Correction (implementation):** the earlier form $x = R\sin(2\pi\lambda)$ with $\lambda = v t / L$
+> linear in time does not give a constant speed, and the code below uses $\omega = v/(\pi R)$, i.e. a
+> period of 16.76 s, which makes the person walk at 2.91 m/s on average instead of 1.5 m/s.
 
 The instantaneous heading angle of the target:
 
@@ -140,6 +144,15 @@ $$u = \frac{\tan^{-1}\!\left(\dfrac{(\mathbf{p}_{tgt} - \mathbf{p}_{drone}) \cdo
 
 where $\hat{n}_{cam}$ is the camera's horizontal right-vector (perpendicular to the look direction
 in the horizontal plane) and $d_{horiz}$ is the horizontal distance from drone to target.
+
+The camera looks along the commanded yaw $\psi_{drone}$, which points at the **estimated** target
+position, while $u$ is evaluated for the **true** target. Equivalently,
+$u = \operatorname{wrap}(\beta_{true} - \psi_{drone}) / (\theta_{FOV}/2)$ with $\beta_{true}$ the
+bearing from the drone to the true target.
+
+> **Correction (implementation):** `framing_score_instant` in the code below builds the look
+> direction from the *true* target, so the lateral offset is always 0 and $u \equiv 0$ for every
+> strategy. The look direction must come from the estimate, as $\psi_{drone}$ above states.
 
 **Framing score** over mission duration $T$:
 
