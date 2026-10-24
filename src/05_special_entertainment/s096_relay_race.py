@@ -13,6 +13,9 @@ Strategies for the outgoing drone (same drones, disturbances and sensor noise; C
                       launches at the last moment a minimum-snap intercept (degree-7 polynomial)
                       to the predicted rendezvous state stays within 80 % of a_max, replans it
                       at 10 Hz, then holds formation with the same PD controller.
+  3. KF, 15 m trigger - (variant) strategy 2, but launching is only allowed once the incoming
+                      drone is within the card's 15 m approach zone of the relay point.
+Sensitivity runs: naive detection range, launch acceleration and exchange-zone length.
 
 A grid search over the cruise speeds of A and B (C has no handoff after it and flies at
 v_max) gives the fastest race whose handoffs both finish inside a 50 m exchange zone.
@@ -336,14 +339,16 @@ def speed_grid(a_launch=A_LAUNCH):
     offsets past their relay points (X) so other zone lengths can be checked afterwards."""
     T = np.full((len(GRID_V), len(GRID_V)), np.nan)
     X = np.full_like(T, np.nan)
+    XP = np.full(T.shape + (2,), np.nan)          # each pass's offset past its relay point
     for i, va in enumerate(GRID_V):
         for j, vb in enumerate(GRID_V):
             r = run_simulation('kf', [va, vb, V_CRUISE_MAX], seed=0, a_launch=a_launch)
             if r['success']:
                 T[i, j] = r['finish']
                 X[i, j] = max(h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs']))
+                XP[i, j] = [h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs'])]
     Z = np.isfinite(T) & (np.nan_to_num(X, nan=np.inf) <= L_ZONE)
-    return T, Z, X
+    return T, Z, X, XP
 
 
 def best_feasible(T, X, L):
@@ -351,7 +356,7 @@ def best_feasible(T, X, L):
     if not np.isfinite(feas).any():
         return None
     i, j = np.unravel_index(np.argmin(feas), feas.shape)
-    return GRID_V[i], GRID_V[j], T[i, j]
+    return GRID_V[i], GRID_V[j], T[i, j], i, j
 
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
@@ -496,7 +501,7 @@ def plot_sensitivity(grids, out_dir):
     fig, ax = plt.subplots(figsize=(8, 5))
     Ls = np.arange(30.0, 100.1, 2.5)
     for al, c in zip(A_SWEEP, ['#1f77b4', '#d62728', '#2ca02c']):
-        Tg, _, Xg = grids[al]
+        Tg, _, Xg, _ = grids[al]
         ts = [best_feasible(Tg, Xg, L) for L in Ls]
         ax.step(Ls, [b[2] if b else np.nan for b in ts], where='post', color=c,
                 label=f'a_launch = {al:.0f} m/s$^2$')
@@ -620,7 +625,7 @@ if __name__ == '__main__':
 
     print('\nSpeed grid (KF, seed 0, v_C = 20 m/s):')
     grids = {al: speed_grid(al) for al in A_SWEEP}
-    T, Z, X = grids[A_LAUNCH]
+    T, Z, X, _ = grids[A_LAUNCH]
     feas = np.where(Z, T, np.inf)
     i, j = np.unravel_index(np.argmin(feas), feas.shape)
     best = (GRID_V[i], GRID_V[j])
@@ -639,12 +644,15 @@ if __name__ == '__main__':
         f'{GRID_V[a]:.0f}->none' for a in range(len(GRID_V))))
     print('  Sensitivity of the fastest feasible (v_A, v_B) -> time to a_launch and L_ZONE:')
     for al in A_SWEEP:
-        Tg, _, Xg = grids[al]
+        Tg, _, Xg, XPg = grids[al]
         cells = []
         for L in L_SWEEP:
             b = best_feasible(Tg, Xg, L)
-            cells.append(f'L {L:.0f}: ' + (f'({b[0]:.0f}, {b[1]:.0f}) {b[2]:.2f} s' if b
-                                           else 'none'))
+            cells.append(f'L {L:.0f}: ' + (
+                f'({b[0]:.0f}, {b[1]:.0f}) {b[2]:.2f} s, passes +{XPg[b[3], b[4], 0]:.1f} / '
+                f'+{XPg[b[3], b[4], 1]:.1f} m vs formula '
+                f'{SNAP_PEAK * b[0] ** 2 / (2 * al):.1f} / {SNAP_PEAK * b[1] ** 2 / (2 * al):.1f} m'
+                if b else 'none'))
         print(f'    a_launch {al:.0f} m/s^2: ' + '; '.join(cells))
 
     v_opt = [best[0], best[1], V_CRUISE_MAX]

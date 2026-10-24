@@ -56,7 +56,7 @@ The pass position is therefore $x_{pass} \approx 1.875\,v^2/(2a_L)$. The highest
 
 $$v_{lim} = \sqrt{2\,a_L\,L/1.875},$$
 
-which is 14.61 m/s for $a_L = 4$ m/s² and $L = 50$ m. The speed "optimum" below is essentially this bound, so it is set by the two added parameters $a_L$ and $L$ (sensitivity below).
+which is 14.61 m/s for $a_L = 4$ m/s² and $L = 50$ m. At the baseline L = 50 m the speed "optimum" below is essentially this bound. Elsewhere the bound is only approximate, especially when the two incoming speeds differ (see the sensitivity table), so the optimum is set by the two added parameters $a_L$ and $L$ rather than by the bound alone.
 
 ---
 
@@ -94,7 +94,7 @@ conda activate drones
 python src/05_special_entertainment/s096_relay_race.py
 ```
 
-Runtime: 4.1–5.9 min, measured while other simulations shared the machine (the independent review measured 1.5 min before the sensitivity runs were added). The script asserts that the speed stays at or below 20 m/s, nothing moves more than $v_{max}\Delta t$ in one step, and every altitude stays above 0.
+Runtime: 3.3–3.8 min, measured while other simulations shared the machine. The script asserts that the speed stays at or below 20 m/s, nothing moves more than $v_{max}\Delta t$ in one step, and every altitude stays above 0.
 
 ---
 
@@ -126,7 +126,17 @@ Ignoring the zone, the fastest race is (18, 16) → 19.44 s, with passes far dow
 | **4 m/s²** | (12, 12) 24.34 s | **(14, 14) 21.86 s** | (14, 16) 20.98 s | (16, 14) 20.70 s |
 | 5 m/s² | (14, 14) 21.72 s | (16, 16) 19.78 s | (16, 16) 19.78 s | (16, 16) 19.78 s |
 
-The predicted $v_{lim}$ values ($a_L$ = 3/4/5 m/s² at L = 50 m: 12.65 / 14.61 / 16.33 m/s) match the grid optima, up to the 2 m/s grid spacing. Over this range the "optimal" race time moves from 28.00 to 19.78 s.
+Simulated pass positions (RP1 / RP2) of these optima, against the formula $1.875\,v^2/(2a_L)$:
+
+| $a_L$ | L = 40 m | L = 50 m | L = 55 m | L = 60 m |
+|---|---|---|---|---|
+| 3 m/s² | +29.4 / +29.6 (formula 31.2 / 31.2) | +41.9 / +41.5 (45.0 / 45.0) | +41.9 / **+54.9 (80.0)** | +55.2 / +52.9 (61.2 / 61.2) |
+| 4 m/s² | +34.5 / +34.3 (33.8 / 33.8) | +44.9 / +45.6 (45.9 / 45.9) | +44.9 / **+53.1 (60.0)** | +57.6 / +49.3 (60.0 / 45.9) |
+| 5 m/s² | +39.0 / +39.5 (36.8 / 36.8) | +49.9 / +48.1 (48.0 / 48.0) | same as L = 50 | same as L = 50 |
+
+When both incoming speeds are equal, the formula is within a few metres (at $a_L$ = 3 m/s² it overestimates by 1.6–8.3 m). It fails when $v_B > v_A$ (the bold cells). B takes the baton at RP1 at the slower speed and then accelerates. The cause is most likely this: C's timing rule sees a gap that is already inside its launch distance and launches at once. Because the pass only needs 0.3 m and 0.5 m/s for 1 s, the window then completes before the planned meeting point. This was inferred from the pass positions, not diagnosed further. So $v_{lim}$ is a reliable bound only for equal speeds, i.e. at the baseline (14, 14) with L = 50 m.
+
+At L = 50 m the predicted $v_{lim}$ values ($a_L$ = 3/4/5 m/s²: 12.65 / 14.61 / 16.33 m/s) match the grid optima, up to the 2 m/s grid spacing. At other zone lengths they do not (pass-position table above). Over this range the "optimal" race time moves from 28.00 to 19.78 s.
 
 ### Monte Carlo (30 seeds)
 
@@ -165,7 +175,7 @@ At the card's speeds, KF was faster than naive in **30/30** seeds, by a mean of 
 - **The card's expectations hold for the KF strategy**: both passes succeed, the pass errors are far inside the tolerances (≤ 0.071 m, ≤ 0.230 m/s), and the race takes 23.81 s against the ≤ 60 s target. The naive strategy also completes its passes, but at about +92 and +117 m past the relay points, well outside any reasonable exchange zone.
 - **The gain comes from timing, not from the KF alone.** Both strategies use the same KF. The difference is *when* the outgoing drone leaves. A tuned "check mark" (naive with $d_{detect}$ = 17.5 m) gets within 0.21 s of the KF time (24.02 vs 23.81 s). The KF rule sets the launch point automatically from the predicted speed: 33.7 m at RP1, 45.7 m at RP2. Launching that early is essential: with the card's 15 m trigger, the same KF strategy is 2.18 s slower.
 - **The zone verdict (KF 30/30, naive 0/30) depends on the chosen 50 m zone.** The best naive mark misses it by about 8 m (RP2 at +58.4 m). With a 60 m zone, naive at 17.5–20 m keeps both passes inside in 30/30 seeds and is only 0.21–0.31 s slower. With a 40 m zone, neither strategy fits at these speeds.
-- **The "optimal" speeds are just the zone bound.** The pass lands at about $1.875\,v^2/(2a_L)$ past the relay point, so the feasible speed is about $\sqrt{2a_L L/1.875}$: 14.61 m/s for the baseline $a_L$ = 4 m/s² and L = 50 m. This gives (14, 14, 20) → 21.84 ± 0.01 s, 2.0 s faster than the card's speeds. Other choices of the two added parameters move the optimum between (10, 10) at 28.00 s and (16, 16) at 19.78 s (table above), so the optimum is a property of those assumptions, not a universal result.
+- **At the baseline, the "optimal" speeds are just the zone bound.** With equal incoming speeds the pass lands at about $1.875\,v^2/(2a_L)$ past the relay point, so the feasible speed is about $\sqrt{2a_L L/1.875}$: 14.61 m/s for the baseline $a_L$ = 4 m/s² and L = 50 m. With unequal speeds the bound is loose, because the later pass can complete earlier than the formula predicts (see above). This gives (14, 14, 20) → 21.84 ± 0.01 s, 2.0 s faster than the card's speeds. Other choices of the two added parameters move the optimum between (10, 10) at 28.00 s and (16, 16) at 19.78 s (table above), so the optimum is a property of those assumptions, not a universal result.
 - **The results barely change with the noise** (race-time std ≤ 0.03 s for every configuration that finished): with σ = 0.1 m/s² disturbances and 5 cm sensing, the outcome is set by geometry and timing.
 
 ### 3D Trajectories
