@@ -161,18 +161,19 @@ class Drone3D(s2d.Drone):
         self.z = z0
         self.z_cmd = z0
         self.ztraj = [z0]
+        self.n_s = 0                       # sample counter (keys the per-sample noise)
 
     def step(self, dt, z_lo, z_hi):
         moved = super().step(dt)
         self.z += (self.z_cmd - self.z) / TAU_Z * dt
-        self.z = min(max(self.z, z_lo), z_hi)
         return moved
 
 
 class Strategy3D(s2d.Strategy):
-    def __init__(self, name, lm0, u, rng, waves, z_b=None, z_a=None, sigma_l=SIGMA_L):
+    def __init__(self, name, lm0, u, rng, waves, z_b=None, z_a=None, sigma_l=SIGMA_L, seed=0):
         super().__init__('predict', lm0, u, 2 if name == 'single' else 1, rng)
         self.kind = name
+        self.seed = seed
         self.waves = waves
         self.sigma_l = sigma_l
         self.correct = name == 'dual_corr'
@@ -228,8 +229,13 @@ class Strategy3D(s2d.Strategy):
         alpha = float(np.mean(1 - np.exp(-KAPPA * h)))
         hs = self.waves.hs(d.pos)
         cm, sth = cos_mean(hs, self.waves.lam)
-        cos_t = math.cos(self.rng.normal(0.0, float(sth)))
-        L = radiance(d.z, alpha, cos_t) * (1 + self.sigma_l * self.rng.standard_normal())
+        # noise keyed per (trial, drone, sample index): every strategy gets the same draws for its
+        # k-th reading of drone A / B, independent of how many readings the other drone took
+        g = np.random.default_rng([self.seed, 7, self.drones.index(d), d.n_s])
+        d.n_s += 1
+        cos_t = math.cos(g.normal(0.0, float(sth)))
+        L = radiance(d.z, alpha, cos_t) * (1 + self.sigma_l * g.standard_normal())
+        self._gps = g.normal(0, s2d.GPS_SIGMA, 2)
         z_model = Z_2D if self.kind == 'single' else d.z
         h_hat = invert(L, z_model, float(cm) if self.correct else 1.0)
         return h_hat, h_hat / (H0 * g_age(t)), float(cm)
@@ -250,7 +256,7 @@ class Strategy3D(s2d.Strategy):
         dk = np.linalg.norm(mu - d.pos, axis=1)
         self.t_nom[dk <= s2d.R_ASSOC] = t
         if d.last_read is not None and reading != d.last_read:
-            m = 0.5 * (d.pos + d.last_pos) + self.rng.normal(0, s2d.GPS_SIGMA, 2)
+            m = 0.5 * (d.pos + d.last_pos) + self._gps
             self.kf.predict_to(t)
             dk = np.linalg.norm(self.kf.mu - m, axis=1)
             k = int(np.argmin(dk))
@@ -316,7 +322,7 @@ def run_trial(u, seed, configs, record=False, lam=LAMBDA_W):
     for key, (kind, kw) in configs.items():
         waves = WaveField(np.random.default_rng([seed, 1]), kw.get('lam', lam))
         strats[key] = Strategy3D(kind, lm0, u, np.random.default_rng([seed, 2]), waves,
-                                 kw.get('z_b'), kw.get('z_a'), kw.get('sigma_l', SIGMA_L))
+                                 kw.get('z_b'), kw.get('z_a'), kw.get('sigma_l', SIGMA_L), seed=seed)
     n_steps = int(round(T_MISSION / DT_SIM))
     field_every = int(round(s2d.DT_FIELD / DT_SIM))
     replan_every = int(round(T_REPLAN / DT_SIM))
@@ -355,6 +361,7 @@ def run_trial(u, seed, configs, record=False, lam=LAMBDA_W):
         for st in strats.values():
             for d, (zlo, zhi) in zip(st.drones, st.ranges):
                 d.dist_since += d.step(DT_SIM, zlo, zhi)
+                # no clipping: the tracker must stay inside the range on its own (z_cmd is in range)
                 assert zlo - 1e-9 <= d.z <= zhi + 1e-9, 'altitude outside its range'
                 if record:
                     d.traj.append(d.pos.copy()); d.ztraj.append(d.z)
@@ -507,6 +514,11 @@ def report(res):
         print(f'  z_B = {zb:5.0f} m (swath {2 * r_foot(zb):.0f} m): thickness RMSE {1e3 * _mc(res, key, "eps_mean").mean():.4f} mm, '
               f'final {1e3 * _mc(res, key, "eps_final").mean():.4f} mm, interior observed {100 * _mc(res, key, "obs_final").mean():.1f}%, '
               f'boundary error {_mc(res, key, "err_mean").mean():.1f} m')
+    for zb in (15.0, 25.0):
+        d = _mc(res, 'dual', 'eps_mean') - _mc(res, ('zb', zb), 'eps_mean')
+        print(f'  z_B = {card_zb():.0f} m minus z_B = {zb:.0f} m, thickness RMSE: per trial '
+              + ', '.join(f'{1e3 * v:+.4f}' for v in d) + f' mm; mean {1e3 * d.mean():+.4f} mm; '
+              f'lower in {int(np.sum(d < 0))}/{N_TRIALS}')
     for za in sorted(ZA_SWEEP + (R_TARGET / math.tan(PHI),)):
         key = 'dual' if abs(za - 10.0) < 1e-9 else ('za', za)
         print(f'  z_A = {za:5.1f} m: boundary error {_mc(res, key, "err_mean").mean():.2f} m, eta {_mc(res, key, "eta_mean").mean():.3f}, '

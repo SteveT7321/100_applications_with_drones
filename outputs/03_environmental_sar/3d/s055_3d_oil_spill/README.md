@@ -30,7 +30,7 @@ The Monte Carlo has 5 trials: the card wind, plus 4 directions from the 2D S055 
 
 **Sensor (card)**: $L = L_0\,\frac{A_{foot}}{\pi z^2}\,\bar\alpha\,\cos\theta_w\,e^{-\mu_{atm}z}\,(1 + \sigma_L\varepsilon)$, where $\bar\alpha$ is the mean of $1 - e^{-\kappa H_{oil}}$ over 7 points of the footprint disc. $\theta_w \sim \mathcal{N}(0, \bar\sigma_\theta^2)$ is drawn per sample, with $\bar\sigma_\theta = \arctan(\pi H_s/\lambda_w)$.
 
-**Inversion**: $\hat H = -\kappa^{-1}\ln\bigl(1 - L/(L_0\tan^2\phi\,e^{-\mu z_m}\,c_w)\bigr)$ and $\hat C = \hat H/(H_0\sqrt{t_0/(t+t_0)})$. Here $z_m$ = 15 m for strategy 1 and the true altitude otherwise, and $c_w = \langle\cos\theta_w\rangle = e^{-\bar\sigma_\theta^2/2}$ for strategy 3, 1 otherwise. A crossing is a change of $\mathbf{1}[\hat C \ge 0.08]$ between consecutive 20 m samples (2D measurement model).
+**Inversion**: $\hat H = -\kappa^{-1}\ln\bigl(1 - L/(L_0\tan^2\phi\,e^{-\mu z_m}\,c_w)\bigr)$ and $\hat C = \hat H/(H_0\sqrt{t_0/(t+t_0)})$. Here $z_m$ = 15 m for strategy 1 and the true altitude otherwise, and $c_w = \langle\cos\theta_w\rangle = e^{-\bar\sigma_\theta^2/2}$ for strategy 3, 1 otherwise. A crossing is a change of $\mathbf{1}[\hat C \ge 0.08]$ between consecutive 20 m samples (2D measurement model). The wave tilt, radiometric noise and GPS noise of each reading are drawn from a generator keyed by (trial, drone, sample index), so every strategy gets the same draws for the $k$-th reading of drone A or B.
 
 **What the card's model actually implies** (all values printed by the script):
 - $A_{foot}/(\pi z^2) = \tan^2\phi$ = 0.2500 at every altitude, so altitude enters the radiance only through $e^{-\mu z}$: 0.99800 at 10 m and 0.99203 at 40 m. Relative to 15 m, the radiance is 1.00100 × at 10 m and 0.99501 × at 40 m.
@@ -79,7 +79,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s055_3d_oil_spill.py
 ```
 
-The card-wind trial runs in the main process and the other 4 trials in a process pool; results are collected in trial order. Runtime ≈ 25–75 s. Two runs (default threading and `OMP_NUM_THREADS=1`) printed byte-identical output and wrote byte-identical figures.
+The card-wind trial runs in the main process and the other 4 trials in a process pool; results are collected in trial order. Runtime ≈ 25–80 s. Runs with default threading and with `OMP_NUM_THREADS=1` printed byte-identical output and wrote byte-identical figures.
 
 ---
 
@@ -89,34 +89,34 @@ The card-wind trial runs in the main process and the other 4 trials in a process
 
 | Metric | Single 15 m (2D) | Dual | Dual + correction |
 |---|---:|---:|---:|
-| Mean $\eta$ (verified) | **0.129** | 0.053 | 0.053 |
-| Mean boundary error | **17.1 m** | 21.3 m | 21.3 m |
-| Final boundary error | **31.8 m** | 41.1 m | 41.1 m |
-| Crossings | 184 | 70 | 70 |
-| Mean thickness RMSE (after 300 s) | 0.0229 mm | **0.0108 mm** | **0.0108 mm** |
-| Final thickness RMSE | 0.0167 mm | 0.0081 mm | 0.0081 mm |
-| Time with RMSE ≤ 0.02 mm | 33.1 % | **92.1 %** | **92.1 %** |
-| Interior cells observed at the end | 34.2 % | 68.7 % | 68.7 % |
+| Mean $\eta$ (verified) | **0.127** | 0.046 | 0.046 |
+| Mean boundary error | **17.8 m** | 22.1 m | 22.1 m |
+| Final boundary error | **33.8 m** | 42.6 m | 42.6 m |
+| Crossings | 180 | 65 | 65 |
+| Mean thickness RMSE (after 300 s) | 0.0228 mm | **0.0111 mm** | **0.0111 mm** |
+| Final thickness RMSE | 0.0168 mm | 0.0084 mm | 0.0084 mm |
+| Time with RMSE ≤ 0.02 mm | 31.8 % | **91.4 %** | **91.4 %** |
+| Interior cells observed at the end | 34.5 % | 69.3 % | 69.3 % |
 | Confidence inflations / min $w_k$ | — | — | 0 / 0.9972 |
 
 ### Monte Carlo (5 wind directions)
 
 | Metric | Single 15 m | Dual | Dual + correction |
 |---|---:|---:|---:|
-| Mean $\eta$ | 0.1216 ± 0.0049 | 0.05261 ± 0.00098 | 0.05261 ± 0.00098 |
-| Mean boundary error | 18.01 ± 0.6 m | 21.31 ± 0.43 m | 21.31 ± 0.43 m |
-| Mean thickness RMSE | 0.02277 mm | 0.01077 mm | 0.01077 mm |
-| Time with RMSE ≤ 0.02 mm | 33.51 % | 93.38 % | 93.38 % |
-| Mean signed thickness error | −0.01642 mm | +0.00049 mm | — |
+| Mean $\eta$ | 0.1227 ± 0.0045 | 0.05197 ± 0.0043 | 0.05197 ± 0.0043 |
+| Mean boundary error | 18.21 ± 0.48 m | 21.44 ± 0.41 m | 21.44 ± 0.41 m |
+| Mean thickness RMSE | 0.02282 mm | 0.01089 mm | 0.0109 mm |
+| Time with RMSE ≤ 0.02 mm | 32.85 % | 93.25 % | 93.25 % |
+| Mean signed thickness error | −0.01645 mm | +0.00046 mm | — |
 
 **Key findings**
 
-- **The dual-altitude split trades boundary tracking for a thickness map.** Moving one drone to the interior lowers the thickness RMSE in 5/5 trials (by 0.012 mm on average, from 0.0228 to 0.0108 mm), and the 0.02 mm target is met 93 % of the time instead of 34 %. The single-altitude map only has boundary samples, which are thin oil, so it underestimates the interior thickness by 0.0164 mm on average. The price is paid in 5/5 trials: one patrol drone instead of two halves the verified coverage (0.122 → 0.053) and raises the mean boundary error by 3.3 m (18.0 → 21.3 m). Neither strategy comes close to the 0.85 coverage target; the 2D study already showed it needs about 8 drones.
-- **The gain comes from where drone B flies, not from its altitude.** Ablation: drone B at the 2D altitude of 15 m (swath 15 m) gives 0.0121 mm, the same as at 25 m (0.0121 mm). Raising $z_B$ to its 40 m ceiling helps only a little (0.0108 mm). Beyond the card bound, 60 m gives 0.0108 mm and 100 m gives 0.0100 mm (81.5 % of the interior observed). The smooth slick lets nearest-cell filling cover what B has not yet flown over, so a wider swath matters little.
-- **Drone A's altitude does not matter**: 8, 10 and 15 m give boundary errors of 21.31, 21.31 and 21.27 m. The point-like sampling every 20 m, not the 4–7.5 m footprint, sets the crossing accuracy.
-- **The sea-state correction changes nothing at card parameters** (honest negative). Strategies 2 and 3 have identical boundary results in 5/5 trials, and their thickness RMSE differs by 3.4e-06 mm on average. The landmark weights never fall below 0.9972, so the inflation never triggers (0 times). **Steep-wave probe** ($\lambda_w$ = 8 m): the correction still does not lower the thickness RMSE (0/5 trials; +0.0000 to +0.0009 mm). The signed errors explain why: the map already has a small positive bias (+0.00049 mm). Uncorrected wave attenuation pulls it to −0.00020 mm, and the correction restores +0.00051 mm. The correction removes the wave bias as intended, but that bias was partly cancelling another one. The boundary error changes by −1.04 to +1.57 m (lower in 3/5).
-- **Radiometric noise** of 2, 5 and 10 % gives a thickness RMSE of 0.0110, 0.0108 and 0.0112 mm: the map error comes from coverage and staleness, not from sensor noise.
-- **Map vs truth** at the end of the card-wind run (dual + correction, observed interior cells): n = 217, R² = 0.842, RMSE = 0.0046 mm.
+- **The dual-altitude split trades boundary tracking for a thickness map.** Moving one drone to the interior lowers the thickness RMSE in 5/5 trials (by 0.01193 mm on average, from 0.02282 to 0.01089 mm), and the 0.02 mm target is met 93.25 % of the time instead of 32.85 %. The single-altitude map only has boundary samples, which are thin oil, so it underestimates the interior thickness by 0.01645 mm on average. The price is paid in 5/5 trials: one patrol drone instead of two lowers the verified coverage from 0.1227 to 0.05197 and raises the mean boundary error by 3.228 m (18.21 → 21.44 m). Neither strategy comes close to the 0.85 coverage target.
+- **The gain comes mostly from where drone B flies; its altitude adds a small, consistent part.** Ablation: drone B at the 2D altitude of 15 m (swath 15 m) gives 0.0122 mm, about the same as at 25 m (0.0123 mm), already far below the single-altitude 0.02282 mm. Raising $z_B$ to its 40 m ceiling gives 0.0109 mm: lower than at 15 m in 5/5 trials (mean −0.0013 mm) and lower than at 25 m in 5/5 (mean −0.0014 mm). This is the only altitude effect in the scenario. Beyond the card bound, 60 m gives 0.0111 mm and 100 m gives 0.0100 mm (81.6 % of the interior observed). The smooth slick lets nearest-cell filling cover what B has not yet flown over, so a wider swath matters little.
+- **Drone A's altitude does not matter**: 8, 10 and 15 m all give a boundary error of 21.44 m. The point-like sampling every 20 m, not the 4–7.5 m footprint, sets the crossing accuracy.
+- **The sea-state correction changes nothing at card parameters** (honest negative). Strategies 2 and 3 have identical boundary results in 5/5 trials, and their thickness RMSE differs by 3.341e-06 mm on average. The landmark weights never fall below 0.9972, so the inflation never triggers (0 times). **Steep-wave probe** ($\lambda_w$ = 8 m): the correction still does not lower the thickness RMSE (0/5 trials; +0.0001 to +0.0005 mm). The signed errors explain why: the map already has a small positive bias (+0.00046 mm). Uncorrected wave attenuation pulls it to −0.00011 mm, and the correction restores +0.00043 mm. The correction removes the wave bias as intended, but that bias was partly cancelling another one. The boundary error changes by −0.64 to +0.94 m (lower in 2/5).
+- **Radiometric noise** of 2, 5 and 10 % gives a thickness RMSE of 0.0109, 0.0109 and 0.0111 mm: the map error comes from coverage and staleness, not from sensor noise.
+- **Map vs truth** at the end of the card-wind run (dual + correction, observed interior cells): n = 219, R² = 0.837, RMSE = 0.0047 mm.
 
 ### Figures
 
@@ -160,7 +160,7 @@ The card-wind trial runs in the main process and the other 4 trials in a process
 | Wave correction raises the threshold "> 20 %" in places | At most 0.1111 % in the simulated field | $\arctan(\pi H_s/80\ \text{m})$ ≤ 1.35° at $H_s$ = 0.6 m. Card corrected; a steep-wave probe is added. |
 | "Higher $z_A$ reduces the path-length penalty" | It increases it; the law moves $z_A$ by < 0.01 m | Card corrected. |
 | $z_B = \arg\max$ … | 1/μ = 5000 m, clipped to 40 m | Card corrected; $z_B$ swept 15–100 m. |
-| Expected: dual altitude reaches 0.02 mm "after the first replanning epoch", single "remains above" | Dual meets it 93 % of the time after about 400 s (figure); single reaches it late in the mission (33.5 % of the time) | Reported as found. |
+| Expected: dual altitude reaches 0.02 mm "after the first replanning epoch", single "remains above" | Dual meets it 93.25 % of the time after about 400 s (figure); single reaches it late in the mission (32.85 % of the time) | Reported as found. |
 | $H_s$ field: std only; "5-minute timescale" | Mean 0.5 m, 100 m grid, AR(1) with a 300 s time constant | Needed to define the field. |
 | $t_0 = R_0/k_F$ | $t_0$ = 1800 s | $k_F$ is not given. |
 | Drone B "covering the full interior" | Drift-following lawnmower over a 1000 m box with $2r_{foot}$ spacing; nearest-cell fill | One pass at 40 m takes 3245 s, longer than the mission. |
