@@ -1,6 +1,6 @@
 # S080 Underground Pipe CCTV Replacement
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Concentric-Ring Wall-Following + Dead Reckoning | **Dimension**: 3D
 
 ---
@@ -58,7 +58,11 @@ $$\rho(t) \leq r_{clear} - r_{drone} = 0.15 \; \text{m} \quad \forall \, t$$
 The nominal (noiseless) distance from the drone centre to the pipe wall along each body-frame axis
 $k \in \{N, S, E, W\}$ is:
 
-$$d_k^{true}(t) = r_{clear} - \delta_k(t)$$
+$$d_k^{true}(t) = r_{clear} - r_{drone} - \delta_k(t)$$
+
+> **Correction (implementation)**: the reading is the skin-to-wall distance, so the drone radius
+> must be subtracted. Without it, a centred drone would read 0.25 m, not the stated 0.15 m. The
+> implementation ray-casts each sensor against the pipe walls, elbows included.
 
 where $\delta_k(t)$ is the signed radial offset of the drone along axis $k$.
 For a perfectly centred drone, $d_k^{true} = r_{clear} - r_{drone}^{sensor} = 0.15$ m
@@ -106,7 +110,19 @@ where $k$ and $k_{opp}$ are the axis pair (N/S or E/W) aligned with the upcoming
 $\Delta d_{bend} = 0.06$ m is the detection threshold. On trigger, the heading vector rotates
 toward the axis showing the larger reading:
 
-$$\hat{\mathbf{h}}_{new} = \hat{\mathbf{h}} \times \hat{\mathbf{n}}_{bend}$$
+$$\hat{\mathbf{h}}_{new} = \hat{\mathbf{n}}_{bend}$$
+
+> **Correction (implementation)**: the original $\hat{\mathbf{h}} \times \hat{\mathbf{n}}_{bend}$ is
+> perpendicular to both vectors. For $\hat{\mathbf{h}} = +x$ and $\hat{\mathbf{n}}_{bend} = +z$ it gives
+> $(0, -1, 0)$, not the bend direction $+z$.
+>
+> **Correction (implementation)**: with $\sigma_{wall}$ = 5 mm and these PD gains, the drone drifts
+> 2–3 cm off-centre often enough that $|d_k - d_{opp}| > 6$ cm fires in the middle of straight
+> pipe. A turn triggered at the first asymmetry is also 0.25 m (one pipe radius) early. In 20
+> Monte Carlo runs this rule triggered 0.95 false bends per run and completed none. The
+> implementation's working variant detects a bend only when a reading is longer than any
+> straight pipe allows (> 0.42 m). It then advances one radius to the elbow centre before
+> turning.
 
 where $\hat{\mathbf{n}}_{bend}$ is the unit vector pointing toward the larger-reading wall. The
 heading transition is blended over $t_{blend} = 0.5$ s using spherical linear interpolation
@@ -126,6 +142,14 @@ $$\sigma_{DR}(t) = \sigma_{v} \, \sqrt{t}$$
 
 with $\sigma_{v} = 0.002$ m/s (velocity measurement noise). Over a 250 s mission this gives
 $\sigma_{DR}(250) \approx 0.032$ m, within the GPS\_ERROR = 0.1 m budget.
+
+> **Correction (implementation)**: white velocity noise of 0.002 m/s per 0.05 s step gives a
+> position error of $\sigma_v\sqrt{\Delta t\,t}$ = 0.0071 m after 250 s; $\sigma_v\sqrt{t}$ is
+> dimensionally inconsistent. The real dead-reckoning error comes from the difference between
+> the commanded and actual advance speed (calibration bias, air-flow disturbance). With the
+> implementation's disturbance model this difference reaches tens of centimetres and turns
+> at the wrong place. The planar $(\cos\hat\theta, \sin\hat\theta, 0)$ form also cannot follow
+> the vertical leg; the implementation integrates along the 3D heading.
 
 ### Wall Contact Metric
 
@@ -190,7 +214,7 @@ PIPE_LENGTH      = 50.0    # m  centreline arc length
 # Elbow arc positions (m along centreline) and bend planes
 # Each elbow rotates the heading 90° in the specified plane
 ELBOW_S      = [15.0, 30.0, 43.0]
-ELBOW_PLANE  = ['xz', 'xy', 'xz']   # plane of the bend
+ELBOW_PLANE  = ['xz', 'yz', 'xy']   # plane of the bend (corrected to match the headings)
 
 # ── Sensor parameters ────────────────────────────────────────────────────────
 SIGMA_WALL    = 0.005    # m   ultrasonic noise std
