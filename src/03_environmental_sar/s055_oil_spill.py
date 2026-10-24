@@ -82,9 +82,13 @@ XS = (np.arange(GRID_N) + 0.5) * H_CELL
 
 # ── Spill field ───────────────────────────────────────────────────────────────
 
-def init_field():
+def init_field(shape=(1.0, 0.0)):
+    """Gaussian patch; shape = (axis factor f, orientation) gives semi-axes R0*f and R0/f."""
+    f, ang = shape
     X, Y = np.meshgrid(XS, XS, indexing='ij')                 # C[i, j]: i -> x, j -> y
-    return C0 * np.exp(-((X - X0[0]) ** 2 + (Y - X0[1]) ** 2) / (2 * R0 ** 2))
+    u = (X - X0[0]) * np.cos(ang) + (Y - X0[1]) * np.sin(ang)
+    w = -(X - X0[0]) * np.sin(ang) + (Y - X0[1]) * np.cos(ang)
+    return C0 * np.exp(-(u ** 2 / (2 * (R0 * f) ** 2) + w ** 2 / (2 * (R0 / f) ** 2)))
 
 
 def advance_field(C, u):
@@ -288,8 +292,8 @@ class Strategy:
         return float(np.sum(seg * ((t - last) <= T_STALE)) / np.sum(seg))
 
 
-def run_trial(u, rng_seed, sweep=False, record=False):
-    C = init_field()
+def run_trial(u, rng_seed, sweep=False, record=False, shape=(1.0, 0.0)):
+    C = init_field(shape)
     lm0 = resample_closed(truth_contour(C), N_LANDMARKS)
     configs = [(s, N_DRONES) for s in STRATS]
     if sweep:
@@ -355,7 +359,7 @@ def summarise(st):
         'eta_mean': float(lg['eta'].mean()), 'eta_nom_mean': float(lg['eta_nom'].mean()),
         'eta_frac_ok': float(np.mean(lg['eta'] >= ETA_TARGET)),
         'err_mean': float(lg['err'].mean()), 'err_final': float(lg['err'][-1]),
-        'stale_kms': float(np.sum((1 - lg['eta']) * lg['per_est']) * dt / 1000.0),
+        'stale_kms': float(np.sum((1 - lg['eta']) * lg['per_true']) * dt / 1000.0),
         'per_err_final': float(lg['per_est'][-1] - lg['per_true'][-1]),
         'n_meas': st.n_meas,
     }
@@ -374,7 +378,17 @@ def run_simulation():
         st, _, _ = run_trial(u, 100 + i)
         for s in STRATS:
             mc[s].append(summarise(st[(s, N_DRONES)]))
-    return main, sweep, mc, frames, true_log, angles
+    # second Monte Carlo: elongated slicks (breaks the rotational symmetry of the first one)
+    rng2 = np.random.default_rng(56)
+    shapes = [(float(rng2.uniform(1.0, 1.5)), float(rng2.uniform(0, np.pi)),
+               float(rng2.uniform(0, 2 * np.pi))) for _ in range(N_TRIALS)]
+    mc2 = {s: [] for s in STRATS}
+    for i, (f, ang, a) in enumerate(shapes):
+        u = speed * np.array([np.cos(a), np.sin(a)])
+        st, _, _ = run_trial(u, 200 + i, shape=(f, ang))
+        for s in STRATS:
+            mc2[s].append(summarise(st[(s, N_DRONES)]))
+    return main, sweep, (mc, mc2, shapes), frames, true_log, angles
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
@@ -482,20 +496,26 @@ def plot_error(main, out_dir):
     _save(fig, out_dir, 'estimation_error.png')
 
 
-def plot_mc(mc, sweep, out_dir):
+def plot_mc(mc, mc2, sweep, out_dir):
     fig, axes = plt.subplots(1, 4, figsize=(19, 4.6))
     keys = [('eta_mean', 'mean η (verified)'), ('err_mean', 'mean landmark error ē (m)'),
             ('stale_kms', 'stale arc-time (km·s)')]
     for ax, (k, lab) in zip(axes[:3], keys):
         vals = [np.array([r[k] for r in mc[s]]) for s in STRATS]
-        ax.bar(range(3), [v.mean() for v in vals], yerr=[v.std() for v in vals],
-               color=[COLORS[s] for s in STRATS], edgecolor='k', capsize=4)
+        vals2 = [np.array([r[k] for r in mc2[s]]) for s in STRATS]
+        ax.bar(np.arange(3) - 0.2, [v.mean() for v in vals], 0.4, yerr=[v.std() for v in vals],
+               color=[COLORS[s] for s in STRATS], edgecolor='k', capsize=4,
+               label='MC1: circular slick, random wind direction')
+        ax.bar(np.arange(3) + 0.2, [v.mean() for v in vals2], 0.4, yerr=[v.std() for v in vals2],
+               color=[COLORS[s] for s in STRATS], edgecolor='k', hatch='//', capsize=4,
+               label='MC2: elongated slick, random orientation and wind')
         ax.set_xticks(range(3))
         ax.set_xticklabels([LABELS[s].replace(', ', ',\n') for s in STRATS], fontsize=8)
         ax.set_title(lab, fontsize=10)
         if k == 'eta_mean':
             ax.axhline(ETA_TARGET, color='red', ls='--', lw=1)
             ax.set_ylim(0, 1)
+            ax.legend(fontsize=7)
         if k == 'err_mean':
             ax.set_yscale('log')
     ks = sorted(sweep)
@@ -506,7 +526,7 @@ def plot_mc(mc, sweep, out_dir):
     axes[3].set_ylim(0, 1.05)
     axes[3].legend(fontsize=8)
     axes[3].set_title('Fleet size (adaptive + prediction, card wind)', fontsize=10)
-    fig.suptitle(f'S055 Monte Carlo over {N_TRIALS} wind directions (mean ± std) and fleet-size sweep')
+    fig.suptitle(f'S055 Monte Carlo, {N_TRIALS} trials each (plain = MC1, hatched = MC2; mean ± std) and fleet-size sweep')
     plt.tight_layout()
     _save(fig, out_dir, 'mc_comparison.png')
 
@@ -576,7 +596,7 @@ def save_animation(frames, main, out_dir):
 
 
 if __name__ == '__main__':
-    main, sweep, mc, frames, true_log, angles = run_simulation()
+    main, sweep, (mc, mc2, shapes), frames, true_log, angles = run_simulation()
     C = init_field()
     r_b0 = R0 * np.sqrt(2 * np.log(C0 / C_THR))
     sig_f = np.sqrt(R0 ** 2 + 2 * D_DIFF * T_MISSION)
@@ -592,9 +612,15 @@ if __name__ == '__main__':
     zz_factor = float(np.sum(np.linalg.norm(np.diff(zz, axis=0), axis=1)) / 1000.0)
     per = true_log[0][1]
     print(f'  Zig-zag path factor {zz_factor:.3f} -> along-boundary speed {V_ARC / zz_factor:.2f} m/s')
+    per1 = true_log[-1][1]
+    need = lambda P, v: ETA_TARGET * P / (v * T_STALE)
     print(f'  Fresh arc per drone in T_stale: {V_ARC / zz_factor * T_STALE:.0f} m; '
-          f'drones needed for eta = 0.85 on a {per:.0f} m boundary (one pass in T_stale): '
-          f'{ETA_TARGET * per / (V_ARC / zz_factor * T_STALE):.1f}')
+          f'drones needed for eta = 0.85 (one pass in T_stale): with the zig-zag '
+          f'{need(per, V_ARC / zz_factor):.1f} (t = 0 perimeter {per:.0f} m) to '
+          f'{need(per1, V_ARC / zz_factor):.1f} (final {per1:.0f} m); at the full {V_ARC:.0f} m/s without '
+          f'zig-zag {need(per, V_ARC):.1f} to {need(per1, V_ARC):.1f}')
+    print(f'  Drift per replanning epoch {np.linalg.norm(U_CARD) * T_REPLAN:.1f} m; '
+          f'half the t = 0 perimeter (one drone arc) {per / 2:.0f} m')
     print(f'  Random-walk filter process noise sigma_q = |u| sqrt(T_replan) = {SIGMA_Q_RW:.2f} m/s^0.5')
     print('  [Card wind, 2 drones]')
     for s in STRATS:
@@ -615,6 +641,21 @@ if __name__ == '__main__':
               f"crossings {a['n_meas'].mean():.0f}, mean error > {ZZ_AMP:.0f} m in "
               f"{int(np.sum(np.isfinite(a['t_lost'])))}/{N_TRIALS} trials "
               f"(first at {np.nanmean(a['t_lost']) if np.isfinite(a['t_lost']).any() else np.nan:.0f} s on average)")
+    print(f'  Monte Carlo 2 ({N_TRIALS} elongated slicks, axis factor U(1, 1.5), random orientation '
+          f'and wind direction):')
+    for s in STRATS:
+        a = {k: np.array([r[k] for r in mc2[s]]) for k in mc2[s][0]}
+        print(f"    {LABELS[s]:25s} eta {a['eta_mean'].mean():.3f} +- {a['eta_mean'].std():.3f}, "
+              f"error {a['err_mean'].mean():.1f} +- {a['err_mean'].std():.1f} m "
+              f"(final {a['err_final'].mean():.1f} +- {a['err_final'].std():.1f}), "
+              f"stale {a['stale_kms'].mean():.0f} +- {a['stale_kms'].std():.0f} km*s, "
+              f"crossings {a['n_meas'].mean():.0f}")
+    e2 = np.array([[r['err_mean'] for r in mc2[s]] for s in STRATS])
+    print('  MC2 lowest mean error: ' + ', '.join(f'{LABELS[s]} {int(np.sum(np.argmin(e2, 0) == i))}'
+                                                  for i, s in enumerate(STRATS)) + f' of {N_TRIALS}')
+    r_err = np.array([r['err_mean'] for r in mc['adaptive']]).mean() / \
+        np.array([r['err_mean'] for r in mc['predict']]).mean()
+    print(f'  MC1 mean error ratio adaptive (no prediction) / prediction: {r_err:.1f}x')
     e = np.array([[r['err_mean'] for r in mc[s]] for s in STRATS])
     h = np.array([[r['eta_mean'] for r in mc[s]] for s in STRATS])
     print('  Lowest mean error: ' + ', '.join(f'{LABELS[s]} {int(np.sum(np.argmin(e, 0) == i))}'
@@ -635,6 +676,6 @@ if __name__ == '__main__':
     plot_trajectories(main, frames, out)
     plot_coverage(main, None, out)
     plot_error(main, out)
-    plot_mc(mc, sweep, out)
+    plot_mc(mc, mc2, sweep, out)
     plot_spacetime_3d(main, frames, out)
     save_animation(frames, main, out)
