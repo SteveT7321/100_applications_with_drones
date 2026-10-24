@@ -56,7 +56,7 @@ BEZIER_ALPHA = 0.3
 THETA_MAX = np.radians(150.0)        # interior angle below which a corner is rounded
 
 # ── Added parameters (see README Deviations) ──────────────────────────────────
-SEEDS = [0, 1, 2, 3, 4]
+SEEDS = list(range(10))
 SAMPLE_MARGINS = [8.0, 16.0, None]   # m, RRT* sampling box margin (None = whole yard)
 CHECK_STEP = R_DRONE / 2             # m, collision sampling along segments (card delta)
 BEZIER_PTS = 8
@@ -206,6 +206,7 @@ class GridPlanner:
         self.deltas = [(dx, dy, dz) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
                        for dz in (-1, 0, 1) if (dx, dy, dz) != (0, 0, 0)]
         self.n_expanded = 0
+        self.n_lookups = 0
 
     def cell(self, p):
         return tuple(int(np.clip(p[i] / GRID_RES, 0, s - 1))
@@ -234,6 +235,7 @@ class GridPlanner:
                 nb = (cur[0] + d[0], cur[1] + d[1], cur[2] + d[2])
                 if not (0 <= nb[0] < self.nx and 0 <= nb[1] < self.ny and 0 <= nb[2] < self.nz):
                     continue
+                self.n_lookups += 1
                 if self.occ[nb] and nb != g:
                     continue
                 ng = gc + GRID_RES * np.sqrt(d[0] ** 2 + d[1] ** 2 + d[2] ** 2)
@@ -314,20 +316,26 @@ def cta(path):
 
 # ── Mission ───────────────────────────────────────────────────────────────────
 def plan_mission(planner, seq, world, rng, grid=None):
+    """Returns the path, scan-point indices, raw length, RRT* iterations and the number
+    of point tests spent in planning (excluding smoothing)."""
     full, seg_starts, iters = [seq[0]], [0], []
     raw_len = 0.0
+    plan_tests = 0
     for a, b in zip(seq[:-1], seq[1:]):
+        c0, l0 = world.n_checked, grid.n_lookups
         if planner == 'rrt':
             seg, it = rrt_star(a, b, world, rng)
             iters.append(it)
+            plan_tests += world.n_checked - c0
         else:
             seg = grid.plan(a, b)
+            plan_tests += grid.n_lookups - l0
         raw_len += path_length(seg)
         seg = shortcut(seg, world, rng)
         seg = bezier_round(seg, world)
         full.extend(seg[1:])
         seg_starts.append(len(full) - 1)
-    return full, seg_starts, raw_len, iters
+    return full, seg_starts, raw_len, iters, plan_tests
 
 
 def stabilisation(rng, n):
@@ -350,7 +358,8 @@ def run_simulation():
             rng = np.random.default_rng(s)
             world.n_checked = 0
             grid.n_expanded = 0
-            path, idx, raw, iters = plan_mission(planner, seq, world, rng, grid)
+            grid.n_lookups = 0
+            path, idx, raw, iters, plan_tests = plan_mission(planner, seq, world, rng, grid)
             checks = world.n_checked
             P = np.array(path)
             assert world.path_free(path), 'smoothed path collides'
@@ -362,6 +371,7 @@ def run_simulation():
                                      t_scan=float((t_stab + T_DWELL).sum()),
                                      t_mission=L / V_SCAN + float((t_stab + T_DWELL).sum()),
                                      checks=checks, expanded=grid.n_expanded,
+                                     plan_tests=plan_tests,
                                      iters=iters, zmax=P[:, 2].max(), zmin=P[:, 2].min()))
     straight = path_length(seq)
     return dict(boxes=boxes, wps=wps, order=order, seq=np.array(seq), res=res,
@@ -466,13 +476,14 @@ def plot_metrics(sim, out_dir):
         ax.set_xticklabels(['RRT*', 'A*'])
         ax.set_ylabel(lab)
         ax.set_ylim(0, max(v.max() for v in vals) * 1.15)
-    ch = np.mean([r['checks'] for r in res['rrt']])
-    ex = np.mean([r['expanded'] for r in res['astar']])
+    ch = np.mean([r['plan_tests'] for r in res['rrt']])
+    ex = np.mean([r['plan_tests'] for r in res['astar']])
     axes[0].set_title(f'Path length ({len(SEEDS)} seeds; dots = seeds)')
     axes[1].set_title('Smoothness (lower = smoother)')
     axes[2].set_title('Mission time incl. 50 x (stabilisation + dwell)')
-    fig.suptitle(f'Planning effort: RRT* {ch / 1e6:.2f} M collision-checked points per mission; '
-                 f'A* {ex / 1e3:.0f} k node expansions per mission', fontsize=10)
+    fig.suptitle(f'Planning-only point tests per mission: RRT* {ch / 1e6:.3f} M collision tests '
+                 f'(50 boxes each), A* {ex / 1e6:.3f} M grid lookups (different unit costs, '
+                 f'not a timing comparison)', fontsize=10)
     plt.tight_layout()
     path = os.path.join(out_dir, 'planner_metrics.png')
     plt.savefig(path, dpi=150, bbox_inches='tight')
@@ -572,6 +583,10 @@ if __name__ == '__main__':
     print(f'  RRT* segments needing a larger sampling box: {int((it > N_ITER).sum())} of {len(it)}')
     print(f'  RRT* iterations per segment: mean {it.mean():.0f}, max {it.max()}; '
           f'collision-checked points per mission: mean {np.mean([r["checks"] for r in res["rrt"]]) / 1e6:.2f} M')
+    print(f'  Planning-only point tests per mission (smoothing excluded): RRT* '
+          f'{np.mean([r["plan_tests"] for r in res["rrt"]]) / 1e6:.3f} M collision tests against '
+          f'50 boxes; A* {np.mean([r["plan_tests"] for r in res["astar"]]) / 1e6:.3f} M grid '
+          f'occupancy lookups (precomputed grid). Different unit costs: not a timing comparison.')
     print(f'  A* node expansions per mission: {np.mean([r["expanded"] for r in res["astar"]]) / 1e3:.0f} k; '
           f'collision-checked points (smoothing only): '
           f'{np.mean([r["checks"] for r in res["astar"]]) / 1e6:.2f} M')

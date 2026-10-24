@@ -10,7 +10,7 @@
 
 **Objective** (card): scan all 50 containers without collision and minimise mission time; compare **RRT\*** and **A\*** (3D grid) on path length, smoothness (cumulative turning angle, CTA) and computation.
 
-**Method**: every leg between consecutive scan points is planned separately in the 3D free space (containers inflated by the drone radius, 0.25–9.75 m altitude), then shortcut-pruned and corner-rounded with Bézier curves. The scan points stay on the path. RRT\* is randomised, so the comparison is run for 5 seeds; each seed drives the shortcut smoother of both planners and the GPS stabilisation draws, so both planners see the same random numbers.
+**Method**: every leg between consecutive scan points is planned separately in the 3D free space (containers inflated by the drone radius, 0.25–9.75 m altitude), then shortcut-pruned and corner-rounded with Bézier curves. The scan points stay on the path. RRT\* is randomised, so the comparison is run for 10 seeds; each seed drives the shortcut smoother of both planners and the GPS stabilisation draws, so both planners see the same random numbers.
 
 ---
 
@@ -63,7 +63,7 @@ $$\text{CTA} = \sum_i \arccos\frac{(\mathbf w_{i+1} - \mathbf w_i)\cdot(\mathbf 
 | Shortcut tries / Bézier α / corner threshold | 200 per leg / 0.3 / interior angle < 150° |
 | Collision sampling step | 0.125 m ($r_d/2$) |
 | RRT\* sampling box margin (added) | 8 m, then 16 m, then whole yard |
-| Seeds (added) | 0–4 (RRT\* and smoothing); stabilisation draws 1000–1004 |
+| Seeds (added) | 0–9 (RRT\* and smoothing); stabilisation draws 1000–1009 |
 
 ---
 
@@ -78,36 +78,36 @@ conda activate drones
 python src/04_industrial_agriculture/s075_container_yard.py
 ```
 
-Runtime ≈ 1 min (measured while other simulations shared the machine).
+Runtime ≈ 2–2.5 min (measured while other simulations shared the machine).
 
 ---
 
 ## Results
 
-| Metric (5 seeds) | RRT\* mean ± std | A\* mean ± std |
+| Metric (10 seeds) | RRT\* mean ± std | A\* mean ± std |
 |---|---:|---:|
 | Containers scanned | 50 in every seed | 50 in every seed |
-| Raw path length before smoothing | 901.6 ± 25.6 m | 641.2 ± 0.0 m |
-| **Path length** | **632.9 ± 4.3 m** | **606.6 ± 0.3 m** |
-| **Cumulative turning angle** | **4311 ± 173°** | **3752 ± 27°** |
-| Travel time | 632.9 ± 4.3 s | 606.6 ± 0.3 s |
-| Stabilisation + dwell | 90.1 ± 0.6 s | 90.1 ± 0.6 s |
-| **Total mission time** | **722.9 ± 4.7 s** | **696.7 ± 0.7 s** |
-| Highest point | 7.80 ± 0.57 m | 6.16 ± 0.11 m |
+| Raw path length before smoothing | 904.1 ± 28.2 m | 641.2 ± 0.0 m |
+| **Path length** | **633.0 ± 3.7 m** | **606.5 ± 0.4 m** |
+| **Cumulative turning angle** | **4251 ± 166°** | **3753 ± 35°** |
+| Travel time | 633.0 ± 3.7 s | 606.5 ± 0.4 s |
+| Stabilisation + dwell | 90.7 ± 1.0 s | 90.7 ± 1.0 s |
+| **Total mission time** | **723.7 ± 3.9 s** | **697.2 ± 1.0 s** |
+| Highest point | 7.34 ± 0.97 m | 6.21 ± 0.09 m |
 
-Paired over the 5 seeds, RRT\* is shorter in 0/5, smoother in 0/5 and faster in 0/5. The straight-line tour through the 50 scan points (ignoring obstacles) is 567.0 m.
+Paired over the 10 seeds, RRT\* is shorter in 0/10, smoother in 0/10 and faster in 0/10. Ten seeds are enough here: the gap in path length (633.0 vs 606.5 m) is far larger than the seed-to-seed spread (RRT\* std 3.7 m), and no seed reverses it. The straight-line tour through the 50 scan points (ignoring obstacles) is 567.0 m.
 
-**Computation** (deterministic counts; wall-clock time is machine-dependent and not reported): RRT\* needs on average 46 iterations per leg (maximum 537; no leg needed a larger sampling box) and 0.28 M collision-checked points per mission. A\* expands 60 k grid nodes per mission; its smoothing checks 0.23 M points.
+**Computation** (deterministic counts; wall-clock time is machine-dependent and not reported). Planning alone, smoothing excluded: RRT\* makes 0.035 M collision tests per mission (each a point against the 50 inflated boxes) and needs on average 46 iterations per leg (maximum 752; no leg needed a larger sampling box); A\* makes 1.544 M occupancy lookups in a precomputed grid (60 k node expansions). **These counts are not comparable as a cost**: a lookup is one array access, a collision test is 50 box tests, and A\* also pays for building the grid once. The card's planning-time comparison is therefore not answered. Including smoothing, RRT\* checks 0.27 M points per mission and A\*'s smoothing 0.23 M.
 
 **Stabilisation** (seed 0): mean 0.31 s per stop, maximum 0.52 s.
 
 **Figures** use seed 0: RRT\* 639.0 m, CTA 4329°, mission 729.5 s; A\* 607.0 m, CTA 3799°, mission 697.4 s.
 
 **Key findings**:
-- **A\* beats RRT\* on every metric in every seed**: 606.6 vs 632.9 m, 3752 vs 4311° of turning, 696.7 vs 722.9 s. The card expected the opposite (RRT\* shorter and smoother). RRT\* stops at its first solution, which is 901.6 m raw; shortcutting removes most of the detours but not all, and the RRT\* legs keep climbing over stacks (highest point 7.80 m) where the grid search stays in the aisles. A\* is optimal on its grid, so after shortcutting it comes close to the obstacle-free tour (606.6 vs 567.0 m).
-- **RRT\* varies between seeds** (path length std 4.3 m, CTA std 173°); A\* differs between seeds only through the random shortcut tries (0.3 m).
+- **A\* beats RRT\* on every metric in every seed**: 606.5 vs 633.0 m, 3753 vs 4251° of turning, 697.2 vs 723.7 s. The card expected the opposite (RRT\* shorter and smoother). RRT\* stops at its first solution, which is 904.1 m raw; shortcutting removes most of the detours but not all, and the RRT\* legs often climb over stacks (highest point 7.34 ± 0.97 m) where the grid search stays lower (6.21 m). A\* is optimal on its grid, so after shortcutting it comes close to the obstacle-free tour (606.5 vs 567.0 m).
+- **RRT\* varies between seeds** (path length std 3.7 m, CTA std 166°); A\* differs between seeds only through the random shortcut tries (0.4 m).
 - **The card's expected metrics cannot be reproduced.** The card lists 312.4 m (RRT\*) and 358.7 m (A\*), but no collision-free tour can be shorter than the 567.0 m straight-line tour through the same scan points; the card has been annotated.
-- **Scanning overhead is small and identical for both planners**: 50 stops cost 90.1 s (1.5 s dwell + 0.31 s mean stabilisation); the planner choice changes only the travel time.
+- **Scanning overhead is small and identical for both planners**: 50 stops cost 90.7 s on average (1.5 s dwell + stabilisation; 0.31 s mean in seed 0); the planner choice changes only the travel time.
 - **Turning angles are large for both planners** (over 3700°): consecutive scan points sit at different heights (1.25, 2.5 or 3.75 m), so the path turns up or down at almost every stop, and the CTA counts those turns as well.
 
 ### 3D Yard Overview
@@ -124,7 +124,7 @@ Top: top views coloured by altitude. Bottom: front views (x–z) with the stacks
 
 ### Planner Metrics
 
-Path length, cumulative turning angle and mission time (bars: mean ± std over 5 seeds; dots: seeds). The title gives the deterministic computation counts:
+Path length, cumulative turning angle and mission time (bars: mean ± std over 10 seeds; dots: seeds). The title gives the planning-only point-test counts, which are not comparable as a cost:
 
 ![Planner metrics](./planner_metrics.png)
 
@@ -140,8 +140,8 @@ Top-down view of the RRT\* mission, seed 0 (184 frames, one every 4 s): the dron
 |------|----------------|--------|
 | 3 m aisles in y; workspace up to 7.5 m (text) | 7.5–9.5 m aisles and 10 m ceiling | The values in the card's own code (row origins, `YARD_Z = 10`); with a 7.5 m ceiling the drone could not pass over a 3-tier stack. Card corrected. |
 | A\* grid 200 × 160 × 15 (text) | 200 × 160 × 20 | `YARD_Z / GRID_RES` in the card's code. Card corrected. |
-| Expected metrics 312.4 m / 358.7 m, RRT\* better | 632.9 m / 606.6 m, A\* better | The card's values are below the 567.0 m straight-line tour, so they cannot be right. Card annotated. |
-| Planning time in seconds | Deterministic counts (iterations, checked points, node expansions) | Wall-clock time changes from run to run and machine to machine, so it cannot be part of a reproducible output. |
+| Expected metrics 312.4 m / 358.7 m, RRT\* better | 633.0 m / 606.5 m, A\* better | The card's values are below the 567.0 m straight-line tour, so they cannot be right. Card annotated. |
+| Planning time in seconds | Deterministic counts (iterations, collision tests, grid lookups, node expansions); no timing comparison | Wall-clock time changes from run to run and machine to machine, so it cannot be part of a reproducible output; the counts have different unit costs, so the planning-time question stays open. |
 | RRT\* samples the whole yard | Samples the leg's bounding box + 8 m (then 16 m, then the whole yard) | With whole-yard sampling, some legs found no path within 5000 iterations in development runs. |
 | Shortcut smoothing over the whole concatenated path | Per leg | Shortcutting the whole path deletes scan points; every scan point must stay on the path (asserted). |
 | Bézier from $\mathbf w_{i-1}$ to $\mathbf w_{i+1}$ with the card's angle test | Corner rounding between points at α = 0.3 of the adjacent edges; only interior angles < 150°; curve checked for collisions | The card's curves for consecutive corners overlap (the path runs back), its test (`angle < 150°` on the turning angle) rounds almost every node, and nothing checked the curves for collisions. |
