@@ -591,6 +591,10 @@ if __name__ == '__main__':
     print(f'  N = {N_DRONES}, sphere R = {SPHERE_RADIUS} m, dt = {DT} s, T_max = {T_MAX} s')
     print(f'  Seed {SEED_MAIN}: min start separation {d0.min():.3f} m '
           f'({n_rej} candidate points rejected for being < {FORMATION_DIST} m)')
+    n_pairs = N_DRONES * (N_DRONES - 1) // 2
+    cap = (1.0 - math.cos(2.0 * math.asin(COLLISION_RADIUS / (2.0 * SPHERE_RADIUS)))) / 2.0
+    print(f'  Uniform sampling without rejection: {n_pairs} pairs x cap fraction {cap:.2e} '
+          f'= {n_pairs * cap:.2f} expected start pairs closer than {COLLISION_RADIUS} m')
     print(f'  Straight-line time to goal at v_pref: {2 * SPHERE_RADIUS / V_PREF:.1f} s; '
           f'all straight paths pass the centre at t ≈ {SPHERE_RADIUS / V_PREF:.1f} s')
     print(f'\n  Main seed {SEED_MAIN}:')

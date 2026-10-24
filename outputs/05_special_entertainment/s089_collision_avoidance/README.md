@@ -83,7 +83,7 @@ conda activate drones
 python src/05_special_entertainment/s089_collision_avoidance.py
 ```
 
-Runtime ≈ 1.5–2.5 min (90, 110 and 135 s measured while other jobs shared the CPU).
+Runtime ≈ 1.5–4 min (139, 156 and 246 s measured in the latest three runs while other jobs shared the CPU).
 
 ---
 
@@ -176,7 +176,7 @@ Seed 42, XY projection, ORCA (left) and no avoidance (right) side by side, 113 f
 | PF attraction $k_{att}(\mathbf{g} - \mathbf{p})$ | $k_{att}(\mathbf{v}^{goal} - \mathbf{v})$ | The spring form is undamped: it saturates at $a_{max}$, cruises at 3 m/s while the others fly at 2 m/s, and oscillates around the goal. The velocity-tracking form is the same attraction with damping and the same cruise speed. |
 | Preferred velocity $v_{pref}\,\hat{\mathbf{e}}_{goal}$; arrived drones set to zero velocity and dropped from the neighbour sets | Speed tapers as $d/T_{arr}$ near the goal; arrived drones keep holding their goal and stay neighbours | Avoids instantaneous stops and drones that become invisible to the others. |
 | Sphere centred at the origin (half the drones below z = 0) | Centre at (0, 0, 25) m; $z \ge 0$ asserted | No flight below ground; relative geometry, and therefore every result, is unchanged. |
-| Random start points | Rejection sampling with 2.0 m minimum separation (`FORMATION_DIST`, unused in the card) between starts and between goals | With uniform sampling the expected number of start pairs closer than 0.5 m is about 0.19 (1225 pairs × cap fraction 1.6·10⁻⁴), so some placements would start in collision. |
+| Random start points | Rejection sampling with 2.0 m minimum separation (`FORMATION_DIST`, unused in the card) between starts and between goals | With uniform sampling the expected number of start pairs closer than 0.5 m is 0.19 (1225 pairs × cap fraction 1.56·10⁻⁴, printed), so some placements would start in collision. |
 | Single run | 20 placements with common random numbers | Results depend on the placement. |
 | Collision count over "ordered pairs" (maths) vs unordered pairs (code) | Unordered pairs, plus "arrived with no contact" | Card maths corrected to match its code. Collided drones are not removed, so arrival alone cannot show crashes. |
 | VO "apex at $\mathbf{v}_B + (\mathbf{p}_A - \mathbf{p}_B)/\tau$" | Apex $\mathbf{v}_B$; truncation sphere centred at $\mathbf{v}_B + (\mathbf{p}_B - \mathbf{p}_A)/\tau$ | From the VO definition, $(\mathbf{v}_A - \mathbf{v}_B)t$ must reach $\mathbf{p}_B - \mathbf{p}_A$; card corrected. |
