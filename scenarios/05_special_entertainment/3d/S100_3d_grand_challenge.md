@@ -1,6 +1,6 @@
 # S100 3D Upgrade — Grand Challenge: Multi-Domain Integration
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S100 original](../S100_grand_challenge.md)
 
 ---
@@ -138,6 +138,12 @@ $$\sqrt{(x - x_D)^2 + (y - y_D)^2 + (z - z_D)^2} \leq r_s + \kappa \cdot |z_D - 
 
 where $r_s = 3$ m is the base sensor radius and $\kappa = 0.4$ is the cone half-angle tangent. Detection probability within footprint: $P_d = 0.85$; outside: $P_{fa} = 0.01$.
 
+*(Check 2026-10-24: this inequality is not a cone. At a height difference $h = |z_D - z|$ its
+horizontal radius is $\sqrt{(r_s + \kappa h)^2 - h^2}$: 3.00 m at $h = 0$, at most 3.27 m at
+$h = 1.43$ m, and zero beyond $h \approx 5$ m (4.99 m on a 1 cm grid). Flying higher therefore shrinks the footprint instead of
+widening it, and a scout at 8 m cannot see a survivor on the ground. The statement below that
+higher flight gives a wider cone does not follow from this model.)*
+
 **Altitude-optimised greedy frontier**: the scout selects the voxel and altitude jointly:
 
 $$(\mathbf{w}_D^*, z_D^*) = \arg\max_{\mathbf{w}_{xy}, z_D} \sum_{\mathbf{x} \in \mathcal{C}(\mathbf{w}_{xy}, z_D)} B_t(\mathbf{x})$$
@@ -160,9 +166,11 @@ $$z_k^{climb}(t) = z_k^{start} + (z_{show} - z_k^{start}) \cdot \Phi\!\left(\fra
 
 where $\Phi(\xi) = 3\xi^2 - 2\xi^3$ is a cubic smoothstep easing function ensuring zero acceleration at start and end, and each drone's climb schedule is staggered by $\delta t_{stagger} = 3$ s to maintain vertical separation $\Delta z_{sep} \geq 5$ m between consecutively ascending drones:
 
-$$\tau_{climb,k} = \frac{|z_{show} - z_k^{start}|}{v_{z,max}} + k \cdot \delta t_{stagger}$$
+$$\tau_{climb,k} = 1.5\,\frac{|z_{show} - z_k^{start}|}{v_{z,max}} + k \cdot \delta t_{stagger}$$
 
-with $v_{z,max} = 3$ m/s.
+with $v_{z,max} = 3$ m/s. *(Corrected 2026-10-24: the smoothstep's peak slope is 1.5, so the earlier
+$\tau = |\Delta z|/v_{z,max}$ gave a peak climb rate of $1.5\,v_{z,max}$ = 4.5 m/s. The stagger
+lengthens the climb of drone $k$ by $3k$ s; it does not delay its start.)*
 
 **3D Hungarian assignment** (same as S100, applied in full 3D at $z = 60$ m):
 
@@ -193,6 +201,8 @@ Before Phase 2 begins, the mission sequencer solves a constrained assignment pro
 $$\text{Assign waypoint } j \text{ to drone } i \quad \text{if} \quad \frac{T_{max,i}}{m_i \cdot g} \geq 1 + \frac{\Delta z_j}{v_{z,max} \cdot \tau_{climb,max}}$$
 
 where $\Delta z_j = z_{wp,j} - z_{base}$ is the altitude gain required. This ensures that high-altitude waypoints are reserved for drones with sufficient thrust margin.
+*(Note 2026-10-24: $\tau_{climb,max}$ is not defined, and both couriers have the same thrust-to-weight
+ratio (1.70), so the constraint cannot separate them.)*
 
 ### Mission Sequencer (3D)
 
@@ -238,7 +248,7 @@ $$S_{mission} = \sum_{p=1}^{4} w_p \cdot s_p - \lambda_{OT} \cdot \max(0,\; t_4^
 | Scout altitude range | $z_D$ | 3 | 4–12 m |
 | Detection probability | $P_d$ | 3 | 0.85 |
 | **Phase 4 — 3D Formation** | | | |
-| Show altitude | $z_{show}$ | 4 | 60.0 m (raised from 25 m in S100) |
+| Show altitude | $z_{show}$ | 4 | 55.0 m (raised from 25 m in S100; corrected 2026-10-24 from 60 m, which is the arena ceiling itself: the PID overshoot then leaves the arena) |
 | Star circumradius | $R_{star}$ | 4 | 8.0 m |
 | Ascent stagger interval | $\delta t_{stagger}$ | 4 | 3.0 s |
 | Max vertical speed | $v_{z,max}$ | 4 | 3.0 m/s |
