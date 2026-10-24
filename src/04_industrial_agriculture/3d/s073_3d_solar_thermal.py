@@ -423,6 +423,14 @@ def coverage(plan, v=V_NOM, sun=(SUN_AZ, SUN_EL), return_map=False):
     return res
 
 
+def hotspot_region(geo):
+    """Imaged fraction of the band where 'anywhere' hot spots can lie (>= sigma_hot from the
+    panel's top and bottom edges)."""
+    s = geo['s']
+    band = (s >= SIGMA_HOT) & (s <= W_SLANT - SIGMA_HOT)
+    return float(geo['cov'][:, band].mean())
+
+
 def shadow_fraction(sun, nx=80, ns=45):
     xs = (np.arange(nx) + 0.5) * FARM_L / nx
     ss = (np.arange(ns) + 0.5) * W_SLANT / ns
@@ -521,7 +529,7 @@ def run_simulation():
     hsweep = {}
     for H in H_SWEEP:
         p = make_plan('3d_row', H=H)
-        hsweep[H] = dict(geo=coverage(p), mc=run_mc(p, 'anywhere'))
+        hsweep[H] = dict(geo=coverage(p, return_map=True), mc=run_mc(p, 'anywhere'))
     msweep = {}
     for m in MARGIN_SWEEP:
         p, q = make_plan('3d_row', margin=m), make_plan('3d_gimbal', margin=m)
@@ -805,6 +813,7 @@ def plot_coverage_map(res, out_dir):
         if res['mc']['anywhere']['2d_row'][k]['det'] < 1:
             show = MC_SEED0 + k
             break
+    print(f'  Coverage-map showcase: seed {show} (first Monte Carlo seed on which 2d_row misses a hot spot)')
     rng_case = draw_case(show, 'anywhere')
     for ax, key in zip(axes, ('2d_row', '3d_row')):
         g = res['geo'][key]
@@ -990,11 +999,13 @@ def report(res):
           f'north of the row centre (margin {PLAN_MARGIN} m); 3d_gimbal: R* = {r_star():.3f} m, '
           f'z = {P["3d_gimbal"]["strips"][0][1]:.3f} m, offset {P["3d_gimbal"]["strips"][0][0] - ROW_YC[0]:+.3f} m')
     print('  [Plans at the card sun]')
-    print('    plan                                  strips  path(m)  time(s)  min clr(m)  imaged   GSD mean/max (cm)  v_max abeam (m/s)')
+    print(f'  2D card lawnmower: footprint {W_FOOT_2D:.3f} m at 5 m, strip spacing {STRIP_D_2D:.3f} m')
+    print('    plan                                  strips  path(m)  time(s)  min clr(m)  imaged   hot-spot region imaged  GSD mean/max (cm)  v_max abeam (m/s)')
     for k in PLANS:
         g, nm = res['geo'][k], res['nominal'][k]
         print(f"    {LABELS[k]:<38} {len(P[k]['strips']):5d}  {nm['L']:7.1f}  {nm['t']:7.1f}  {nm['clr_min']:8.3f}"
-              f"  {100 * g['frac']:6.2f}%   {100 * g['gsd_mean']:.2f} / {100 * g['gsd_max']:.2f}        {g['v_max']:.3f}")
+              f"  {100 * g['frac']:6.2f}%   {100 * hotspot_region(g):6.2f}%                 "
+              f"{100 * g['gsd_mean']:.2f} / {100 * g['gsd_max']:.2f}        {g['v_max']:.3f}")
     print('  [Nominal mission: card seeds (defects 42, noise 0), hot spots at panel centres]')
     print(f"    defective panels {sorted(res['case_nom']['idx'].tolist())}")
     for k in PLANS:
@@ -1035,12 +1046,14 @@ def report(res):
     print(f"  Card rule at its blur-limited speed 0.9 v_max = {res['v_low']:.3f} m/s: imaged "
           f"{100 * res['geo_low_slow']['frac']:.2f}%, detection (anywhere) {100 * mu:.1f} ± {100 * sd:.1f}%, "
           f"8/8 {n8}/{N_MC}, time {res['mc_low_slow'][0]['t']:.1f} s ({res['mc_low_slow'][0]['t'] / t['3d_row']:.1f} x 3d_row)")
-    print('  [Planned-altitude sweep, 3d_row, anywhere model]')
-    print('     H (m)   imaged    GSD max (cm)  detection mean ± std   8/8   never in view   all blurred')
+    print('  [Planned-altitude sweep, 3d_row (offset at the window midpoint, +0.386 m at H*), anywhere model]')
+    print('     H (m)   offset (m)   imaged   hot-spot region imaged   GSD max (cm)  detection mean ± std   8/8   never in view   all blurred')
     for H in H_SWEEP:
         hs = res['hsweep'][H]
         mu, sd, n8 = _stats(hs['mc'])
-        print(f"    {H:5.2f}   {100 * hs['geo']['frac']:6.2f}%   {100 * hs['geo']['gsd_max']:6.2f}        "
+        lo_, hi_ = row_offset(H)
+        print(f"    {H:5.2f}   {0.5 * (lo_ + hi_):+.3f}      {100 * hs['geo']['frac']:6.2f}%   "
+              f"{100 * hotspot_region(hs['geo']):6.2f}%                  {100 * hs['geo']['gsd_max']:6.2f}        "
               f"{100 * mu:5.1f} ± {100 * sd:4.1f}%      {n8:2d}/{N_MC}   {sum(x['unseen'] for x in hs['mc']):4d}"
               f"            {sum(x['blur'] for x in hs['mc']):4d}")
     gmax = max(res['hsweep'][H]['geo']['gsd_max'] for H in H_SWEEP)

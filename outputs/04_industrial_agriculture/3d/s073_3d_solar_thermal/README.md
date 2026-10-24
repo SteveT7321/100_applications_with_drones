@@ -85,7 +85,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s073_3d_solar_thermal.py
 ```
 
-Runtime 55–56 s over three runs. Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
+Runtime 54–59 s over three runs. Two single-threaded runs and one run with default threading printed byte-identical output and produced byte-identical PNG and GIF files.
 
 ---
 
@@ -98,13 +98,15 @@ Runtime 55–56 s over three runs. Two single-threaded runs and one run with def
 
 ### Plans at the card sun
 
-| Plan | Strips | 3D path | Time | Min clearance | Panel surface imaged unblurred | GSD mean / max | v_max abeam |
-|---|---:|---:|---:|---:|---:|---|---:|
-| 2D card lawnmower @5 m | 19 | 1579.6 m | 1579.6 s | 3.148 m | 94.67 % | 1.90 / 2.64 cm | 0.951 m/s |
-| 2D row-centred @5 m | 10 | 854.0 m | 854.0 s | 3.135 m | 85.26 % | 2.06 / 3.14 cm | 1.118 m/s |
-| Card rule, 2.865 m | 47 | 3864.9 m | 3864.9 s | 1.053 m | 6.76 % | 1.31 / 1.78 cm | 0.306 m/s |
-| 3D row-aligned, H* = 6.244 m | 10 | 854.0 m | 854.0 s | 4.385 m | **100.00 %** | 2.58 / 3.84 cm | 1.414 m/s |
-| 3D row-aligned, tilt-normal gimbal | 10 | 854.0 m | 854.0 s | 4.359 m | **100.00 %** | 2.44 / 2.66 cm | 1.761 m/s |
+| Plan | Strips | 3D path | Time | Min clearance | Panel surface imaged unblurred | Hot-spot region imaged | GSD mean / max | v_max abeam |
+|---|---:|---:|---:|---:|---:|---:|---|---:|
+| 2D card lawnmower @5 m (footprint 4.142 m, strip spacing 3.314 m) | 19 | 1579.6 m | 1579.6 s | 3.148 m | 94.67 % | 95.76 % | 1.90 / 2.64 cm | 0.951 m/s |
+| 2D row-centred @5 m | 10 | 854.0 m | 854.0 s | 3.135 m | 85.26 % | 93.07 % | 2.06 / 3.14 cm | 1.118 m/s |
+| Card rule, 2.865 m | 47 | 3864.9 m | 3864.9 s | 1.053 m | 6.76 % | 0.00 % | 1.31 / 1.78 cm | 0.306 m/s |
+| 3D row-aligned, H* = 6.244 m | 10 | 854.0 m | 854.0 s | 4.385 m | **100.00 %** | **100.00 %** | 2.58 / 3.84 cm | 1.414 m/s |
+| 3D row-aligned, tilt-normal gimbal | 10 | 854.0 m | 854.0 s | 4.359 m | **100.00 %** | **100.00 %** | 2.44 / 2.66 cm | 1.761 m/s |
+
+"Hot-spot region" is the part of the panel where a hot spot can lie in the "anywhere" model: hot-spot centres are drawn at least σ = 0.4 m from the panel's top and bottom edges, so the edge strips a plan misses hold no hot spots.
 
 **Nominal mission** (card seeds, defective panels 10, 50, 75, 83, 88, 101, 116, 118, hot spots at panel centres): 8/8 detected by both 2D plans (33–34 valid frames per hot spot), `3d_row` (43–44) and `3d_gimbal` (48–49); **0/8 by the card rule** (0 valid frames: every frame is blurred).
 
@@ -129,17 +131,19 @@ Paired, hot spot anywhere: `3d_row` beats `2d_row` on 23 seeds, loses on 0, ties
 
 ### Planned altitude of the row-aligned plan (card sun, hot spot anywhere, 50 seeds)
 
-| H (m) | Panel surface imaged | Coarsest GSD | Detection mean ± std | Seeds 8/8 | Never in view |
-|---:|---:|---:|---|---:|---:|
-| 4.50 | 73.02 % | 2.69 cm | 91.8 ± 9.9 % | 25/50 | 33 |
-| 5.00 | 83.67 % | 3.08 cm | 98.8 ± 3.7 % | 45/50 | 5 |
-| 5.50 | 94.33 % | 3.48 cm | 100.0 ± 0.0 % | 50/50 | 0 |
-| 5.76 | 100.00 % | 3.69 cm | 100.0 ± 0.0 % | 50/50 | 0 |
-| 6.00 | 100.00 % | 3.76 cm | 100.0 ± 0.0 % | 50/50 | 0 |
-| 6.25 | 100.00 % | 3.84 cm | 100.0 ± 0.0 % | 50/50 | 0 |
-| 6.50 | 100.00 % | 3.92 cm | 100.0 ± 0.0 % | 50/50 | 0 |
-| 7.00 | 100.00 % | 4.10 cm | 100.0 ± 0.0 % | 50/50 | 0 |
-| 8.00 | 100.00 % | 4.46 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+Every row keeps the cross-track offset at the midpoint of the feasible window, +0.386 m north of the row centre (the same offset as at H*); only the altitude changes.
+
+| H (m) | Offset | Panel surface imaged | Hot-spot region imaged | Coarsest GSD | Detection mean ± std | Seeds 8/8 | Never in view |
+|---:|---:|---:|---:|---:|---|---:|---:|
+| 4.50 | +0.386 m | 73.02 % | 89.20 % | 2.69 cm | 91.8 ± 9.9 % | 25/50 | 33 |
+| 5.00 | +0.386 m | 83.67 % | 99.17 % | 3.08 cm | 98.8 ± 3.7 % | 45/50 | 5 |
+| 5.50 | +0.386 m | 94.33 % | 100.00 % | 3.48 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+| 5.76 | +0.386 m | 100.00 % | 100.00 % | 3.69 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+| 6.00 | +0.386 m | 100.00 % | 100.00 % | 3.76 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+| 6.25 | +0.386 m | 100.00 % | 100.00 % | 3.84 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+| 6.50 | +0.386 m | 100.00 % | 100.00 % | 3.92 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+| 7.00 | +0.386 m | 100.00 % | 100.00 % | 4.10 cm | 100.0 ± 0.0 % | 50/50 | 0 |
+| 8.00 | +0.386 m | 100.00 % | 100.00 % | 4.46 cm | 100.0 ± 0.0 % | 50/50 | 0 |
 
 No hot spot in the sweep was lost to blur. Planning margin: H* = 5.761 / 6.002 / 6.244 / 6.485 / 6.968 m and gimbal height 5.761 / 5.980 / 6.199 / 6.417 / 6.855 m for m = 0 / 0.1 / 0.2 / 0.3 / 0.5 m; both image 100.00 % at every margin (the flight has no cross-track error, as in the 2D base).
 
@@ -168,7 +172,7 @@ Paired (frame rule): the glare-aware plan beats `3d_row` at H*, `2d_row` and `2d
 **Key findings**
 
 - **Tilt makes the 2D altitude too low for row-aligned passes.** A 5 m pass over the row centre images 85.26 % of the tilted panel surface and misses 28 of 400 hot spots placed anywhere on the panels. Raising the pass to the planned H* = 6.244 m and shifting it 0.386 m north images 100 % and finds every hot spot on 50/50 seeds, in the same 854.0 s. The altitude sweep shows the threshold: full coverage from 5.76 m. The 3D plans fly **one constant altitude** for the whole mission: the gain is a different fixed altitude plus an offset derived from the tilt geometry, not altitude variation in flight (the vertical moves are the card rule's transits only).
-- **Detection follows coverage here.** The weakest hot spot reads 3.38 σ above the threshold in every frame, so any imaged, unblurred hot spot is detected; detection is a ceiling effect of coverage. It separates the 3D plans from the 2D plans, but it cannot separate plans that both image 100 %.
+- **Detection follows coverage of the hot-spot region, not of the whole panel.** The weakest hot spot reads 3.38 σ above the threshold in every frame, so any imaged, unblurred hot spot is detected. Hot spots never lie within σ = 0.4 m of a panel edge, so the edge strips a plan misses do not count: at H = 5.00 m the plan images 83.67 % of the panel but 99.17 % of the hot-spot region and detects 98.8 %; `2d_row` images 85.26 % of the panel, 93.07 % of the region, and detects 93.0 %. Detection is a ceiling effect of that coverage: it separates the 3D plans from the 2D plans, but it cannot separate plans that both image 100 %.
 - **The 3D plan also beats the 2D card lawnmower**, which images only 94.67 % of the tilted surface (its footprint is narrower at panel height) and takes 45.9 % longer.
 - **The card's altitude rule fails.** At the card sun no altitude is glare-limited, so "lowest glare-free altitude" means 2.865 m, 1 m over the top edges. There the image moves 1/ρ times faster: v_max is 0.306 m/s, every frame at 1.0 m/s is blurred, and the card rule detects 1.0 %; flown slowly enough it needs 16.4 × the mission time.
 - **The tilt-normal gimbal gives a more uniform resolution.** It images the same 100 % with a more uniform GSD (mean 2.44, max 2.66 cm, against mean 2.58, max 3.84 cm for the nadir pass) and a higher blur limit (1.761 vs 1.414 m/s). Detection is tied on all 50 seeds, but that tie is the coverage ceiling above (both plans image 100 %), not evidence that the gimbal does not matter for detection.
