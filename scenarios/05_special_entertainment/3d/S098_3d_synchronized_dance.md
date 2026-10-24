@@ -1,6 +1,6 @@
 # S098 3D Upgrade — Swarm Synchronized Dance
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S098 original](../S098_synchronized_dance.md)
 
 ---
@@ -15,8 +15,9 @@ between ring layers is treated as guaranteed.
 
 This variant elevates altitude to a first-class choreographic axis. Keyframes are authored as full
 $(x, y, z, t)$ tuples with deliberate altitude-layer structure. Inter-keyframe interpolation is
-replaced by **minimum-snap trajectories** (4th-order polynomial per axis) that enforce zero velocity
-and acceleration at each keyframe boundary. Altitude-layer synchronisation is separately tracked as
+replaced by **minimum-snap trajectories** (degree-7 polynomial per axis; corrected from
+"4th-order", which contradicted the model below) that enforce zero velocity, acceleration and jerk
+at each keyframe boundary. Altitude-layer synchronisation is separately tracked as
 a KPI distinct from horizontal XY fidelity. A real-time **3D collision-avoidance** check runs at
 every timestep and forces a repulsion impulse whenever any two drones approach within the safety
 radius — something the original entirely omits because the two-ring geometry at a single altitude
@@ -85,6 +86,11 @@ $$\min_{\mathbf{c}} \int_0^1 \left(\frac{d^4 q_k}{d\tau^4}\right)^2 d\tau$$
 subject to the eight boundary conditions. The solution is obtained by solving an $8 \times 8$ linear
 system per axis per segment per drone.
 
+*(Note 2026-10-24: the eight boundary conditions already determine all eight coefficients, so
+nothing is left to minimise; the "minimum-snap" segment is the degree-7 smoothstep
+$q_0 + (q_1 - q_0)(35\tau^4 - 84\tau^5 + 70\tau^6 - 20\tau^7)$, with peak speed
+$2.1875\,|q_1 - q_0|/T$.)*
+
 The full 3D commanded position at query time $t$ for drone $k$:
 
 $$\mathbf{p}_k^{cmd}(t) = \begin{bmatrix} x_k(\tau(t)) \\ y_k(\tau(t)) \\ z_k(\tau(t)) \end{bmatrix}$$
@@ -144,9 +150,17 @@ $$\mathbf{p}_k(t + \Delta t) = (1 - \alpha_{rec})\,\mathbf{p}_k^{cmd}(t + \Delta
 
 with $\alpha_{rec} = e^{-\Delta t / t_{rec}}$.
 
+*(Correction 2026-10-24: applied at every step, this blend low-passes the whole choreography with a
+0.2 s lag, which alone gives a 79 cm position error with perfect clocks. The implementation filters
+only the repulsion offset: $\mathbf{o}_k \leftarrow \alpha_{rec}\mathbf{o}_k + \Delta\mathbf{v}_k^{rep}\Delta t$,
+$\mathbf{p}_k = \mathbf{p}_k^{cmd} + \mathbf{o}_k$.)*
+
 ### PTP Clock Correction (unchanged structure, same EMA)
 
-$$\hat{\delta}_k \leftarrow (1 - \beta)\,\hat{\delta}_k + \beta\,\Delta_k, \qquad \delta_k \leftarrow \delta_k - \hat{\delta}_k$$
+$$\hat{\delta}_k \leftarrow (1 - \beta)\,\hat{\delta}_k + \beta\,\Delta_k, \qquad \delta_k \leftarrow \delta_k + \hat{\delta}_k$$
+
+*(Sign corrected 2026-10-24, as in the fixed S098 card: with $\Delta_k$ = peers minus self,
+subtracting it diverges.)*
 
 ---
 
