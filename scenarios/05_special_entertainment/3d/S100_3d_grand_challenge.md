@@ -7,14 +7,14 @@
 
 ## What Changes in 3D
 
-The original S100 already declares a $100 \times 100 \times 30$ m arena, but in practice each phase collapses altitude to a single operating band: Phase 1 catches every ball inside S094's $[0.3, 4.0]$ m altitude window with an orientation-free net in still air, Phase 2 couriers fly at a fixed delivery height of $z = 5$ m, Phase 3 scout maintains a constant $z = 8$ m AGL, and Phase 4 lifts all five drones to a single star plane at $z = 50$ m. The z-axis is never used as a tactical or navigational resource.
+The original S100 already declares a $100 \times 100 \times 30$ m arena, but in practice each phase collapses altitude to a single operating band: Phase 1 catches every ball inside S094's $[0.3, 4.0]$ m altitude window with an orientation-free net in still air, Phase 2 couriers fly at a fixed delivery height of $z = 5$ m, Phase 3 scout maintains a constant $z = 8$ m AGL, and Phase 4 lifts all five drones to a single star plane at $z = 25$ m (inside the 30 m ceiling). The z-axis is never used as a tactical or navigational resource.
 
 This 3D upgrade activates the full volumetric arena across all four phases:
 
 - **Phase 1**: the launcher throws from a 10 m mast, the catcher may take the ball anywhere on its descending branch inside a $[0.3, 20]$ m altitude window, the net cup only accepts balls that enter through its mouth (cup axis tied to the thrust direction, as in the [S094 3D upgrade](S094_3d_ball_catching.md)), and an altitude-dependent wind drifts the ball, so the planner must choose the catch altitude, not only the catch point.
 - **Phase 2**: delivery waypoints are distributed across three altitude bands; couriers plan 3D TSP routes and must manage climb/descent energy costs separately from horizontal cruise cost.
 - **Phase 3**: the SAR belief map is extended to a $50 \times 50 \times 12$ m volumetric search volume, with the scout varying altitude to optimise the 3D sensor footprint cone against a survivor who may be sheltering at elevation (rubble pile, rooftop).
-- **Phase 4**: the star formation is assembled via a vertically stratified ascent choreography — each drone follows an altitude-stratified climb profile to avoid mid-air convergence conflicts, then locks into the $z = 50$ m show plane.
+- **Phase 4**: the star formation is assembled via a vertically stratified ascent choreography — each drone follows an altitude-stratified climb profile to avoid mid-air convergence conflicts, then locks into the $z = 60$ m show plane.
 
 Additionally, a **heterogeneous fleet model** is introduced: each drone has distinct mass, maximum thrust, and battery capacity, making altitude-stratified task allocation a constrained optimisation problem rather than a symmetric assignment.
 
@@ -238,7 +238,7 @@ $$S_{mission} = \sum_{p=1}^{4} w_p \cdot s_p - \lambda_{OT} \cdot \max(0,\; t_4^
 | Scout altitude range | $z_D$ | 3 | 4–12 m |
 | Detection probability | $P_d$ | 3 | 0.85 |
 | **Phase 4 — 3D Formation** | | | |
-| Show altitude | $z_{show}$ | 4 | 60.0 m (raised from 50 m) |
+| Show altitude | $z_{show}$ | 4 | 60.0 m (raised from 25 m in S100) |
 | Star circumradius | $R_{star}$ | 4 | 8.0 m |
 | Ascent stagger interval | $\delta t_{stagger}$ | 4 | 3.0 s |
 | Max vertical speed | $v_{z,max}$ | 4 | 3.0 m/s |

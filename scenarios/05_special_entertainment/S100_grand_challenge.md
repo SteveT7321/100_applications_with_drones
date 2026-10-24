@@ -1,6 +1,6 @@
 # S100 Ultimate Grand Challenge — Multi-Domain Integration
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Multi-Phase Mission Sequencer (Predictive Catch Point + TSP + Bayesian SAR + ORCA Formation) | **Dimension**: 3D
 
 ---
@@ -131,32 +131,37 @@ airborne for about 1.0–2.2 s, so Phase 1 should end well before its 60 s deadl
 
 Drones B and C must jointly deliver packages to $M = 3$ waypoints
 $\{\mathbf{w}_1, \mathbf{w}_2, \mathbf{w}_3\} \subset \mathbb{R}^3$. Each courier carries one
-package and can deliver to exactly one waypoint per flight leg.
+package at a time, so every delivery is a round trip from the courier's own pad (B at
+(45, 92, 2) m, C at (55, 92, 2) m) to one waypoint and back; a courier with another delivery
+reloads on its pad for $T_{load} = 3$ s. (Two packages for three waypoints means one courier must
+fly twice; the couriers use separate pads so that they never land on the same spot.)
 
-**Joint TSP via nearest-neighbour heuristic**: construct the full pairwise distance matrix over
-the set $\mathcal{W} = \{\mathbf{b}_{base}\} \cup \{\mathbf{w}_1, \mathbf{w}_2, \mathbf{w}_3\}$
-(base plus 3 waypoints). Start from the base, greedily assign the nearest unvisited waypoint to
-whichever of {B, C} is geographically closest to it, alternating assignments. The resulting route
-partition $(\mathcal{R}_B, \mathcal{R}_C)$ minimises an upper bound on the total travel distance:
+**Joint TSP via nearest-neighbour heuristic**: repeatedly give the remaining waypoint that is
+nearest to a courier to that courier, nearest trip first. Because a courier is back on its pad
+before every trip, its position at every decision is its pad, so the heuristic sends each
+waypoint to the courier whose pad is nearest. This minimises the total round-trip distance
 
-$$D_{total} = \sum_{k \in \mathcal{R}_B} d_k^B + \sum_{k \in \mathcal{R}_C} d_k^C$$
+$$D_{total} = \sum_{k \in \mathcal{R}_B} 2\,d_k^B + \sum_{k \in \mathcal{R}_C} 2\,d_k^C$$
 
-where $d_k^i$ is the Euclidean leg distance for drone $i$ to reach waypoint $k$ from the previous
-stop.
+where $d_k^i$ is the distance from the pad of drone $i$ to waypoint $k$. It does not minimise the
+time until the last courier lands (the makespan) or the battery used by the busiest courier; an
+exhaustive search over the $2^3$ waypoint splits does, and is a useful comparison.
 
-**Battery model**: each drone starts Phase 2 with a normalised state-of-charge $E_0 = 1.0$.
-Energy consumption per unit distance at cruise speed $v_{cruise} = 5$ m/s:
+**Battery model**: every drone starts the mission with a normalised state-of-charge
+$E_0 = 1.0$, and the same model applies to every drone in every phase. Flying at cruise speed
+costs $c_{fly} = 0.004$ m$^{-1}$ (battery fraction per metre, $\dot E = -c_{fly} v$, i.e. a range of
+250 m); hovering, including the delivery dwell of $\tau_{deliver} = 3$ s, costs
+$c_{hover} = 0.003$ s$^{-1}$. One rate that contains both card values is
 
-$$\dot{E} = -c_{fly} \cdot v_{cruise}$$
+$$\dot{E} = -\max\!\left(c_{hover},\; c_{fly}\,\|\mathbf{v}\|\right) \quad \text{while airborne}, \qquad \dot E = 0 \text{ on the ground.}$$
 
-with $c_{fly} = 0.004$ s$^{-1}$ m$^{-1}$ (energy fraction per metre). At each waypoint a delivery
-dwell of $\tau_{deliver} = 3$ s consumes $c_{hover} = 0.003$ s$^{-1}$. The **safety reserve** is
-$E_{reserve} = 0.15$ (15 % of full charge must remain at return to base). The **battery trigger**:
-before committing to the next leg of length $d_{next}$, drone $i$ checks
+A drone may never fly on an empty battery. The **safety reserve** is $E_{reserve} = 0.15$
+(15 % of full charge must remain at return to base). The **battery trigger**: before committing
+to the next trip, drone $i$ checks
 
-$$E_i - c_{fly} \cdot d_{next} - c_{fly} \cdot d_{home} \geq E_{reserve}$$
+$$E_i - c_{fly} \cdot d_{next} - c_{fly} \cdot d_{home} - c_{hover}\,\tau_{deliver} \geq E_{reserve}$$
 
-where $d_{home}$ is its straight-line distance back to base. If the condition fails, the drone
+where $d_{next}$ is the pad-to-waypoint distance and $d_{home}$ the way back. If the condition fails, the drone
 aborts remaining deliveries and returns to base immediately. Phase 2 completes when all three
 packages are delivered (or all drones have returned) and the couriers have landed.
 
@@ -166,7 +171,7 @@ regardless of which drone delivers it.
 ### Phase 3 — Search and Rescue: Bayesian Belief Map
 
 Drone D searches for two survivors at unknown positions $\mathbf{x}_1^*, \mathbf{x}_2^*$ within
-a $50 \times 50$ m ground-plane zone (the southern half of the arena, $y \in [0, 50]$ m). The
+a $50 \times 50$ m ground-plane zone (the south-west quadrant of the arena, $x, y \in [0, 50]$ m). The
 zone is discretised into a $100 \times 100$ grid of $0.5$ m cells.
 
 **Dual-target prior**: two independent Gaussian priors are maintained, one per survivor:
@@ -198,7 +203,11 @@ $$\mathbf{w}_{D}^* = \arg\max_{\mathbf{w}} B_t(\mathbf{w})$$
 **Survivor located** when the belief in any survivor's map exceeds the detection threshold
 $\tau_{det} = 0.6$ in a $3 \times 3$ patch, or when a physical hit observation is recorded.
 Phase 3 completes when both survivors have been located, or when the Phase 3 budget
-($\leq 240$ s) is exhausted.
+($\leq 240$ s) is exhausted. A "physical hit" is a detection while the survivor really is in the
+footprint (the operator confirms it on the video feed); false alarms only update the belief.
+The scout also applies the Phase 2 battery trigger with "home" = the formation: it ends the
+search when $E_D - c_{fly}\,(d_{far} + z_{show}) < E_{reserve}$, where $d_{far}$ is its distance to
+the farthest star vertex, so that it can still fly to its vertex and land after the show.
 
 **Entropy tracking**: the joint search entropy
 
@@ -209,8 +218,9 @@ information gain rate.
 
 ### Phase 4 — Grand Formation: Hungarian Assignment + ORCA
 
-All five drones must arrange themselves into a **5-pointed star** pattern at show altitude
-$z_{show} = 50$ m within the arena. The star vertices are computed analytically: for a star
+All five drones must arrange themselves into a **5-pointed star** pattern (one drone on each of
+the five tips) at show altitude $z_{show} = 25$ m, inside the 30 m arena ceiling (an earlier
+version of this card used 50 m, above the ceiling). The star vertices are computed analytically: for a star
 inscribed in a circle of radius $R_{star} = 8$ m, the $k$-th point ($k = 0, \ldots, 4$) is at:
 
 $$\mathbf{g}_k = \begin{bmatrix}
@@ -263,11 +273,14 @@ $$\text{state} \leftarrow \begin{cases}
 \textsc{Phase2} & \text{if state} = \textsc{Phase1} \land (\text{ball caught} \lor N_{balls} \text{ balls lost} \lor t \geq 60) \\
 \textsc{Phase3} & \text{if state} = \textsc{Phase2} \land (\text{all deliveries done} \lor t \geq 160) \\
 \textsc{Phase4} & \text{if state} = \textsc{Phase3} \land (\text{both survivors found} \lor t \geq 240) \\
-\textsc{Done}   & \text{if state} = \textsc{Phase4} \land (\varepsilon_f \leq 0.15 \lor t \geq 300)
+\textsc{Done}   & \text{if state} = \textsc{Phase4} \land (\max_k \|\mathbf{p}_k - \mathbf{g}_{\sigma^*(k)}\| \leq 0.15 \lor t \geq 330)
 \end{cases}$$
 
 At each transition the sequencer logs the completion timestamp $t_p^{end}$ and computes the
-phase success flag $s_p = \mathbf{1}[t_p^{end} \leq T_p^{budget}]$.
+phase success flag $s_p = \mathbf{1}[\text{phase } p \text{ achieved} \land t_p^{end} \leq T_p^{budget}]$, with the
+absolute deadlines $T_p^{budget} = 60, 160, 240, 300$ s. Phase 2 is prorated: it earns one point
+per package delivered by its deadline. The loop runs to 330 s at most, so a formation that has
+not converged costs the full 30 s overtime penalty.
 
 **Overall mission score**:
 
@@ -277,8 +290,10 @@ with weights $(w_1, w_2, w_3, w_4) = (2, 3, 3, 2)$, $\lambda_{OT} = 0.05$, $T_{t
 
 **Distributed communication**: at each simulation step, each drone broadcasts a state packet
 $\langle k, \mathbf{p}_k, E_k, \text{phase}, \text{status} \rangle$. All drones receive all
-packets within communication range $r_{comm} = 80$ m (effectively the entire arena). This shared
-situational awareness allows:
+packets within communication range $r_{comm} = 80$ m, relayed from drone to drone. This covers
+most of the arena but not all of it (the diagonal is 141 m): the scout can leave the range of
+Drone E in the far south-west of the search zone, and an event reaches the sequencer on Drone E
+only while its sender is connected to E. This shared situational awareness allows:
 - Phase 2 couriers to broadcast delivery completion events so the sequencer can tally progress.
 - Phase 3 scout to broadcast survivor-located events so Phase 4 can begin immediately.
 - Phase 4 formation lead (Drone E) to trigger the Hungarian assignment for all five agents
@@ -338,7 +353,10 @@ C_FLY           = 0.004         # energy fraction per metre
 C_HOVER         = 0.003         # energy fraction per second (hover/delivery dwell)
 TAU_DELIVER     = 3.0           # s — delivery dwell time
 E_RESERVE       = 0.15          # minimum state-of-charge fraction
-BASE_POS        = np.array([50.0, 95.0, 2.0])  # launch/recovery pad
+BASE_POS        = np.array([50.0, 95.0, 2.0])  # launch deck (drones park at z = 2 m)
+PADS            = {1: np.array([45.0, 92.0, 2.0]),   # courier B pad
+                   2: np.array([55.0, 92.0, 2.0])}   # courier C pad
+T_LOAD          = 3.0           # s — reload on the pad between two trips
 
 DELIVERY_WPS    = np.array([    # 3 delivery waypoints (x, y, z)
     [20.0, 70.0, 5.0],
@@ -362,7 +380,7 @@ DET_THRESH      = 0.60          # belief threshold for located declaration
 V_SCOUT         = 4.0           # m/s
 
 # Phase 4 — Formation constants
-SHOW_ALT        = 50.0          # m — star formation altitude
+SHOW_ALT        = 25.0          # m — star formation altitude (below the 30 m ceiling)
 STAR_RADIUS     = 8.0           # m — star circumradius
 V_FORM          = 6.0           # m/s
 KP, KI, KD     = 1.2, 0.05, 0.4
@@ -514,25 +532,20 @@ def run_mission(seed=42):
     # ── Phase 2 state ─────────────────────────────────────────────────────────
     energy = np.array([1.0, 1.0, 1.0, 1.0, 1.0])  # per drone
     delivered = [False, False, False]               # per waypoint
-    courier_waypoints = {1: None, 2: None}          # Drone B, C current wp
+    courier_mode = {1: 'pad', 2: 'pad'}             # pad / out / dwell / back
+    reload_until = {1: 0.0, 2: 0.0}
+    dwell_until = {1: 0.0, 2: 0.0}
 
     def assign_tsp():
-        """Nearest-neighbour TSP split between couriers B and C."""
+        """Nearest-neighbour split: one package per trip, so every trip starts
+        from the courier's pad and each waypoint goes to the courier with the nearest pad."""
         remaining = list(range(3))
         routes = {1: [], 2: []}
-        positions_bc = {1: pos[1, :2].copy(), 2: pos[2, :2].copy()}
-        drone_turn = 1  # alternate between B and C
         while remaining:
-            best_wp, best_dist, best_drone = None, np.inf, None
-            for wp_idx in remaining:
-                wp_xy = DELIVERY_WPS[wp_idx, :2]
-                for d in [1, 2]:
-                    dist = np.linalg.norm(positions_bc[d] - wp_xy)
-                    if dist < best_dist:
-                        best_dist, best_wp, best_drone = dist, wp_idx, d
-            routes[best_drone].append(best_wp)
-            positions_bc[best_drone] = DELIVERY_WPS[best_wp, :2].copy()
-            remaining.remove(best_wp)
+            best = min((np.linalg.norm(PADS[d] - DELIVERY_WPS[w]), w, d)
+                       for w in remaining for d in [1, 2])
+            routes[best[2]].append(best[1])
+            remaining.remove(best[1])
         return routes
 
     # ── Phase 4 state ─────────────────────────────────────────────────────────
@@ -596,57 +609,39 @@ def run_mission(seed=42):
                 phase_end_t[1] = t
                 state = Phase.PHASE2
 
-        # ── Phase 2: Logistics delivery ────────────────────────────────────────
+        # ── Phase 2: Logistics delivery (one package per round trip) ───────────
         if state == Phase.PHASE2:
-            for drone_id in [1, 2]:
-                route = tsp_routes[drone_id]
-                ptr = route_ptr[drone_id]
+            for d in [1, 2]:
+                route, ptr = tsp_routes[d], route_ptr[d]
+                if courier_mode[d] == 'pad':                   # loaded, on the pad
+                    if ptr < len(route) and t >= reload_until[d]:
+                        w = DELIVERY_WPS[route[ptr]]
+                        d_leg = np.linalg.norm(w - PADS[d])
+                        if (energy[d] - 2 * C_FLY * d_leg - C_HOVER * TAU_DELIVER
+                                >= E_RESERVE):                 # battery trigger
+                            courier_mode[d] = 'out'
+                        else:
+                            route_ptr[d] = len(route)          # abort the rest
+                elif courier_mode[d] == 'out':
+                    if fly_to(d, DELIVERY_WPS[route[ptr]], V_COURIER):    # arrived
+                        courier_mode[d], dwell_until[d] = 'dwell', t + TAU_DELIVER
+                elif courier_mode[d] == 'dwell' and t >= dwell_until[d]:
+                    delivered[route[ptr]] = True
+                    deliveries_made += 1
+                    route_ptr[d] += 1
+                    courier_mode[d] = 'back'
+                elif courier_mode[d] == 'back':
+                    if fly_to(d, PADS[d], V_COURIER):          # landed on its pad
+                        courier_mode[d] = 'pad'
+                        reload_until[d] = t + T_LOAD
+            # fly_to() moves the drone and charges max(c_hover, c_fly |v|) per second
 
-                if ptr >= len(route):
-                    # All assigned deliveries done — return to base
-                    home_vec = BASE_POS - pos[drone_id]
-                    home_dist = np.linalg.norm(home_vec)
-                    if home_dist < 1.0:
-                        continue  # landed
-                    step = V_COURIER * DT
-                    pos[drone_id] += home_vec / home_dist * min(step, home_dist)
-                    energy[drone_id] -= C_FLY * min(step, home_dist)
-                    continue
-
-                wp_idx = route[ptr]
-                wp = DELIVERY_WPS[wp_idx]
-                direction = wp - pos[drone_id]
-                dist_to_wp = np.linalg.norm(direction)
-
-                # Battery check before committing to next leg
-                d_home = np.linalg.norm(BASE_POS - pos[drone_id])
-                if (energy[drone_id] - C_FLY * dist_to_wp - C_FLY * d_home
-                        < E_RESERVE):
-                    # Abort — return to base
-                    route_ptr[drone_id] = len(route)
-                    continue
-
-                if dist_to_wp < 1.0:
-                    # Arrived — deliver
-                    if not delivered[wp_idx]:
-                        delivered[wp_idx] = True
-                        deliveries_made += 1
-                    energy[drone_id] -= C_HOVER * TAU_DELIVER
-                    route_ptr[drone_id] += 1
-                else:
-                    step = V_COURIER * DT
-                    pos[drone_id] += direction / dist_to_wp * min(step, dist_to_wp)
-                    energy[drone_id] -= C_FLY * min(step, dist_to_wp)
-
-            # Phase 2 completion check
-            all_couriers_done = (
-                route_ptr[1] >= len(tsp_routes[1]) and
-                route_ptr[2] >= len(tsp_routes[2])
-            )
+            # Phase 2 completion: every courier has no trip left and is on its pad
+            all_couriers_done = all(route_ptr[d] >= len(tsp_routes[d]) and
+                                    courier_mode[d] == 'pad' for d in [1, 2])
             if all_couriers_done or t >= T_PHASE[2]:
                 if not phase_end_t[2]:
-                    phase_complete[2] = (deliveries_made == 3 and
-                                         t <= T_PHASE[2])
+                    phase_complete[2] = deliveries_made / 3   # prorated: w_2 = 3, 1 point per package
                     phase_end_t[2] = t
                     state = Phase.PHASE3
 
@@ -1154,7 +1149,8 @@ if __name__ == "__main__":
 | Phase 1 time budget | $T_1$ | 1 | 60 s |
 | **Phase 2 — Logistics** | | | |
 | Courier cruise speed | $V_{B,C}$ | 2 | 5.0 m/s |
-| Energy consumption rate | $c_{fly}$ | 2 | 0.004 s$^{-1}$m$^{-1}$ |
+| Energy consumption rate (all drones) | $c_{fly}$ | All | 0.004 m$^{-1}$ |
+| Courier pads / reload time | — | 2 | (45, 92, 2) m and (55, 92, 2) m / 3 s |
 | Hover energy rate | $c_{hover}$ | 2 | 0.003 s$^{-1}$ |
 | Delivery dwell time | $\tau_{deliver}$ | 2 | 3.0 s |
 | Battery safety reserve | $E_{reserve}$ | 2 | 15 % |
@@ -1173,7 +1169,7 @@ if __name__ == "__main__":
 | Number of survivors | — | 3 | 2 |
 | Phase 3 time budget | $T_3$ | 3 | 80 s |
 | **Phase 4 — Formation** | | | |
-| Star formation altitude | $z_{show}$ | 4 | 50 m |
+| Star formation altitude | $z_{show}$ | 4 | 25 m (below the 30 m ceiling) |
 | Star circumradius | $R_{star}$ | 4 | 8 m |
 | Formation cruise speed | $V_{form}$ | 4 | 6.0 m/s |
 | PID gains $(K_p, K_i, K_d)$ | — | 4 | (1.2, 0.05, 0.4) |
@@ -1212,7 +1208,7 @@ if __name__ == "__main__":
   marked with vertical dashed lines.
 
 - **Phase 4 figure** (`s100_phase4_formation.png`): two-panel figure. Left: 3D trajectory plot of
-  all five drones converging from their Phase 3 end positions to the 5-pointed star at $z = 50$ m;
+  all five drones converging from their Phase 3 end positions to the 5-pointed star at $z = 25$ m;
   each drone coloured distinctly (red/orange/purple/cyan/gold); star target vertices shown as lime
   green stars; Hungarian assignment lines drawn as dashed connectors from initial positions to
   assigned targets. Right: per-drone position error vs time from Phase 4 start; convergence
