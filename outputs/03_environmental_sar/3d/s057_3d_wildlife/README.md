@@ -86,7 +86,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s057_3d_wildlife.py
 ```
 
-The script imports the fixed S057 module for the reserve, the individual draws, the detection model and the strip layout. Runtime ≈ 50 s on an idle machine and up to about 2 min under load (47–128 s measured). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the fixed S057 module for the reserve, the individual draws, the detection model and the strip layout. Runtime ≈ 50 s on an idle machine and up to about 2 min under load (47–144 s measured). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -145,7 +145,7 @@ The planned 2D path is 7485 / 13985 / 34500 m for every mode. The effective $\ov
 | Low | TF | 1 | card | 101.0 | 239.5 ± 19.1 | +4.6 % | 7.4 % | 9.5 % | 56.0 % | 0.26 % | 0.37 % |
 | Low | TF | 1 | DEM | 101.0 | 238.3 ± 19.0 | +4.0 % | 7.1 % | 9.2 % | 56.0 % | 0.26 % | 0.37 % |
 
-On this reserve the flat S057 reference itself is +4.0 to +7.9 % high. This combines the reserve's +2.3 % camouflage-weighting bias from S057 with the sampling noise of 50 correlated trials.
+On this reserve the flat S057 reference itself is +4.0 to +7.9 % high. This combines the reserve's +2.3 % camouflage-weighting bias with the sampling noise of 50 correlated trials. The bias is printed by the script and identified in S057: large groups are less camouflaged, population-weighted 0.266 against the group mean 0.282.
 
 **Per-survey head-to-head** (smaller / equal / larger \|error\|, terrain-following with the card estimator first):
 

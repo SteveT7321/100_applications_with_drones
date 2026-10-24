@@ -577,6 +577,10 @@ def report(dem, reserve, res, terr, p2v_raw):
           f'(mean {p2v_raw.mean():.1f}); the card formula allows up to {2 * DZ_RELIEF:.0f} m')
     print(f"  Reserve: N* = {n_true}, c_bar = {reserve['c_bar']:.3f}; strip widths " +
           ' / '.join(f'{m2d.strip_width(h):.2f}' for (h, _, _) in STRATEGIES) + ' m')
+    sz, cm = reserve['sizes'], reserve['camo']
+    print(f"  Camouflage-weighting bias of the card estimator on this reserve (S057): "
+          f"sum n_g (1 - c_g) / ((1 - c_bar) N*) - 1 = {100 * (np.sum(sz * (1 - cm)) / ((1 - cm.mean()) * n_true) - 1):+.1f} %; "
+          f"population-weighted camouflage {np.sum(sz * cm) / n_true:.3f}")
     for (h, v, lab), sh in zip(STRATEGIES, SHORT):
         mean_level = float(dem.Z.mean()) + h
         print(f'  {sh}: a constant altitude of mean terrain + h = {mean_level:.1f} m would be below '
