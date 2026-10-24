@@ -140,7 +140,12 @@ def exponential_variogram(h, C0, C1, a):
     return C0 + C1 * (1.0 - np.exp(-h / a))
 
 
-def fit_variogram(pts, vals, n_lags=N_LAGS, fix_c0=None):
+def gaussian_variogram(h, C0, C1, a):
+    """Parabolic at the origin; used only to diagnose the nugget estimate."""
+    return C0 + C1 * (1.0 - np.exp(-(h / a) ** 2))
+
+
+def fit_variogram(pts, vals, n_lags=N_LAGS, fix_c0=None, model=exponential_variogram):
     d = pdist(pts)
     g = 0.5 * pdist(vals[:, None], 'sqeuclidean')
     edges = np.linspace(0, d.max() * 0.6, n_lags + 1)
@@ -157,7 +162,7 @@ def fit_variogram(pts, vals, n_lags=N_LAGS, fix_c0=None):
                             x0=[np.var(vals), d.max() / 3],
                             bounds=([1e-6, 1.0], [np.inf, 20 * d.max()]))
         return (fix_c0, *res.x), lags, gam, np.array(cnt)
-    res = least_squares(lambda p: exponential_variogram(lags, *p) - gam,
+    res = least_squares(lambda p: model(lags, *p) - gam,
                         x0=[0.1, np.var(vals), d.max() / 3],
                         bounds=([1e-4, 1e-6, 1.0], [np.inf, np.inf, 20 * d.max()]))
     return tuple(res.x), lags, gam, np.array(cnt)
@@ -168,10 +173,10 @@ class OrdinaryKriging:
     even at h = 0, the diagonal is 0. Predictions estimate the noise-free field and the
     reported variance is the error variance of that estimate (lambda.gamma0 + mu - C0)."""
 
-    def __init__(self, pts, vals, params):
-        self.pts, self.vals, self.params = pts, vals, params
+    def __init__(self, pts, vals, params, model=exponential_variogram):
+        self.pts, self.vals, self.params, self.model = pts, vals, params, model
         n = len(vals)
-        G = exponential_variogram(cdist(pts, pts), *params)
+        G = model(cdist(pts, pts), *params)
         np.fill_diagonal(G, 0.0)
         A = np.zeros((n + 1, n + 1))
         A[:n, :n] = G
@@ -184,7 +189,7 @@ class OrdinaryKriging:
         C0 = self.params[0]
         z = np.zeros(len(q)); var = np.zeros(len(q))
         for i in range(0, len(q), chunk):
-            g0 = exponential_variogram(cdist(self.pts, q[i:i + chunk]), *self.params)
+            g0 = self.model(cdist(self.pts, q[i:i + chunk]), *self.params)
             rhs = np.vstack([g0, np.ones((1, g0.shape[1]))])
             sol = lu_solve(self.lu, rhs)
             lam, mu = sol[:-1], sol[-1]
@@ -542,13 +547,19 @@ if __name__ == '__main__':
     pts0, vals0 = m0['pts'], m0['vals']
     trend0 = T0 - LAPSE_RATE * pts0[:, 2]
     signal0 = true_temperature(*pts0.T)
-    for name, data in [('original (trend + noise)', vals0),
-                       ('exactly detrended (noisy)', vals0 - trend0),
-                       ('noise-free field', signal0),
-                       ('detrended, noise-free', signal0 - trend0)]:
-        (c0, c1, aa), lg, gm, _ = fit_variogram(pts0, data)
-        print(f"  Variogram fit on {name} data: C0 = {c0:.4f} K^2, C1 = {c1:.3f} K^2, a = {aa:.0f} m; "
-              f"first lag bin ({lg[0]:.0f} m) gamma = {gm[0]:.4f} K^2")
+    for mname, model in [('exponential', exponential_variogram), ('Gaussian', gaussian_variogram)]:
+        for name, data in [('original (trend + noise)', vals0),
+                           ('exactly detrended (noisy)', vals0 - trend0),
+                           ('control: noise-free field (true nugget 0)', signal0),
+                           ('control: detrended, noise-free (true nugget 0)', signal0 - trend0)]:
+            (c0, c1, aa), lg, gm, _ = fit_variogram(pts0, data, model=model)
+            print(f"  {mname} fit on {name} data: C0 = {c0:.4f} K^2, C1 = {c1:.3f} K^2, "
+                  f"a = {aa:.0f} m; first lag bin ({lg[0]:.0f} m) gamma = {gm[0]:.4f} K^2")
+    pg, *_ = fit_variogram(pts0, vals0, model=gaussian_variogram)
+    zg, _ = OrdinaryKriging(pts0, vals0, pg, gaussian_variogram).predict(res['val_pts'])
+    print(f"  OK with the fitted Gaussian variogram (seed 0, original data): RMSE "
+          f"{np.sqrt(np.mean((zg - res['val_true']) ** 2)):.4f} K "
+          f"(exponential fit {m0['ok']['rmse']:.4f} K, fixed nugget {m0['ok_nug']['rmse']:.4f} K)")
     print(f"  Card sampling: {m0['ok_card']['n']} distinct points; max |field perturbation| at those "
           f"points = {m0['ok_card']['perturb_at_samples']:.2e} K (sin(2 pi x / 600) = 0 at x = 0, 600)")
     print(f'\n  --- {N_SEEDS} sensor-noise seeds (CRN), validation RMSE (K) ---')

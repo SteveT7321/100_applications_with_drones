@@ -119,16 +119,16 @@ OK beats IDW in 4/10 seeds and card-sampling OK in 10/10. The fixed-nugget OK be
 - **The card's sampling cannot see the horizontal structure.** The card samples only at the waypoints, the row ends at $x$ = 0 and $x$ = 600 m, where $\sin(2\pi x/600) = 0$. The perturbation at all 256 card sample points is at most 7.57 × 10⁻⁹ K. Kriging then reconstructs only the lapse-rate profile: its RMSE (0.5130 K) is the same as that of a pure lapse-rate profile (0.5088 K, the RMS of the perturbation at the validation points), and its mean is above the card's 0.5 K target (best seed 0.4947 K). Sampling every 50 m along the same paths gives 0.1534 K.
 - **The card's RMSE target holds with continuous sampling** (0.1534 K, below 0.5 K in 10/10 seeds, R² 0.9752).
 - **The fitted nugget collapses, and Kriging is no better than IDW.** The least-squares fit puts the nugget on its lower bound (0.0001 K² against a true noise variance of 0.09 K²) with a range of 1173 m, beyond the domain. With almost no nugget, Kriging nearly interpolates the noisy readings and does not filter the 0.3 K noise. Result: 0.1534 K for OK against 0.1489 K for IDW, which wins 6 of 10 seeds. Fixing the nugget at the known $\sigma_s^2$ (refitted $C_1$ = 10.173 K², $a$ = 3683 m) brings OK to 0.1090 K and makes it the best method in every seed.
-- **The cause is the variogram model and the fit, not the lapse-rate trend.** The script fits the same model to four versions of the seed-0 data, and every fit puts the nugget on its lower bound (0.0001 K²):
+- **The cause is the shape of the variogram model, not the lapse-rate trend.** The script fits both an exponential model (linear at the origin, the card's choice) and a Gaussian model (parabolic at the origin) to four versions of the seed-0 data. The two noise-free versions are controls: their true nugget is 0, so a fitted nugget near 0 is correct there.
 
-| Data | First lag bin (28 m) | Fitted $C_0$ | $C_1$ | $a$ |
-|---|---:|---:|---:|---:|
-| Original (trend + noise) | 0.1058 K² | 0.0001 K² | 3.980 K² | 1173 m |
-| Exactly detrended, noisy | 0.0904 K² | 0.0001 K² | 0.330 K² | 112 m |
-| Noise-free field | 0.0170 K² | 0.0001 K² | 8.904 K² | 3209 m |
-| Detrended, noise-free | 0.0016 K² | 0.0001 K² | 0.250 K² | 157 m |
+| Data | First lag bin (28 m) | Exponential $C_0$ / $C_1$ / $a$ | Gaussian $C_0$ / $C_1$ / $a$ |
+|---|---:|---:|---:|
+| Original (trend + noise) | 0.1058 K² | 0.0001 K² / 3.980 K² / 1173 m | **0.0920 K²** / 1.381 K² / 306 m |
+| Exactly detrended, noisy | 0.0904 K² | 0.0001 K² / 0.330 K² / 112 m | **0.0743 K²** / 0.249 K² / 145 m |
+| Control: noise-free field (true nugget 0) | 0.0170 K² | 0.0001 K² / 8.904 K² / 3209 m | 0.0050 K² / 1.368 K² / 305 m |
+| Control: detrended, noise-free (true nugget 0) | 0.0016 K² | 0.0001 K² / 0.250 K² / 157 m | 0.0001 K² / 0.234 K² / 148 m |
 
-  Even with the trend removed exactly, the first lag bin sits at the noise level (0.0904 K²) and the fit still returns no nugget. The field is smooth, so its true semivariogram rises like $h^2$ near the origin on top of the 0.09 K² nugget. The exponential model is linear at the origin. An unweighted least-squares fit over 15 bins, most of them at long lags, matches that shape by starting the curve at zero and rising steeply, rather than with a flat nugget. Detrending (universal Kriging) alone would therefore not fix the nugget. A model that is parabolic at the origin (Gaussian or Matérn), a fit weighted toward short lags (pair counts or Cressie weights), or a nugget taken from sensor calibration as in the fixed-nugget run would.
+  On the noisy data the exponential fit returns no nugget even when the trend is removed exactly and the first lag bin sits at the noise level (0.0904 K²). The Gaussian fit recovers a nugget close to the true 0.09 K² on the original data (0.0920 K²) and 0.0743 K² on the detrended data. The field is smooth, so its semivariogram rises like $h^2$ near the origin on top of the nugget; a model that is linear at the origin can only mimic that by starting at zero and rising steeply. Detrending therefore does not fix the nugget, but a model that is parabolic at the origin does: Ordinary Kriging with the fitted Gaussian variogram reaches 0.0603 K on seed 0, against 0.1559 K with the exponential fit and 0.1120 K with the fixed nugget (seed-0 values, printed by the script).
 - **The band assignment barely matters here.** The optimum equals the identity assignment and the spread between the best and worst assignment is 0.23 % of the band path length. The Hungarian step is correct but has no effect for this start/entry geometry.
 - **Band boundaries do not show higher uncertainty.** The card expects elevated Kriging variance at the band boundaries. Along the vertical line $x = y$ = 300 m the variance within 8 m of a boundary is 0.1232 K² against 0.1241 K² elsewhere, because both neighbouring drones sample the boundary level (180 m and 340 m are the top level of one band and the bottom level of the next). The variance is set by the 85.7 m row spacing instead: it is highest midway between rows (see the slices below).
 - **More altitude levels help little.** RMSE for $N_z$ = 3, 4, 6, 8, 10 is 0.1543, 0.1566, 0.1558, 0.1369, 0.1277 K (3 seeds). It does not fall steadily until $N_z$ = 8, although the mean Kriging variance falls monotonically (0.1010 → 0.0774 K²). The vertical structure is smooth, and the error comes mostly from the horizontal gaps between rows, which $N_z$ does not change. $N_z$ = 8 and 10 need 53 and 67 min of flight (3210 s and 4010 s), more than the 50 min battery.
@@ -192,7 +192,7 @@ The three drones fly their bands simultaneously; sample points appear coloured b
 | Temperature, humidity and wind-speed sensors | Temperature only | The card defines a model only for temperature. |
 | No speed or battery | 15 m/s, 50 min battery; each flight asserted to fit | Physical check; $N_z \ge 8$ is flagged as exceeding the battery. |
 | One noise realisation | 10 sensor-noise seeds (common to all methods) and 3 seeds per $N_z$ | Mean ± std and per-seed wins. |
-| Only Kriging | IDW baseline and a fixed-nugget Kriging diagnostic | Shows that the fitted nugget, not Kriging itself, limits the result. |
+| Only Kriging with an exponential variogram | IDW baseline, a fixed-nugget Kriging diagnostic, and a Gaussian-variogram fit and Kriging run on seed 0 | Shows that the fitted nugget, not Kriging itself, limits the result, and that a model parabolic at the origin recovers the nugget. |
 | Validation points "from a uniform grid"; card code draws them uniformly at random | Uniform random (card code) | — |
 | Experimental variogram plotted at bin centres | Plotted at the mean pair distance of each bin | More accurate lag for wide bins. |
 
@@ -200,7 +200,7 @@ The three drones fly their bands simultaneously; sample points appear coloured b
 
 ## Extensions
 
-1. **Better variogram estimation**: fit a Gaussian or Matérn model (parabolic at the origin) with weights toward short lags, or estimate the parameters by restricted maximum likelihood, and compare with the fixed-nugget result (0.1090 K). Universal Kriging (explicit lapse-rate trend) can be combined with this, but the detrended fits above show that it does not fix the nugget on its own.
+1. **Gaussian or Matérn variogram for all seeds**: switch the main method to a model that is parabolic at the origin (seed 0: 0.0603 K with a fitted Gaussian variogram) and repeat the seed and $N_z$ comparisons; restricted maximum likelihood estimation of the variogram parameters is another option.
 2. **Anisotropic variogram**: separate horizontal and vertical ranges, since the field varies over 600 m horizontally but mostly linearly in height.
 3. **Row spacing instead of levels**: spend the flight budget on more rows per level, which attacks the error the $N_z$ sweep could not reduce.
 4. **Adaptive sampling**: redirect drones to the highest-$\sigma_K^2$ regions after each level.
