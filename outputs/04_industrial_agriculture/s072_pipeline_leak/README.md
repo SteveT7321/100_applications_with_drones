@@ -198,7 +198,7 @@ Top-down view of the nominal steady case (145 frames). During the patrol the who
 | "More robust in noisy plume conditions" | Added a turbulent plume (per-puff wind perturbation σ = 0.3 m/s) | The card's plume has no turbulence, so robustness could not be tested otherwise. |
 | Localisation error $\varepsilon$ in 3D | Both 3D and horizontal; horizontal is the main metric | The 3D error is bounded below by the flight height, so patrol-only (3 m) could never reach 2 m by construction. |
 | Gradient probes at ±0.5 m (four extra readings at once) | Same, read every 0.5 s | Physically this needs a cross of four sensors on 0.5 m booms (or a hovering probe pattern); assumed here as in the card. |
-| False alarm "noise alone exceeds threshold" | Counted readings above the threshold where the true concentration is below 0.001 g/m³ | Readings at the plume edge that are pushed over the threshold by noise are reported separately (13 per plume). |
+| False alarm "noise alone exceeds threshold" | Counted readings above the threshold where the true concentration is below 0.001 g/m³ | Readings at the plume edge that are pushed over the threshold by noise are reported separately (13 steady, 11 turbulent). |
 | True leak as a red sphere; detection markers | Leak green, drone tracks red | Project colour convention (target green). |
 | GIF `s072_patrol.gif` | `animation.gif` | Project naming convention. |
 
