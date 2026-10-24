@@ -334,9 +334,11 @@ def dose_eval(res, c_w=C_W, w_dw=W_DW, alt_factor=True):
 def run_simulation():
     jobs = [(s, g, SIGMA_H, seed, seed == PLOT_SEED and g == 'Tuned')
             for g in GAINS for s in STRATS for seed in range(N_SEEDS)]
-    jobs += [(s, 'Tight', SIGMA_H_LOW, seed, False) for s in STRATS for seed in range(N_SWEEP_SEEDS)]
+    jobs += [(s, 'Tight', SIGMA_H_LOW, seed, False) for s in STRATS for seed in range(N_SEEDS)]
     jobs += [(s, 'Tuned', sh, seed, False) for sh in SIGMA_H_SWEEP if sh != SIGMA_H
              for s in STRATS for seed in range(N_SWEEP_SEEDS)]
+    # sigma_h 0.15 with Tuned gains: seeds 10..19 on top of the sweep's seeds 0..9 (20 seeds, like the main runs)
+    jobs += [(s, 'Tuned', SIGMA_H_LOW, seed, False) for s in STRATS for seed in range(N_SWEEP_SEEDS, N_SEEDS)]
     jobs += [(s, g, SIGMA_H, seed, False, rc) for rc in R_CROWN_SWEEP if rc != R_CROWN
              for g in GAINS for s in STRATS for seed in range(N_SWEEP_SEEDS)]
     jobs += [('adaptive', g, SIGMA_H, seed, False, R_CROWN, KDZ_PROBE) for g in GAINS for seed in range(N_SEEDS)]
@@ -654,16 +656,18 @@ def report(res):
             c, sf, nfree = stats(rs)
             parts.append(f"{s} {c.mean():.3f} +- {c.std():.3f}, {nfree}/{N_SWEEP_SEEDS}, {sf.mean():.3f}")
         print(f'    sigma_h {sh:.2f}: ' + ' | '.join(parts))
-    print(f'\n  --- low height spread sigma_h = {SIGMA_H_LOW}, {N_SWEEP_SEEDS} seeds: per seed and per clearance '
+    print(f'\n  --- low height spread sigma_h = {SIGMA_H_LOW}, {N_SEEDS} seeds (0-{N_SEEDS - 1}): per seed and per clearance '
           f'(collision-free missions, safe C_eff; per-seed safe C_eff higher/equal/lower) ---')
     for g in GAINS:
-        rsd = {s: res[(s, g, SIGMA_H_LOW)][:N_SWEEP_SEEDS] for s in STRATS}
+        rsd = {s: res[(s, g, SIGMA_H_LOW)] for s in STRATS}
+        assert all(len(v) == N_SEEDS for v in rsd.values())
         cd = {s: np.array([dose_eval(r)['ceff'] for r in rsd[s]]) for s in STRATS}
         for i, (rd, mz) in enumerate(CLEARANCES):
             sf = {s: cd[s] * np.array([r['contact_cl'][i] == 0 for r in rsd[s]]) for s in STRATS}
             print(f'    {g}, r_d {rd:.1f} m / m_z {mz:.2f} m: ' + ', '.join(
-                f"{s} {int(np.sum([r['contact_cl'][i] == 0 for r in rsd[s]]))}/{N_SWEEP_SEEDS} {sf[s].mean():.3f}"
+                f"{s} {int(np.sum([r['contact_cl'][i] == 0 for r in rsd[s]]))}/{N_SEEDS} {sf[s].mean():.3f}"
                 for s in STRATS) +
+                f"; adaptive - fixed15 mean {sf['adaptive'].mean() - sf['fixed15'].mean():+.3f}"
                 f"; adaptive vs fixed15 {wins(sf['adaptive'], sf['fixed15'])}, adaptive vs fixedsafe "
                 f"{wins(sf['adaptive'], sf['fixedsafe'])}, fixed15 vs fixedsafe {wins(sf['fixed15'], sf['fixedsafe'])}")
     print('\n  --- floor barrier over EVERY job group (asserts: z >= Z_MIN, z > 0, thrust acceleration <= A_MAX) ---')
