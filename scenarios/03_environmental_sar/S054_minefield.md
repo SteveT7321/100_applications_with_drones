@@ -1,6 +1,6 @@
 # S054 Minefield Detection
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
