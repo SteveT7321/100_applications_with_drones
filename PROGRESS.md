@@ -130,7 +130,7 @@
 
 ---
 
-## Domain 5: Special Ops & Entertainment — 14/20
+## Domain 5: Special Ops & Entertainment — 19/20
 
 - [x] **S081** Selfie Follow Mode
 - [x] **S082** FPV Racing
@@ -146,11 +146,11 @@
 - [x] **S092** Movie Chase Scene
 - [x] **S093** Rubble Search and Rescue
 - [x] **S094** Aerial Ball Catching
-- [ ] **S095** Water Surface Takeoff/Landing
-- [ ] **S096** Drone Relay Race
-- [ ] **S097** Aerial Puzzle Assembly
-- [ ] **S098** Swarm Synchronized Dance
-- [ ] **S099** Obstacle Relay Pass
+- [x] **S095** Water Surface Takeoff/Landing
+- [x] **S096** Drone Relay Race
+- [x] **S097** Aerial Puzzle Assembly
+- [x] **S098** Swarm Synchronized Dance
+- [x] **S099** Obstacle Relay Pass
 - [ ] **S100** Grand Challenge: Multi-Domain Integration Scenario
 
 ---
@@ -163,5 +163,5 @@
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 20 | 20 |
 | Industrial & Agriculture | 20 | 20 |
-| Special Ops & Entertainment | 14 | 20 |
-| **Total** | **94** | **100** |
+| Special Ops & Entertainment | 19 | 20 |
+| **Total** | **99** | **100** |
