@@ -524,8 +524,14 @@ if __name__ == '__main__':
         print(f'  bias {1000 * b:4.1f} mm: ' + '; '.join(
             f'{LABELS[s]} gap {1000 * np.mean(sweep[b][s]["hold_gap_max"]):.2f}, '
             f'slot {1000 * np.mean(sweep[b][s]["hold_err_max"]):.2f} (max '
-            f'{1000 * np.max(sweep[b][s]["hold_err_max"]):.2f}), fit to 5 mm in '
-            f'{np.isfinite(sweep[b][s]["fit_time"]).sum()}/{N_MC}'
+            f'{1000 * np.max(sweep[b][s]["hold_err_max"]):.2f}, min '
+            f'{1000 * np.min(sweep[b][s]["hold_err_max"]):.2f}), first fit to 5 mm in '
+            f'{np.isfinite(sweep[b][s]["fit_time"]).sum()}/{N_MC} '
+            f'({np.nanmin(sweep[b][s]["fit_time"]) if np.isfinite(sweep[b][s]["fit_time"]).any() else np.nan:.1f}'
+            f'-{np.nanmax(sweep[b][s]["fit_time"]) if np.isfinite(sweep[b][s]["fit_time"]).any() else np.nan:.1f} s '
+            f'after switch), worst slot <= 5 mm over the scored hold in '
+            f'{int((sweep[b][s]["hold_err_max"] <= DELTA_FIT).sum())}/{N_MC}, scored time with '
+            f'slot <= 5 mm {100 * np.mean(sweep[b][s]["frac_err_ok"]):.1f}%'
             for s in ('indep', 'consensus')))
 
     print('\nWind sweep with no position bias (mean over seeds of the worst value, mm):')
@@ -534,8 +540,10 @@ if __name__ == '__main__':
         print(f'  wind common {wc} / individual {wi} m/s^2: ' + '; '.join(
             f'{LABELS[s]} gap {1000 * np.mean(r[s]["hold_gap_max"]):.2f}, '
             f'slot {1000 * np.mean(r[s]["hold_err_max"]):.2f} (max '
-            f'{1000 * np.max(r[s]["hold_err_max"]):.2f}), fit to 5 mm in '
-            f'{np.isfinite(r[s]["fit_time"]).sum()}/{N_MC}' for s in ('indep', 'consensus')))
+            f'{1000 * np.max(r[s]["hold_err_max"]):.2f}), first fit to 5 mm in '
+            f'{np.isfinite(r[s]["fit_time"]).sum()}/{N_MC}, worst slot <= 5 mm over the scored '
+            f'hold in {int((r[s]["hold_err_max"] <= DELTA_FIT).sum())}/{N_MC}, scored time with '
+            f'slot <= 5 mm {100 * np.mean(r[s]["frac_err_ok"]):.1f}%' for s in ('indep', 'consensus')))
 
     print()
     plot_3d(runs, OUTPUT_DIR)
