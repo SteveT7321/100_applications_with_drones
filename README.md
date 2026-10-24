@@ -117,9 +117,9 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S053 | [Coral Reef 3D Reconstruction](outputs/03_environmental_sar/s053_coral_reef/README.md) | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
 | S054 | [Minefield Detection](outputs/03_environmental_sar/s054_minefield/README.md) | [card](scenarios/03_environmental_sar/S054_minefield.md) | [3D](outputs/03_environmental_sar/3d/s054_3d_minefield/README.md) |
 | S055 | [Coastline Oil Spill Tracking](outputs/03_environmental_sar/s055_oil_spill/README.md) | [card](scenarios/03_environmental_sar/S055_oil_spill.md) | [3D](outputs/03_environmental_sar/3d/s055_3d_oil_spill/README.md) |
-| S056 | [Nuclear Plant Leak Detection (Radiation Hotspot Localization)](outputs/03_environmental_sar/s056_radiation/README.md) | [card](scenarios/03_environmental_sar/S056_radiation.md) |  |
-| S057 | [Wildlife Population Census](outputs/03_environmental_sar/s057_wildlife/README.md) | [card](scenarios/03_environmental_sar/S057_wildlife.md) |  |
-| S058 | [Typhoon Eye Probing](outputs/03_environmental_sar/s058_typhoon/README.md) | [card](scenarios/03_environmental_sar/S058_typhoon.md) |  |
+| S056 | [Nuclear Plant Leak Detection (Radiation Hotspot Localization)](outputs/03_environmental_sar/s056_radiation/README.md) | [card](scenarios/03_environmental_sar/S056_radiation.md) | [3D](outputs/03_environmental_sar/3d/s056_3d_radiation/README.md) |
+| S057 | [Wildlife Population Census](outputs/03_environmental_sar/s057_wildlife/README.md) | [card](scenarios/03_environmental_sar/S057_wildlife.md) | [3D](outputs/03_environmental_sar/3d/s057_3d_wildlife/README.md) |
+| S058 | [Typhoon Eye Probing](outputs/03_environmental_sar/s058_typhoon/README.md) | [card](scenarios/03_environmental_sar/S058_typhoon.md) | [3D](outputs/03_environmental_sar/3d/s058_3d_typhoon/README.md) |
 | S059 | [Underwater Target Sonar Marking (Surface Cooperative Localization)](outputs/03_environmental_sar/s059_sonar_relay/README.md) | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) |  |
 | S060 | [Multi-Drone Cooperative Meteorological Measurement](outputs/03_environmental_sar/s060_meteorological/README.md) | [card](scenarios/03_environmental_sar/S060_meteorological.md) |  |
 
@@ -132,7 +132,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 |----|--------------------|------|----|
 | S061 | [Power Line Inspection](outputs/04_industrial_agriculture/s061_power_line/README.md) | [card](scenarios/04_industrial_agriculture/S061_power_line.md) |  |
 | S062 | [Wind Turbine Blade Inspection](outputs/04_industrial_agriculture/s062_wind_turbine/README.md) | [card](scenarios/04_industrial_agriculture/S062_wind_turbine.md) |  |
-| S063 | [Single-Plant Precision Spraying](outputs/04_industrial_agriculture/s063_precision_spraying/README.md) | [card](scenarios/04_industrial_agriculture/S063_precision_spraying.md) |  |
+| S063 | [Single-Plant Precision Spraying](outputs/04_industrial_agriculture/s063_precision_spraying/README.md) | [card](scenarios/04_industrial_agriculture/S063_precision_spraying.md) | [3D](outputs/04_industrial_agriculture/3d/s063_3d_precision_spraying/README.md) |
 | S064 | [Greenhouse Interior Precision Flight](outputs/04_industrial_agriculture/s064_greenhouse/README.md) | [card](scenarios/04_industrial_agriculture/S064_greenhouse.md) | [3D](outputs/04_industrial_agriculture/3d/s064_3d_greenhouse/README.md) |
 | S065 | [Building 3D Modeling — Multi-Angle Scan Path](outputs/04_industrial_agriculture/s065_3d_scan_path/README.md) | [card](scenarios/04_industrial_agriculture/S065_3d_scan_path.md) |  |
 | S066 | [Cooperative Crane Simulation](outputs/04_industrial_agriculture/s066_cooperative_crane/README.md) | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) |  |
@@ -245,7 +245,7 @@ drones/
 | Special Ops & Entertainment | 20 | 20 |
 | **Total** | **100** | **100** |
 
-> **3D Upgrades**: 64 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 14 in Environmental & SAR (S041–S052, S054, S055), 4 in Industrial & Agriculture (S064, S067, S068, S070) and 8 in Special Ops & Entertainment (S081, S083, S086, S092, S096–S098, S100). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
+> **3D Upgrades**: 68 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 17 in Environmental & SAR (S041–S052, S054–S058), 5 in Industrial & Agriculture (S063, S064, S067, S068, S070) and 8 in Special Ops & Entertainment (S081, S083, S086, S092, S096–S098, S100). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
