@@ -14,7 +14,7 @@ realisations (common random numbers):
                   acceleration (feed-forward tilt and thrust).
 
 All three are hard-clamped to the same commanded tilt (card: 30 deg); a sensitivity run repeats
-everything at 35 and 39 deg.
+everything at other common limits (30.5, 31, 35, 39 deg) and with a cone-shaped LQR clamp.
 
 The plant is the 6-DOF rigid-body model (quaternion attitude, motor lag, mixer), fpv_5inch motors
 with the card's mass 1.0 kg and inertia 0.01 kg m^2. The headline run is seed 42; a 20-seed
@@ -72,8 +72,12 @@ LOG_EVERY   = EST_EVERY      # log at 50 Hz
 ACC_NOISE   = 0.1            # m/s^2 accelerometer noise std (RLS input)
 YAW_KP, YAW_KD = 16.0, 8.0   # yaw hold for the LQR controllers (1/s^2, 1/s)
 MC_SEEDS    = list(range(42, 62))
-TILT_LIMITS = np.array([THETA_LIM, np.radians(35.0), np.radians(39.0)])  # common hard limit;
-                                               # 30 deg = card (headline), others = sensitivity
+# Tilt-limit groups (limit deg, LQR clamp shape); the PID always clips the total tilt (a cone).
+# 'box' clips the LQR's commanded roll and pitch separately (card), 'cone' clips their norm.
+# Group 0 (30 deg, box) is the card's setting used for the headline and Monte Carlo.
+TILT_GROUPS = [(30.0, 'box'), (30.0, 'cone'), (30.5, 'box'), (31.0, 'box'), (35.0, 'box'),
+               (39.0, 'box')]
+BIND_MARGIN = np.radians(0.5)   # 'clamp binding' = total tilt within 0.5 deg of the limit
 HEAD_SEED   = 42
 W_EFF_MEAN  = 0.5 * RHO_AIR * C_D * A_REF * MEAN_WIND_Y ** 2 / MASS   # m/s^2
 
@@ -151,6 +155,14 @@ def lqr_gain():
     return K, x_ss, eig
 
 
+def clamp_attitude(ang, lim, cone):
+    """(B, 2) roll/pitch commands -> clipped: per axis ('box') or on their norm ('cone')."""
+    box = np.clip(ang, -lim[:, None], lim[:, None])
+    n = np.linalg.norm(ang, axis=1)
+    scale = np.where(n > lim, lim / np.maximum(n, 1e-12), 1.0)
+    return np.where(cone[:, None], ang * scale[:, None], box)
+
+
 def euler_rates(eul, w):
     ph, th = eul[:, 0], eul[:, 1]
     phd = w[:, 0] + np.sin(ph) * np.tan(th) * w[:, 1] + np.cos(ph) * np.tan(th) * w[:, 2]
@@ -159,14 +171,15 @@ def euler_rates(eul, w):
 
 
 # ── Simulation ────────────────────────────────────────────────────────────────
-def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
-    """All controllers x all tilt limits x all seeds in one batch.
-    Drone index b = (l * C + c) * S + s; limit index 0 (the card's 30 deg) is logged in full."""
+def run_simulation(seeds=MC_SEEDS, groups=TILT_GROUPS):
+    """All controllers x all tilt-limit groups x all seeds in one batch.
+    Drone index b = (l * C + c) * S + s; group 0 (the card's 30 deg) is logged in full."""
     K, x_ss, eig = lqr_gain()
-    S, C, NL = len(seeds), len(CTRLS), len(limits)
+    S, C, NL = len(seeds), len(CTRLS), len(groups)
     B = NL * C * S
     H = C * S                                    # fully logged headline group (limit 0)
-    lim_of = np.repeat(np.asarray(limits, dtype=float), C * S)
+    lim_of = np.repeat(np.radians([g[0] for g in groups]), C * S)
+    cone_of = np.repeat(np.array([g[1] == 'cone' for g in groups]), C * S)
     ctrl_of = np.tile(np.repeat(np.arange(C), S), NL)
     seed_of = np.tile(np.arange(S), NL * C)
     n_max = int(round(T_MAX / DT))
@@ -192,6 +205,10 @@ def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
     peak_y = np.zeros(B)                 # running maxima at the full control rate
     peak_att = np.zeros(B)
     acc = {k: np.zeros(B) for k in ('n', 'y2', 'att', 'dz2')}   # 50 Hz running sums
+    bind_time = np.zeros(B)              # time with the total tilt within BIND_MARGIN of the limit
+    bind_run = np.zeros(B)
+    bind_max = np.zeros(B)               # longest continuous binding interval
+    tilt_max = np.zeros(B)
     logs = {k: [] for k in ('t', 'pos', 'eul', 'w_hat', 'w_true', 'thrust', 'wind', 'tilt')}
     # LQR roll / pitch rows: tau = -K_a (angle - angle_cmd) - K_r rate, with the commanded
     # angle angle_cmd = angle_ref - (other terms) / K_a hard-clipped to the tilt limit
@@ -216,7 +233,7 @@ def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
             fn = np.linalg.norm(f, axis=1)
             att_ff = np.column_stack([np.arcsin(np.clip(-f[:, 1] / fn, -1, 1)),
                                       np.arctan2(f[:, 0], f[:, 2])])
-            att_ff = np.clip(att_ff, -lim_of[:, None], lim_of[:, None])
+            att_ff = clamp_attitude(att_ff, lim_of, cone_of)
             thrust_ff = fn
         # ── PID (cascade of the base model) ──
         v_sp = v_ref + gains['kp_pos'] * (p_ref - drone.pos)
@@ -232,11 +249,14 @@ def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
         u = -e @ K.T
         T_lqr = np.where(is_rls, thrust_ff, MASS * G) + u[:, 0]
         T_lqr = T_lqr / np.maximum(np.cos(eul[:, 0]) * np.cos(eul[:, 1]), 0.5)
-        tau_rp = np.zeros((B, 2))
+        ang_cmd = np.zeros((B, 2))
         for j, (r, ia, ir) in enumerate(rows):
             other = e @ K[r] - K[r, ia] * e[:, ia] - K[r, ir] * e[:, ir]
-            ang_cmd = np.clip(xr[:, ia] - other / K[r, ia], -lim_of, lim_of)
-            tau_rp[:, j] = -K[r, ia] * (x[:, ia] - ang_cmd) - K[r, ir] * e[:, ir]
+            ang_cmd[:, j] = xr[:, ia] - other / K[r, ia]
+        ang_cmd = clamp_attitude(ang_cmd, lim_of, cone_of)
+        tau_rp = np.zeros((B, 2))
+        for j, (r, ia, ir) in enumerate(rows):
+            tau_rp[:, j] = -K[r, ia] * (x[:, ia] - ang_cmd[:, j]) - K[r, ir] * e[:, ir]
         tau_z = I_ZZ * (-YAW_KP * eul[:, 2] - YAW_KD * drone.omega[:, 2])
         tau_lqr = np.column_stack([tau_rp, tau_z])
         T = np.where(is_pid, T_pid, np.clip(T_lqr, 0.0, params.thrust_max))
@@ -250,6 +270,12 @@ def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
         att = np.max(np.abs(eul[:, :2]), axis=1)
         lat = np.abs(drone.pos[:, 1])
         flying = alive & ~done
+        tilt = tilt_angle(drone.quat)
+        binding = flying & (tilt >= lim_of - BIND_MARGIN)
+        bind_time += binding * DT
+        bind_run = np.where(binding, bind_run + DT, 0.0)
+        bind_max = np.maximum(bind_max, bind_run)
+        tilt_max = np.where(flying, np.maximum(tilt_max, tilt), tilt_max)
         peak_y = np.where(flying, np.maximum(peak_y, lat), peak_y)
         peak_att = np.where(flying, np.maximum(peak_att, att), peak_att)
         if (k + 1) % LOG_EVERY == 0:
@@ -287,6 +313,8 @@ def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
     for b in range(B):
         te = t_end[b] if np.isfinite(t_end[b]) else tl[-1]
         r = dict(ctrl=CTRLS[ctrl_of[b]], seed=seeds[seed_of[b]], lim=float(np.degrees(lim_of[b])),
+                 bind_time=float(bind_time[b]), bind_max=float(bind_max[b]),
+                 tilt_max=float(np.degrees(tilt_max[b])),
                  success=bool(done[b]), fail=fail_reason[b], t_end=te,
                  rms_y=float(np.sqrt(acc['y2'][b] / acc['n'][b])),
                  peak_y=float(peak_y[b]), peak_att=float(np.degrees(peak_att[b])),
@@ -303,7 +331,7 @@ def run_simulation(seeds=MC_SEEDS, limits=TILT_LIMITS):
             r['est_rms'] = float(np.sqrt(np.mean((logs['w_hat'][after, b, 1]
                                                   - logs['w_true'][after, b, 1]) ** 2)))
         res[b] = r
-    meta = dict(K=K, x_ss=x_ss, eig=eig, S=S, C=C, seeds=seeds, limits=list(limits),
+    meta = dict(K=K, x_ss=x_ss, eig=eig, S=S, C=C, seeds=seeds, groups=list(groups),
                 ctrl_of=ctrl_of, seed_of=seed_of, params=params)
     return logs, res, meta, winds
 
@@ -439,7 +467,8 @@ def plot_metrics_bar(res, meta, out_dir):
         axes[j].set_xticklabels([LABEL[c] for c in CTRLS])
         axes[j].set_ylabel('m')
         axes[j].set_title('RMS lateral deviation' if key == 'rms_y' else 'Peak lateral deviation')
-        axes[j].legend(fontsize=8)
+        axes[j].set_ylim(0, 8.0)
+        axes[j].legend(fontsize=8, loc='upper center', ncol=2)
         axes[j].grid(alpha=0.3, axis='y')
     succ = [sum(res[c * S + s]['success'] for s in range(S)) for c in range(len(CTRLS))]
     pk = [np.mean([res[c * S + s]['peak_att'] for s in range(S)]) for c in range(len(CTRLS))]
@@ -496,11 +525,13 @@ def plot_path_deviation_3d(logs, res, meta, out_dir):
 
 
 def plot_envelope(res, meta, out_dir):
-    S, C, lims = meta['S'], meta['C'], np.degrees(meta['limits'])
+    S, C = meta['S'], meta['C']
+    gi = [i for i, g in enumerate(meta['groups']) if g[1] == 'box']
+    lims = np.array([meta['groups'][i][0] for i in gi])
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.5))
     for ci, c in enumerate(CTRLS):
         succ, rms = [], []
-        for li in range(len(lims)):
+        for li in gi:
             R_ = [res[(li * C + ci) * S + s] for s in range(S)]
             succ.append(sum(r['success'] for r in R_))
             rms.append(np.mean([r['rms_y'] for r in R_]))
@@ -512,7 +543,7 @@ def plot_envelope(res, meta, out_dir):
     axes[1].set_yscale('log')
     for ax in axes:
         ax.set_xlabel('common hard tilt limit (deg); fail limit stays 40 deg')
-        ax.set_xticks(lims)
+        ax.set_xticks([30, 31, 35, 39])
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
     axes[0].set_title('Success vs tilt limit (same limit for all controllers)')
@@ -595,6 +626,7 @@ if __name__ == '__main__':
     allw = winds[:, :int(100 / DT)]
     print(f'  Wind over {S} seeds (first 100 s): W_y std per seed {allw[:, :, 1].std(axis=1).min():.2f}'
           f'-{allw[:, :, 1].std(axis=1).max():.2f} m/s, overall max {allw[:, :, 1].max():.2f} m/s')
+    print(f'  Drag constant 0.5 rho C_D A = {0.5 * RHO_AIR * C_D * A_REF:.4f} kg/m')
     print(f'  Mean-wind drag: F = {MASS * W_EFF_MEAN:.3f} N -> {W_EFF_MEAN:.3f} m/s^2, '
           f'equilibrium tilt {np.degrees(np.arctan(W_EFF_MEAN / G)):.1f} deg; at 20 m/s: '
           f'{0.5 * RHO_AIR * C_D * A_REF * 400:.2f} N, tilt '
@@ -608,7 +640,9 @@ if __name__ == '__main__':
           f"{DT_EST / GAMMA:.2f} s)")
     print(f'  Common hard tilt limit (commanded attitude clipped, all controllers): '
           f'{np.degrees(THETA_LIM):.0f} deg (card) for the headline and Monte Carlo; '
-          f'sensitivity at ' + ', '.join(f'{np.degrees(x):.0f}' for x in TILT_LIMITS[1:]) + ' deg')
+          f'sensitivity groups: ' + ', '.join(f'{g[0]:g} deg {g[1]}' for g in TILT_GROUPS[1:])
+          + ' (box = LQR roll and pitch clipped separately, cone = their norm clipped; the PID '
+          'always clips the total tilt)')
     print(f'\n  Headline seed {HEAD_SEED}:')
     print('  controller  result   t_end    RMS|y|  peak|y|  peak att  mean att  z RMS   '
           'energy   RLS conv  est RMS')
@@ -652,20 +686,41 @@ if __name__ == '__main__':
           f'acceleration {er.mean():.3f} +- {er.std():.3f} m/s^2')
 
     C = meta['C']
+    print(f'\n  Clamp binding, card limit 30 deg (total tilt within 0.5 deg of the limit):')
+    for ci, c in enumerate(CTRLS):
+        R_ = [res[ci * S + s] for s in range(S)]
+        ok = [r for r in R_ if r['success']]
+        bad = [r for r in R_ if not r['success']]
+        nb_ok = sum(r['tilt_max'] >= 29.5 for r in ok)
+        line = (f"  {LABEL[c]:10s}: peak total tilt >= 29.5 deg on {nb_ok}/{len(ok)} successful "
+                f"and {sum(r['tilt_max'] >= 29.5 for r in bad)}/{len(bad)} failed runs; longest "
+                f"continuous binding: successes max {max(r['bind_max'] for r in ok):.2f} s, ")
+        line += (f"failures min {min(r['bind_max'] for r in bad):.2f} s" if bad else 'no failures')
+        line += (f"; total binding time: successes median "
+                 f"{np.median([r['bind_time'] for r in ok]):.2f} s")
+        print(line)
+    print("  Max total tilt at 30 deg box: " + ', '.join(
+        f"{LABEL[c]} {max(res[ci * S + s]['tilt_max'] for s in range(S)):.2f} deg"
+        for ci, c in enumerate(CTRLS)))
     print(f'\n  Tilt-limit sensitivity ({S} seeds each, fail limits unchanged: 40 deg, 5 m):')
-    print('  limit  controller  success  RMS|y| mean+-std  peak|y| mean  peak att mean  failures')
-    sens = {}
-    for li, lim in enumerate(meta['limits']):
+    print('  limit  clamp  controller  success  RMS|y| mean+-std  peak|y| mean  peak att mean  '
+          'failures')
+    for li, (lim, mode) in enumerate(meta['groups']):
         for ci, c in enumerate(CTRLS):
             R_ = [res[(li * C + ci) * S + s] for s in range(S)]
             ry = np.array([r['rms_y'] for r in R_])
-            sens[(li, c)] = (sum(r['success'] for r in R_), ry.mean())
             fails = ', '.join(f"{r['seed']} ({'y' if r['fail'].startswith('|y|') else 'att'})"
                               for r in R_ if r['fail'])
-            print(f"  {np.degrees(lim):4.0f}   {LABEL[c]:10s}  {sens[(li, c)][0]:2d}/{S}    "
-                  f"{ry.mean():.3f} +- {ry.std():.3f}     {np.mean([r['peak_y'] for r in R_]):.3f}"
-                  f"        {np.mean([r['peak_att'] for r in R_]):5.2f}       "
-                  f"{fails if fails else '-'}")
+            print(f"  {lim:5.1f}  {mode:4s}   {LABEL[c]:10s}  {sum(r['success'] for r in R_):2d}/{S}"
+                  f"    {ry.mean():.3f} +- {ry.std():.3f}     "
+                  f"{np.mean([r['peak_y'] for r in R_]):.3f}        "
+                  f"{np.mean([r['peak_att'] for r in R_]):5.2f}       {fails if fails else '-'}")
+        rr = {c: np.array([res[(li * C + ci) * S + s]['rms_y'] for s in range(S)])
+              for ci, c in enumerate(CTRLS)}
+        print(f"         paired RMS |y| wins: LQR + RLS < PID on "
+              f"{np.sum(rr['lqr_rls'] < rr['pid'])}/{S}, LQR + RLS < LQR on "
+              f"{np.sum(rr['lqr_rls'] < rr['lqr'])}/{S}, LQR < PID on "
+              f"{np.sum(rr['lqr'] < rr['pid'])}/{S}")
     plot_envelope(res, meta, out)
     plot_trajectory_3d(logs, res, meta, out)
     plot_lateral_and_attitude(logs, res, meta, out)

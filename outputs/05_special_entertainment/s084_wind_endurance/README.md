@@ -13,7 +13,7 @@
 2. **LQR**: the card's LQR on a 10-state linearisation about hover. It commands thrust and roll/pitch torques directly; there is no wind estimate.
 3. **LQR + RLS** (proposed): the same LQR, linearised around an equilibrium shifted by the RLS estimate $\hat{\mathbf{w}}$ of the wind acceleration. The shift supplies a feed-forward tilt and thrust that cancel $-m\hat{\mathbf{w}}$.
 
-**Common flight envelope**: as the card specifies, every controller is hard-clamped to the same commanded tilt, $\theta_{lim}$ = 30°. A sensitivity run repeats all 60 missions with a common limit of 35° and of 39°; the fail limit stays at 40°.
+**Common flight envelope**: as the card specifies, every controller is hard-clamped to a commanded tilt of $\theta_{lim}$ = 30°. The clamp shapes differ slightly. The PID clips the total tilt of its thrust vector (a cone). The LQR clips its roll and pitch commands separately (a per-axis box, as in the card), so its total tilt can slightly exceed 30°: up to 30.29° (LQR) and 30.53° (LQR + RLS). A check with a cone clip on the LQR gives the same success counts and paired wins (see the sensitivity table). Sensitivity runs repeat all 60 missions with common limits of 30.5°, 31°, 35° and 39°; the fail limit stays at 40°.
 
 **Plant**: the 6-DOF rigid body in [`src/base/rigid_body_drone.py`](../../../src/base/rigid_body_drone.py) (quaternion attitude, motor lag, mixer). It uses the `fpv_5inch` rotors with the card's mass of 1.0 kg and roll/pitch inertia of 0.01 kg m². The quadratic wind drag is applied as an external force. The headline run is seed 42; a 20-seed Monte Carlo (seeds 42–61) gives the statistics.
 
@@ -41,13 +41,14 @@ $$\hat{\mathbf{w}}_{k+1} = \hat{\mathbf{w}}_k + \Gamma\bigl(\mathbf{a}_{meas,k} 
 
 Here $\mathbf{a}_{meas} = \Delta\mathbf{v}/\Delta t$ plus accelerometer noise of 0.1 m/s², and $\mathbf{a}_{model} = R\mathbf{e}_3 T/m - g\mathbf{e}_3$ uses the actual rotor thrust. The feed-forward is $\mathbf{f}_{ff} = m(g\mathbf{e}_3 - \hat{\mathbf{w}})$. It gives the reference attitude $\phi_{ff} = \arcsin(-f_y/\|\mathbf{f}\|)$ and $\theta_{ff} = \operatorname{atan2}(f_x, f_z)$, clipped to ±30°, and the thrust $\|\mathbf{f}_{ff}\|$.
 
-### Hard tilt clamp (same for all controllers)
+### Hard tilt clamp (same limit for all controllers)
 
-PID: the commanded thrust vector is tilt-limited to $\theta_{lim}$. LQR: the roll row of $u = -K(\mathbf{x} - \mathbf{x}_{ref})$ is written as $\tau_\phi = -K_{\phi}(\phi - \phi_{cmd}) - K_{\dot\phi}\dot\phi$, where $\phi_{cmd} = \phi_{ref} - (\text{all other terms of the row})/K_\phi$. Then $\phi_{cmd}$ is clipped to $\pm\theta_{lim}$. This is exactly the LQR law while $|\phi_{cmd}| < \theta_{lim}$, and a hard limit on the commanded roll otherwise. Pitch is handled the same way. The RLS feed-forward attitude is clipped to the same limit.
+PID: the commanded thrust vector is tilt-limited to $\theta_{lim}$. LQR: the roll row of $u = -K(\mathbf{x} - \mathbf{x}_{ref})$ is written as $\tau_\phi = -K_{\phi}(\phi - \phi_{cmd}) - K_{\dot\phi}\dot\phi$, where $\phi_{cmd} = \phi_{ref} - (\text{all other terms of the row})/K_\phi$. Then $\phi_{cmd}$ is clipped to $\pm\theta_{lim}$. This is exactly the LQR law while $|\phi_{cmd}| < \theta_{lim}$, and a hard limit on the commanded roll otherwise. Pitch is handled the same way. The RLS feed-forward attitude is clipped to the same limit. This per-axis box allows a total tilt of up to about $\sqrt2\,\theta_{lim}$ if roll and pitch both saturate. In practice pitch stays small (forward speed 1 m/s), so the measured maximum is 30.53°. The "cone" check instead scales $(\phi_{cmd}, \theta_{cmd})$ so that its norm is at most $\theta_{lim}$.
 
 ### Metrics
 
 - RMS and peak $|y|$ and peak attitude up to mission end or failure. The peaks are taken at the 200 Hz control rate, RMS from the 50 Hz log.
+- Clamp binding: the time during which the total tilt is within 0.5° of the limit, and the longest continuous such interval.
 - RLS convergence: the first time $|\hat w_y - \bar W_{eff}| < 0.5$ m/s², where $\bar W_{eff}$ = 2.117 m/s². The RMS error of $\hat w_y$ against the true instantaneous wind acceleration after 2 s is also reported.
 - Shaft energy until the end of the mission.
 
@@ -87,7 +88,7 @@ conda activate drones
 python src/05_special_entertainment/s084_wind_endurance.py
 ```
 
-Runtime ≈ 90–180 s with about 10 other simulations sharing the 12-thread machine (measured 90–177 s here for the 180-mission batch that includes the tilt-limit sensitivity).
+Runtime ≈ 100–180 s with about 10 other simulations sharing the 12-thread machine (measured 104–126 s here for the 360-mission batch that includes all sensitivity groups; 90–177 s for an earlier 180-mission version).
 
 ---
 
@@ -101,7 +102,7 @@ Runtime ≈ 90–180 s with about 10 other simulations sharing the 12-thread mac
 |------------|--------|----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|-----:|
 | PID only | FAIL: $\|y\|$ = 5.01 m | 90.50 s | 0.521 m | 5.007 m | 30.00° | 10.62° | 0.005 m | 13700 J | — | — |
 | LQR | FAIL: $\|y\|$ = 5.01 m | 90.11 s | 0.661 m | 5.007 m | 30.00° | 10.48° | 0.008 m | 13616 J | — | — |
-| LQR + RLS | FAIL: $\|y\|$ = 5.01 m | 90.66 s | 0.502 m | 5.009 m | 30.00° | 10.62° | 0.032 m | 13725 J | 1.90 s | 0.268 m/s² |
+| LQR + RLS | FAIL: $\|y\|$ = 5.00 m | 90.66 s | 0.501 m | 5.004 m | 30.00° | 10.62° | 0.032 m | 13725 J | 1.82 s | 0.267 m/s² |
 
 **Monte Carlo, 20 seeds, common 30° limit:**
 
@@ -109,38 +110,58 @@ Runtime ≈ 90–180 s with about 10 other simulations sharing the 12-thread mac
 |------------|:-------:|-----:|-----:|-----:|-----:|
 | PID only | 15/20 | 0.428 ± 0.334 m | 2.338 ± 2.052 m | 28.82 ± 2.10° | 15274 J |
 | LQR | 14/20 | 0.744 ± 0.500 m | 2.701 ± 1.891 m | 28.70 ± 2.36° | 15263 J |
-| **LQR + RLS** | **16/20** | **0.350 ± 0.373 m** | **2.077 ± 2.119 m** | 28.85 ± 2.11° | 15280 J |
+| **LQR + RLS** | **16/20** | **0.350 ± 0.372 m** | **2.077 ± 2.119 m** | 28.85 ± 2.13° | 15280 J |
 
 All failures are lateral ($|y|$ > 5 m); no run exceeds 40°:
 - **PID only**: seeds 42, 51, 52, 55, 58 (at 90.5, 39.5, 74.3, 45.6, 39.2 s).
 - **LQR**: seeds 42, 49, 51, 52, 55, 58 (at 90.1, 6.9, 38.8, 73.7, 44.8, 38.9 s).
 - **LQR + RLS**: seeds 42, 51, 55, 58 (at 90.7, 40.0, 46.1, 39.3 s).
 
-Head-to-head on the same seeds: LQR + RLS has the lower RMS $|y|$ on 19/20 seeds against LQR and on 18/20 against PID. LQR beats PID on 0/20.
+Head-to-head on the same seeds: LQR + RLS has the lower RMS $|y|$ on 19/20 seeds against LQR and on 17/20 against PID. LQR beats PID on 0/20.
 
-Peak attitude over successful missions: PID 28.42 ± 2.29°, LQR 28.14 ± 2.64°, LQR + RLS 28.56 ± 2.27° (max 30.00° for all three). Only 2/15, 2/14 and 2/16 of these runs stay below 25°.
+Peak attitude over successful missions: PID 28.42 ± 2.29°, LQR 28.14 ± 2.64°, LQR + RLS 28.56 ± 2.29° (max 30.00° for all three). Only 2/15, 2/14 and 2/16 of these runs stay below 25°.
 
-RLS: first within 0.5 m/s² of the mean-wind acceleration after 2.99 ± 5.94 s (max 25.78 s; never on 0 seeds). RMS error against the true instantaneous wind acceleration: 0.268 ± 0.031 m/s².
+**Clamp binding at 30°** (total tilt within 0.5° of the limit):
+
+| Controller | Peak tilt ≥ 29.5°: successful / failed runs | Longest continuous binding: max over successes / min over failures | Total binding time, median over successes |
+|------------|------|------|------|
+| PID only | 10/15 / 5/5 | 9.71 s / 3.74 s | 1.19 s |
+| LQR | 9/14 / 6/6 | 6.36 s / 3.02 s | 1.01 s |
+| LQR + RLS | 11/16 / 4/4 | 9.66 s / 4.93 s | 1.47 s |
+
+Maximum total tilt: PID 30.00°, LQR 30.29°, LQR + RLS 30.53°.
+
+RLS: first within 0.5 m/s² of the mean-wind acceleration after 2.99 ± 5.94 s (max 25.78 s; never on 0 seeds). RMS error against the true instantaneous wind acceleration: 0.268 ± 0.030 m/s².
 
 **Tilt-limit sensitivity** (same limit for all three controllers, 20 seeds each, fail limits unchanged):
 
-| Limit | Controller | Success | RMS $\|y\|$ | Mean peak $\|y\|$ | Mean peak attitude | Failed seeds |
-|------:|------------|:-------:|-----:|-----:|-----:|------|
-| 30° | PID only | 15/20 | 0.428 ± 0.334 m | 2.338 m | 28.82° | 42, 51, 52, 55, 58 |
-| 30° | LQR | 14/20 | 0.744 ± 0.500 m | 2.701 m | 28.70° | 42, 49, 51, 52, 55, 58 |
-| 30° | LQR + RLS | 16/20 | 0.350 ± 0.373 m | 2.077 m | 28.85° | 42, 51, 55, 58 |
-| 35° | PID only | 20/20 | 0.237 ± 0.161 m | 1.004 m | 31.67° | — |
-| 35° | LQR | 20/20 | 0.551 ± 0.181 m | 1.534 m | 31.54° | — |
-| 35° | LQR + RLS | 20/20 | 0.103 ± 0.143 m | 0.621 m | 31.97° | — |
-| 39° | PID only | 20/20 | 0.186 ± 0.084 m | 0.633 m | 32.99° | — |
-| 39° | LQR | 20/20 | 0.513 ± 0.108 m | 1.158 m | 32.89° | — |
-| 39° | **LQR + RLS** | **20/20** | **0.048 ± 0.011 m** | **0.239 m** | 33.48° | — |
+| Limit (LQR clamp) | Controller | Success | RMS $\|y\|$ | Mean peak $\|y\|$ | Mean peak attitude | Failed seeds | Paired RMS wins |
+|------:|------------|:-------:|-----:|-----:|-----:|------|------|
+| 30° box | PID only | 15/20 | 0.428 ± 0.334 m | 2.338 m | 28.82° | 42, 51, 52, 55, 58 | |
+| 30° box | LQR | 14/20 | 0.744 ± 0.500 m | 2.701 m | 28.70° | 42, 49, 51, 52, 55, 58 | LQR < PID: 0/20 |
+| 30° box | LQR + RLS | 16/20 | 0.350 ± 0.372 m | 2.077 m | 28.85° | 42, 51, 55, 58 | < PID 17/20, < LQR 19/20 |
+| 30° cone | PID only | 15/20 | 0.428 ± 0.334 m | 2.338 m | 28.82° | 42, 51, 52, 55, 58 | |
+| 30° cone | LQR | 14/20 | 0.744 ± 0.499 m | 2.701 m | 28.70° | 42, 49, 51, 52, 55, 58 | LQR < PID: 0/20 |
+| 30° cone | LQR + RLS | 16/20 | 0.353 ± 0.376 m | 2.085 m | 28.84° | 42, 51, 55, 58 | < PID 17/20, < LQR 19/20 |
+| 30.5° box | PID only | 17/20 | 0.415 ± 0.324 m | 2.163 m | 29.19° | 42, 51, 58 | |
+| 30.5° box | LQR | 15/20 | 0.661 ± 0.272 m | 2.581 m | 29.07° | 42, 51, 52, 55, 58 | LQR < PID: 2/20 |
+| 30.5° box | LQR + RLS | 18/20 | 0.307 ± 0.322 m | 1.853 m | 29.20° | 42, 58 | < PID 20/20, < LQR 20/20 |
+| 31° box | PID only | 18/20 | 0.370 ± 0.262 m | 1.951 m | 29.56° | 42, 58 | |
+| 31° box | LQR | 18/20 | 0.643 ± 0.242 m | 2.415 m | 29.44° | 42, 58 | LQR < PID: 0/20 |
+| 31° box | LQR + RLS | 18/20 | 0.257 ± 0.258 m | 1.623 m | 29.58° | 42, 58 | < PID 20/20, < LQR 20/20 |
+| 35° box | PID only | 20/20 | 0.237 ± 0.161 m | 1.004 m | 31.67° | — | |
+| 35° box | LQR | 20/20 | 0.551 ± 0.181 m | 1.534 m | 31.54° | — | LQR < PID: 0/20 |
+| 35° box | LQR + RLS | 20/20 | 0.103 ± 0.143 m | 0.622 m | 31.99° | — | < PID 20/20, < LQR 20/20 |
+| 39° box | PID only | 20/20 | 0.186 ± 0.084 m | 0.633 m | 32.99° | — | |
+| 39° box | LQR | 20/20 | 0.513 ± 0.108 m | 1.158 m | 32.89° | — | LQR < PID: 0/20 |
+| 39° box | **LQR + RLS** | **20/20** | **0.048 ± 0.011 m** | **0.239 m** | 33.48° | — | < PID 20/20, < LQR 20/20 |
 
 **Key findings**:
-- **The card's 30° clamp, not the control law, decides most failures.** With the same hard 30° limit on all three controllers, every failure is lateral. A 20 m/s gust already needs 30.9° of tilt, and seed 42 reaches 28.76 m/s. When the clamp binds, every controller is blown out past 5 m, and the 4–6 failed seeds (42, 51, 55, 58 for all three) are largely the same. Raising the common limit to 35° gives 20/20 successes for all three controllers, and so does 39°. The fail rule stays at 40°, and no run exceeds it.
-- **Within the same envelope, RLS feed-forward is the best controller.** At 30° it has the most successes (16/20, against 15 for PID and 14 for LQR) and the lowest RMS $|y|$ (0.350 m; lower than LQR on 19/20 seeds and than PID on 18/20). At 39°, where nothing fails, it cuts RMS $|y|$ to 0.048 m, against 0.186 m for PID and 0.513 m for LQR. The estimator follows the gusts themselves, not only the mean: RMS error 0.268 m/s² against the instantaneous wind acceleration, with a 0.40 s time constant against a 16.7 s gust correlation time.
+- **The card's 30° clamp, not the control law, decides most failures.** With a 30° limit on all three controllers, every failure is lateral. A 20 m/s gust already needs 30.9° of tilt, and seed 42 reaches 28.76 m/s. The clamp binds on most seeds, including many successful ones: peak tilt reaches 29.5° or more on 10/15, 9/14 and 11/16 successful runs. A drone survives short binding (up to 6.4–9.7 s here) but is blown past 5 m when a gust holds it on the clamp for long enough (at least 3.0–4.9 s in the failed runs). The failed seeds are largely the same for all three controllers (42, 51, 55, 58). Raising the common limit to 31° leaves only seeds 42 and 58, and at 35° and 39° all three controllers succeed on 20/20. The fail rule stays at 40°, and no run exceeds it.
+- **Within the same envelope, RLS feed-forward tracks best; the success-count ranking is not robust.** At 30° LQR + RLS has 16/20 successes against 15 (PID) and 14 (LQR). This margin of 1–2 seeds is within the clamp sensitivity: at 30.5° the counts are 18 / 17 / 15, and at 31° all three have 18/20. LQR + RLS has at least as many successes as the PID at every limit. The robust evidence is the paired RMS comparison. LQR + RLS has the lower RMS $|y|$ than the PID on 17/20 seeds at 30° and on 20/20 at every larger limit, and than LQR on 19–20/20. At 39°, where nothing fails, it reaches 0.048 m, against 0.186 m for PID and 0.513 m for LQR. The estimator follows the gusts themselves, not only the mean: RMS error 0.268 m/s² against the instantaneous wind acceleration, with a 0.40 s time constant against a 16.7 s gust correlation time.
+- **The clamp shape does not matter.** Clipping the LQR's roll and pitch commands per axis (card) or on their norm (cone, like the PID) gives the same successes and failed seeds. The paired wins are identical, and the RLS RMS changes by only 0.003 m (0.350 against 0.353 m).
 - **Pure LQR is the weakest**, because it has no integral action. Its offset matches the linear model's prediction (0.436 m under the mean wind; flown RMS 0.513 m at 39°). It has a higher RMS $|y|$ than the PID on every seed at 30° (0/20 wins) and a higher mean RMS at every limit. It is the only controller that fails seed 49, at 6.9 s, early in the run.
-- **The PID does not drift as the card expects.** The base model's velocity loop has integral action, which removes the steady wind offset. At 35° and 39° it succeeds on 20/20 seeds with RMS $|y|$ of 0.237 m and 0.186 m. The card's "PID: RMS > 5 m, FAIL" holds only on the 5 seeds where the 30° clamp binds.
+- **The PID does not drift as the card expects.** The base model's velocity loop has integral action, which removes the steady wind offset. At 35° and 39° it succeeds on 20/20 seeds with RMS $|y|$ of 0.237 m and 0.186 m. At 30° it fails on 5/20 seeds, but the card's "RMS > 5 m" cannot occur: a mission ends as soon as $|y|$ exceeds 5 m. Even the failed seed-42 run has an RMS of only 0.521 m.
 - **Card targets for LQR + RLS** (RMS < 0.5 m, peak < 1 m, success): at the card's 30° limit the mean RMS (0.350 m) meets the target, but the mean peak (2.077 m) and the success rate (16/20) do not. At 35° and 39° all three targets hold. Convergence (2.99 s mean, < 15 s) holds. The "< 25° peak attitude" target holds on only 2/16 successful runs at 30°, because the gusts themselves need 25–30°.
 - **Energy is the same for all three** (15263–15280 J per successful mission of about 100 s, i.e. roughly 150 W). The thrust needed to hold against the wind dominates; how well the drone tracks hardly matters. The values are estimates: see the Sim2Real notes.
 
@@ -203,7 +224,7 @@ Top-down view of all three controllers on seed 42. The side bar shows the latera
 | PID maps acceleration to "pseudo torques" (×5) | Base-model cascaded PID (position P, velocity PI, attitude, rate PI) | A standard, reasonable PID baseline (X2). The card's map has no physical meaning. |
 | Feed-forward $u_{ff} = -m\hat{w}$ mapped to torques (×5) | LQR linearised around the equilibrium tilt and thrust that cancel $-m\hat{\mathbf{w}}$ | A torque does not cancel a force; the equilibrium shift does. |
 | $a_{meas}$ = model + true force (card code) | Finite-difference velocity plus 0.1 m/s² noise, against a model using the actual rotor thrust | The card code hands the estimator the exact answer. |
-| "Hard-clamped to 30°", implemented in the card code as torque scaling whenever $\|\phi\| > 30°$ | A true hard clamp of the commanded roll and pitch, with the same 30° limit as the PID's tilt limit; sensitivity at 35° and 39° for all controllers | Torque scaling is not a hard clamp: an earlier version of this scenario used a soft variant and let the LQR position loop push the tilt past 40°, while the PID was hard-limited. That compared different flight envelopes, not control laws (X2). |
+| "Hard-clamped to 30°", implemented in the card code as torque scaling whenever $\|\phi\| > 30°$ | A true hard clamp of the commanded roll and pitch at the same 30° as the PID's tilt limit. LQR: per-axis box (card); PID: cone on the total tilt. A cone check for the LQR, and common limits of 30.5°, 31°, 35° and 39° for all controllers | Torque scaling is not a hard clamp. An earlier version of this scenario used a soft variant and let the LQR position loop push the tilt past 40° while the PID was hard-limited, which compared different flight envelopes rather than control laws (X2). The box allows up to 30.53° of total tilt; the cone check shows that this does not change the results. |
 | One run, Δt = 0.02 s | 20-seed Monte Carlo with common wind, control at 5 ms, RLS at the card's 0.02 s | X2; the rigid-body inner loops need a faster step. |
 | RLS convergence "within 0.5 m/s of the mean wind" | Within 0.5 m/s² of the mean-wind acceleration (the card's metric table) | $\hat w$ is an acceleration. |
 | Peaks taken from the sampled log | Peaks at the 200 Hz control rate | The 50 Hz log can miss the failing sample. |
