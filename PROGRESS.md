@@ -105,18 +105,18 @@
 
 ---
 
-## Domain 4: Industrial & Agriculture — 0/20
+## Domain 4: Industrial & Agriculture — 5/20
 
 - [ ] **S061** Power Line Inspection
 - [ ] **S062** Wind Turbine Blade Inspection
 - [ ] **S063** Precision Per-Plant Spraying
 - [ ] **S064** Greenhouse Interior Navigation
 - [ ] **S065** Building 3D Scan Path
-- [ ] **S066** Cooperative Crane Simulation
-- [ ] **S067** Spray Overlap Optimization
-- [ ] **S068** Large-Scale Field Spraying
-- [ ] **S069** Automated Warehouse Inventory
-- [ ] **S070** Swarm Weeding
+- [x] **S066** Cooperative Crane Simulation
+- [x] **S067** Spray Overlap Optimization
+- [x] **S068** Large-Scale Field Spraying
+- [x] **S069** Automated Warehouse Inventory
+- [x] **S070** Swarm Weeding
 - [ ] **S071** Bridge Underside Inspection
 - [ ] **S072** Pipeline Leak Detection
 - [ ] **S073** Solar Panel Thermal Inspection
@@ -162,6 +162,6 @@
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 11 | 20 |
-| Industrial & Agriculture | 0 | 20 |
+| Industrial & Agriculture | 5 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **51** | **100** |
+| **Total** | **56** | **100** |

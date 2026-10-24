@@ -126,7 +126,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-4"></a>
-<details open><summary><b>4 · Industrial & Agriculture</b> — 0/20 done</summary>
+<details open><summary><b>4 · Industrial & Agriculture</b> — 5/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -135,11 +135,11 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S063 | Single-Plant Precision Spraying *(planned)* | [card](scenarios/04_industrial_agriculture/S063_precision_spraying.md) |  |
 | S064 | Greenhouse Interior Precision Flight *(planned)* | [card](scenarios/04_industrial_agriculture/S064_greenhouse.md) |  |
 | S065 | Building 3D Modeling — Multi-Angle Scan Path *(planned)* | [card](scenarios/04_industrial_agriculture/S065_3d_scan_path.md) |  |
-| S066 | Cooperative Crane Simulation *(planned)* | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) |  |
-| S067 | Spray Coverage Overlap Optimization *(planned)* | [card](scenarios/04_industrial_agriculture/S067_spray_overlap.md) |  |
-| S068 | Large-Scale Farmland Cooperative Spraying *(planned)* | [card](scenarios/04_industrial_agriculture/S068_large_field_spray.md) |  |
-| S069 | Automated Warehouse Inventory *(planned)* | [card](scenarios/04_industrial_agriculture/S069_warehouse_inventory.md) |  |
-| S070 | Swarm Weeding Task *(planned)* | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) |  |
+| S066 | [Cooperative Crane Simulation](outputs/04_industrial_agriculture/s066_cooperative_crane/README.md) | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) |  |
+| S067 | [Spray Coverage Overlap Optimization](outputs/04_industrial_agriculture/s067_spray_overlap/README.md) | [card](scenarios/04_industrial_agriculture/S067_spray_overlap.md) |  |
+| S068 | [Large-Scale Farmland Cooperative Spraying](outputs/04_industrial_agriculture/s068_large_field_spray/README.md) | [card](scenarios/04_industrial_agriculture/S068_large_field_spray.md) |  |
+| S069 | [Automated Warehouse Inventory](outputs/04_industrial_agriculture/s069_warehouse_inventory/README.md) | [card](scenarios/04_industrial_agriculture/S069_warehouse_inventory.md) |  |
+| S070 | [Swarm Weeding Task](outputs/04_industrial_agriculture/s070_swarm_weeding/README.md) | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) |  |
 | S071 | Bridge Underside Structural Inspection *(planned)* | [card](scenarios/04_industrial_agriculture/S071_bridge_inspection.md) |  |
 | S072 | Oil Pipeline Leak Detection *(planned)* | [card](scenarios/04_industrial_agriculture/S072_pipeline_leak.md) |  |
 | S073 | Solar Panel Thermal Imaging Inspection *(planned)* | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) |  |
@@ -240,9 +240,9 @@ drones/
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 11 | 20 |
-| Industrial & Agriculture | 0 | 20 |
+| Industrial & Agriculture | 5 | 20 |
 | Special Ops & Entertainment | 0 | 20 |
-| **Total** | **51** | **100** |
+| **Total** | **56** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
