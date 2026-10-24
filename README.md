@@ -142,12 +142,12 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S070 | [Swarm Weeding Task](outputs/04_industrial_agriculture/s070_swarm_weeding/README.md) | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) | [3D](outputs/04_industrial_agriculture/3d/s070_3d_swarm_weeding/README.md) |
 | S071 | [Bridge Underside Structural Inspection](outputs/04_industrial_agriculture/s071_bridge_inspection/README.md) | [card](scenarios/04_industrial_agriculture/S071_bridge_inspection.md) |  |
 | S072 | [Oil Pipeline Leak Detection](outputs/04_industrial_agriculture/s072_pipeline_leak/README.md) | [card](scenarios/04_industrial_agriculture/S072_pipeline_leak.md) |  |
-| S073 | [Solar Panel Thermal Imaging Inspection](outputs/04_industrial_agriculture/s073_solar_thermal/README.md) | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) |  |
-| S074 | [Mine 3D Mapping](outputs/04_industrial_agriculture/s074_mine_mapping/README.md) | [card](scenarios/04_industrial_agriculture/S074_mine_mapping.md) |  |
+| S073 | [Solar Panel Thermal Imaging Inspection](outputs/04_industrial_agriculture/s073_solar_thermal/README.md) | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) | [3D](outputs/04_industrial_agriculture/3d/s073_3d_solar_thermal/README.md) |
+| S074 | [Mine 3D Mapping](outputs/04_industrial_agriculture/s074_mine_mapping/README.md) | [card](scenarios/04_industrial_agriculture/S074_mine_mapping.md) | [3D](outputs/04_industrial_agriculture/3d/s074_3d_mine_mapping/README.md) |
 | S075 | [Port Container Yard Inventory](outputs/04_industrial_agriculture/s075_container_yard/README.md) | [card](scenarios/04_industrial_agriculture/S075_container_yard.md) |  |
-| S076 | [Extreme Heat Cooling Strategy](outputs/04_industrial_agriculture/s076_thermal_management/README.md) | [card](scenarios/04_industrial_agriculture/S076_thermal_management.md) |  |
+| S076 | [Extreme Heat Cooling Strategy](outputs/04_industrial_agriculture/s076_thermal_management/README.md) | [card](scenarios/04_industrial_agriculture/S076_thermal_management.md) | [3D](outputs/04_industrial_agriculture/3d/s076_3d_thermal_management/README.md) |
 | S077 | [Precision Pollination Flight Pattern](outputs/04_industrial_agriculture/s077_pollination/README.md) | [card](scenarios/04_industrial_agriculture/S077_pollination.md) |  |
-| S078 | [Harvester Cooperative Guidance](outputs/04_industrial_agriculture/s078_harvester_guidance/README.md) | [card](scenarios/04_industrial_agriculture/S078_harvester_guidance.md) |  |
+| S078 | [Harvester Cooperative Guidance](outputs/04_industrial_agriculture/s078_harvester_guidance/README.md) | [card](scenarios/04_industrial_agriculture/S078_harvester_guidance.md) | [3D](outputs/04_industrial_agriculture/3d/s078_3d_harvester_guidance/README.md) |
 | S079 | [Offshore Wind Farm Installation Assistance](outputs/04_industrial_agriculture/s079_offshore_wind/README.md) | [card](scenarios/04_industrial_agriculture/S079_offshore_wind.md) |  |
 | S080 | [Underground Pipe CCTV Replacement](outputs/04_industrial_agriculture/s080_underground_pipe/README.md) | [card](scenarios/04_industrial_agriculture/S080_underground_pipe.md) |  |
 
@@ -245,7 +245,7 @@ drones/
 | Special Ops & Entertainment | 20 | 20 |
 | **Total** | **100** | **100** |
 
-> **3D Upgrades**: 68 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 17 in Environmental & SAR (S041–S052, S054–S058), 5 in Industrial & Agriculture (S063, S064, S067, S068, S070) and 8 in Special Ops & Entertainment (S081, S083, S086, S092, S096–S098, S100). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
+> **3D Upgrades**: 72 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040), 17 in Environmental & SAR (S041–S052, S054–S058), 9 in Industrial & Agriculture (S063, S064, S067, S068, S070, S073, S074, S076, S078) and 8 in Special Ops & Entertainment (S081, S083, S086, S092, S096–S098, S100). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); the S001–S050 reviews are summarised in [docs/review_3d_variants.md](docs/review_3d_variants.md). The S051–S100 variants are built only where the base scenario holds altitude fixed, and each one prints a fixed-altitude 2D baseline.
 
 → Full tracker: [PROGRESS.md](PROGRESS.md)
 
