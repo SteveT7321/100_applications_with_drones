@@ -219,7 +219,7 @@ def step(strategy, t, pos, v_air, wind, gps, plan):
     if strategy != 'open_loop':
         meas = pos + gps                          # GPS-measured position
         v_true = v_air + wind                     # ground velocity, assumed measured exactly
-        fb = KP * (p_ref - meas) + KD * (v_ff - v_true)
+        fb = KP * (p_ref - meas) + KD * (v_ref - v_true)
         if strategy == 'phase_locked_safety':
             d, near = blade_dists(meas, t)
             for i in np.where(d < D_WARN)[0]:
