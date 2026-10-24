@@ -128,7 +128,7 @@ GPS Monte Carlo (facade captures, 200 draws per σ):
 
 - **The card's NN tour violates the safety margin twice.** Twice it jumps from a facade strip straight up to a roof capture.
   - Leg 167, West → Roof, climbs from the West facade at z = 4.48 m to the adjacent roof edge and passes 0.996 m from the building.
-  - Leg 415, North → Roof, runs from the top North strip, at z = 9.70 m, to a roof capture near the middle of the roof and clears the roof edge by only 0.409 m.
+  - Leg 415, North → Roof, runs from the top North strip, at z = 9.70 m, to a capture on the east roof edge, 3.2 m south of the centre line, and clears the north roof edge near the north-east corner by only 0.409 m.
   - Neither leg crosses the building itself, but both enter the 1 m safety margin.
   - With the two up-over-down detours, the NN flown length is 679.4 m.
   - 2-opt removes both legs and gives the shortest tour that respects the margin: 659.7 m, 5.6 % shorter than the rings.
