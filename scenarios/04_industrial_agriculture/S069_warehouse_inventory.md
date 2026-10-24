@@ -1,6 +1,6 @@
 # S069 Automated Warehouse Inventory
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 
 **Algorithm**: 3D A* Path Planning + Dwell-Based Scan Scheduling | **Dimension**: 3D
 
@@ -104,6 +104,16 @@ $$v^* = \underset{v \leq v_{thresh}}{\arg\max}\; \frac{P_{scan}(v)}{d_i / v}$$
 
 Differentiating and setting to zero yields v* = v_thresh / (1 + k_scan) for a fixed distance d_i,
 showing that slower hover speeds pay diminishing returns once P_scan saturates.
+
+> **Corrected (2026-10, implementation review).** With $u = v / v_{thresh}$, maximising
+> $u\,(1 - e^{-k(1-u)})$ gives the condition $e^{k(1-u)} = 1 + k u$, not $u = 1/(1+k)$.
+> For $k_{scan} = 3$ this gives $v^* = 0.1284$ m/s; the stated 0.05 m/s reaches only 52.9 % of
+> the maximum scan rate. Two further consequences of the model as written:
+> (i) $P_{scan}(0) = 1 - e^{-3} = 0.9502$, so one dwell can never give 95 % unless every hover
+> has exactly zero velocity; (ii) $\sigma_v = $ GPS_ERROR $/ \Delta t_{ctrl} = 0.1 / 0.1 = 1.0$ m/s
+> makes the per-attempt success about 10.8 %. Meeting $\eta_{scan} \ge 95$ % therefore needs
+> repeated dwells (re-scan until read). The implementation compares both policies and sweeps
+> $\sigma_v$.
 
 ---
 
