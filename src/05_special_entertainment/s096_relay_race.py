@@ -211,6 +211,7 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
     hist = dict(t=[], p=[], v=[], holder=[], mode=[]) if record else None
     finish = None
     n_steps = int(round(T_MAX / DT))
+    leg_t, leg_gap = 0.0, float(np.linalg.norm(p[0] - p[1]))
     for k in range(n_steps):
         t = k * DT
         z_noise = rng_obs.normal(0.0, SIGMA_OBS, 3)      # drawn every step (CRN)
@@ -246,7 +247,9 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
                                                       xin[3:], tau),
                                         launch_gap=float(np.linalg.norm(xin[:3] - po)),
                                         launch_peak=float(peak[0]), tau=tau,
-                                        launch_vxmin=float(vxmin[0]))
+                                        launch_vxmin=float(vxmin[0]), launch_t=t,
+                                        v_est=float(v_in), v_true=float(v[holder, 0]),
+                                        plan_dist=float(v_in * tau / 2))
                             mode = 'intercept'
                 elif np.linalg.norm(xin[:3] - po) <= d_detect:
                     plan = dict(launch_gap=float(np.linalg.norm(xin[:3] - po)), t0=t)
@@ -291,10 +294,18 @@ def run_simulation(strategy, v_cruise=V_CRUISE, seed=0, d_detect=D_DETECT, recor
                 handoffs.append(dict(t=t + DT, x=x_h, dp=dp, dv=dv,
                                      zone_ok=x_h <= RELAY_XS[out] + L_ZONE,
                                      launch_gap=(plan or {}).get('launch_gap', np.nan),
-                                     launch_peak=(plan or {}).get('launch_peak', np.nan)))
+                                     launch_peak=(plan or {}).get('launch_peak', np.nan),
+                                     leg_gap=leg_gap,
+                                     launch_delay=(plan or {}).get('launch_t', np.nan) - leg_t,
+                                     v_est=(plan or {}).get('v_est', np.nan),
+                                     v_true=(plan or {}).get('v_true', np.nan),
+                                     plan_dist=(plan or {}).get('plan_dist', np.nan)))
                 done[holder] = True
                 holder = out
                 window = 0.0
+                if holder < 2:     # gap to the next outgoing drone when the baton arrives
+                    leg_t = t + DT
+                    leg_gap = float(np.linalg.norm(p[holder] - p[holder + 1]))
                 mode = 'wait'
                 plan = None
                 if holder < 2:
@@ -341,6 +352,7 @@ def speed_grid(a_launch=A_LAUNCH):
     X = np.full_like(T, np.nan)
     XP = np.full(T.shape + (2,), np.nan)          # each pass's offset past its relay point
     LG = np.full(T.shape + (2,), np.nan)          # gap at the outgoing drone's launch
+    HO = {}                                       # full handoff records per cell
     for i, va in enumerate(GRID_V):
         for j, vb in enumerate(GRID_V):
             r = run_simulation('kf', [va, vb, V_CRUISE_MAX], seed=0, a_launch=a_launch)
@@ -349,8 +361,9 @@ def speed_grid(a_launch=A_LAUNCH):
                 X[i, j] = max(h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs']))
                 XP[i, j] = [h['x'] - RELAY_XS[k + 1] for k, h in enumerate(r['handoffs'])]
                 LG[i, j] = [h['launch_gap'] for h in r['handoffs']]
+                HO[i, j] = r['handoffs']
     Z = np.isfinite(T) & (np.nan_to_num(X, nan=np.inf) <= L_ZONE)
-    return T, Z, X, (XP, LG)
+    return T, Z, X, (XP, LG, HO)
 
 
 def best_feasible(T, X, L):
@@ -646,8 +659,9 @@ if __name__ == '__main__':
         f'{GRID_V[a]:.0f}->none' for a in range(len(GRID_V))))
     print('  Sensitivity of the fastest feasible (v_A, v_B) -> time to a_launch and L_ZONE:')
     for al in A_SWEEP:
-        Tg, _, Xg, (XPg, LGg) = grids[al]
+        Tg, _, Xg, (XPg, LGg, HOg) = grids[al]
         cells = []
+        detail = []
         for L in L_SWEEP:
             b = best_feasible(Tg, Xg, L)
             vl = math.sqrt(2 * al * L / SNAP_PEAK)
@@ -657,7 +671,19 @@ if __name__ == '__main__':
                 f'{SNAP_PEAK * b[0] ** 2 / (2 * al):.1f} / {SNAP_PEAK * b[1] ** 2 / (2 * al):.1f} m, '
                 f'launch gaps {LGg[b[3], b[4], 0]:.1f} / {LGg[b[3], b[4], 1]:.1f} m'
                 if b else 'none'))
+            if b and max(b[0], b[1]) > vl:           # optimum exceeds the bound: show why
+                for k, h in enumerate(HOg[b[3], b[4]]):
+                    detail.append(
+                        f'L {L:.0f} ({b[0]:.0f}, {b[1]:.0f}) pass {k + 1}: gap when the baton '
+                        f'arrived {h["leg_gap"]:.1f} m, launch delay {h["launch_delay"]:.2f} s, '
+                        f'launch gap {h["launch_gap"]:.1f} m, KF speed estimate '
+                        f'{h["v_est"]:.2f} m/s (true {h["v_true"]:.2f} m/s), planned launch '
+                        f'distance {h["plan_dist"]:.1f} m, formula with the cruise speed '
+                        f'{SNAP_PEAK * (b[0], b[1])[k] ** 2 / (2 * al):.1f} m, pass '
+                        f'+{XPg[b[3], b[4], k]:.1f} m')
         print(f'    a_launch {al:.0f} m/s^2:\n      ' + '\n      '.join(cells))
+        for d in detail:
+            print(f'      exception detail: {d}')
 
     v_opt = [best[0], best[1], V_CRUISE_MAX]
     print(f'\nMonte Carlo ({N_MC} seeds; same disturbance and sensor noise for every strategy):')
