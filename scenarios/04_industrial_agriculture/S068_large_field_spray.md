@@ -1,6 +1,6 @@
 # S068 Large-Scale Farmland Cooperative Spraying
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Field Partitioning + Battery-Aware Lawnmower Replanning | **Dimension**: 2D
 
 ---
@@ -77,6 +77,16 @@ $$t_{elapsed} + t_{return} \geq T_{bat}$$
 Once triggered, the drone records its current waypoint index as the **resume index**, flies
 directly to the station, waits $T_{charge} = 120$ s, then resumes from the recorded waypoint.
 
+> **Implementation note (2026-10 review).** In the pseudocode below, the drone flies back to the
+> *next waypoint* (the far end of the interrupted run), so the rest of that run is never
+> sprayed. Coverage is also marked while the drone ferries diagonally over other strips. The
+> implementation stores the exact stopping point, flies back to it with the nozzle off, sprays only
+> on the runs, and solves the trigger exactly along the current leg. It also finds that all four
+> drones of the equal partition reach the station at the same time (600–720 s), so the
+> "unlimited capacity" assumption is binding: one swap slot would make three drones queue.
+> The card's per-strip grid (27 runs per strip, last run clamped) flies 108 runs; one global
+> grid with 1.9 m spacing needs 106.
+
 ### Maximum Spray Distance per Charge
 
 The maximum along-track distance a drone can spray on a single charge (ignoring return flight)
@@ -132,6 +142,9 @@ and a ferry round-trip penalty.
 ---
 
 ## Implementation
+
+> The sketch below is the original pseudocode; see the note above for its resume bug. The
+> implemented version is `src/04_industrial_agriculture/s068_large_field_spray.py`.
 
 ```python
 import numpy as np
