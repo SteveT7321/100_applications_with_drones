@@ -105,7 +105,7 @@
 
 ---
 
-## Domain 4: Industrial & Agriculture — 15/20
+## Domain 4: Industrial & Agriculture — 20/20
 
 - [x] **S061** Power Line Inspection
 - [x] **S062** Wind Turbine Blade Inspection
@@ -122,11 +122,11 @@
 - [x] **S073** Solar Panel Thermal Inspection
 - [x] **S074** Mine 3D Mapping
 - [x] **S075** Container Yard Inventory
-- [ ] **S076** Thermal Management in Hot Environment
-- [ ] **S077** Precision Pollination
-- [ ] **S078** Harvester Guidance
-- [ ] **S079** Offshore Wind Installation
-- [ ] **S080** Underground Pipe Inspection
+- [x] **S076** Thermal Management in Hot Environment
+- [x] **S077** Precision Pollination
+- [x] **S078** Harvester Guidance
+- [x] **S079** Offshore Wind Installation
+- [x] **S080** Underground Pipe Inspection
 
 ---
 
@@ -162,6 +162,6 @@
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 15 | 20 |
-| Industrial & Agriculture | 15 | 20 |
+| Industrial & Agriculture | 20 | 20 |
 | Special Ops & Entertainment | 6 | 20 |
-| **Total** | **76** | **100** |
+| **Total** | **81** | **100** |

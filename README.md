@@ -126,7 +126,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-4"></a>
-<details open><summary><b>4 · Industrial & Agriculture</b> — 15/20 done</summary>
+<details open><summary><b>4 · Industrial & Agriculture</b> — 20/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -145,11 +145,11 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S073 | [Solar Panel Thermal Imaging Inspection](outputs/04_industrial_agriculture/s073_solar_thermal/README.md) | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) |  |
 | S074 | [Mine 3D Mapping](outputs/04_industrial_agriculture/s074_mine_mapping/README.md) | [card](scenarios/04_industrial_agriculture/S074_mine_mapping.md) |  |
 | S075 | [Port Container Yard Inventory](outputs/04_industrial_agriculture/s075_container_yard/README.md) | [card](scenarios/04_industrial_agriculture/S075_container_yard.md) |  |
-| S076 | Extreme Heat Cooling Strategy *(planned)* | [card](scenarios/04_industrial_agriculture/S076_thermal_management.md) |  |
-| S077 | Precision Pollination Flight Pattern *(planned)* | [card](scenarios/04_industrial_agriculture/S077_pollination.md) |  |
-| S078 | Harvester Cooperative Guidance *(planned)* | [card](scenarios/04_industrial_agriculture/S078_harvester_guidance.md) |  |
-| S079 | Offshore Wind Farm Installation Assistance *(planned)* | [card](scenarios/04_industrial_agriculture/S079_offshore_wind.md) |  |
-| S080 | Underground Pipe CCTV Replacement *(planned)* | [card](scenarios/04_industrial_agriculture/S080_underground_pipe.md) |  |
+| S076 | [Extreme Heat Cooling Strategy](outputs/04_industrial_agriculture/s076_thermal_management/README.md) | [card](scenarios/04_industrial_agriculture/S076_thermal_management.md) |  |
+| S077 | [Precision Pollination Flight Pattern](outputs/04_industrial_agriculture/s077_pollination/README.md) | [card](scenarios/04_industrial_agriculture/S077_pollination.md) |  |
+| S078 | [Harvester Cooperative Guidance](outputs/04_industrial_agriculture/s078_harvester_guidance/README.md) | [card](scenarios/04_industrial_agriculture/S078_harvester_guidance.md) |  |
+| S079 | [Offshore Wind Farm Installation Assistance](outputs/04_industrial_agriculture/s079_offshore_wind/README.md) | [card](scenarios/04_industrial_agriculture/S079_offshore_wind.md) |  |
+| S080 | [Underground Pipe CCTV Replacement](outputs/04_industrial_agriculture/s080_underground_pipe/README.md) | [card](scenarios/04_industrial_agriculture/S080_underground_pipe.md) |  |
 
 </details>
 
@@ -240,9 +240,9 @@ drones/
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
 | Environmental & SAR | 15 | 20 |
-| Industrial & Agriculture | 15 | 20 |
+| Industrial & Agriculture | 20 | 20 |
 | Special Ops & Entertainment | 6 | 20 |
-| **Total** | **76** | **100** |
+| **Total** | **81** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
