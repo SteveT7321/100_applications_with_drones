@@ -662,7 +662,8 @@ if __name__ == '__main__':
     vzp = max(results[s]['vz_peak'] for s in STRATS)
     nvz = sum(results[s]['sat_vz'] for s in STRATS) + sum(azsweep[a]['sat_vz'] for a in A_Z_SWEEP)
     print(f'  Vertical speed limit {V_Z_MAX:.0f} m/s (added): peak |v_z| over all strategies {vzp:.2f} m/s; '
-          f'steps clipped at the limit (all strategies and the a_z sweep) {nvz} -> never binds')
+          f'steps clipped at the limit (all strategies and the a_z sweep) {nvz} -> '
+          f"{'never binds' if nvz == 0 else 'BINDS'}")
     print(f'  2D-baseline altitude sweep (fixed z, r_xy = {R_XY:.2f} m, 3D KF tilt):')
     for z in Z_FIX_SWEEP:
         r = zsweep[z]
@@ -695,8 +696,10 @@ if __name__ == '__main__':
         print(f"    {LABELS[s]}: removing the jumps changes F_2D by {100 * d.mean():+.1f} pp "
               f"(higher without jumps in {int(np.sum(d > 0))}/{N_MC})")
     g = nojump['fix']['F2'] - nojump['sph']['F2']
+    g_with = results['fix']['F2'] - results['sph']['F2']
+    same = np.sign(g.mean()) == np.sign(g_with.mean())
     print(f"    without jumps: F_2D gap fix - sph {100 * g.mean():+.1f} pp (fix higher in {int(np.sum(g > 0))}/{N_MC}) "
-          f"-> the ranking does not depend on the jumps")
+          f"-> {'same ranking as with jumps' if same else 'RANKING CHANGES without jumps'}")
     print('  Ablation — gimbal lag removed (tau = 0), F_v:')
     for s in ('sph', 'fix', 'oracle'):
         print(f"    {LABELS[s]:<34} tau = 0.1 s {100 * results[s]['Fv'].mean():.1f}%  ->  tau = 0 "
