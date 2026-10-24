@@ -447,6 +447,12 @@ def run_simulation(course, plan, strategy, seed):
                     refB = trajB_active.eval(t)
             pB, vB = track(pB, vB, refB, noise[k, 1])
         assert pA[2] > 0 and (pB is None or pB[2] > 0), (strategy, t, pA, pB, holder)
+        for pp, vv in ((pA, vA), (pB, vB)):
+            if pp is None:
+                continue
+            assert np.linalg.norm(vv) <= V_MAX + 1e-9, 'speed limit exceeded'
+            assert np.min(np.linalg.norm(course['pillars'] - pp[:2], axis=1)) > R_PILLAR, \
+                'pillar penetration'
         # handoff check
         if strategy != 'single' and holder == 'A':
             dp, dv = np.linalg.norm(pA - pB), np.linalg.norm(vA - vB)
@@ -755,11 +761,14 @@ if __name__ == '__main__':
     d_mh = mc['hover']['t'] - mc['matched']['t']
     d_ms = mc['matched']['t'] - mc['single']['t']
     print(f'  Hover - matched time: {np.nanmean(d_mh):.2f} ± {np.nanstd(d_mh):.2f} s '
-          f'(matched faster in {int(np.sum(d_mh > 0))}/{N_COURSES})')
+          f'(matched faster in {int(np.sum(d_mh > 1e-9))}, hover faster in '
+          f'{int(np.sum(d_mh < -1e-9))}, ties {int(np.sum(np.abs(d_mh) <= 1e-9))} of {N_COURSES})')
     print(f'  Matched - single time: {np.nanmean(d_ms):+.2f} ± {np.nanstd(d_ms):.2f} s')
     d_rr = mc['matched_rrt']['t'] - mc['matched']['t']
     print(f'  Plain RRT - RRT* (matched relay) time: {np.nanmean(d_rr):+.2f} ± '
-          f'{np.nanstd(d_rr):.2f} s (RRT* faster in {int(np.sum(d_rr > 0))}/{N_COURSES}); raw '
+          f'{np.nanstd(d_rr):.2f} s (RRT* faster in {int(np.sum(d_rr > 1e-9))}, plain RRT faster in '
+          f'{int(np.sum(d_rr < -1e-9))}, exact ties {int(np.sum(np.abs(d_rr) <= 1e-9))} of '
+          f'{N_COURSES}); raw '
           f'path RRT* {np.nanmean(mc["plan_len_star"]):.2f} m vs RRT '
           f'{np.nanmean(mc["plan_len_rrt"]):.2f} m (RRT* shorter in '
           f'{int(np.sum(mc["plan_len_star"] < mc["plan_len_rrt"]))}/{N_COURSES})')

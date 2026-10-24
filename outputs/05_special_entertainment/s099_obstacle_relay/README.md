@@ -89,7 +89,7 @@ conda activate drones
 python src/05_special_entertainment/s099_obstacle_relay.py
 ```
 
-Runtime: about 4 min, measured while about ten other simulations shared the 12-thread machine, so it is shorter when the script runs alone. The script asserts that both drones stay above the ground; any pillar contact makes a run fail (clearance > 0 is required for success).
+Runtime: 4.3–4.4 min, measured while other simulations shared the machine (the independent review measured 2.4 min). On the flown path, the script asserts every step that both drones stay above the ground, stay at or below $v_{max}$ = 3 m/s, and never enter a pillar. A run is scored a success only if its pillar clearance stays above 0.
 
 ---
 
@@ -119,9 +119,9 @@ Both planners grew trees of 2665 nodes, and both ended with 18 waypoints after s
 | Relay, hover | 20/20 | 24.52 ± 2.15 s | 100/100 | 0.017 / 0.007 m | 0.017 m / 0.039 m/s |
 | Relay, matched, RRT | 20/20 | 23.50 ± 2.37 s | 100/100 | 0.015 / 0.007 m | 0.015 m / 0.042 m/s |
 
-- Hover minus matched: **0.78 ± 0.88 s**; matched was faster on 16/20 courses.
+- Hover minus matched: **0.78 ± 0.88 s**; matched was faster on 16/20 courses, hover on 4, with no ties.
 - Matched minus single: −0.00 ± 0.01 s.
-- Plain RRT minus RRT*, both as matched relays: −0.24 ± 0.65 s (RRT* faster on only 2/20 courses). The raw RRT* tree path was shorter on 20/20 courses (25.80 m against 32.21 m).
+- Plain RRT minus RRT*, both as matched relays: −0.24 ± 0.65 s. On 12/20 courses the times are exactly equal, because shortcutting gave the same waypoints; RRT* was faster on 2 and plain RRT on 6. The raw RRT* tree path was shorter on 20/20 courses (25.80 m against 32.21 m).
 
 **Key findings**:
 
@@ -129,7 +129,7 @@ Both planners grew trees of 2665 nodes, and both ended with 18 waypoints after s
 - **The velocity-matched handoff costs nothing.** B launches 2.5 s early and joins A's planned state; the pass errors are 0.015 m and 0.041 m/s against tolerances of 0.10 m and 0.15 m/s. Mission time equals the single drone's (difference −0.00 ± 0.01 s): the relay keeps the single-drone time while each drone flies only part of the course (21.1 / 27.4 m on the demo course against 45.7 m alone).
 - **A relay of identical drones does not make the mission faster.** The baton moves along the same planned path at the same speed limits either way. The card's "minimum total time" objective therefore gains nothing from the relay as such, only from avoiding a stop.
 - **A hover handoff costs 0.78 s on average**, because A must stop and B must restart from rest. On 4/20 courses the hover version was nevertheless faster. Splitting the course at a waypoint rebuilds both trajectories, and the rebuilt time-scaling can come out shorter than the single plan. Those courses reflect the trajectory generator, not the handoff.
-- **RRT\*'s shorter tree paths do not survive shortcutting.** Raw RRT* paths are about 20% shorter (25.80 vs 32.21 m). After greedy shortcutting both planners give similar waypoint sets, and plain RRT was even 0.24 s faster on average. The card's RRT* rewiring is not what sets the mission time here.
+- **RRT\*'s shorter tree paths do not survive shortcutting.** Raw RRT* paths are about 20% shorter (25.80 vs 32.21 m). After greedy shortcutting, both planners give identical mission times on 12/20 courses. On the other 8, plain RRT was faster 6 times and RRT* 2 times, so plain RRT was 0.24 s faster on average. The card's RRT* rewiring is not what sets the mission time here.
 - **The tightest pillar clearance comes from B's launch curve** (0.19 m on the demo course). The staging point is computed from A's velocity and is not collision-checked by the planner; the clearance is reported and a run fails if it reaches 0.
 
 ### Course Overview
