@@ -47,6 +47,7 @@ R_OUT_STAR     = 4.5      # m
 R_IN_STAR      = 1.8      # m
 Z_STAR         = (-1.2, 1.2)
 INIT_NOISE     = 0.05     # m   std of initial position error around the sphere keypoints
+Z_CENTRE       = 8.0      # m   altitude of the formation centre (all shapes above ground)
 EPS_TARGET     = 0.3      # m   card target for end-of-morph formation error
 N_MC           = 20       # Monte Carlo seeds
 SEEDS          = list(range(N_MC))
@@ -118,8 +119,9 @@ def make_star(n=N_DRONES, r_out=R_OUT_STAR, r_in=R_IN_STAR, z_layers=Z_STAR):
     return np.array(pts, dtype=float)
 
 
-SHAPES = {'sphere': make_sphere(), 'cube': make_cube(),
-          'helix': make_helix(), 'star': make_star()}
+_CENTRE = np.array([0.0, 0.0, Z_CENTRE])
+SHAPES = {'sphere': make_sphere() + _CENTRE, 'cube': make_cube() + _CENTRE,
+          'helix': make_helix() + _CENTRE, 'star': make_star() + _CENTRE}
 
 
 def nn_stats(pts):
@@ -402,6 +404,7 @@ def simulate(seed, use_orca=True, use_hungarian=True):
             assert np.all(np.linalg.norm(vel, axis=1) <= V_MAX + 1e-9), 'speed limit violated'
             assert np.all(np.linalg.norm(dv, axis=1) <= lim + 1e-9), 'acceleration limit violated'
             pos = pos + vel * DT
+            assert np.all(pos[:, 2] >= 0.0), 'drone below ground'
             k += 1
             tau1 = (step + 1) / N_STEPS_MORPH
             des1 = (1.0 - tau1) * p_a + tau1 * p_b
@@ -420,6 +423,7 @@ def simulate(seed, use_orca=True, use_hungarian=True):
         'coll_steps': int(np.sum(n_pairs > 0)), 'coll_pair_steps': int(n_pairs.sum()),
         'min_sep_all': float(min_sep.min()), 'eps_end': np.array(eps_end),
         'smooth': smooth, 'max_speed': float(speed.max()),
+        'min_z': float(log['pos'][:, :, 2].min()), 'max_z': float(log['pos'][:, :, 2].max()),
         'travel_assigned': np.array(travel_assigned), 'path_len': path_len,
         'con_steps': int(n_con.sum()), 'inf_steps': int(n_inf.sum()), 'acc_sat': acc_sat,
     }
@@ -434,7 +438,7 @@ def run_simulation():
             if seed == MAIN_SEED:
                 main[c] = r
             mc[c].append({k: r[k] for k in ('coll_steps', 'coll_pair_steps', 'min_sep_all',
-                                            'eps_end', 'smooth', 'max_speed',
+                                            'eps_end', 'smooth', 'max_speed', 'min_z',
                                             'travel_assigned', 'path_len', 'con_steps',
                                             'inf_steps', 'acc_sat')})
     return main, mc
@@ -472,7 +476,7 @@ def plot_shapes(out_dir):
         for a, b in _outline_edges(name):
             ax.plot(*zip(p[a], p[b]), color='0.5', lw=0.8)
         ax.scatter(p[:, 0], p[:, 1], p[:, 2], color='green', s=40, depthshade=False)
-        ax.set_xlim(-5, 5); ax.set_ylim(-5, 5); ax.set_zlim(-6, 6)
+        ax.set_xlim(-5, 5); ax.set_ylim(-5, 5); ax.set_zlim(Z_CENTRE - 6, Z_CENTRE + 6)
         ax.set_box_aspect((10, 10, 12))
         ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)'); ax.set_zlabel('z (m)')
         ax.set_title(f'{name}: NN mean {mnn:.2f} m, min {minn:.2f} m', fontsize=10)
@@ -596,7 +600,7 @@ def save_animation(main, out_dir, step=3):
     cols = plt.cm.tab20(np.linspace(0, 1, N_DRONES))
     fig = plt.figure(figsize=(7, 6.5))
     ax = fig.add_subplot(111, projection='3d')
-    ax.set_xlim(-5, 5); ax.set_ylim(-5, 5); ax.set_zlim(-6, 6)
+    ax.set_xlim(-5, 5); ax.set_ylim(-5, 5); ax.set_zlim(Z_CENTRE - 6, Z_CENTRE + 6)
     ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)'); ax.set_zlabel('z (m)')
     dots = ax.scatter(pos[0, :, 0], pos[0, :, 1], pos[0, :, 2], c=cols, s=40,
                       depthshade=False)
@@ -650,6 +654,7 @@ if __name__ == '__main__':
         print(f"    Max eps_f during mission   : {r['eps_f'].max():.3f} m")
         print(f"    Smoothness S               : {r['smooth']:.4f} m/s per step")
         print(f"    Max speed                  : {r['max_speed']:.3f} m/s")
+        print(f"    Altitude range             : {r['min_z']:.2f}–{r['max_z']:.2f} m")
         print('    Assigned straight-line travel per transition: ' +
               ', '.join(f'{d:.1f}' for d in r['travel_assigned']) + ' m')
         print(f"    Flown path length (sum)    : {r['path_len']:.1f} m")
@@ -677,7 +682,8 @@ if __name__ == '__main__':
         print(f'    Flown path length          : {_ms([x["path_len"] for x in m], "{:.1f}")} m')
         print(f'    ORCA-active agent-steps    : {_ms([x["con_steps"] for x in m], "{:.1f}")}'
               f', infeasible LP agent-steps: {_ms([x["inf_steps"] for x in m], "{:.1f}")}')
-        print(f'    Max speed over all seeds   : {max(x["max_speed"] for x in m):.3f} m/s')
+        print(f'    Max speed over all seeds   : {max(x["max_speed"] for x in m):.3f} m/s, '
+              f'lowest altitude {min(x["min_z"] for x in m):.2f} m')
         print(f'    Acceleration-limited agent-steps: '
               f'{_ms([x["acc_sat"] for x in m], "{:.1f}")}')
     # Paired comparisons (common random numbers)

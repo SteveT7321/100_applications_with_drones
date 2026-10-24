@@ -75,6 +75,7 @@ The velocity change per step is clipped to $a_{max}\,\Delta t$ with $a_{max} = 5
 | Helix radius / rise per drone | 3.0 m / 0.6 m |
 | Star outer / inner radius / layers | 4.5 m / 1.8 m / $z = \pm 1.2$ m |
 | Reference formation distance $d_{form}$ | 2.0 m (plot reference only) |
+| Formation centre altitude (added) | 8.0 m; drones fly between 2.19 and 13.80 m (all seeds and conditions), $z \ge 0$ asserted |
 | Initial position noise | N(0, 0.05 m) per axis around the sphere keypoints |
 | Formation-error target | < 0.3 m |
 | Monte Carlo | 20 seeds (0–19); seed 0 for the time-series figures |
@@ -92,7 +93,7 @@ conda activate drones
 python src/05_special_entertainment/s088_formation_morphing.py
 ```
 
-Runtime ≈ 35 s on a lightly loaded machine (58–83 s measured while other jobs shared the CPU).
+Runtime ≈ 35 s (33–36 s measured in three runs).
 
 ---
 
@@ -118,15 +119,15 @@ ORCA changed the velocity in 164 agent-steps with Hungarian assignment and in 25
 | ORCA + random assignment | 0.3 ± 1.3 | 1/20 (max 6) | 1.0000 m (0.9998) | 0.067 ± 0.022 m | 0.0355 ± 0.0014 | 348.9 ± 18.7 m | 3373.7 ± 438.3 |
 | Random, no ORCA (control) | 363.2 ± 28.3 | 20/20 (max 415) | 0.1528 ± 0.0853 m (0.0295) | 0.000 ± 0.000 m | 0.0338 ± 0.0011 | 348.7 ± 18.6 m | — |
 
-Paired per seed (common random numbers): ORCA + random has fewer collision steps than random without ORCA in 20/20 seeds; ORCA + Hungarian has fewer than ORCA + random in 1/20 seeds and the same (zero) in 19/20; the worst end-of-morph error is lower with Hungarian than with random assignment in 20/20 seeds. The largest speed over all seeds and conditions is 1.752 m/s, so $v_{max} = 3$ m/s never binds.
+Paired per seed (common random numbers): ORCA + random has fewer collision steps than random without ORCA in 20/20 seeds; ORCA + Hungarian has fewer than ORCA + random in 1/20 seeds and the same (zero) in 19/20; the worst end-of-morph error is lower with Hungarian than with random assignment in 20/20 seeds. For the two Hungarian conditions the 20 seeds are effectively **one case repeated** (see below), so these counts compare one Hungarian outcome with 20 random-assignment outcomes. The largest speed over all seeds and conditions is 1.752 m/s, so $v_{max} = 3$ m/s never binds.
 
 **Key findings**:
-- **The proposed method meets every card target**: zero collisions in 20/20 seeds, minimum separation 1.0706 m, worst end-of-morph error 0.003 m (< 0.25 m), smoothness 0.0208 m/s per step (< 0.05).
-- **The card's claim that the "no ORCA" condition shows why ORCA is necessary does not hold here.** With Hungarian assignment the straight-line paths never come closer than 1.0727 m, in all 20 seeds, so the no-ORCA run is collision-free and slightly smoother (0.0205 vs 0.0208). ORCA only nudges velocities (164 agent-steps, path length unchanged at 161.3 m). In the seed-0 metrics panel the closest approach of both Hungarian runs (1.0706 / 1.0727 m) occurs just after t = 20 s, next to the helix formation, whose own keypoint spacing is only 1.114 m.
+- **The proposed method meets every card target**: zero collisions (one effective case, see the last finding), minimum separation 1.0706 m, worst end-of-morph error 0.003 m (< 0.25 m), smoothness 0.0208 m/s per step (< 0.05).
+- **The card's claim that the "no ORCA" condition shows why ORCA is necessary does not hold here.** With Hungarian assignment the straight-line paths never come closer than 1.0727 m, so the no-ORCA run is collision-free and slightly smoother (0.0205 vs 0.0208). ORCA only nudges velocities (164 agent-steps, path length unchanged at 161.3 m). In the seed-0 metrics panel the closest approach of both Hungarian runs (1.0706 / 1.0727 m) occurs just after t = 20 s, next to the helix formation, whose own keypoint spacing is only 1.114 m.
 - **ORCA matters when the assignment is poor.** Random assignment more than doubles the planned travel (348.9 vs 160.7 m) and makes the paths cross. Without ORCA this gives collisions in 20/20 seeds (363.2 ± 28.3 collision timesteps, closest pair 0.0295 m). With ORCA the drones slide around each other along the 1.0 m boundary: minimum separation 1.0000 m, except in one seed where the separation dipped to 0.9998 m for 6 timesteps (a 0.2 mm violation, counted as collisions). The LP was infeasible in 0.7 ± 1.8 agent-steps per run; there linearProgram 4 only minimises the violation.
 - **Hungarian assignment is the cheaper safety measure.** Compared with ORCA + random, it halves the travel, needs ORCA in 164 instead of 3373.7 agent-steps, and lowers the worst formation error from 0.067 to 0.003 m.
 - **The formation-error target is not discriminative.** Every condition stays well below 0.3 m at every morph end (largest 0.121 m, ORCA + random; see the Monte Carlo figure), because the $K_P$ term pulls each drone back onto its moving target. It is reported for completeness; the comparison rests on collisions, separation, travel and ORCA activity.
-- **Monte Carlo spread with Hungarian assignment is almost zero.** The only randomness is the 0.05 m initial noise, which does not change the assignment, so the Hungarian rows have std ≈ 0. The random-assignment rows vary because the permutations change with the seed.
+- **The Monte Carlo is degenerate for the Hungarian conditions.** Their only randomness is the 0.05 m initial noise, which never changes the assignment, so all 20 seeds give practically the same run (std 0.0000 for separation and smoothness). The Hungarian rows therefore report **one case**, not 20 independent wins. Only the random-assignment rows carry real seed-to-seed variation, because the permutations change with the seed.
 
 ### Target Shapes
 
@@ -171,6 +172,7 @@ ORCA + Hungarian, seed 0, 3D view with 2 s trails, 201 frames at 20 fps (every 3
 | No acceleration limit | $\|\Delta\mathbf{v}\| \le a_{max}\Delta t$, $a_{max} = 5$ m/s², all conditions | Physical sanity (no instantaneous velocity jumps); the card asks for bounded acceleration changes. It binds in 57.5 ± 1.4 (ORCA + Hungarian) to 199.8 ± 14.7 (random, no ORCA) of the 12 000 agent-steps per run. |
 | Three conditions, single run | Added a fourth control (random assignment, no ORCA); 20-seed Monte Carlo with common random numbers | Hungarian without ORCA turned out collision-free, so the card's comparison could not show what ORCA prevents. |
 | Smoothness: card code takes the RMS over vector components | RMS of $\|\Delta\mathbf{v}\|$ as in the card's formula | The code value is $1/\sqrt{3}$ of the formula value. |
+| Shapes centred at the origin (drones would fly down to z ≈ −5.7 m) | Formation centre at 8.0 m altitude; $z \ge 0$ asserted | No flight below ground; the geometry and all separations are unchanged by the shift. |
 | Output names `s088_3d_trajectories.png`, `s088_metrics_panel.png`, `s088_animation.gif` | `3d_trajectories.png`, `metrics_panel.png`, `animation.gif`, plus `shapes.png` and `monte_carlo.png` | Repository naming convention. |
 
 ---
