@@ -70,6 +70,7 @@ DT          = 0.005          # s    rigid-body control / physics step (200 Hz)
 EST_EVERY   = int(round(DT_EST / DT))
 LOG_EVERY   = EST_EVERY      # log at 50 Hz
 ACC_NOISE   = 0.1            # m/s^2 accelerometer noise std (RLS input)
+ACC_SEED_BASE = 1000         # accelerometer-noise generator of seed sd: default_rng(1000 + sd)
 YAW_KP, YAW_KD = 16.0, 8.0   # yaw hold for the LQR controllers (1/s^2, 1/s)
 MC_SEEDS    = list(range(42, 62))
 # Tilt-limit groups (limit deg, LQR clamp shape); the PID always clips the total tilt (a cone).
@@ -184,13 +185,17 @@ def run_simulation(seeds=MC_SEEDS, groups=TILT_GROUPS):
     seed_of = np.tile(np.arange(S), NL * C)
     n_max = int(round(T_MAX / DT))
     winds = np.stack([wind_series(sd, n_max + 1) for sd in seeds])      # (S, n, 3)
+    # accelerometer noise per seed (common random numbers across controllers and tilt groups;
+    # independent of batch size and drone index)
+    n_est = n_max // EST_EVERY + 1
+    acc_noise = np.stack([np.random.default_rng(ACC_SEED_BASE + sd).standard_normal((n_est, 3))
+                          for sd in seeds])                              # (S, n_est, 3)
     params = make_params('fpv_5inch', mass=MASS, inertia=np.array([I_XX, I_YY, I_ZZ]),
                          drag=np.zeros(3))
     gains = default_gains('fpv_5inch', max_tilt=lim_of)      # PID: hard limit on commanded tilt
     start = np.tile([0.0, 0.0, Z_REF], (B, 1))
     drone = RigidBodyDrone(start, preset='fpv_5inch', params=params, gains=gains, dt=DT,
                            drag_ff=False, record=False)
-    rng_acc = np.random.default_rng(1000)
     is_pid = ctrl_of == 0
     is_rls = ctrl_of == 2
     w_hat = np.zeros((B, 3))
@@ -224,7 +229,7 @@ def run_simulation(seeds=MC_SEEDS, groups=TILT_GROUPS):
         eul = quat_to_euler(drone.quat)
         # ── RLS wind-acceleration estimate (50 Hz) ──
         if k % EST_EVERY == 0 and k > 0:
-            a_meas = (drone.vel - v_prev) / DT_EST + ACC_NOISE * rng_acc.standard_normal((B, 3))
+            a_meas = (drone.vel - v_prev) / DT_EST + ACC_NOISE * acc_noise[seed_of, k // EST_EVERY]
             Rm = quat_to_rot(drone.quat)
             a_model = Rm[:, :, 2] * (drone.thrust_total() / MASS)[:, None] - [0.0, 0.0, G]
             w_hat = w_hat + GAMMA * (a_meas - a_model - w_hat)
@@ -537,13 +542,22 @@ def plot_envelope(res, meta, out_dir):
             rms.append(np.mean([r['rms_y'] for r in R_]))
         axes[0].plot(lims, succ, 'o-', color=COLOR[c], label=LABEL[c])
         axes[1].plot(lims, rms, 'o-', color=COLOR[c], label=LABEL[c])
+        for li, g in enumerate(meta['groups']):          # cone-clamp check, drawn at its limit
+            if g[1] != 'cone':
+                continue
+            R_ = [res[(li * C + ci) * S + s] for s in range(S)]
+            kw = dict(marker='s', ms=11, mfc='none', mec=COLOR[c], ls='none',
+                      label=f'{g[0]:g} deg, cone-shaped LQR clamp' if ci == 0 else None)
+            axes[0].plot([g[0]], [sum(r['success'] for r in R_)], **kw)
+            axes[1].plot([g[0]], [np.mean([r['rms_y'] for r in R_])], **kw)
     axes[0].set_ylabel(f'missions completed (of {S})')
     axes[0].set_ylim(0, S + 1)
     axes[1].set_ylabel('mean RMS |y| (m)')
     axes[1].set_yscale('log')
     for ax in axes:
         ax.set_xlabel('common hard tilt limit (deg); fail limit stays 40 deg')
-        ax.set_xticks([30, 31, 35, 39])
+        ax.set_xticks(lims)
+        ax.set_xticklabels([f'{x:g}' for x in lims], fontsize=8)
         ax.grid(alpha=0.3)
         ax.legend(fontsize=8)
     axes[0].set_title('Success vs tilt limit (same limit for all controllers)')
@@ -682,7 +696,8 @@ if __name__ == '__main__':
     er = np.array([res[ic * S + s]['est_rms'] for s in range(S)])
     print(f'  RLS: first within 0.5 m/s^2 of the mean-wind acceleration after '
           f'{np.nanmean(tc):.2f} +- {np.nanstd(tc):.2f} s (max {np.nanmax(tc):.2f} s, never on '
-          f'{int(np.sum(~np.isfinite(tc)))} seeds); RMS error vs the true instantaneous wind '
+          f'{int(np.sum(~np.isfinite(tc)))} seeds; < 15 s on {int(np.sum(tc < 15.0))}/{S} '
+          f'seeds); RMS error vs the true instantaneous wind '
           f'acceleration {er.mean():.3f} +- {er.std():.3f} m/s^2')
 
     C = meta['C']
