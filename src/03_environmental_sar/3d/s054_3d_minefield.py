@@ -188,6 +188,7 @@ class Mission3D(s2d.Mission):
         za = self.agl()
         assert za > 0.0, f'drone below ground (AGL {za:.2f} m)'
         rg = float(r_gpr(za))
+        fa_possible = float(pd3(0.0, za, za)) > THETA_ALARM
         changed = False
         i0, i1 = max(0, int(px - rg) - 1), min(N_CELLS, int(px + rg) + 2)
         j0, j1 = max(0, int(py - rg) - 1), min(N_CELLS, int(py + rg) + 2)
@@ -225,7 +226,8 @@ class Mission3D(s2d.Mission):
         for b in np.where(inside & ~self.in_block)[0]:
             k = self.block_pass[b]
             self.block_pass[b] += 1
-            if self.f['fa_u'][b, k % 64] < P_FA:
+            # a false alarm is an alarm: it needs a sensor that can exceed theta_alarm at this AGL
+            if self.f['fa_u'][b, k % 64] < P_FA and fa_possible:
                 xy = self.block_xy[b] - FA_BLOCK / 2 + self.f['fa_xy'][b, k % 64]
                 self.fa_xy = np.vstack([self.fa_xy, xy])
                 self.fa_cum = np.append(self.fa_cum, 0.0)
@@ -260,7 +262,6 @@ class Mission3D(s2d.Mission):
         zc = self.z_cmd_at(self.pos)
         rate = min(max((zc - self.z) / TAU_Z, -VZ_MAX), VZ_MAX)
         self.z += rate * DT
-        assert abs(rate) <= VZ_MAX + 1e-12
 
     def step_towards(self, target):
         d = target - self.pos
@@ -271,7 +272,6 @@ class Mission3D(s2d.Mission):
         else:
             new, arrived = self.pos + d / dist * stp, False
         moved = np.linalg.norm(new - self.pos)
-        assert moved <= stp + 1e-9, 'speed limit exceeded'
         if self.risk_at(self.pos) >= s2d.R_CAUTION:
             self.danger_dist += moved
         z0 = self.z
@@ -299,7 +299,8 @@ class Mission3D(s2d.Mission):
         zg = float(self.ter.h(self.pos[0], self.pos[1]))
         cmd = self.override_agl if self.override_agl is not None else \
             (self.z_fixed - zg if self.mode == 'fixed' else self.z_agl_cmd)
-        self.agl_log.append((self.t, self.z - zg, cmd, self.z, zg, self.override_agl is not None))
+        self.agl_log.append((self.t, self.z - zg, cmd, self.z, zg, self.override_agl is not None,
+                             self.pos[0], self.pos[1]))
         if self.record:
             self.traj3.append(np.array([*self.pos, self.z]))
 
@@ -366,6 +367,14 @@ class Mission3D(s2d.Mission):
         self.return_home()
         el = np.array(self.esc_log)
         al = np.array(self.agl_log)
+        # independent end-to-end kinematics check on the logged 3D track (catches teleports in
+        # detours / hovers, double vertical updates, or steps that skip the speed limits)
+        dt_log = np.diff(al[:, 0])
+        assert np.all(dt_log > 0), 'time not increasing'
+        vh = np.hypot(np.diff(al[:, 6]), np.diff(al[:, 7])) / dt_log
+        vz = np.abs(np.diff(al[:, 3])) / dt_log
+        assert vh.max() <= V + 1e-6, f'horizontal speed {vh.max():.3f} m/s'
+        assert vz.max() <= VZ_MAX + 1e-6, f'vertical speed {vz.max():.3f} m/s'
         surv = ~al[:, 5].astype(bool)
         detected = self.alarmed | self.confirmed
         err = np.abs(al[surv, 1] - al[surv, 2])
@@ -463,6 +472,9 @@ def report(res):
     print(f'Optimal scan altitude: grid argmax {res["z_grid"]:.3f} m, bounded search {zs:.3f} m '
           f'(card: ~2.5 m); eta(z*) / eta(2.5) = {eta(zs) / eta(2.5):.2f}')
     print(f'  no alarm is possible above {alarm_altitude_limit():.3f} m AGL (P_d directly below <= {THETA_ALARM})')
+    r2 = np.linspace(0.01, s2d.R_GPR, 400001)
+    print(f'  2D S054 GPR (flat, altitude-independent): alarm radius '
+          f'{float(r2[s2d.gpr_detect_prob(r2) > THETA_ALARM].max()):.3f} m')
     print(f'  alarm radius at z* = {alarm_radius(zs):.3f} m -> strip width for no seams 2 x {alarm_radius(zs):.3f} = '
           f'{2 * alarm_radius(zs):.2f} m (card strip 8 m)')
     print(f'  card AGL-error bound vz_max*tau/cos(15 deg) = {VZ_MAX * TAU_Z / math.cos(math.radians(15)):.3f} m; '
