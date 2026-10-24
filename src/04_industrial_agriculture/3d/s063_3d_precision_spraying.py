@@ -84,6 +84,16 @@ DW_WORST = F_DW + 4 * SIGMA_DW   # m/s^2 worst-case downward downwash assumed by
 A_BRAKE = A_MAX - DW_WORST - 0.05  # m/s^2 braking deceleration the barrier plans with (0.05 margin)
 Z_BUF = 0.005                    # m: the barrier stops this far inside the bound
 BARRIER = True                   # set False only to show that the altitude asserts can fail
+# Longest single braking manoeuvre: stopping from the fastest descent possible inside the altitude envelope
+# (full thrust down plus worst downwash from Z_MAX to Z_MIN) at A_BRAKE (printed for reference).
+V_ENVELOPE = math.sqrt(2 * (A_MAX + DW_WORST) * (Z_MAX - Z_MIN))
+T_BARRIER_MAX = V_ENVELOPE / A_BRAKE
+# Broken-loop check (added): the barrier is a safety override that acts only during transients (braking a
+# descent, unwinding the integrator).  If it overrides the vertical command for more than half of the
+# mission, the vertical loop is not flying the aircraft any more and the run is stopped.
+BARRIER_SHARE_MAX = 0.5
+# Clearance sweep (added): drone radius r_d widens the crown cylinder, vertical margin m_z raises its top.
+CLEARANCES = [(0.0, 0.0), (0.1, 0.05), (0.2, 0.1)]
 T_MAX = 700.0
 PLOT_SEED = 0
 ANIM_STEP = 100
@@ -140,7 +150,7 @@ def run_mission(args):
     st = {'px': float(DEPOT[0]), 'py': float(DEPOT[1]),
           'pz': zc[TOUR[0]] if strategy != 'tf' else DZ_NOM,
           'vx': 0.0, 'vy': 0.0, 'vz': 0.0, 'ix': 0.0, 'iy': 0.0, 'iz': 0.0, 'k': 0,
-          'nsat': 0, 'nbar': 0, 'ninf': 0}
+          'nsat': 0, 'nbar': 0, 'ninf': 0, 'brun': 0, 'bmax': 0}
     X, Y, Z, CUR, VZ, DWL = [], [], [], [], [], []
     w_g = 2 * math.pi / T_WIND
 
@@ -171,6 +181,7 @@ def run_mission(args):
         ax = min(max(ax, -A_MAX), A_MAX)
         ay = min(max(ay, -A_MAX), A_MAX)
         az = min(max(az, -A_MAX), A_MAX)
+        active = False
         if BARRIER:                                             # acceleration-limited braking barrier
             vz = st['vz']
             for d, sgn, dw_bad in ((pz - Z_MIN - Z_BUF, -1.0, -DW_WORST),          # floor
@@ -185,15 +196,18 @@ def run_mission(args):
                     a_req = (-v_ok - vz) / DT - dw_bad
                     if az < a_req:
                         st['nbar'] += 1
+                        active = True
                         st['ninf'] += int(a_req > A_MAX)
                         az = min(a_req, A_MAX)
                 else:                                           # need vz_next <= v_ok
                     a_req = (v_ok - vz) / DT - dw_bad
                     if az > a_req:
                         st['nbar'] += 1
+                        active = True
                         st['ninf'] += int(a_req < -A_MAX)
                         az = max(a_req, -A_MAX)
-        assert abs(az) <= A_MAX + 1e-12
+        st['brun'] = st['brun'] + 1 if active else 0
+        st['bmax'] = max(st['bmax'], st['brun'])
         st['vx'] += (ax + A_WIND * math.sin(w_g * t + ph[0]) + tx[k]) * DT
         st['vy'] += (ay + A_WIND * math.sin(w_g * t + ph[1]) + ty[k]) * DT
         st['vz'] += (az + dw[k]) * DT
@@ -252,6 +266,7 @@ def run_mission(args):
         prev = PLANTS[pi].copy()
         z_prev = z_t
     X, Y, Z = np.array(X), np.array(Y), np.array(Z)
+    assert st['nbar'] / st['k'] <= BARRIER_SHARE_MAX, 'barrier flies the drone: vertical loop broken'
     # vertical acceleration from the logged trajectory: thrust part within A_MAX (no velocity resets)
     acc = np.diff(np.concatenate([[0.0], VZ])) / DT - np.array(DWL)
     assert np.max(np.abs(acc)) <= A_MAX + 1e-6, 'vertical thrust acceleration above A_MAX'
@@ -260,14 +275,21 @@ def run_mission(args):
     contact = np.zeros(N_PLANTS, dtype=bool)
     own = np.zeros(N_PLANTS, dtype=bool)          # contact with the plant currently being approached/sprayed
     n_contact = 0
+    any_step = np.zeros(len(X), dtype=bool)
+    dist = np.hypot(X[:, None] - PLANTS[None, :, 0], Y[:, None] - PLANTS[None, :, 1])
     for j in range(N_PLANTS):
-        m = (np.hypot(X - PLANTS[j, 0], Y - PLANTS[j, 1]) < rc) & (Z < h[j])
+        m = (dist[:, j] < rc) & (Z < h[j])                     # point drone, zero clearance (main rule)
         contact[j] = m.any()
         own[j] = (m & (CUR == j)).any()
         n_contact += int(m.sum())
+        any_step |= m
+    contact_cl = tuple(int(np.sum(np.any((dist < rc + rd) & (Z[:, None] < h[None, :] + mz), axis=0)))
+                       for rd, mz in CLEARANCES)
+    assert contact_cl[0] == int(contact.sum())
     sp = np.hypot(np.diff(np.concatenate([[DEPOT[0]], X])), np.diff(np.concatenate([[DEPOT[1]], Y])))
     out = {'h': h, 'hover': [], 'time': st['k'] * DT, 'timeouts': timeouts, 'wait': waits.mean(),
-           'sat': st['nsat'] / st['k'], 'barrier': st['nbar'], 'barrier_infeasible': st['ninf'], 'contact_plants': int(contact.sum()),
+           'sat': st['nsat'] / st['k'], 'barrier': st['nbar'], 'barrier_infeasible': st['ninf'], 'barrier_run': st['bmax'] * DT, 'barrier_share': st['nbar'] / st['k'],
+           'contact_cl': contact_cl, 'contact_plants': int(contact.sum()),
            'contact_own': int(own.sum()), 'contact_other': int((contact & ~own).sum()),
            'contact_own_climb': int((own & climb_leg).sum()), 'contact_own_descent': int((own & ~climb_leg).sum()),
            'contact_steps': n_contact, 'z_safe': z_safe, 'max_step': float(sp.max()),
@@ -277,6 +299,7 @@ def run_mission(args):
                              'ph': ph})
     if keep_log:
         out['traj'] = np.column_stack([X, Y, Z])
+        out['contact_step'] = any_step
     return out
 
 
@@ -314,7 +337,7 @@ def run_simulation():
     jobs += [(s, 'Tuned', sh, seed, False) for sh in SIGMA_H_SWEEP if sh != SIGMA_H
              for s in STRATS for seed in range(N_SWEEP_SEEDS)]
     jobs += [(s, g, SIGMA_H, seed, False, rc) for rc in R_CROWN_SWEEP if rc != R_CROWN
-             for g in GAINS for s in ('fixed15', 'adaptive', 'tf') for seed in range(N_SWEEP_SEEDS)]
+             for g in GAINS for s in STRATS for seed in range(N_SWEEP_SEEDS)]
     jobs += [('adaptive', g, SIGMA_H, seed, False, R_CROWN, KDZ_PROBE) for g in GAINS for seed in range(N_SEEDS)]
     outs = [run_mission(j) for j in jobs]
     res = {}
@@ -332,6 +355,21 @@ def _save(fig, out_dir, name):
     print(f'Saved: {path}')
 
 
+_TH = np.linspace(0, 2 * np.pi, 25)
+
+
+def _crowns(ax, h, rc=R_CROWN):
+    for i in range(N_PLANTS):
+        ax.plot(PLANTS[i, 0] + rc * np.cos(_TH), PLANTS[i, 1] + rc * np.sin(_TH), np.full_like(_TH, h[i]),
+                color='darkgreen', lw=0.8)
+
+
+def _collision_text(r):
+    c = dose_eval(r)['ceff']
+    n = r['contact_plants']
+    return (f"crown contacts {n} -> collision, safe C_eff 0.000" if n > 0 else 'no crown contact, safe C_eff = C_eff'), c
+
+
 def plot_field_3d(res, out_dir):
     fig = plt.figure(figsize=(15, 6.5))
     for c, s in enumerate(['adaptive', 'fixed15']):
@@ -345,10 +383,16 @@ def plot_field_3d(res, out_dir):
             zh = res[(s, 'Tuned', SIGMA_H)][PLOT_SEED]['hover'][TOUR.index(i)]['z'].mean()
             ax.plot([PLANTS[i, 0]] * 2, [PLANTS[i, 1]] * 2, [h[i], zh], 'k:', lw=0.8)
         ax.scatter(PLANTS[:, 0], PLANTS[:, 1], h, color='green', s=30, label='canopy top h_i')
+        _crowns(ax, h)
+        cs = r['contact_step']
+        if cs.any():
+            ax.scatter(tr[cs, 0], tr[cs, 1], tr[cs, 2], color='black', marker='x', s=12, label='inside a crown')
         ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)'); ax.set_zlabel('z (m)')
         ax.set_zlim(0, 3)
         ax.view_init(elev=25, azim=-60)
-        ax.set_title(f'{LABELS[s]}, Tuned PID, seed {PLOT_SEED}\ndotted = standoff during spraying', fontsize=10)
+        txt, ce = _collision_text(r)
+        ax.set_title(f'{LABELS[s]}, Tuned PID, seed {PLOT_SEED}: C_eff {ce:.3f}; {txt}\n'
+                     f'dark-green rings = crowns (r = {R_CROWN} m), dotted = standoff during spraying', fontsize=9)
         ax.legend(fontsize=8)
     fig.suptitle('S063 3D field overview (green stems = canopy height)')
     _save(fig, out_dir, 'field_3d.png')
@@ -406,7 +450,8 @@ def plot_impacts(res, out_dir):
             ax.add_patch(plt.Circle(PLANTS[i], SIGMA_SPRAY, fill=False, color='green', lw=0.8))
         ax.scatter(PLANTS[:, 0], PLANTS[:, 1], color='green', s=25, zorder=5, label='plant centre')
         dv = dose_eval(r)
-        ax.set_title(f"{LABELS[s]}: C_eff = {dv['ceff']:.3f}, mean drift-offset d = {100 * dv['drift'].mean():.1f} cm",
+        txt, _ = _collision_text(r)
+        ax.set_title(f"{LABELS[s]}: C_eff = {dv['ceff']:.3f}, mean drift-offset d = {100 * dv['drift'].mean():.1f} cm\n{txt}",
                      fontsize=10)
         ax.set_aspect('equal'); ax.set_xlim(-0.5, 20.5); ax.set_ylim(-0.5, 20.5)
         ax.set_xlabel('x (m)'); ax.set_ylabel('y (m)')
@@ -444,6 +489,9 @@ def save_animation(res, out_dir):
     nf = int(np.ceil((n - 1) / ANIM_STEP)) + 1
     idx = [min(i * ANIM_STEP, n - 1) for i in range(nf)]
     h = r['h']
+    cs = r['contact_step']
+    # cumulative number of distinct crown entries (rising edges of the contact flag) up to each step
+    entries = np.cumsum(np.concatenate([[cs[0]], cs[1:] & ~cs[:-1]]).astype(int))
     fig = plt.figure(figsize=(6.4, 5.6))
     ax = fig.add_subplot(111, projection='3d')
 
@@ -452,11 +500,16 @@ def save_animation(res, out_dir):
         ax.cla()
         for i in range(N_PLANTS):
             ax.plot([PLANTS[i, 0]] * 2, [PLANTS[i, 1]] * 2, [0, h[i]], color='green', lw=3)
+        _crowns(ax, h)
         ax.plot(tr[:k + 1:10, 0], tr[:k + 1:10, 1], tr[:k + 1:10, 2], color='red', lw=0.7)
+        sel = cs[:k + 1]
+        if sel.any():
+            ax.scatter(tr[:k + 1][sel, 0], tr[:k + 1][sel, 1], tr[:k + 1][sel, 2], color='black', marker='x', s=6)
         ax.scatter(*tr[k], color='red', s=25)
         ax.set_xlim(0, 20); ax.set_ylim(0, 20); ax.set_zlim(0, 3)
         ax.view_init(elev=25, azim=-60)
-        ax.set_title(f'S063 3D lidar terrain following, t = {(k + 1) * DT:.0f} s, z = {tr[k, 2]:.2f} m', fontsize=9)
+        ax.set_title(f'S063 3D lidar terrain following, t = {(k + 1) * DT:.0f} s, z = {tr[k, 2]:.2f} m\n'
+                     f'crown entries so far {entries[k]} (black x = inside a crown)', fontsize=9)
         return []
 
     anim = animation.FuncAnimation(fig, update, frames=nf, blit=False)
@@ -466,7 +519,8 @@ def save_animation(res, out_dir):
     from PIL import Image
     with Image.open(path) as gif:
         nfile = gif.n_frames
-    print(f'Saved: {path} ({nf} frames rendered, {nfile} in the file, every {ANIM_STEP} steps = {ANIM_STEP * DT:.0f} s)')
+    print(f'Saved: {path} ({nf} frames rendered, {nfile} in the file, every {ANIM_STEP} steps = {ANIM_STEP * DT:.0f} s; '
+          f'crown entries in this mission {entries[-1]}, plants touched {r["contact_plants"]}, lowest altitude {tr[:, 2].min():.3f} m)')
 
 
 # ── Report ────────────────────────────────────────────────────────────────────
@@ -499,7 +553,10 @@ def report(res):
           f'highest speed that full braking can stop from z = {Z_MIN:.1f} m before z = 0: '
           f'{math.sqrt(2 * (A_MAX - F_DW) * Z_MIN):.2f} m/s')
     print('  Scoring rule: a mission with any crown contact is a collision; its safe C_eff is 0. '
-          'C_eff (dose only) is reported beside it.')
+          'C_eff (dose only) is reported beside it. Main rule: point drone, zero clearance.')
+    print(f'  Broken-loop check: the barrier may override the vertical command in at most {100 * BARRIER_SHARE_MAX:.0f} % '
+          f'of the steps of a mission (assert). For reference, braking the fastest descent possible inside the envelope '
+          f'({V_ENVELOPE:.2f} m/s) at {A_BRAKE:.2f} m/s^2 takes {T_BARRIER_MAX:.2f} s')
 
     def stats(rs):
         c = np.array([dose_eval(r)['ceff'] for r in rs])
@@ -516,7 +573,8 @@ def report(res):
             ce[s], sa[s] = c, sf
             a = lambda k: np.mean([e[k].mean() for e in ev])
             print(f"    {LABELS[s]:26s} C_eff {c.mean():.3f} +- {c.std():.3f} | collision-free missions {nfree}/{len(rs)}, "
-                  f"safe C_eff {sf.mean():.3f} | hover RMS 3D {100 * a('rms3'):.1f} cm, "
+                  f"safe C_eff {sf.mean():.3f}, mean C_eff of the collision-free missions "
+                  f"{(c[sf > 0].mean() if np.any(sf > 0) else float('nan')):.4f} | hover RMS 3D {100 * a('rms3'):.1f} cm, "
                   f"horiz {100 * a('rmsh'):.1f} cm | standoff dev {100 * a('sdev'):.1f} cm | drift offset d "
                   f"{100 * a('drift'):.1f} cm | plants with dose > 0.9 {100 * np.mean([np.mean(e['dose'] > 0.9) for e in ev]):.1f} % | "
                   f"canopy contact: plants {np.mean([r['contact_plants'] for r in rs]):.2f}/mission "
@@ -529,6 +587,15 @@ def report(res):
                   f"saturated {100 * np.mean([r['sat'] for r in rs]):.2f} %, floor-barrier steps {np.mean([r['barrier'] for r in rs]):.1f}/mission, "
                   f"vertical travel {np.mean([r['climb'] for r in rs]):.1f} m, z range {min(r['zmin'] for r in rs):.3f}-"
                   f"{max(r['zmax'] for r in rs):.2f} m, max step {max(r['max_step'] for r in rs):.4f} m")
+        print(f'    clearance sweep (drone radius r_d, vertical margin m_z): collision-free missions and safe C_eff')
+        for s in STRATS:
+            rs = res[(s, g, SIGMA_H)]
+            c = np.array([dose_eval(r)['ceff'] for r in rs])
+            parts = []
+            for i, (rd, mz) in enumerate(CLEARANCES):
+                free = np.array([r['contact_cl'][i] == 0 for r in rs])
+                parts.append(f'r_d {rd:.1f} m / m_z {mz:.2f} m: {int(free.sum())}/{len(rs)}, {np.mean(c * free):.3f}')
+            print(f'      {LABELS[s]:26s} ' + ' | '.join(parts))
         for a_, b_ in [('adaptive', 'fixed15'), ('adaptive', 'fixedsafe'), ('adaptive', 'tf'), ('tf', 'fixed15'),
                        ('fixedsafe', 'fixed15')]:
             w, ws = wins(ce[a_], ce[b_]), wins(sa[a_], sa[b_])
@@ -547,7 +614,7 @@ def report(res):
     for rc in R_CROWN_SWEEP:
         for g in GAINS:
             out = {}
-            for s in ('fixed15', 'adaptive', 'tf'):
+            for s in STRATS:
                 key = (s, g, SIGMA_H) if rc == R_CROWN else (s, g, SIGMA_H, rc)
                 rs = res[key][:N_SWEEP_SEEDS]
                 c, sf, nfree = stats(rs)
@@ -557,7 +624,8 @@ def report(res):
                 f"; C_eff: tf > fixed15 in {wins(out['tf'][0], out['fixed15'][0])[0]}/{N_SWEEP_SEEDS}, "
                 f"adaptive > tf in {wins(out['adaptive'][0], out['tf'][0])[0]}/{N_SWEEP_SEEDS}; safe C_eff: tf > fixed15 in "
                 f"{wins(out['tf'][1], out['fixed15'][1])[0]}/{N_SWEEP_SEEDS}, adaptive > tf in "
-                f"{wins(out['adaptive'][1], out['tf'][1])[0]}/{N_SWEEP_SEEDS}")
+                f"{wins(out['adaptive'][1], out['tf'][1])[0]}/{N_SWEEP_SEEDS}, adaptive vs fixedsafe higher/equal/lower "
+                f"{wins(out['adaptive'][1], out['fixedsafe'][1])}")
     print(f'\n  --- vertical-damping probe: adaptive with k_d,z x {KDZ_PROBE} (sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
     for g in GAINS:
         kp, ki, kd = (ALPHA_Z * GAINS[g][k] for k in ('kp', 'ki', 'kd'))
@@ -594,8 +662,16 @@ def report(res):
         nb += 1
         print(f"    {str(key):42s} barrier active {np.mean([r['barrier'] for r in rs]):.1f} steps/mission in "
               f"{sum(r['barrier'] > 0 for r in rs)}/{len(rs)} missions, infeasible {sum(r['barrier_infeasible'] for r in rs)}, "
-              f"lowest altitude {min(r['zmin'] for r in rs):.4f} m")
-    print(f'    job groups with any barrier activity: {nb} of {len(res)}')
+              f"lowest altitude {min(r['zmin'] for r in rs):.4f} m, longest continuous stretch "
+              f"{max(r['barrier_run'] for r in rs):.2f} s, largest share of steps {100 * max(r['barrier_share'] for r in rs):.2f} %")
+    print('\n  --- seed-0 missions shown in the figures (Tuned, sigma_h 0.3) ---')
+    for s in STRATS:
+        r = res[(s, 'Tuned', SIGMA_H)][PLOT_SEED]
+        txt, ce = _collision_text(r)
+        print(f'    {LABELS[s]:26s} C_eff {ce:.3f}, mean drift offset {100 * dose_eval(r)["drift"].mean():.1f} cm; {txt}')
+    print(f'    job groups with any barrier activity: {nb} of {len(res)}; longest stretch overall '
+          f"{max(r['barrier_run'] for rs in res.values() for r in rs):.2f} s; largest share of steps "
+          f"{100 * max(r['barrier_share'] for rs in res.values() for r in rs):.2f} % vs the {100 * BARRIER_SHARE_MAX:.0f} % assert")
 
 if __name__ == '__main__':
     import sys

@@ -139,8 +139,9 @@ $$\mathbf{q}(t+\Delta t) = \mathbf{q}(t) + \dot{\mathbf{q}}(t)\,\Delta t$$
 with altitude bounds enforced: $z(t) \in [z_{min}, z_{max}] = [0.3,\, 6.0]$ m.
 
 The bounds must be enforced through the controller, not by clamping the state. An
-acceleration-limited braking barrier caps the vertical speed towards a bound so that full
-braking with $A_{max} - f_{dw}$ stops inside it. (Clarified: clamping $z$ and zeroing
+acceleration-limited braking barrier caps the vertical speed towards a bound so that braking at
+$A_{max} - (f_{dw} + 4\sigma_{dw}) - 0.05 = 2.60$ m/s² stops inside it, i.e. full thrust minus a
+worst-case (4σ) downwash and a small margin. (Clarified: clamping $z$ and zeroing
 $\dot z$ in one step is an instant stop that the thrust cannot produce. From 0.3 m, any descent
 faster than $\sqrt{2(A_{max} - f_{dw})\cdot 0.3} \approx 1.31$ m/s would reach the ground.)
 
