@@ -50,10 +50,12 @@ T_AMB_SWEEP = np.arange(40.0, 55.01, 1.0)   # degC ambient sweep
 ANIM_DT     = 30.0       # s   simulated time per GIF frame
 ANIM_TRAIL_EVERY = 10    # log samples between drawn trail points in the GIF
 
-STRATEGIES = ['none', 'reactive', 'predictive']
-LABELS = {'none': 'No management', 'reactive': 'Reactive throttle',
+STRATEGIES = ['none', 'reactive', 'reactive_max', 'predictive']
+LABELS = {'none': 'No management', 'reactive': 'Reactive (hold T_warn)',
+          'reactive_max': 'Reactive (throttle to T_max)',
           'predictive': 'Predictive pauses'}
-COLORS = {'none': '#D62728', 'reactive': '#1F77B4', 'predictive': '#2CA02C'}
+COLORS = {'none': '#D62728', 'reactive': '#1F77B4', 'reactive_max': '#9467BD',
+          'predictive': '#2CA02C'}
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), '..', '..',
                           'outputs', '04_industrial_agriculture', 's076_thermal_management')
@@ -141,6 +143,8 @@ def plan_pauses(t_amb, v=V0):
 def simulate(strategy, t_amb=T_AMB, reactive_law='hold'):
     """Fly the full lawnmower path under one strategy; returns a log dict and an outcome."""
     elems, n_strips = build_path()
+    if strategy == 'reactive_max':
+        strategy, reactive_law = 'reactive', 'tmax'
     plan = plan_pauses(t_amb) if strategy == 'predictive' else []
     pi = 0
     tm, clock, s = t_amb, 0.0, 0.0
@@ -188,6 +192,9 @@ def simulate(strategy, t_amb=T_AMB, reactive_law='hold'):
                 elif tm >= T_WARN:
                     if reactive_law == 'hold':
                         v = min(V0, max(V_MIN, v_hold(tm, t_amb)))
+                    elif reactive_law == 'tmax':
+                        # speed whose steady-state temperature is T_max (uses the 80-85 band)
+                        v = min(V0, max(V_MIN, v_safe_static(t_amb)))
                     else:   # literal card formula
                         v = min(V0, max(V_MIN, v_safe_card(tm)))
                 slow = v < V0 - 1e-12
@@ -283,7 +290,7 @@ def plot_temperature_traces(res, out_dir):
 def plot_speed_profile(res, out_dir):
     fig, axes = plt.subplots(2, 1, figsize=(13, 6.5), sharex=True)
     for ax, case in zip(axes, ('card', 'hot')):
-        for st in ('reactive', 'predictive'):
+        for st in ('reactive', 'reactive_max', 'predictive'):
             L, o = res[case][st]
             ax.plot(L['t'] / 60, L['v'], color=COLORS[st], lw=0.9, alpha=0.85,
                     label=f"{LABELS[st]} (mission {o['mission_s'] / 60:.1f} min)")
@@ -302,7 +309,7 @@ def plot_speed_profile(res, out_dir):
 
 
 def plot_flight_paths(res, out_dir):
-    fig, axes = plt.subplots(2, 3, figsize=(16, 10.5))
+    fig, axes = plt.subplots(2, 4, figsize=(21, 10.5))
     norm = plt.Normalize(T_AMB, 90)
     for r, case in enumerate(('card', 'hot')):
         for c, st in enumerate(STRATEGIES):
@@ -361,7 +368,7 @@ def plot_mission_timeline(res, out_dir):
                 ax.barh(k, w / 60, left=t0 / 60, color='blue', height=0.6)
             ax.text(o['mission_s'] / 60 + 0.3, k, f"{o['mission_s'] / 60:.1f} min",
                     va='center', fontsize=8)
-        ax.set_yticks(range(3))
+        ax.set_yticks(range(len(STRATEGIES)))
         ax.set_yticklabels([LABELS[s] for s in reversed(STRATEGIES)], fontsize=8)
         ax.set_title(_case_title(case) + ' — blue = cooling pause, grey = turn', fontsize=10)
     axes[1].set_xlabel('Mission time (min)')
@@ -402,8 +409,8 @@ def plot_steady_state(out_dir):
 
 
 def plot_metrics(res, out_dir):
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    x = np.arange(3)
+    fig, axes = plt.subplots(1, 3, figsize=(18, 4.8))
+    x = np.arange(len(STRATEGIES))
     w = 0.38
     for j, case in enumerate(('card', 'hot')):
         o = [res[case][st][1] for st in STRATEGIES]
@@ -418,7 +425,7 @@ def plot_metrics(res, out_dir):
                         else f'{vv:d}', ha='center', va='bottom', fontsize=8)
     for ax, t in zip(axes, ('Mission time (min)', 'Cooling pauses', 'Peak motor temperature (°C)')):
         ax.set_xticks(x)
-        ax.set_xticklabels([LABELS[s] for s in STRATEGIES], fontsize=8)
+        ax.set_xticklabels([LABELS[s].replace(' (', '\n(') for s in STRATEGIES], fontsize=8)
         ax.set_title(t)
         ax.grid(alpha=0.3, axis='y')
     axes[2].axhline(T_MAX, color='k', ls='--', lw=1)
@@ -470,8 +477,8 @@ def save_animation(res, out_dir, case='hot'):
     t_grid = np.minimum(np.arange(n_frames) * step, n - 1) * DT
 
     fig = plt.figure(figsize=(15, 8))
-    gs = fig.add_gridspec(2, 3, height_ratios=[1.3, 1])
-    maps = [fig.add_subplot(gs[0, c]) for c in range(3)]
+    gs = fig.add_gridspec(2, 4, height_ratios=[1.3, 1])
+    maps = [fig.add_subplot(gs[0, c]) for c in range(4)]
     axT = fig.add_subplot(gs[1, :])
     norm = plt.Normalize(T_AMB, 90)
     dots, trails, idx_of = {}, {}, {}
@@ -558,17 +565,23 @@ if __name__ == '__main__':
           f'{lo["mission_s"]:.1f} s ({lo["mission_s"] / 60:.2f} min), peak {lo["peak_T"]:.2f} degC, '
           f'{lo["n_switch"]} speed switches, {lo["d_throttled"]:.1f} m at {V_MIN} m/s, '
           f'{lo["mission_s"] - res["card"]["reactive"][1]["mission_s"]:+.1f} s vs v_hold law')
-    print('  Ambient sweep (T_amb: none / reactive / predictive mission min; none peak; '
-          'pred pauses):')
+    print('  Ambient sweep (T_amb: none / reactive-hold / reactive-Tmax / predictive mission min; '
+          'peaks none / hold / Tmax; pauses hold / Tmax / pred):')
     for i, ta in enumerate(T_AMB_SWEEP):
         o = [res['sweep'][st][i] for st in STRATEGIES]
-        print(f'    {ta:4.0f}: {o[0]["mission_s"] / 60:6.2f} / {o[1]["mission_s"] / 60:6.2f} / '
-              f'{o[2]["mission_s"] / 60:6.2f}   peak {o[0]["peak_T"]:.1f}, '
-              f'reactive peak {o[1]["peak_T"]:.2f}, pauses r{o[1]["n_pauses"]} p{o[2]["n_pauses"]}')
-    rx = [res['sweep']['reactive'][i]['mission_s'] - res['sweep']['predictive'][i]['mission_s']
-          for i in range(len(T_AMB_SWEEP))]
-    better = [f'{ta:.0f}' for ta, d in zip(T_AMB_SWEEP, rx) if d > 0]
-    print(f'  Predictive faster than reactive at T_amb = {", ".join(better) if better else "none"}')
+        print(f'    {ta:4.0f}: ' + ' / '.join(f'{oo["mission_s"] / 60:6.2f}' for oo in o) +
+              f'   peaks {o[0]["peak_T"]:.1f} / {o[1]["peak_T"]:.2f} / {o[2]["peak_T"]:.2f}'
+              f'   pauses {o[1]["n_pauses"]} / {o[2]["n_pauses"]} / {o[3]["n_pauses"]}')
+    for st in ('reactive', 'reactive_max'):
+        rx = [res['sweep'][st][i]['mission_s'] - res['sweep']['predictive'][i]['mission_s']
+              for i in range(len(T_AMB_SWEEP))]
+        better = [f'{ta:.0f}' for ta, d in zip(T_AMB_SWEEP, rx) if d > 0]
+        print(f'  Predictive faster than {LABELS[st]} at T_amb = '
+              f'{", ".join(better) if better else "none"}')
+    print(f'  Max peak of reactive (throttle to T_max) over the sweep: '
+          f'{max(o["peak_T"] for o in res["sweep"]["reactive_max"]):.2f} degC; time above T_max '
+          f'{max(o["t_over"] for o in res["sweep"]["reactive_max"]):.1f} s; pauses '
+          f'{max(o["n_pauses"] for o in res["sweep"]["reactive_max"])}')
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)

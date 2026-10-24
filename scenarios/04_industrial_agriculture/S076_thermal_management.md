@@ -88,6 +88,10 @@ $$v_{safe}(T_m) = \sqrt{\max\!\left(0,\; \frac{T_{max} - T_m}{R_{th} \cdot k_v} 
 > implementation uses the speed that holds the current temperature constant ($dT_m/dt = 0$):
 >
 > $$v_{hold}(T_m) = \sqrt{\max\!\left(0,\; \frac{(T_m - T_{amb})/R_{th} - P_{hover}}{k_v}\right)}$$
+>
+> and, as a second variant that uses the 80–85 °C band, the static $v_{safe}$ above (steady
+> state at $T_{max}$). The second variant is the faster one at every ambient temperature from
+> 40 to 55 °C and never exceeds $T_{max}$.
 
 ### Cooling Pause Temperature Decay
 
@@ -724,7 +728,8 @@ if __name__ == '__main__':
 > **Correction (implementation)**: these targets do not hold with the parameters above.
 > $T_{m,\infty}(v_0) = 81°C < T_{max}$, so at $T_{amb} = 45°C$ unmanaged flight peaks at 80.9 °C
 > and never breaches $T_{max}$; the full path takes 35.9 min (2095 s cruise + 19 × 3 s turns).
-> The simulation gives: reactive 37.0 min with 0 pauses; predictive 42.9 min with 14 pauses.
+> The simulation gives: reactive 37.0 min (hold 80 °C) or 35.9 min (throttle to $T_{max}$), both
+> with 0 pauses; predictive 42.9 min with 14 pauses.
 > Unmanaged flight breaches $T_{max}$ only for $T_{amb} > 49°C$ (see the outputs README ambient sweep).
 
 ---
