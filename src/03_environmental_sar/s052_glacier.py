@@ -531,7 +531,7 @@ def plot_gsd_altitude(res, out_dir):
     ax.plot(ALTITUDE, g80, 'o', color='tab:green', ms=9, label=f'operating point h = 80 m: {g80:.2f} cm')
     gxx, gyy = grid_centres(COV_RES)
     agl_min = Z_FLY - terrain(gxx[None, :], gyy[:, None]).max()
-    ax.axvspan(agl_min, ALTITUDE, color='grey', alpha=0.2, label='AGL range over the flanks')
+    ax.axvspan(agl_min, ALTITUDE, color='grey', alpha=0.2, label='AGL range over the glacier')
     ax.set_xlabel('altitude above ground h (m)')
     ax.set_ylabel('GSD (cm/px)')
     ax.set_ylim(0, 6)
@@ -622,7 +622,7 @@ def save_animation(res, out_dir):
 
     anim = animation.FuncAnimation(fig, update, frames=len(idx), blit=False)
     path = os.path.join(out_dir, 'animation.gif')
-    anim.save(path, writer='pillow', fps=15, dpi=80)
+    anim.save(path, writer='pillow', fps=15, dpi=70)
     plt.close(fig)
     print(f'Saved: {path} ({len(idx)} frames, every {step} steps of {DT} s)')
 
