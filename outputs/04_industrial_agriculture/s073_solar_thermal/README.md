@@ -14,6 +14,7 @@
 1. **Nominal mission** with the card's plan, seeds and constant 1.0 m/s.
 2. **Plan comparison** (50 seeds, common random numbers: same defective panels, ΔT and hot-spot positions for every plan): the card's 19-strip lawnmower, an edge-aligned 18-strip lawnmower, and a 10-strip plan flown along the centre of each panel row. Two hot-spot models: at the panel centre (card) or anywhere on the panel.
 3. **Speed sweep** (50 seeds) with wind-induced speed fluctuations (σ_v = 0.1 m/s, the card's P_FN model): detection rate and blurred frames for mean speeds 0.5–2.5 m/s.
+4. **Correlation time of the speed fluctuation** (50 seeds, v₀ = 1.5 m/s): from 0.2 s up to one random speed per mission, which is the card's assumption.
 
 ---
 
@@ -29,7 +30,7 @@ $$w_{foot} = 2h\tan(\theta_{FOV}/2) = 4.142\ \text{m}, \qquad d = w_{foot}(1 - \
 | Edge-aligned lawnmower | $y_i = w_{foot}/2 + i\,d$, last clamped to $W - w_{foot}/2$ | 18 (y = 2.07 … 57.93 m) | 1495.9 m |
 | Row-centred | one strip along the centre of each panel row | 10 (y = 3.00 … 57.00 m) | 854.0 m |
 
-The two lawnmowers image 100.0 % of the farm area; the row-centred plan images 70.0 %.
+The two lawnmowers image 100.0 % of the farm area; the row-centred plan images 69.0 % (exact union of the strip footprints).
 
 ### Detection
 
@@ -47,7 +48,7 @@ With a fluctuating speed $v = v_0 + \delta v$, $\delta v \sim \mathcal N(0, \sig
 
 $$P_{FN} = 1 - \Phi\!\left(\frac{v_{max} - v_0}{\sigma_v}\right)$$
 
-In the sweep, $\delta v$ is a first-order Gauss–Markov process with σ_v = 0.1 m/s and correlation time 2 s, and the drone advances along the path at the fluctuating speed.
+In the sweep, $\delta v$ is a first-order Gauss–Markov process with σ_v = 0.1 m/s and correlation time τ_v = 2 s, and the drone advances along the path at the fluctuating speed. The card's formula treats $v$ as a single random value; under that assumption ("constant per mission", τ_v → ∞) a mission is either entirely blurred or not, and $P_{FN}$ is also the per-panel miss probability.
 
 ---
 
@@ -73,6 +74,7 @@ In the sweep, $\delta v$ is a first-order Gauss–Markov process with σ_v = 0.1
 | Monte Carlo (added) | 50 seeds (3000–3049) per plan / model / speed |
 | Hot spot anywhere on the panel (added) | uniform within the panel, 0.4 m from its edges |
 | Speeds swept (added) | 0.5, 0.75, 1.0, 1.25, 1.4, 1.5, 1.6, 1.75, 2.0, 2.5 m/s |
+| Correlation times compared (added) | 0.2, 2, 20, 200 s and one speed per mission, at v₀ = 1.5 m/s |
 
 ---
 
@@ -87,7 +89,7 @@ conda activate drones
 python src/04_industrial_agriculture/s073_solar_thermal.py
 ```
 
-Runtime ≈ 1.7 min (measured while other simulations shared the machine).
+Runtime ≈ 1–2 min (measured while other simulations shared the machine).
 
 ---
 
@@ -140,8 +142,9 @@ Missed panels are summed over 50 seeds × 8 panels = 400 hot spots.
 **Key findings**:
 - **At the card's operating point every metric is fixed by construction**: 8/8 detected, 0 false alarms, 0 false negatives, in all 50 seeds. The weakest possible hot spot reads (10 × 0.9692 − 8) / 0.5 = 3.38 σ above the threshold in every frame and is seen in at least 41 frames, a healthy panel would need a 16 σ noise excursion to be flagged, and at 1.0 m/s the blur (1.650 px) is far below the 2.5 px limit. The card's expectations (no blur misses at 1.0 m/s, P_FN ≈ 0) hold, but they cannot discriminate between plans or settings.
 - **The card's lawnmower flies a strip outside the farm.** Its 19th strip is centred at y = 61.30 m. An edge-aligned plan needs 18 strips and saves 83.8 s (5.3 %; 1579.7 → 1495.9 s) with identical detection in every seed.
-- **Where the hot spots are decides how sparse the plan may be.** With hot spots at the panel centres (the card's model), one strip along each panel row finds all of them in 854.0 s, 725.7 s (45.9 %) less than the card plan. If a hot spot can be anywhere on the panel, the same plan sees only 70.0 % of the area and detects 83.2 ± 10.8 % (8/8 in only 7 of 50 seeds), while both lawnmowers still detect 100 %. Full-area coverage is only worth its cost when defects are not at known positions.
-- **Blur sets a sharp speed limit, but the card's P_FN overstates panel misses.** Detection stays at 100 % up to v₀ = 1.25 m/s and collapses between 1.5 and 1.75 m/s (92.8 % → 6.0 %). The card formula correctly predicts the blurred-frame fraction (e.g. 0.440 vs 43.46 % measured at 1.5 m/s), but a panel is missed only if all of its frames are blurred (41–82 frames per hot spot in the nominal run), so at 1.5 m/s only 29 of 400 hot spots (7.25 %) are missed. Every miss in the sweep was a hot spot whose frames were all blurred; none was caused by thermal noise.
+- **Where the hot spots are decides how sparse the plan may be.** With hot spots at the panel centres (the card's model), one strip along each panel row finds all of them in 854.0 s, 725.7 s (45.9 %) less than the card plan. If a hot spot can be anywhere on the panel, the same plan sees only 69.0 % of the area and detects 83.2 ± 10.8 % (8/8 in only 7 of 50 seeds), while both lawnmowers still detect 100 %. Full-area coverage is only worth its cost when defects are not at known positions.
+- **Blur sets a sharp speed limit.** Detection stays at 100 % up to v₀ = 1.25 m/s and collapses between 1.5 and 1.75 m/s (92.8 % → 6.0 %, with τ_v = 2 s). Every miss in the sweep was a hot spot whose frames were all blurred; none was caused by thermal noise.
+- **Whether the card's P_FN is also the panel-miss rate depends on how fast the speed fluctuates.** The card formula always predicts the blurred-frame fraction (0.440 at 1.5 m/s; measured 40.30–44.00 % for every correlation time). A panel, however, is missed only if all of its frames are blurred (41–82 frames per hot spot in the nominal run). At v₀ = 1.5 m/s the share of missed hot spots is 0.00 % for τ_v = 0.2 s, 7.25 % for 2 s, 27.25 % for 20 s, 34.75 % for 200 s and 44.00 % with one random speed per mission, which equals the card's P_FN. So under the card's own assumption its formula is the panel-miss probability; it overstates panel misses only when the speed decorrelates within the few seconds a panel is in view. The speed-sweep numbers above use τ_v = 2 s and are therefore the optimistic end.
 - **Speed is free up to 1.25 m/s.** Coverage time falls from 1581.4 s at 1.0 m/s to 1264.6 s at 1.25 m/s with 100 % detection; at 1.5 m/s it is 1054.0 s but detection drops to 92.8 %.
 
 ### Thermal Map with Flight Path
@@ -174,6 +177,12 @@ Left: detection rate (green), measured blurred-frame fraction (red squares) and 
 
 ![Speed sweep](./speed_sweep.png)
 
+### Correlation Time of the Speed Fluctuation
+
+Hot spots missed (orange) and blurred frames (red) at v₀ = 1.5 m/s for correlation times from 0.2 s to one random speed per mission; dashed line: the card's P_FN:
+
+![Correlation time sensitivity](./tau_v_sensitivity.png)
+
 ### Animation
 
 The nominal mission (133 frames, one every 12 s of flight): the drone (white) with its footprint (cyan) sweeps the thermal map; a detected panel gets a red frame; the title shows the strip and the number of detected panels:
@@ -188,7 +197,7 @@ The nominal mission (133 frames, one every 12 s of flight): the drone (white) wi
 | In-view test uses the GPS-noisy position | Uses the true position | The camera images where the drone actually is; GPS noise enters only through the card's pointing attenuation factor (kept). |
 | $y_i = (i + \tfrac12)d$, 19 strips | Kept as the card plan; an 18-strip edge-aligned plan added | The 19th strip lies 1.30 m outside the farm. Card annotated. |
 | Single nominal run | 50-seed plan comparison, a second hot-spot model, and a 50-seed speed sweep | The nominal metrics are fixed by construction (100 % / 0 / 0) and cannot answer which plan or speed is better. |
-| $P_{FN}$ with $v \sim \mathcal N(v_0, \sigma_v^2)$, no time structure | Gauss–Markov speed fluctuation, correlation time 2 s (added) | Needed to simulate it; the per-frame blurred fraction matches the card formula, and the per-panel miss rate is reported separately. |
+| $P_{FN}$ with $v \sim \mathcal N(v_0, \sigma_v^2)$, one value (no time structure) | Gauss–Markov speed fluctuation, correlation time 2 s (added) in the speed sweep; correlation times 0.2 s to "one speed per mission" compared at 1.5 m/s | The card's assumption is the "per mission" case, where its formula gives the panel-miss rate exactly (44.00 %); shorter correlation times lower the panel-miss rate. |
 | Row-centred plan, hot spot anywhere on the panel | Added | Not in the card; tests whether full-area coverage is needed. |
 | Defective panels shown with magenta crosses; drone white | Same | Card's colours kept (no pursuer/evader roles here). |
 | GIF `s073_animation.gif` | `animation.gif` | Project naming convention. |

@@ -58,6 +58,8 @@ N_MC             = 50
 MC_SEED0         = 3000
 SPEEDS           = [0.5, 0.75, 1.0, 1.25, 1.4, 1.5, 1.6, 1.75, 2.0, 2.5]
 ANIM_STEP        = 120            # timesteps per GIF frame
+TAU_V_SWEEP      = [0.2, 2.0, 20.0, 200.0, np.inf]   # s; inf = one random speed per mission
+V_TAU_PROBE      = 1.5            # m/s mean speed of the correlation-time sweep
 
 # ── Derived ───────────────────────────────────────────────────────────────────
 W_FOOT   = 2.0 * ALTITUDE * np.tan(np.deg2rad(FOV_DEG) / 2.0)   # 4.142 m
@@ -134,11 +136,13 @@ def draw_case(seed, panels, model, defect_seed=None):
     return defect_idx, delta_t, hot
 
 
-def speed_series(seed, v0, n, fluctuate=True):
+def speed_series(seed, v0, n, fluctuate=True, tau=TAU_V):
     rng = np.random.default_rng(seed + 7919)
     if not fluctuate:
         return np.full(n, v0)
-    phi = np.exp(-DT / TAU_V)
+    if np.isinf(tau):                       # one random speed for the whole mission
+        return np.full(n, max(v0 + SIGMA_V * rng.normal(0.0, 1.0), 0.05))
+    phi = np.exp(-DT / tau)
     xi = rng.normal(0.0, 1.0, n)
     q = SIGMA_V * np.sqrt(1 - phi ** 2)
     # dv[0] = sigma xi[0]; dv[k] = phi dv[k-1] + q xi[k]  (stationary Gauss-Markov)
@@ -153,11 +157,11 @@ def blur_radius(speed):
 
 # ── One inspection ────────────────────────────────────────────────────────────
 def inspect(plan, panels, defect_idx, delta_t, hot, seed, v0=V_NOMINAL, fluctuate=False,
-            check_fa=True):
+            check_fa=True, tau=TAU_V):
     wps = waypoints(plan)
     v_floor = max(v0 - 8 * SIGMA_V, 0.05) if fluctuate else v0
     n_max = int(np.ceil(path_length(wps) / (v_floor * DT))) + 10
-    speeds = speed_series(seed, v0, n_max, fluctuate)
+    speeds = speed_series(seed, v0, n_max, fluctuate, tau)
     xy, v, strip = fly(wps, speeds)
     n = len(xy)
     rng = np.random.default_rng(seed + 104729)
@@ -193,12 +197,20 @@ def inspect(plan, panels, defect_idx, delta_t, hot, seed, v0=V_NOMINAL, fluctuat
                 n_strips=len(strip_centres(plan)))
 
 
-def area_coverage(plan, res=0.1):
-    xs = (np.arange(int(FARM_L / res)) + 0.5) * res
-    ys = (np.arange(int(FARM_W / res)) + 0.5) * res
-    yc = strip_centres(plan)
-    cov_y = (np.abs(ys[:, None] - yc[None, :]) <= W_FOOT / 2).any(axis=1)
-    return cov_y.mean() * 1.0, len(xs)
+def area_coverage(plan):
+    """Exact imaged fraction of the farm: length of the union of the strips'
+    cross-track intervals [y - w/2, y + w/2] clipped to [0, W], divided by W."""
+    iv = sorted((max(y - W_FOOT / 2, 0.0), min(y + W_FOOT / 2, FARM_W))
+                for y in strip_centres(plan))
+    total, cur_lo, cur_hi = 0.0, iv[0][0], iv[0][1]
+    for lo, hi in iv[1:]:
+        if lo > cur_hi:
+            total += cur_hi - cur_lo
+            cur_lo, cur_hi = lo, hi
+        else:
+            cur_hi = max(cur_hi, hi)
+    total += cur_hi - cur_lo
+    return total / FARM_W
 
 
 def build_thermal_map(panels, defect_idx, delta_t, hot, nx=800, ny=600):
@@ -242,8 +254,20 @@ def run_simulation():
                             n_all_blur=int(((r['blurred_in'] == r['frames_in']) &
                                             (r['frames_in'] > 0)).sum())))
         sweep[v0] = res
+    # Correlation time of the speed fluctuation at v0 = 1.5 m/s (card plan, CRN per seed)
+    tau_sweep = {}
+    for tau in TAU_V_SWEEP:
+        res = []
+        for k in range(N_MC):
+            seed = MC_SEED0 + k
+            di, dt_, ho = draw_case(seed, panels, 'centre')
+            r = inspect('card', panels, di, dt_, ho, seed, v0=V_TAU_PROBE, fluctuate=True,
+                        check_fa=False, tau=tau)
+            res.append(dict(det=r['det_rate'], blur=r['blur_frac'],
+                            n_missed=int((~r['detected']).sum())))
+        tau_sweep[tau] = res
     return dict(panels=panels, defect_idx=d_idx, delta_t=d_t, hot=hot, nominal=nominal,
-                T_map=T_map, xs=xs, ys=ys, plan_mc=plan_mc, sweep=sweep)
+                T_map=T_map, xs=xs, ys=ys, plan_mc=plan_mc, sweep=sweep, tau_sweep=tau_sweep)
 
 
 # ── Plots ─────────────────────────────────────────────────────────────────────
@@ -412,6 +436,35 @@ def plot_speed_sweep(res, out_dir):
     print(f'Saved: {path}')
 
 
+def plot_tau_sweep(res, out_dir):
+    ts = res['tau_sweep']
+    labels = [('constant\nper mission' if np.isinf(t) else f'{t:g} s') for t in TAU_V_SWEEP]
+    miss = [100 * sum(r['n_missed'] for r in ts[t]) / (N_MC * M_DEFECTIVE) for t in TAU_V_SWEEP]
+    blur = [100 * np.mean([r['blur'] for r in ts[t]]) for t in TAU_V_SWEEP]
+    x = np.arange(len(TAU_V_SWEEP))
+    fig, ax = plt.subplots(figsize=(9, 4.8))
+    ax.bar(x - 0.2, miss, 0.4, color='tab:orange', edgecolor='k', label='hot spots missed (MC)')
+    ax.bar(x + 0.2, blur, 0.4, color='tab:red', alpha=0.6, edgecolor='k',
+           label='blurred frames (MC)')
+    pfn = 100 * norm.sf((V_MAX - V_TAU_PROBE) / SIGMA_V)
+    ax.axhline(pfn, color='k', ls='--', lw=1, label=f'card P_FN = {pfn:.1f}%')
+    for i, (mv, bv) in enumerate(zip(miss, blur)):
+        ax.text(i - 0.2, mv + 1, f'{mv:.1f}', ha='center', fontsize=8)
+        ax.text(i + 0.2, bv + 1, f'{bv:.1f}', ha='center', fontsize=8)
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_xlabel('correlation time of the speed fluctuation')
+    ax.set_ylabel('%')
+    ax.set_ylim(0, 60)
+    ax.set_title(f'Panel misses vs speed-fluctuation correlation time '
+                 f'(v0 = {V_TAU_PROBE} m/s, sigma_v = {SIGMA_V} m/s, {N_MC} seeds)')
+    ax.legend(fontsize=8, loc='upper left')
+    path = os.path.join(out_dir, 'tau_v_sensitivity.png')
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Saved: {path}')
+
+
 def save_animation(res, out_dir):
     nom = res['nominal']
     xy = nom['xy']
@@ -473,7 +526,7 @@ if __name__ == '__main__':
           f'{DT_THRESH / T_NOISE_STD:.0f} sigma')
     for p in PLANS:
         yc = strip_centres(p)
-        cov, _ = area_coverage(p)
+        cov = area_coverage(p)
         print(f'  Plan {PLAN_LABELS[p]:<24} {len(yc):2d} strips, y = {yc[0]:.2f} .. {yc[-1]:.2f} m, '
               f'path {path_length(waypoints(p)):7.1f} m, area covered {100 * cov:.1f}%')
     print('  [Nominal mission: card plan, card seeds, constant 1.0 m/s, hot spots at panel centres]')
@@ -516,6 +569,18 @@ if __name__ == '__main__':
               f"= {100 * sum(r['n_missed'] for r in sw) / (N_MC * M_DEFECTIVE):5.2f}%"
               f"            {np.mean([r['t'] for r in sw]):7.1f} s")
 
+    print(f'  [Speed-fluctuation correlation time: card plan, v0 = {V_TAU_PROBE} m/s, '
+          f'sigma_v = {SIGMA_V} m/s, {N_MC} seeds, card P_FN = '
+          f'{100 * norm.sf((V_MAX - V_TAU_PROBE) / SIGMA_V):.1f}%]')
+    print('    tau_v          blurred frames   hot spots missed   detection mean ± std')
+    for tau in TAU_V_SWEEP:
+        ts = res['tau_sweep'][tau]
+        d = np.array([r['det'] for r in ts])
+        nm = sum(r['n_missed'] for r in ts)
+        lab = 'per mission' if np.isinf(tau) else f'{tau:g} s'
+        print(f"    {lab:<13}  {100 * np.mean([r['blur'] for r in ts]):6.2f}%          "
+              f"{nm:3d} = {100 * nm / (N_MC * M_DEFECTIVE):5.2f}%      "
+              f"{100 * d.mean():5.1f} ± {100 * d.std():4.1f}%")
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
     plot_thermal_map(res, out)
@@ -523,4 +588,5 @@ if __name__ == '__main__':
     plot_blur_curve(out)
     plot_plan_comparison(res, out)
     plot_speed_sweep(res, out)
+    plot_tau_sweep(res, out)
     save_animation(res, out)
