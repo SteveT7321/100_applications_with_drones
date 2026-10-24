@@ -35,6 +35,8 @@ Two horizontal gain sets: the card's **Tuned** (2.0, 0.2, 0.5) and S063's best, 
 
 The main rule treats the drone as a **point with zero clearance**: a contact is the drone's centre inside a crown cylinder below its top. A clearance sweep widens the cylinder by a drone radius $r_d$ and raises its top by a vertical margin $m_z$, with $(r_d, m_z)$ = (0, 0), (0.1, 0.05), (0.2, 0.1) m.
 
+**Statistics (added)**: every strategy comparison is paired over the same seeds. The script prints the mean difference with a 95 % bootstrap interval (10 000 resamples, fixed rng seed 6301) and the per-seed higher / equal / lower counts. A difference is called *resolved* only when its interval excludes 0. Means without a resolved interval are reported as unresolved; the per-seed counts are then the more robust statement.
+
 ---
 
 ## Mathematical Model
@@ -97,7 +99,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s063_3d_precision_spraying.py
 ```
 
-The script imports the S063 module for the layout, tour, gains and noise streams. Runtime ≈ 3 min, including the crown-radius sweep (all four strategies), the low-spread check and the damping probe (231 s and 233 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 210 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the S063 module for the layout, tour, gains and noise streams. Runtime ≈ 4 min, including the crown-radius sweep (all four strategies), the low-spread check and the damping probe (223 s and 234 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 217 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -120,7 +122,7 @@ The script imports the S063 module for the layout, tour, gains and noise streams
 |---|---:|:---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Fixed 1.5 m | 0.428 ± 0.069 | 2/20 | 0.051 | 49.5 / 40.3 cm | 24.1 cm | 34.8 cm | 1.60 (1.60 / 0.00) | 1.50 | 333.3 s | 0.00 % | 0.0 | 1.404–1.53 m |
 | Fixed, clears all | 0.170 ± 0.082 | **20/20** | 0.170 | 70.6 / 40.3 cm | 54.2 cm | 35.6 cm | 0.00 | 0.00 | 333.3 s | 0.00 % | 0.0 | 1.804–2.47 m |
-| Per-plant adaptive | **0.760 ± 0.011** | 5/20 | **0.190** | 40.6 / 40.3 cm | **4.5 cm** | 33.9 cm | 1.25 (0.65 / 0.60) | 0.00 | 333.5 s | 0.01 % | 1.5 | 0.305–2.91 m |
+| Per-plant adaptive | **0.760 ± 0.011** | 5/20 | 0.190 | 40.6 / 40.3 cm | **4.5 cm** | 33.9 cm | 1.25 (0.65 / 0.60) | 0.00 | 333.5 s | 0.01 % | 1.5 | 0.305–2.91 m |
 | Lidar terrain following | 0.445 ± 0.066 | **0/20** | 0.000 | 52.0 / 40.5 cm | 25.2 cm | 35.3 cm | 19.55 (19.40 / 0.15) | 0.90 | 334.3 s | 9.35 % | 379.6 | 0.305–3.45 m |
 
 **Tight PID**
@@ -129,7 +131,7 @@ The script imports the S063 module for the layout, tour, gains and noise streams
 |---|---:|:---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | Fixed 1.5 m | 0.483 ± 0.072 | 3/20 | 0.081 | 27.3 / 10.3 cm | 23.8 cm | 23.8 cm | 1.50 (1.50 / 0.00) | 1.30 | 265.3 s | 0.27 % | 0.0 | 1.438–1.54 m |
 | Fixed, clears all | 0.165 ± 0.080 | **20/20** | 0.165 | 58.5 / 10.3 cm | 56.7 cm | 36.7 cm | 0.00 | 0.00 | 265.3 s | 0.27 % | 0.0 | 1.839–2.46 m |
-| Per-plant adaptive | **0.871 ± 0.004** | 7/20 | **0.305** | 10.6 / 10.3 cm | **1.8 cm** | 24.7 cm | 0.75 (0.30 / 0.45) | 0.00 | 275.0 s | 0.98 % | 0.1 | 0.350–2.79 m |
+| Per-plant adaptive | **0.871 ± 0.004** | 7/20 | 0.305 | 10.6 / 10.3 cm | **1.8 cm** | 24.7 cm | 0.75 (0.30 / 0.45) | 0.00 | 275.0 s | 0.98 % | 0.1 | 0.350–2.79 m |
 | Lidar terrain following | 0.838 ± 0.016 | **0/20** | 0.000 | 12.3 / 10.5 cm | 3.7 cm | 25.5 cm | 17.45 (16.65 / 0.80) | 0.00 | 289.3 s | 9.73 % | 423.1 | 0.305–3.61 m |
 
 Mean $C_{eff}^{3D}$ of the collision-free missions only: fixed 1.5 m 0.5110 / 0.5405, clears-all 0.1705 / 0.1652, adaptive 0.7585 / 0.8703 (Tuned / Tight).
@@ -142,6 +144,14 @@ Mean $C_{eff}^{3D}$ of the collision-free missions only: fixed 1.5 m 0.5110 / 0.
 | Fixed, clears all | 20/20, 0.170 · 20/20, 0.170 · 20/20, 0.170 | 20/20, 0.165 · 20/20, 0.165 · 20/20, 0.165 |
 | Per-plant adaptive | 5/20, 0.190 · 0/20, 0.000 · 0/20, 0.000 | 7/20, 0.305 · 7/20, 0.305 · 2/20, 0.087 |
 | Lidar terrain following | 0/20, 0.000 in all three | 0/20, 0.000 in all three |
+
+Paired safe $C_{eff}^{3D}$ per clearance (0 / 0, 0.1 / 0.05, 0.2 / 0.1 m):
+- Adaptive − clears-all:
+  - Tuned: +0.019 [−0.120, +0.180] (5/0/15), **−0.170 [−0.208, −0.135]** (0/0/20), **−0.170 [−0.208, −0.135]** (0/0/20).
+  - Tight: +0.139 [−0.038, +0.330] (7/0/13), +0.139 [−0.038, +0.330] (7/0/13), −0.078 [−0.174, +0.057] (2/0/18).
+- Adaptive − fixed 1.5 m:
+  - Tuned: +0.139 [−0.026, +0.313] (5/13/2), 0 (0/20/0), 0 (0/20/0).
+  - Tight: **+0.224 [+0.023, +0.429]** (7/11/2), **+0.248 [+0.040, +0.453]** (7/11/2), +0.087 [+0.000, +0.218] (2/18/0).
 
 Plants receiving a dose > 0.9: at most 4.0 % (adaptive, Tight). Settle time-outs per mission: Tuned 19.9–20.0 of 20 for every strategy; Tight 4.3 / 4.3 / 5.2 / 7.2. Vertical travel per mission: Tuned 6.5 / 6.5 / 24.9 / 151.2 m; Tight 6.9 / 6.9 / 20.8 / 73.2 m.
 
@@ -158,33 +168,37 @@ Plants receiving a dose > 0.9: at most 4.0 % (adaptive, Tight). Settle time-outs
 
 The largest share of steps on the barrier in any mission is 3.65 %, against the 50 % assert. A sign-flipped vertical loop puts the barrier on 99.5 % of the steps and trips the assert; this was checked in a separate test, not printed. For scale, braking the fastest descent possible inside the 0.3–6 m envelope (6.18 m/s) at 2.60 m/s² takes 2.38 s. The longest continuous stretch, 2.14 s (TF, Tuned, $\sigma_h$ 0.6), is close to that, which suggests the barrier also holds the drone while a wound-up integrator unwinds (*not probed*). A stretch-length assert would therefore not separate a working loop from a broken one; the share of steps does.
 
-**Per-seed comparisons** ($C_{eff}^{3D}$ higher / equal / lower and mean difference; then the same for safe $C_{eff}^{3D}$):
+**Paired comparisons** (A − B over the same 20 seeds: mean difference [95 % bootstrap interval], per-seed higher / equal / lower; **bold** = interval excludes 0):
 
-| Gains | Pair | $C_{eff}^{3D}$ | Safe $C_{eff}^{3D}$ |
+| Gains | A − B | $C_{eff}^{3D}$ | Safe $C_{eff}^{3D}$ |
 |---|---|---|---|
-| Tuned | Adaptive vs fixed 1.5 m | 20 / 0 / 0, +0.332 | 5 / 13 / 2, +0.139 |
-| Tuned | Adaptive vs fixed clears-all | 20 / 0 / 0, +0.590 | 5 / 0 / 15, +0.019 |
-| Tuned | Adaptive vs terrain following | 20 / 0 / 0, +0.315 | 5 / 15 / 0, +0.190 |
-| Tuned | Terrain following vs fixed 1.5 m | 10 / 0 / 10, +0.018 | 0 / 18 / 2, −0.051 |
-| Tuned | Fixed clears-all vs fixed 1.5 m | 0 / 0 / 20, −0.257 | 18 / 0 / 2, +0.119 |
-| Tight | Adaptive vs fixed 1.5 m | 20 / 0 / 0, +0.388 | 7 / 11 / 2, +0.224 |
-| Tight | Adaptive vs fixed clears-all | 20 / 0 / 0, +0.706 | 7 / 0 / 13, +0.139 |
-| Tight | Adaptive vs terrain following | 19 / 0 / 1, +0.033 | 7 / 13 / 0, +0.305 |
-| Tight | Terrain following vs fixed 1.5 m | 20 / 0 / 0, +0.356 | 0 / 17 / 3, −0.081 |
-| Tight | Fixed clears-all vs fixed 1.5 m | 0 / 0 / 20, −0.318 | 17 / 0 / 3, +0.084 |
+| Tuned | Adaptive − fixed 1.5 m | **+0.332 [+0.301, +0.364]**, 20 / 0 / 0 | +0.139 [−0.026, +0.313], 5 / 13 / 2 |
+| Tuned | Adaptive − clears-all | **+0.590 [+0.555, +0.622]**, 20 / 0 / 0 | +0.019 [−0.120, +0.180], 5 / 0 / 15 |
+| Tuned | Adaptive − terrain following | **+0.315 [+0.285, +0.344]**, 20 / 0 / 0 | **+0.190 [+0.075, +0.342]**, 5 / 15 / 0 |
+| Tuned | Terrain following − fixed 1.5 m | +0.018 [−0.021, +0.057], 10 / 0 / 10 | −0.051 [−0.131, +0.000], 0 / 18 / 2 |
+| Tuned | Clears-all − fixed 1.5 m | **−0.257 [−0.311, −0.201]**, 0 / 0 / 20 | **+0.119 [+0.049, +0.178]**, 18 / 0 / 2 |
+| Tuned | Clears-all − terrain following | **−0.275 [−0.330, −0.216]**, 0 / 0 / 20 | **+0.170 [+0.135, +0.208]**, 20 / 0 / 0 |
+| Tight | Adaptive − fixed 1.5 m | **+0.388 [+0.355, +0.420]**, 20 / 0 / 0 | **+0.224 [+0.023, +0.429]**, 7 / 11 / 2 |
+| Tight | Adaptive − clears-all | **+0.706 [+0.670, +0.740]**, 20 / 0 / 0 | +0.139 [−0.038, +0.330], 7 / 0 / 13 |
+| Tight | Adaptive − terrain following | **+0.033 [+0.025, +0.040]**, 19 / 0 / 1 | **+0.305 [+0.131, +0.479]**, 7 / 13 / 0 |
+| Tight | Terrain following − fixed 1.5 m | **+0.356 [+0.322, +0.388]**, 20 / 0 / 0 | −0.081 [−0.172, +0.000], 0 / 17 / 3 |
+| Tight | Clears-all − fixed 1.5 m | **−0.318 [−0.373, −0.261]**, 0 / 0 / 20 | **+0.084 [+0.006, +0.150]**, 17 / 0 / 3 |
+| Tight | Clears-all − terrain following | **−0.673 [−0.709, −0.635]**, 0 / 0 / 20 | **+0.165 [+0.131, +0.202]**, 20 / 0 / 0 |
+
+Adaptive with Tight − Tuned gains ($C_{eff}^{3D}$, same seeds): **+0.111 [+0.106, +0.116]**, 20 / 0 / 0.
 
 **Crown-radius sweep** ($\sigma_h$ = 0.3 m, 10 seeds; $C_{eff}^{3D}$ / collision-free missions / safe $C_{eff}^{3D}$ / crown contacts per mission). Clears-all flies above every crown, so the radius does not affect it:
 
-| $R_{crown}$ | Gains | Fixed 1.5 m | Fixed clears-all | Adaptive | Terrain following | Safe: TF > fixed 1.5 m | Safe: adaptive > TF | Safe: adaptive vs clears-all |
-|---|---|---|---|---|---|:---:|:---:|:---:|
-| 0.25 m | Tuned | 0.407 / 0/10 / 0.000 / 1.70 | 0.152 / 10/10 / 0.152 / 0.00 | 0.760 / 4/10 / 0.302 / 0.70 | 0.020 / 0/10 / 0.000 / 18.80 | 0/10 | 4/10 | 4 / 0 / 6 |
-| 0.25 m | Tight | 0.458 / 0/10 / 0.000 / 1.70 | 0.144 / 10/10 / 0.144 / 0.00 | 0.871 / 4/10 / 0.348 / 0.80 | 0.850 / 0/10 / 0.000 / 19.50 | 0/10 | 4/10 | 4 / 0 / 6 |
-| 0.50 m | Tuned | 0.407 / 0/10 / 0.000 / 1.80 | 0.152 / 10/10 / 0.152 / 0.00 | 0.760 / 4/10 / 0.302 / 1.20 | 0.459 / 0/10 / 0.000 / 19.40 | 0/10 | 4/10 | 4 / 0 / 6 |
-| 0.50 m | Tight | 0.458 / 0/10 / 0.000 / 1.70 | 0.144 / 10/10 / 0.144 / 0.00 | 0.871 / 4/10 / 0.348 / 0.80 | 0.836 / 0/10 / 0.000 / 17.40 | 0/10 | 4/10 | 4 / 0 / 6 |
-| 1.00 m | Tuned | 0.407 / 0/10 / 0.000 / 1.80 | 0.152 / 10/10 / 0.152 / 0.00 | 0.760 / 1/10 / 0.075 / 2.20 | 0.708 / 0/10 / 0.000 / 16.70 | 0/10 | 1/10 | 1 / 0 / 9 |
-| 1.00 m | Tight | 0.458 / 0/10 / 0.000 / 1.70 | 0.144 / 10/10 / 0.144 / 0.00 | 0.871 / 3/10 / 0.260 / 1.20 | 0.823 / 0/10 / 0.000 / 13.20 | 0/10 | 3/10 | 3 / 0 / 7 |
+| $R_{crown}$ | Gains | Fixed 1.5 m | Fixed clears-all | Adaptive | Terrain following | Safe: adaptive − clears-all | Safe: adaptive − TF | Dose only: TF − fixed 1.5 m |
+|---|---|---|---|---|---|---|---|---|
+| 0.25 m | Tuned | 0.407 / 0/10 / 0.000 / 1.70 | 0.152 / 10/10 / 0.152 / 0.00 | 0.760 / 4/10 / 0.302 / 0.70 | 0.020 / 0/10 / 0.000 / 18.80 | +0.150 [−0.096, +0.404], 4/0/6 | **+0.302 [+0.075, +0.529]**, 4/6/0 | **−0.386 [−0.414, −0.356]**, 0/0/10 |
+| 0.25 m | Tight | 0.458 / 0/10 / 0.000 / 1.70 | 0.144 / 10/10 / 0.144 / 0.00 | 0.871 / 4/10 / 0.348 / 0.80 | 0.850 / 0/10 / 0.000 / 19.50 | +0.203 [−0.076, +0.490], 4/0/6 | **+0.348 [+0.087, +0.609]**, 4/6/0 | **+0.391 [+0.365, +0.420]**, 10/0/0 |
+| 0.50 m | Tuned | 0.407 / 0/10 / 0.000 / 1.80 | 0.152 / 10/10 / 0.152 / 0.00 | 0.760 / 4/10 / 0.302 / 1.20 | 0.459 / 0/10 / 0.000 / 19.40 | +0.150 [−0.096, +0.404], 4/0/6 | **+0.302 [+0.075, +0.529]**, 4/6/0 | **+0.053 [+0.002, +0.103]**, 7/0/3 |
+| 0.50 m | Tight | 0.458 / 0/10 / 0.000 / 1.70 | 0.144 / 10/10 / 0.144 / 0.00 | 0.871 / 4/10 / 0.348 / 0.80 | 0.836 / 0/10 / 0.000 / 17.40 | +0.203 [−0.076, +0.490], 4/0/6 | **+0.348 [+0.087, +0.609]**, 4/6/0 | **+0.378 [+0.353, +0.404]**, 10/0/0 |
+| 1.00 m | Tuned | 0.407 / 0/10 / 0.000 / 1.80 | 0.152 / 10/10 / 0.152 / 0.00 | 0.760 / 1/10 / 0.075 / 2.20 | 0.708 / 0/10 / 0.000 / 16.70 | −0.077 [−0.182, +0.092], 1/0/9 | +0.075 [+0.000, +0.225], 1/9/0 | **+0.302 [+0.274, +0.330]**, 10/0/0 |
+| 1.00 m | Tight | 0.458 / 0/10 / 0.000 / 1.70 | 0.144 / 10/10 / 0.144 / 0.00 | 0.871 / 3/10 / 0.260 / 1.20 | 0.823 / 0/10 / 0.000 / 13.20 | +0.116 [−0.131, +0.388], 3/0/7 | +0.260 [+0.000, +0.521], 3/7/0 | **+0.364 [+0.339, +0.390]**, 10/0/0 |
 
-By dose only (not shown in the table), TF beats fixed 1.5 m in 0/10, 7/10 and 10/10 seeds at 0.25 / 0.5 / 1.0 m with Tuned gains, and in 10/10 at every radius with Tight gains. Adaptive beats TF in 10/10 everywhere.
+The cells give $C_{eff}^{3D}$ / collision-free missions / safe $C_{eff}^{3D}$ / crown contacts per mission; the paired columns give the difference [95 % interval], higher / equal / lower. The safe-score difference between adaptive and clears-all is unresolved at every radius. Terrain following always scores 0 on the safe score, so TF − fixed 1.5 m is 0 there. By dose only, adaptive beats terrain following in 10/10 seeds at every radius (resolved, +0.022 to +0.739).
 
 **Vertical-damping probe** (adaptive, $\sigma_h$ = 0.3 m, 20 seeds). Contacts with the target plant are split by whether the leg to it climbs to a taller plant or descends / stays level:
 
@@ -195,12 +209,16 @@ By dose only (not shown in the table), TF beats fixed 1.5 m in 0/10, 7/10 and 10
 | Tight | × 1 (0.258) | 0.30 (0.20 / 0.10) | 0.45 | 0.35 m | 0.871 | 7/20 | 0.305 |
 | Tight | × 2.5 (0.683) | 0.20 (0.20 / 0.00) | 0.35 | 0.72 m | 0.874 | 11/20 | 0.480 |
 
+Paired over the same seeds (× 2.5 − × 1, safe $C_{eff}^{3D}$):
+- Tuned **+0.192 [+0.001, +0.382]**, 10/9/1. Collision-free with both 4, only with × 2.5 in 6, only with × 1 in 1.
+- Tight **+0.176 [+0.044, +0.350]**, 8/9/3. Collision-free with both 7, only with × 2.5 in 4, only with × 1 in 0.
+
 **Probe: dose without the standoff factor** (drift and hover error only, $C_{eff}^{3D}$; collisions as in the main tables):
 
-| Gains | Fixed 1.5 m | Fixed clears-all | Adaptive | Terrain following | Adaptive vs fixed 1.5 m | Adaptive vs clears-all |
+| Gains | Fixed 1.5 m | Fixed clears-all | Adaptive | Terrain following | Adaptive − fixed 1.5 m | Adaptive − clears-all |
 |---|---:|---:|---:|---:|:---:|:---:|
-| Tuned | 0.718 ± 0.039 | 0.765 ± 0.016 | 0.783 ± 0.011 | 0.665 ± 0.039 | 20 / 0 / 0 | 20 / 0 / 0 |
-| Tight | 0.814 ± 0.035 | 0.751 ± 0.028 | 0.876 ± 0.004 | 0.869 ± 0.004 | 18 / 0 / 2 | 20 / 0 / 0 |
+| Tuned | 0.718 ± 0.039 | 0.765 ± 0.016 | 0.783 ± 0.011 | 0.665 ± 0.039 | **+0.065 [+0.049, +0.084]**, 20/0/0 | **+0.018 [+0.014, +0.022]**, 20/0/0 |
+| Tight | 0.814 ± 0.035 | 0.751 ± 0.028 | 0.876 ± 0.004 | 0.869 ± 0.004 | **+0.063 [+0.047, +0.078]**, 18/0/2 | **+0.125 [+0.113, +0.137]**, 20/0/0 |
 
 **Sensitivity to the added drift parameters** (Tuned, mean $C_{eff}^{3D}$, dose only; fixed 1.5 m / clears-all / adaptive / terrain following). The drift parameters do not change the flight, so the collision counts above apply unchanged:
 
@@ -210,7 +228,11 @@ By dose only (not shown in the table), TF beats fixed 1.5 m in 0/10, 7/10 and 10
 | 0.30 s⁻¹ (1.0 m/s) | 0.417 / 0.162 / 0.745 / 0.441 | 0.428 / 0.170 / 0.760 / 0.445 | 0.420 / 0.169 / 0.744 / 0.436 |
 | 0.60 s⁻¹ (0.5 m/s) | 0.428 / 0.171 / 0.759 / 0.445 | 0.419 / 0.169 / 0.743 / 0.436 | 0.412 / 0.165 / 0.729 / 0.427 |
 
-By dose alone the ranking is adaptive > terrain following > fixed 1.5 m > clears-all in all nine cases. The mean drift offset ranges from 33.9 to 76.5 cm.
+By mean dose the order is adaptive > terrain following > fixed 1.5 m > clears-all in all nine cases.
+- Resolved in all nine: adaptive − terrain following (+0.210 to +0.315, 20/0/0 every time) and fixed 1.5 m − clears-all (+0.204 to +0.257, 20/0/0).
+- Terrain following − fixed 1.5 m is resolved only for 2 m/s wind with no downwash (+0.040 [+0.016, +0.066], 14/0/6). The other eight cases are unresolved (+0.016 to +0.027, 10/0/10 or 11/0/9).
+
+The mean drift offset ranges from 33.9 to 76.5 cm.
 
 **$C_{eff}^{3D}$ vs canopy-height spread** (Tuned, 10 seeds; $C_{eff}^{3D}$, collision-free missions, safe $C_{eff}^{3D}$):
 
@@ -222,16 +244,37 @@ By dose alone the ranking is adaptive > terrain following > fixed 1.5 m > clears
 | 0.45 | 0.315 ± 0.055, 0/10, 0.000 | 0.097 ± 0.035, 10/10, 0.097 | 0.760 ± 0.012, 0/10, 0.000 | 0.459 ± 0.063, 0/10, 0.000 |
 | 0.60 | 0.271 ± 0.051, 0/10, 0.000 | 0.081 ± 0.025, 10/10, 0.081 | 0.760 ± 0.012, 0/10, 0.000 | 0.453 ± 0.064, 0/10, 0.000 |
 
-**Low height spread, $\sigma_h$ = 0.15 m, per seed and per clearance** (20 seeds, 0–19, both gain sets; the $\sigma_h$ table above uses the 10-seed sweep). Each cell gives collision-free missions and safe $C_{eff}^{3D}$. The last three columns give the adaptive − fixed 1.5 m difference of the mean safe $C_{eff}^{3D}$, and per-seed safe $C_{eff}^{3D}$ higher / equal / lower for adaptive. Terrain following is 0/20 (0.000) in every row:
+Paired over the same 10 seeds (difference [95 % interval], higher / equal / lower):
 
-| Gains | Clearance $r_d$ / $m_z$ | Fixed 1.5 m | Fixed clears-all | Adaptive | Mean difference adaptive − fixed 1.5 m | Adaptive vs fixed 1.5 m | Adaptive vs clears-all |
-|---|---|---|---|---|---:|:---:|:---:|
-| Tuned | 0 / 0 m | 19/20, 0.575 | 20/20, 0.389 | 15/20, 0.569 | −0.006 | 15 / 0 / 5 | 15 / 0 / 5 |
-| Tuned | 0.1 / 0.05 m | 18/20, 0.546 | 20/20, 0.389 | 14/20, 0.530 | −0.016 | 14 / 0 / 6 | 14 / 0 / 6 |
-| Tuned | 0.2 / 0.1 m | 15/20, 0.458 | 20/20, 0.389 | 12/20, 0.455 | −0.003 | 12 / 2 / 6 | 12 / 0 / 8 |
-| Tight | 0 / 0 m | 19/20, 0.656 | 20/20, 0.372 | 18/20, 0.784 | +0.128 | 18 / 0 / 2 | 18 / 0 / 2 |
-| Tight | 0.1 / 0.05 m | 19/20, 0.656 | 20/20, 0.372 | 15/20, 0.653 | −0.003 | 15 / 0 / 5 | 15 / 0 / 5 |
-| Tight | 0.2 / 0.1 m | 18/20, 0.623 | 20/20, 0.372 | 14/20, 0.609 | −0.014 | 14 / 0 / 6 | 14 / 0 / 6 |
+| $\sigma_h$ | Dose: adaptive − fixed 1.5 m | Safe: adaptive − fixed 1.5 m | Safe: adaptive − clears-all | Safe: fixed 1.5 m − clears-all |
+|---|---|---|---|---|
+| 0.00 | 0 (identical), 0/10/0 | 0, 0/10/0 | 0, 0/10/0 | 0, 0/10/0 |
+| 0.15 | **+0.164 [+0.143, +0.186]**, 10/0/0 | −0.140 [−0.371, +0.090], 6/0/4 | +0.087 [−0.156, +0.321], 6/0/4 | **+0.226 [+0.176, +0.277]**, 10/0/0 |
+| 0.30 | **+0.353 [+0.322, +0.386]**, 10/0/0 | **+0.302 [+0.075, +0.529]**, 4/6/0 | +0.150 [−0.096, +0.404], 4/0/6 | **−0.152 [−0.187, −0.117]**, 0/0/10 |
+| 0.45 | **+0.445 [+0.411, +0.483]**, 10/0/0 | 0, 0/10/0 | **−0.097 [−0.119, −0.076]**, 0/0/10 | **−0.097 [−0.119, −0.076]**, 0/0/10 |
+| 0.60 | **+0.489 [+0.458, +0.525]**, 10/0/0 | 0, 0/10/0 | **−0.081 [−0.096, −0.066]**, 0/0/10 | **−0.081 [−0.096, −0.066]**, 0/0/10 |
+
+**Low height spread, $\sigma_h$ = 0.15 m, per seed and per clearance** (20 seeds, 0–19, both gain sets; the $\sigma_h$ table above uses the 10-seed sweep). Each strategy cell gives collision-free missions and mean safe $C_{eff}^{3D}$; the paired columns give the safe-score difference [95 % interval], higher / equal / lower. Terrain following is 0/20 (0.000) in every row:
+
+| Gains | Clearance $r_d$ / $m_z$ | Fixed 1.5 m | Clears-all | Adaptive | Adaptive − fixed 1.5 m | Adaptive − clears-all | Fixed 1.5 m − clears-all |
+|---|---|---|---|---|---|---|---|
+| Tuned | 0 / 0 m | 19/20, 0.575 | 20/20, 0.389 | 15/20, 0.569 | −0.006 [−0.161, +0.146], 15/0/5 | **+0.180 [+0.027, +0.319]**, 15/0/5 | **+0.185 [+0.130, +0.238]**, 19/0/1 |
+| Tuned | 0.1 / 0.05 m | 18/20, 0.546 | 20/20, 0.389 | 14/20, 0.530 | −0.016 [−0.197, +0.164], 14/0/6 | +0.141 [−0.023, +0.294], 14/0/6 | **+0.157 [+0.089, +0.220]**, 18/0/2 |
+| Tuned | 0.2 / 0.1 m | 15/20, 0.458 | 20/20, 0.389 | 12/20, 0.455 | −0.003 [−0.198, +0.198], 12/2/6 | +0.066 [−0.098, +0.228], 12/0/8 | +0.068 [−0.029, +0.160], 15/0/5 |
+| Tight | 0 / 0 m | 19/20, 0.656 | 20/20, 0.372 | 18/20, 0.784 | +0.128 [−0.012, +0.253], 18/0/2 | **+0.411 [+0.275, +0.520]**, 18/0/2 | **+0.283 [+0.220, +0.341]**, 19/0/1 |
+| Tight | 0.1 / 0.05 m | 19/20, 0.656 | 20/20, 0.372 | 15/20, 0.653 | −0.003 [−0.184, +0.172], 15/0/5 | **+0.280 [+0.100, +0.443]**, 15/0/5 | **+0.283 [+0.220, +0.341]**, 19/0/1 |
+| Tight | 0.2 / 0.1 m | 18/20, 0.623 | 20/20, 0.372 | 14/20, 0.609 | −0.014 [−0.221, +0.192], 14/0/6 | **+0.237 [+0.050, +0.412]**, 14/0/6 | **+0.251 [+0.171, +0.322]**, 18/0/2 |
+
+Adaptive vs fixed 1.5 m in the same rows. The two mean columns are the average per-seed margin in the seeds adaptive wins and in the seeds it loses:
+
+| Gains | Clearance | Mean margin when adaptive wins / loses | Only adaptive collides | Only fixed 1.5 m collides | Both / neither |
+|---|---|---|:---:|:---:|:---:|
+| Tuned | 0 / 0 m | +0.188 / −0.588 | 5 | 1 | 0 / 14 |
+| Tuned | 0.1 / 0.05 m | +0.229 / −0.588 | 6 | 2 | 0 / 12 |
+| Tuned | 0.2 / 0.1 m | +0.292 / −0.592 | 6 | 3 | 2 / 9 |
+| Tight | 0 / 0 m | +0.217 / −0.672 | 2 | 1 | 0 / 17 |
+| Tight | 0.1 / 0.05 m | +0.220 / −0.672 | 5 | 1 | 0 / 14 |
+| Tight | 0.2 / 0.1 m | +0.268 / −0.671 | 6 | 2 | 0 / 12 |
 
 **What changed with the physics fix** (main runs, $\sigma_h$ = 0.3 m, 20 seeds). The *Before* column is taken from the output of the previous version, commit 1c61058; the current script does not print it:
 
@@ -252,34 +295,34 @@ By dose alone the ranking is adaptive > terrain following > fixed 1.5 m > clears
   - fixed 1.5 m 2/20 and 3/20;
   - terrain following 0/20 with both, and 0/10 in every crown-radius and $\sigma_h$ configuration.
 
-  Per seed, clears-all beats adaptive on the safe score in 15/20 (Tuned) and 13/20 (Tight) seeds. Neither card strategy is both safe and accurate here.
-- **Which strategy has the higher *mean* safe score depends on the clearance and crown-radius assumptions; it is not a robust ranking.**
-  - With the point-drone rule and 0.5 m crowns, adaptive's mean safe $C_{eff}^{3D}$ (0.190 / 0.305) is above clears-all (0.170 / 0.165). That is only because its few collision-free missions score high: 0.7585 / 0.8703 on average.
-  - With 1.0 m crowns (Tuned) adaptive drops to 0.075 against 0.152 for clears-all on the same 10 seeds.
-  - With a 0.1 m drone radius and 0.05 m vertical margin, Tuned adaptive is collision-free in 0/20 missions (safe 0.000); Tight adaptive stays 7/20 (0.305). With 0.2 m and 0.1 m it is 0/20 and 2/20 (0.000 / 0.087).
+  On the safe score, clears-all beats fixed 1.5 m (Tuned **+0.119 [+0.049, +0.178]**, 18/0/2; Tight **+0.084 [+0.006, +0.150]**, 17/0/3) and terrain following (resolved, 20/0/0). Clears-all vs adaptive is **unresolved** (Tuned +0.019 [−0.120, +0.180], Tight +0.139 [−0.038, +0.330] for adaptive − clears-all). Per seed, clears-all is ahead in 15/20 (Tuned) and 13/20 (Tight) seeds. Neither card strategy is both safe and accurate here.
+- **The mean safe-score comparison of adaptive and clears-all is not resolved under any assumption tested; the sign of the mean even depends on the clearance and crown-radius assumptions.**
+  - With the point-drone rule and 0.5 m crowns, adaptive's mean safe $C_{eff}^{3D}$ (0.190 / 0.305) is above clears-all (0.170 / 0.165), but the intervals include 0 (see above). Its mean is pulled up by its few collision-free missions, which average 0.7585 / 0.8703.
+  - With 1.0 m crowns (Tuned, 10 seeds) the sign reverses: 0.075 vs 0.152, adaptive − clears-all −0.077 [−0.182, +0.092], 1/0/9. This is still unresolved.
+  - With a 0.1 m drone radius and 0.05 m vertical margin, Tuned adaptive is collision-free in 0/20 missions, and clears-all is then resolved ahead (adaptive − clears-all **−0.170 [−0.208, −0.135]**, 0/0/20). Tight adaptive stays 7/20 (0.305), unresolved against clears-all. With 0.2 m and 0.1 m it is 0/20 and 2/20 (0.000 / 0.087).
   - Clears-all flies at the tallest crown top + 0.5 m, so neither sweep affects it. In the clearance sweep (20 main seeds) it is 20/20 at every clearance, with safe C_eff 0.170 / 0.165. In the crown-radius sweep (10 seeds) it is 10/10 at every radius, with 0.152 / 0.144.
   - Fixed 1.5 m reaches 0/20 at a 0.2 m radius with either gain set.
-- **At low height spread adaptive wins most seeds, while the mean safe score is tied.** These are the 20-seed results at $\sigma_h$ = 0.15 m.
-  - **Per seed adaptive comes out ahead in every configuration.** It beats fixed 1.5 m on the safe score in 15, 14 and 12 of 20 seeds with Tuned gains (point drone, 0.1 / 0.05 m and 0.2 / 0.1 m clearance), and in 18, 15 and 14 of 20 with Tight gains. It beats clears-all in the same numbers of seeds, or 12 / 0 / 8 with Tuned at 0.2 / 0.1 m.
-  - **The means are essentially tied in five of six cases** (adaptive − fixed 1.5 m from −0.016 to −0.003). The exception is Tight with a point drone: 0.784 vs 0.656, +0.128.
-  - **Why the mean ties despite the per-seed lead:** fixed 1.5 m collides less often (19, 18, 15 of 20 collision-free with Tuned; 19, 19, 18 with Tight), while adaptive collides more often (15, 14, 12 and 18, 15, 14), and each of its collisions costs a full mission.
-  - Clears-all is collision-free in 20/20 but scores only 0.389 / 0.372.
-  - The earlier 10-seed version of this check (seeds 0–9; previous version's output, commit db461b9, not printed now) suggested an even split and a higher mean for fixed 1.5 m. Seeds 10–19 reverse that, which shows how sensitive these few-collision comparisons are to the sample.
+- **At low height spread no mean difference between adaptive and fixed 1.5 m is resolved at 20 seeds, while the per-seed counts favour adaptive.** These are the 20-seed results at $\sigma_h$ = 0.15 m.
+  - **Per seed:** adaptive beats fixed 1.5 m on the safe score in 15, 14 and 12 of 20 seeds with Tuned gains (point drone, 0.1 / 0.05 m, 0.2 / 0.1 m clearance), and in 18, 15 and 14 of 20 with Tight gains. This is the robust part of the result.
+  - **Means:** all six mean differences have intervals that include 0, from −0.016 [−0.197, +0.164] to +0.128 [−0.012, +0.253]. The Tight point-drone row (+0.128) is the largest but is not resolved either.
+  - **Why the mean does not follow the per-seed lead:** adaptive wins by small margins and loses by large ones. Its mean margin is +0.188 to +0.292 in the seeds it wins and −0.588 to −0.672 in the seeds it loses. In every row the number of seeds where only adaptive collides (5 / 6 / 6 with Tuned, 2 / 5 / 6 with Tight) equals its number of losses. The reverse case, where only fixed 1.5 m collides, occurs in 1 / 2 / 3 and 1 / 1 / 2 seeds.
+  - Against clears-all, adaptive's safe-score lead is resolved in four of six rows: Tuned point drone **+0.180** and all three Tight rows (+0.237 to +0.411). Fixed 1.5 m is resolved ahead of clears-all in five of six rows.
+  - The earlier 10-seed means (seeds 0–9; previous version's output, commit db461b9, not printed now) favoured fixed 1.5 m by up to 0.24 with clearance. With 20 seeds the adaptive − fixed 1.5 m gap is within ±0.02 in five rows, and no row is resolved.
   - At $\sigma_h$ = 0 the three planned strategies coincide (0.757, 10-seed sweep).
-- **By dose quality alone, per-plant adaptive altitude is the clear winner, as the card expects.** At $\sigma_h$ = 0.3 m it holds the standoff within 4.5 cm (Tuned) and 1.8 cm (Tight) of 0.5 m. It reaches $C_{eff}^{3D}$ = 0.760 / 0.871 and beats both fixed altitudes in 20/20 seeds (+0.332 to +0.706).
-  - In the 10-seed $\sigma_h$ sweep (Tuned), its $C_{eff}^{3D}$ is flat across $\sigma_h$ (0.757–0.760), but its safety is not: collision-free missions fall from 10/10 at $\sigma_h$ = 0 to 6/10, 4/10 and then 0/10 at $\sigma_h$ ≥ 0.45, so its safe $C_{eff}^{3D}$ falls from 0.757 to 0.
+- **By dose quality alone, per-plant adaptive altitude is the clear winner, as the card expects.** At $\sigma_h$ = 0.3 m it holds the standoff within 4.5 cm (Tuned) and 1.8 cm (Tight) of 0.5 m. It reaches $C_{eff}^{3D}$ = 0.760 / 0.871 and beats both fixed altitudes in 20/20 seeds, resolved (+0.332 to +0.706, every interval above 0).
+  - In the 10-seed $\sigma_h$ sweep (Tuned), its $C_{eff}^{3D}$ is flat across $\sigma_h$ (0.757–0.760), but its safety is not: collision-free missions fall from 10/10 at $\sigma_h$ = 0 to 6/10, 4/10 and then 0/10 at $\sigma_h$ ≥ 0.45, so its safe $C_{eff}^{3D}$ falls from 0.757 to 0. Its safe lead over fixed 1.5 m is resolved only at $\sigma_h$ 0.3 (**+0.302 [+0.075, +0.529]**, 4/6/0). At 0.15 it is unresolved (−0.140 [−0.371, +0.090], 6/0/4, 10-seed sweep). At 0.45 and 0.6 both score 0, while clears-all is resolved ahead of both.
   - Fixed 1.5 m falls from 0.757 to 0.271 in $C_{eff}^{3D}$. In the 10 sweep seeds it collides in every mission from $\sigma_h$ = 0.3 m; in the 20 main-run seeds at 0.3 m it has 2/20 (Tuned) and 3/20 (Tight) collision-free missions. The clears-all altitude stays collision-free but falls to 0.081.
-- **Part of the dose gap is built into the card's dose model, but not all of it.** The standoff factor penalises fixed altitudes directly. Without it, adaptive still wins every seed against the clears-all altitude and 18–20 of 20 against fixed 1.5 m, with smaller margins (0.783 vs 0.718 / 0.765 Tuned; 0.876 vs 0.814 / 0.751 Tight).
+- **Part of the dose gap is built into the card's dose model, but not all of it.** The standoff factor penalises fixed altitudes directly. Without it, adaptive still beats the clears-all altitude in every seed and fixed 1.5 m in 18–20 of 20, with smaller but resolved margins: Tuned +0.065 / +0.018, Tight +0.063 / +0.125, every interval above 0.
 - **Card-style lidar terrain following without look-ahead is unsafe and is not a competitive strategy once collisions count.** It tracks the ground (0.5 m) between plants and sees each crown only once it is overhead. It therefore meets every plant from the side: 19.55 (Tuned) / 17.45 (Tight) crown contacts per mission, almost all on the plant it is approaching. Between plants it dives towards the floor so often that the braking barrier is active 379.6 / 423.1 steps per mission.
   - The previous version (commit 1c61058) enforced the floor with an instant stop at up to 2.78 m/s. That stop is physically impossible, and in reality these would have been ground strikes.
-  - By dose alone it is level with fixed 1.5 m with Tuned gains (10 / 0 / 10) and close to adaptive with Tight gains (0.838 vs 0.871). That dose-only comparison depends strongly on the crown radius I added (Tuned: 0.020 / 0.459 / 0.708 at 0.25 / 0.5 / 1.0 m).
-  - With collisions counted, terrain following scores 0 at every radius and every $\sigma_h$, and loses to adaptive in every seed where adaptive is collision-free.
+  - By dose alone it is level with fixed 1.5 m with Tuned gains (+0.018 [−0.021, +0.057], 10/0/10, unresolved). With Tight gains it is resolved ahead of fixed 1.5 m (+0.356) and only slightly below adaptive, though the gap is resolved (adaptive − TF **+0.033 [+0.025, +0.040]**, 19/0/1). That dose-only comparison depends strongly on the crown radius I added (Tuned: 0.020 / 0.459 / 0.708 at 0.25 / 0.5 / 1.0 m).
+  - With collisions counted, terrain following scores 0 at every radius and every $\sigma_h$. It loses to adaptive in every seed where adaptive is collision-free: resolved at 0.5 m (Tuned **+0.190**, Tight **+0.305**) and at 0.25 m, unresolved at 1.0 m (1/9/0 and 3/7/0).
 - **The adaptive plan's collisions are partly a tuning problem (probed).** With Tuned gains it touches 1.25 crowns per mission: 0.65 on the plant being approached and 0.60 on other plants. Of the 0.65, 0.55 happen on descending or level legs and 0.10 on climbs to a taller plant.
-  - Raising the vertical derivative gain 2.5× (damping 0.189 → 0.527) removes the descent contacts. Collision-free missions double, 5/20 → 10/20, and the safe $C_{eff}^{3D}$ goes 0.190 → 0.382.
-  - With Tight gains: 7/20 → 11/20 collision-free and 0.305 → 0.480 safe. The climb contacts (0.10 / 0.20) remain.
+  - Raising the vertical derivative gain 2.5× (damping 0.189 → 0.527) removes the descent contacts. Collision-free missions double, 5/20 → 10/20, and the safe $C_{eff}^{3D}$ goes 0.190 → 0.382. The paired gain is **+0.192 [+0.001, +0.382]** (10/9/1); it is resolved, but only barely.
+  - With Tight gains: 7/20 → 11/20 collision-free and 0.305 → 0.480 safe, paired **+0.176 [+0.044, +0.350]** (8/9/3). The climb contacts (0.10 / 0.20) remain.
   - Other-plant contacts barely change (0.60 → 0.50, 0.45 → 0.35). Flying at the endpoints' altitude over a taller plant in between is the likely cause (*not probed*).
-- **The horizontal gains still matter for the top score.** With the card's Tuned gains, the S063 finding carries over: 40 cm horizontal hover RMS and 19.9 of 20 settle time-outs. That caps adaptive at $C_{eff}^{3D}$ = 0.760; Tight raises it to 0.871.
-- **The dose ranking does not depend on the added drift parameters.** It never changes over the nine combinations of wind amplitude and downwash speed. These parameters do not affect the flight, so they do not change the collision counts.
+- **The horizontal gains still matter for the top score.** With the card's Tuned gains, the S063 finding carries over: 40 cm horizontal hover RMS and 19.9 of 20 settle time-outs. That caps adaptive at $C_{eff}^{3D}$ = 0.760; Tight raises it to 0.871 (paired **+0.111 [+0.106, +0.116]**, 20/0/0).
+- **The resolved parts of the dose ranking do not depend on the added drift parameters.** Adaptive > terrain following and fixed 1.5 m > clears-all are resolved in all nine combinations. Terrain following vs fixed 1.5 m is resolved in only one. These parameters do not affect the flight, so they do not change the collision counts.
 
 ### 3D Field Overview
 

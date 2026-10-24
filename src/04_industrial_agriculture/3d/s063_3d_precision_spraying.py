@@ -532,6 +532,22 @@ def wins(a, b):
     return int(np.sum(a > b + 1e-12)), int(np.sum(np.abs(a - b) <= 1e-12)), int(np.sum(a < b - 1e-12))
 
 
+N_BOOT_PAIR = 10000              # paired bootstrap resamples (added)
+BOOT_SEED = 6301                 # fixed rng seed for every paired bootstrap (deterministic)
+
+
+def pc(a, b):
+    """Paired comparison a - b over the same seeds: mean difference, 95 % bootstrap interval of the
+    mean difference, per-seed higher/equal/lower, and whether the interval excludes 0."""
+    a, b = np.asarray(a, float), np.asarray(b, float)
+    d = a - b
+    idx = np.random.default_rng(BOOT_SEED).integers(0, len(d), (N_BOOT_PAIR, len(d)))
+    lo, hi = np.percentile(d[idx].mean(axis=1), [2.5, 97.5])
+    w = wins(a, b)
+    tag = 'resolved' if (lo > 0 or hi < 0) else 'unresolved'
+    return f'{d.mean():+.3f} [{lo:+.3f}, {hi:+.3f}] {tag}, {w[0]}/{w[1]}/{w[2]}'
+
+
 def report(res):
     print('\n=== S063 3D Precision Per-Plant Spraying — Results ===')
     print(f'  NN tour {m2d.path_length(PLANTS, TOUR):.2f} m (S063)')
@@ -591,28 +607,36 @@ def report(res):
                   f"vertical travel {np.mean([r['climb'] for r in rs]):.1f} m, z range {min(r['zmin'] for r in rs):.3f}-"
                   f"{max(r['zmax'] for r in rs):.2f} m, max step {max(r['max_step'] for r in rs):.4f} m")
         print(f'    clearance sweep (drone radius r_d, vertical margin m_z): collision-free missions and safe C_eff')
+        sfc = {}
         for s in STRATS:
             rs = res[(s, g, SIGMA_H)]
             c = np.array([dose_eval(r)['ceff'] for r in rs])
             parts = []
             for i, (rd, mz) in enumerate(CLEARANCES):
                 free = np.array([r['contact_cl'][i] == 0 for r in rs])
+                sfc[(s, i)] = c * free
                 parts.append(f'r_d {rd:.1f} m / m_z {mz:.2f} m: {int(free.sum())}/{len(rs)}, {np.mean(c * free):.3f}')
             print(f'      {LABELS[s]:26s} ' + ' | '.join(parts))
+        for i, (rd, mz) in enumerate(CLEARANCES):
+            print(f'      paired safe C_eff at r_d {rd:.1f} / m_z {mz:.2f} (diff [95 % CI], higher/equal/lower): '
+                  f"adaptive - fixedsafe {pc(sfc[('adaptive', i)], sfc[('fixedsafe', i)])}; "
+                  f"adaptive - fixed15 {pc(sfc[('adaptive', i)], sfc[('fixed15', i)])}")
         for a_, b_ in [('adaptive', 'fixed15'), ('adaptive', 'fixedsafe'), ('adaptive', 'tf'), ('tf', 'fixed15'),
-                       ('fixedsafe', 'fixed15')]:
-            w, ws = wins(ce[a_], ce[b_]), wins(sa[a_], sa[b_])
-            print(f'    {LABELS[a_]} vs {LABELS[b_]}: C_eff higher / equal / lower {w[0]} / {w[1]} / {w[2]}, mean difference '
-                  f'{ce[a_].mean() - ce[b_].mean():+.3f}; safe C_eff {ws[0]} / {ws[1]} / {ws[2]}, '
-                  f'mean difference {sa[a_].mean() - sa[b_].mean():+.3f}')
+                       ('fixedsafe', 'fixed15'), ('fixedsafe', 'tf')]:
+            print(f'    {LABELS[a_]} - {LABELS[b_]} (diff [95 % CI], higher/equal/lower): C_eff {pc(ce[a_], ce[b_])}; '
+                  f'safe C_eff {pc(sa[a_], sa[b_])}')
+    ca = {g: np.array([dose_eval(r)['ceff'] for r in res[('adaptive', g, SIGMA_H)]]) for g in GAINS}
+    print(f"\n  adaptive C_eff, Tight - Tuned gains (same seeds): {pc(ca['Tight'], ca['Tuned'])}")
     print(f'\n  --- sensitivity of mean C_eff (dose only) to the added drift parameters (Tuned, sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
     for cw in C_W_SWEEP:
         for wd in W_DW_SWEEP:
-            vals = {s: np.mean([dose_eval(r, cw, wd)['ceff'] for r in res[(s, 'Tuned', SIGMA_H)]]) for s in STRATS}
+            v = {s: np.array([dose_eval(r, cw, wd)['ceff'] for r in res[(s, 'Tuned', SIGMA_H)]]) for s in STRATS}
             drift = {s: np.mean([dose_eval(r, cw, wd)['drift'].mean() for r in res[(s, 'Tuned', SIGMA_H)]]) for s in STRATS}
-            order = sorted(STRATS, key=lambda s: -vals[s])
+            order = sorted(STRATS, key=lambda s: -v[s].mean())
             print(f'    c_w {cw:.2f} 1/s (wind amplitude {A_WIND / cw:.1f} m/s), w_dw {wd:.0f} m/s: ' +
-                  ', '.join(f'{s} {vals[s]:.3f} (d {100 * drift[s]:.1f} cm)' for s in STRATS) + f' | ranking {" > ".join(order)}')
+                  ', '.join(f'{s} {v[s].mean():.3f} (d {100 * drift[s]:.1f} cm)' for s in STRATS) + f' | ranking {" > ".join(order)}'
+                  f" | paired: adaptive - tf {pc(v['adaptive'], v['tf'])}; tf - fixed15 {pc(v['tf'], v['fixed15'])}; "
+                  f"fixed15 - fixedsafe {pc(v['fixed15'], v['fixedsafe'])}")
     print(f'\n  --- crown-radius sweep (sigma_h = {SIGMA_H}, {N_SWEEP_SEEDS} seeds; C_eff / collision-free missions / safe C_eff / contacts per mission) ---')
     for rc in R_CROWN_SWEEP:
         for g in GAINS:
@@ -623,53 +647,67 @@ def report(res):
                 c, sf, nfree = stats(rs)
                 out[s] = (c, sf, nfree, np.mean([r['contact_plants'] for r in rs]))
             print(f'    R_crown {rc:.2f} m, {g}: ' + ', '.join(
-                f'{s} {out[s][0].mean():.3f} / {out[s][2]}/{N_SWEEP_SEEDS} / {out[s][1].mean():.3f} / {out[s][3]:.2f}' for s in out) +
-                f"; C_eff: tf > fixed15 in {wins(out['tf'][0], out['fixed15'][0])[0]}/{N_SWEEP_SEEDS}, "
-                f"adaptive > tf in {wins(out['adaptive'][0], out['tf'][0])[0]}/{N_SWEEP_SEEDS}; safe C_eff: tf > fixed15 in "
-                f"{wins(out['tf'][1], out['fixed15'][1])[0]}/{N_SWEEP_SEEDS}, adaptive > tf in "
-                f"{wins(out['adaptive'][1], out['tf'][1])[0]}/{N_SWEEP_SEEDS}, adaptive vs fixedsafe higher/equal/lower "
-                f"{wins(out['adaptive'][1], out['fixedsafe'][1])}")
+                f'{s} {out[s][0].mean():.3f} / {out[s][2]}/{N_SWEEP_SEEDS} / {out[s][1].mean():.3f} / {out[s][3]:.2f}' for s in out))
+            print(f"      paired (diff [95 % CI], higher/equal/lower): C_eff tf - fixed15 {pc(out['tf'][0], out['fixed15'][0])}; "
+                  f"C_eff adaptive - tf {pc(out['adaptive'][0], out['tf'][0])}; safe adaptive - fixedsafe "
+                  f"{pc(out['adaptive'][1], out['fixedsafe'][1])}; safe adaptive - tf {pc(out['adaptive'][1], out['tf'][1])}; "
+                  f"safe tf - fixed15 {pc(out['tf'][1], out['fixed15'][1])}")
     print(f'\n  --- vertical-damping probe: adaptive with k_d,z x {KDZ_PROBE} (sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
     for g in GAINS:
         kp, ki, kd = (ALPHA_Z * GAINS[g][k] for k in ('kp', 'ki', 'kd'))
+        st = {}
         for sc, key in ((1.0, ('adaptive', g, SIGMA_H)), (KDZ_PROBE, ('adaptive', g, SIGMA_H, R_CROWN, KDZ_PROBE))):
             poles = np.roots([1, sc * kd, kp, ki])
             cp = poles[np.argmax(np.abs(poles.imag))]
             rs = res[key]
             c, sf, nfree = stats(rs)
+            st[sc] = (c, sf, np.array([r['contact_plants'] == 0 for r in rs]))
             print(f'    {g}, k_d,z x {sc:g} (damping {-cp.real / abs(cp):.3f}): target-plant contacts '
                   f"{np.mean([r['contact_own'] for r in rs]):.2f}/mission (climb leg {np.mean([r['contact_own_climb'] for r in rs]):.2f}, "
                   f"descent/level leg {np.mean([r['contact_own_descent'] for r in rs]):.2f}), other plants "
                   f"{np.mean([r['contact_other'] for r in rs]):.2f}, z min {min(r['zmin'] for r in rs):.2f} m, "
                   f"C_eff {c.mean():.3f}, collision-free {nfree}/{len(rs)}, safe C_eff {sf.mean():.3f}")
+        f1, f2 = st[1.0][2], st[KDZ_PROBE][2]
+        print(f'      paired x{KDZ_PROBE:g} - x1 (same seeds): safe C_eff {pc(st[KDZ_PROBE][1], st[1.0][1])}; '
+              f'collision-free in both {int(np.sum(f1 & f2))}, only with x{KDZ_PROBE:g} {int(np.sum(f2 & ~f1))}, '
+              f'only with x1 {int(np.sum(f1 & ~f2))}')
     print(f'\n  --- probe: dose without the standoff factor (drift and hover error only), sigma_h = {SIGMA_H}, {N_SEEDS} seeds ---')
     for g in GAINS:
         vals = {s: np.array([dose_eval(r, alt_factor=False)['ceff'] for r in res[(s, g, SIGMA_H)]]) for s in STRATS}
         print(f'    {g}: ' + ', '.join(f'{s} {vals[s].mean():.3f} +- {vals[s].std():.3f}' for s in STRATS) +
-              f"; adaptive vs fixed15 higher/equal/lower {wins(vals['adaptive'], vals['fixed15'])}, "
-              f"adaptive vs fixedsafe {wins(vals['adaptive'], vals['fixedsafe'])}")
+              f"; paired adaptive - fixed15 {pc(vals['adaptive'], vals['fixed15'])}, "
+              f"adaptive - fixedsafe {pc(vals['adaptive'], vals['fixedsafe'])}")
     print(f'\n  --- C_eff vs sigma_h (Tuned, {N_SWEEP_SEEDS} seeds; C_eff, collision-free missions, safe C_eff) ---')
     for sh in SIGMA_H_SWEEP:
-        parts = []
+        parts, S = [], {}
         for s in STRATS:
             rs = res[(s, 'Tuned', sh)][:N_SWEEP_SEEDS]
             c, sf, nfree = stats(rs)
+            S[s] = (c, sf)
             parts.append(f"{s} {c.mean():.3f} +- {c.std():.3f}, {nfree}/{N_SWEEP_SEEDS}, {sf.mean():.3f}")
         print(f'    sigma_h {sh:.2f}: ' + ' | '.join(parts))
+        print(f"      paired: C_eff adaptive - fixed15 {pc(S['adaptive'][0], S['fixed15'][0])}; safe adaptive - fixed15 "
+              f"{pc(S['adaptive'][1], S['fixed15'][1])}; safe adaptive - fixedsafe {pc(S['adaptive'][1], S['fixedsafe'][1])}; "
+              f"safe fixed15 - fixedsafe {pc(S['fixed15'][1], S['fixedsafe'][1])}")
     print(f'\n  --- low height spread sigma_h = {SIGMA_H_LOW}, {N_SEEDS} seeds (0-{N_SEEDS - 1}): per seed and per clearance '
-          f'(collision-free missions, safe C_eff; per-seed safe C_eff higher/equal/lower) ---')
+          f'(collision-free missions, safe C_eff; paired diff [95 % CI], higher/equal/lower) ---')
     for g in GAINS:
         rsd = {s: res[(s, g, SIGMA_H_LOW)] for s in STRATS}
         assert all(len(v) == N_SEEDS for v in rsd.values())
         cd = {s: np.array([dose_eval(r)['ceff'] for r in rsd[s]]) for s in STRATS}
         for i, (rd, mz) in enumerate(CLEARANCES):
-            sf = {s: cd[s] * np.array([r['contact_cl'][i] == 0 for r in rsd[s]]) for s in STRATS}
+            fr = {s: np.array([r['contact_cl'][i] == 0 for r in rsd[s]]) for s in STRATS}
+            sf = {s: cd[s] * fr[s] for s in STRATS}
+            d = sf['adaptive'] - sf['fixed15']
+            win, loss = d > 1e-12, d < -1e-12
             print(f'    {g}, r_d {rd:.1f} m / m_z {mz:.2f} m: ' + ', '.join(
-                f"{s} {int(np.sum([r['contact_cl'][i] == 0 for r in rsd[s]]))}/{N_SEEDS} {sf[s].mean():.3f}"
-                for s in STRATS) +
-                f"; adaptive - fixed15 mean {sf['adaptive'].mean() - sf['fixed15'].mean():+.3f}"
-                f"; adaptive vs fixed15 {wins(sf['adaptive'], sf['fixed15'])}, adaptive vs fixedsafe "
-                f"{wins(sf['adaptive'], sf['fixedsafe'])}, fixed15 vs fixedsafe {wins(sf['fixed15'], sf['fixedsafe'])}")
+                f"{s} {int(fr[s].sum())}/{N_SEEDS} {sf[s].mean():.3f}" for s in STRATS) +
+                f"; adaptive - fixed15 {pc(sf['adaptive'], sf['fixed15'])}; adaptive - fixedsafe "
+                f"{pc(sf['adaptive'], sf['fixedsafe'])}; fixed15 - fixedsafe {pc(sf['fixed15'], sf['fixedsafe'])}")
+            print(f"      adaptive vs fixed15: mean margin in adaptive's wins {d[win].mean() if win.any() else float('nan'):+.3f}, "
+                  f"in its losses {d[loss].mean() if loss.any() else float('nan'):+.3f}; seeds where only adaptive collides "
+                  f"{int(np.sum(~fr['adaptive'] & fr['fixed15']))}, only fixed15 {int(np.sum(fr['adaptive'] & ~fr['fixed15']))}, "
+                  f"both {int(np.sum(~fr['adaptive'] & ~fr['fixed15']))}, neither {int(np.sum(fr['adaptive'] & fr['fixed15']))}")
     print('\n  --- floor barrier over EVERY job group (asserts: z >= Z_MIN, z > 0, thrust acceleration <= A_MAX) ---')
     nb = 0
     for key in sorted(res, key=str):
