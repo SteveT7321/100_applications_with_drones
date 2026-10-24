@@ -107,9 +107,10 @@ to $50\%$ speed.
 > (`dt * speed_factor`), which is not the same as halving the speed. The implementation drives
 > every drone with $\mathbf a = K_p\mathbf e + K_i\!\int\!\mathbf e - K_d\mathbf v$ (derivative on
 > the measured velocity; the integral is frozen while $\|\mathbf a\|$ is at the 3 m/s² limit) and a
-> yielding drone has its speed cap halved to 2.5 m/s. The rule only slows drones down; it does not
-> steer them apart, and in the simulated "DRONE" → "SHOW" morph pairs of drones still pass within a
-> few centimetres of each other (see the implementation README).
+> yielding drone has its speed cap halved to 2.5 m/s, which it reaches by braking at no more than
+> 3 m/s². The rule only slows drones down; it does not steer them apart, and in the simulated
+> "DRONE" → "SHOW" morph pairs of drones still pass within a few centimetres of each other, mostly
+> because the underdamped PID overshoots each pixel by about 2 m (see the implementation README).
 
 ### Visual Fidelity Metric
 

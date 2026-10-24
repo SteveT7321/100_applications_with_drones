@@ -135,6 +135,10 @@ def fly(pos0, vel0, goals, lit, avoid, log=False):
     fid[0] = np.mean(np.linalg.norm(pos[lit] - goals[lit], axis=1) <= EPS_POS)
     t_all = None
     yield_steps = 0
+    bind_steps = 0
+    a_peak = 0.0
+    pair_min = np.full(len(iu[0]), np.inf)
+    pair_tmin = np.zeros(len(iu[0]))
     hist = np.zeros((N_PHASE + 1, n, 3)) if log else None
     ylog = np.zeros((N_PHASE + 1, n), dtype=bool) if log else None
     if log:
@@ -146,6 +150,9 @@ def fly(pos0, vel0, goals, lit, avoid, log=False):
         dp = d[iu]
         min_sep = min(min_sep, float(dp.min()))
         ever_close |= dp < COLLISION_RADIUS
+        closer = dp < pair_min
+        pair_min = np.where(closer, dp, pair_min)
+        pair_tmin = np.where(closer, k * DT, pair_tmin)
         vcap = np.full(n, V_MAX)
         if avoid:
             rank = np.empty(n, dtype=int)
@@ -164,11 +171,22 @@ def fly(pos0, vel0, goals, lit, avoid, log=False):
         a = KP * err + KI * integ - KD * vel
         an = np.linalg.norm(a, axis=1, keepdims=True)
         a = np.where(an > A_MAX, a / np.maximum(an, 1e-12) * A_MAX, a)
-        vel = vel + a * DT
-        vn = np.linalg.norm(vel, axis=1, keepdims=True)
-        vel = np.where(vn > vcap[:, None], vel / np.maximum(vn, 1e-12) * vcap[:, None], vel)
-        assert np.all(np.linalg.norm(vel, axis=1) <= V_MAX + 1e-9)
-        assert np.all(np.linalg.norm(a, axis=1) <= A_MAX + 1e-9)
+        v_tgt = vel + a * DT
+        vn = np.linalg.norm(v_tgt, axis=1, keepdims=True)
+        over = vn[:, 0] > vcap
+        v_tgt = np.where(over[:, None], v_tgt / np.maximum(vn, 1e-12) * vcap[:, None], v_tgt)
+        if avoid:
+            bind_steps += int(np.sum(over & yld & (vn[:, 0] > YIELD_FACTOR * V_MAX)))
+        # the speed cap is reached by braking at no more than A_MAX (no instant velocity jump)
+        dv = v_tgt - vel
+        dvn = np.linalg.norm(dv, axis=1, keepdims=True)
+        dv = np.where(dvn > A_MAX * DT, dv / np.maximum(dvn, 1e-12) * A_MAX * DT, dv)
+        vel_new = vel + dv
+        a_real = np.linalg.norm(vel_new - vel, axis=1) / DT
+        assert np.all(a_real <= A_MAX + 1e-9)                    # realised acceleration
+        assert np.all(np.linalg.norm(vel_new, axis=1) <= V_MAX + 1e-9)
+        a_peak = max(a_peak, float(a_real.max()))
+        vel = vel_new
         pos = pos + vel * DT
         assert np.all(pos[:, 2] > 0.0)
         e = np.linalg.norm(pos - goals, axis=1)
@@ -182,11 +200,91 @@ def fly(pos0, vel0, goals, lit, avoid, log=False):
            't_v95': float(above[0] * DT) if len(above) else None,
            'min_sep': min_sep, 'pairs_close': int(ever_close.sum()),
            'yield_frac': yield_steps / (N_PHASE * n),
+           'yield_steps': yield_steps, 'bind_steps': bind_steps, 'a_peak': a_peak,
+           'pair_min': pair_min, 'pair_tmin': pair_tmin, 'pairs': iu,
            'final_max': float(np.linalg.norm(pos - goals, axis=1).max())}
     if log:
         res['hist'] = hist
         res['yield'] = ylog
     return res
+
+
+def _cross2(a, b):
+    return a[0] * b[1] - a[1] * b[0]
+
+
+def _segments_cross(p1, p2, q1, q2, tol=1e-6):
+    """Proper intersection of two 2D segments (collinear overlaps excluded)."""
+    d1, d2 = p2 - p1, q2 - q1
+    den = _cross2(d1, d2)
+    if abs(den) < tol:
+        return False
+    t = _cross2(q1 - p1, d2) / den
+    u = _cross2(q1 - p1, d1) / den
+    return 0.0 < t < 1.0 and 0.0 < u < 1.0
+
+
+def _point_seg_dist(p, a, b):
+    ab = b - a
+    t = np.clip(np.dot(p - a, ab) / max(np.dot(ab, ab), 1e-12), 0.0, 1.0)
+    return float(np.linalg.norm(p - (a + t * ab)))
+
+
+def overshoot(hist, start, goal, still=0.1):
+    """Distance (m) each drone has passed beyond its goal along its travel direction, per step."""
+    d = goal - start
+    n = np.linalg.norm(d, axis=1, keepdims=True)
+    u = np.where(n > still, d / np.maximum(n, 1e-12), 0.0)
+    return np.einsum('tnd,nd->tn', hist - goal[None], u)
+
+
+def classify_close_pairs(r, still=0.1):
+    """Classify the morph's close pairs (< COLLISION_RADIUS) by what the two drones are doing,
+    evaluated at the moment of closest approach (first matching class wins)."""
+    ph = r['ph2']
+    start, goal, lit = r['ph1']['pos'], r['B'][r['sB']], r['lit_B']
+    disp = np.linalg.norm(goal - start, axis=1)
+    moving = disp >= still
+    ov = overshoot(ph['hist'], start, goal, still)
+    iu = ph['pairs']
+    cats = {'spare drone involved': [],
+            'a drone has overshot its pixel by > 0.5 m': [],
+            'moving drone passes a stationary lit drone': [],
+            'follower on the same row': [],
+            "path runs within 0.5 m of the other's pixel": [],
+            'straight paths cross': [], 'other': []}
+    for p in np.where(ph['pair_min'] < COLLISION_RADIUS)[0]:
+        i, j = iu[0][p], iu[1][p]
+        k = int(round(ph['pair_tmin'][p] / DT))
+        rec = (int(i), int(j), float(ph['pair_min'][p]), float(ph['pair_tmin'][p]))
+        di = (goal[i] - start[i])[:2]
+        dj = (goal[j] - start[j])[:2]
+        if not (lit[i] and lit[j]):
+            cats['spare drone involved'].append(rec)
+        elif max(ov[k, i], ov[k, j]) > COLLISION_RADIUS:
+            cats['a drone has overshot its pixel by > 0.5 m'].append(rec)
+        elif not (moving[i] and moving[j]):
+            cats['moving drone passes a stationary lit drone'].append(rec)
+        elif (abs(_cross2(di / np.linalg.norm(di), dj / np.linalg.norm(dj))) < 1e-3
+              and abs(_cross2(di / np.linalg.norm(di), (start[j] - start[i])[:2])) < still):
+            cats['follower on the same row'].append(rec)
+        elif min(_point_seg_dist(goal[j], start[i], goal[i]), _point_seg_dist(goal[i], start[j], goal[j]),
+                 _point_seg_dist(start[j], start[i], goal[i]),
+                 _point_seg_dist(start[i], start[j], goal[j])) < COLLISION_RADIUS:
+            cats["path runs within 0.5 m of the other's pixel"].append(rec)
+        elif _segments_cross(start[i, :2], goal[i, :2], start[j, :2], goal[j, :2]):
+            cats['straight paths cross'].append(rec)
+        else:
+            cats['other'].append(rec)
+    lm = np.where(lit & moving)[0]
+    n_cross = sum(_segments_cross(start[a, :2], goal[a, :2], start[b, :2], goal[b, :2])
+                  for ia, a in enumerate(lm) for b in lm[ia + 1:])
+    mov = np.where(moving)[0]
+    ov_max = ov[:, mov].max(axis=0)
+    ov_stats = (float(ov_max.max()), float(ov_max.mean()), int(np.sum(ov_max > COLLISION_RADIUS)),
+                len(mov), int(mov[np.argmax(ov_max)]))
+    return (cats, int(n_cross), int(np.sum(lit & ~moving)), int(np.sum(lit)),
+            int(np.sum(lit & moving)), ov_stats)
 
 
 def run_mission(seed, config, words, log=False):
@@ -454,6 +552,34 @@ if __name__ == '__main__':
           f"{int(np.sum(h['B_t95'] < g['B_t95']))}/{N_MC} (ties {int(np.sum(h['B_t95'] == g['B_t95']))}), "
           f"faster ascent t95 in {int(np.sum(h['A_t95'] < g['A_t95']))}/{N_MC}, "
           f"larger morph min sep in {int(np.sum(h['B_minsep'] > g['B_minsep']))}/{N_MC}")
+    print(f"  Hungarian morph spread over layouts: t_all std {h['B_tall'].std():.3f} s, min sep std "
+          f"{h['B_minsep'].std():.4f} m, distinct t_all values {len(np.unique(h['B_tall']))}")
+    print('  Yield rule activity in the showcase (drone-steps yielding / steps where the 2.5 m/s '
+          'cap actually limited the speed):')
+    for c in ['hung', 'greedy']:
+        for ph, tag in [('ph1', 'ascent'), ('ph2', 'morph')]:
+            p = show[c][ph]
+            print(f"    {LABELS[c]:<28} {tag:<7} {p['yield_steps']:>5} / {p['bind_steps']:>4}")
+    print('  Peak realised acceleration (showcase): ' + ', '.join(
+        f"{LABELS[c]} {max(show[c]['ph1']['a_peak'], show[c]['ph2']['a_peak']):.3f}"
+        for c in CONFIGS) + f' m/s^2 (limit {A_MAX})')
+    for c in ['hung', 'hung_free']:
+        cats, n_cross, n_still, n_lit, n_lit_mov, ovs = classify_close_pairs(show[c])
+        print(f'  Morph close pairs (< {COLLISION_RADIUS} m), {LABELS[c]}, seed {SHOW_SEED}: '
+              f'{n_lit} lit drones, {n_still} of them stay on their pixel (move < 0.1 m), '
+              f'{n_lit_mov} move; proper crossings among their straight paths: {n_cross}')
+        print(f'    overshoot past the own pixel (moving drones): max {ovs[0]:.2f} m (drone {ovs[4]}), '
+              f'mean of per-drone max {ovs[1]:.2f} m, {ovs[2]}/{ovs[3]} drones overshoot by > 0.5 m '
+              f'(braking from {V_MAX:.0f} m/s at {A_MAX:.0f} m/s^2 needs {V_MAX ** 2 / (2 * A_MAX):.2f} m)')
+        for name, recs in cats.items():
+            ex = ''
+            if recs:
+                i, j, dmin, tmin = min(recs, key=lambda x: x[2])
+                st, gl = show[c]['ph1']['pos'], show[c]['B'][show[c]['sB']]
+                ex = (f'; closest: drones {i} ({st[i, 0]:.0f},{st[i, 1]:.0f})->({gl[i, 0]:.0f},{gl[i, 1]:.0f},'
+                      f'{gl[i, 2]:.0f}) and {j} ({st[j, 0]:.0f},{st[j, 1]:.0f})->({gl[j, 0]:.0f},'
+                      f'{gl[j, 1]:.0f},{gl[j, 2]:.0f}), {dmin:.3f} m at t = {tmin:.2f} s')
+            print(f'    {name:<44} {len(recs):>3}{ex}')
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
