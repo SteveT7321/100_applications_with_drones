@@ -74,6 +74,7 @@ SIGMA_H_SWEEP = [0.0, 0.15, 0.3, 0.45, 0.6]
 N_SWEEP_SEEDS = 10
 R_CROWN_SWEEP = [0.25, 0.5, 1.0]  # crown-radius sensitivity (added)
 KDZ_PROBE = 2.5                  # vertical-damping probe: k_d,z x 2.5
+BOUND_CONTACT_MAX = 1.0          # s, longest allowed continuous contact with the altitude bound (added)
 T_MAX = 700.0
 PLOT_SEED = 0
 ANIM_STEP = 100
@@ -130,7 +131,7 @@ def run_mission(args):
     st = {'px': float(DEPOT[0]), 'py': float(DEPOT[1]),
           'pz': zc[TOUR[0]] if strategy != 'tf' else DZ_NOM,
           'vx': 0.0, 'vy': 0.0, 'vz': 0.0, 'ix': 0.0, 'iy': 0.0, 'iz': 0.0, 'k': 0,
-          'nsat': 0, 'nclamp': 0}
+          'nsat': 0, 'nclamp': 0, 'crun': 0, 'cmax': 0}
     X, Y, Z, CUR = [], [], [], []
     w_g = 2 * math.pi / T_WIND
 
@@ -167,11 +168,16 @@ def run_mission(args):
         st['px'] = px + st['vx'] * DT
         st['py'] = py + st['vy'] * DT
         nz = pz + st['vz'] * DT
-        assert nz > 0.0, 'drone would have gone below the ground in one step'
         if nz < Z_MIN or nz > Z_MAX:                            # card altitude bounds
             st['nclamp'] += 1
+            st['crun'] += 1
             nz = min(max(nz, Z_MIN), Z_MAX)
             st['vz'] = 0.0
+        else:
+            st['crun'] = 0
+        st['cmax'] = max(st['cmax'], st['crun'])
+        # a brief touch of the altitude bound is part of the model; resting on it is a landing/crash
+        assert st['crun'] * DT <= BOUND_CONTACT_MAX, 'drone resting on the altitude bound (landed or stuck)'
         st['pz'] = nz
         X.append(st['px']); Y.append(st['py']); Z.append(nz); CUR.append(st['cur'])
         st['k'] = k + 1
@@ -233,7 +239,7 @@ def run_mission(args):
         n_contact += int(m.sum())
     sp = np.hypot(np.diff(np.concatenate([[DEPOT[0]], X])), np.diff(np.concatenate([[DEPOT[1]], Y])))
     out = {'h': h, 'hover': [], 'time': st['k'] * DT, 'timeouts': timeouts, 'wait': waits.mean(),
-           'sat': st['nsat'] / st['k'], 'clamp': st['nclamp'], 'contact_plants': int(contact.sum()),
+           'sat': st['nsat'] / st['k'], 'clamp': st['nclamp'], 'clamp_run': st['cmax'] * DT, 'contact_plants': int(contact.sum()),
            'contact_own': int(own.sum()), 'contact_other': int((contact & ~own).sum()),
            'contact_own_climb': int((own & climb_leg).sum()), 'contact_own_descent': int((own & ~climb_leg).sum()),
            'contact_steps': n_contact, 'z_safe': z_safe, 'max_step': float(sp.max()),
@@ -477,7 +483,7 @@ def report(res):
                   f"(missions with any {sum(r['contact_plants'] > 0 for r in rs)}/{N_SEEDS}), "
                   f"plants sprayed from inside the crown {np.mean([np.sum(e['dz'] <= 0) for e in ev]):.2f} | "
                   f"time {np.mean([r['time'] for r in rs]):.1f} s, time-outs {np.mean([r['timeouts'] for r in rs]):.1f}/20, "
-                  f"saturated {100 * np.mean([r['sat'] for r in rs]):.2f} %, altitude clamps {np.mean([r['clamp'] for r in rs]):.1f}, "
+                  f"saturated {100 * np.mean([r['sat'] for r in rs]):.2f} %, altitude clamps {np.mean([r['clamp'] for r in rs]):.1f} (longest continuous contact {max(r['clamp_run'] for r in rs):.2f} s), "
                   f"vertical travel {np.mean([r['climb'] for r in rs]):.1f} m, z range {min(r['zmin'] for r in rs):.2f}-"
                   f"{max(r['zmax'] for r in rs):.2f} m, max step {max(r['max_step'] for r in rs):.4f} m")
         for a_, b_ in [('adaptive', 'fixed15'), ('adaptive', 'fixedsafe'), ('adaptive', 'tf'), ('tf', 'fixed15')]:
