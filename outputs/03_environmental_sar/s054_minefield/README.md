@@ -63,7 +63,7 @@ The card pattern has 25 strips, 5192 m and 1731 s.
 | Risk-aware look-ahead / rejoin margin (added) | 15 m / 2 m |
 | $J_{max}$ (added) | 3 × risk-free cost from the farthest corner |
 | Escape-risk sampling / risk-weight refresh (added) | every 5 s / every 10 s |
-| Monte Carlo (added) | 6 fields (seeds 0–5), same field and false-alarm draws for every strategy |
+| Monte Carlo (added) | 15 fields (seeds 0–14), same field and false-alarm draws for every strategy; seam test with 6.8 m and 6.4 m strips |
 
 ---
 
@@ -78,7 +78,7 @@ conda activate drones
 python src/03_environmental_sar/s054_minefield.py
 ```
 
-Runtime ≈ 2–3 min (measured with other simulations running in parallel).
+Runtime ≈ 2.5–5.5 min depending on machine load (about 5 min with several other simulations running).
 
 ---
 
@@ -108,21 +108,36 @@ The fixed run misses three mines. None of them is in the unflown eastern strip (
 | (88.4, 114.8) | 3.61 m | 0.945 |
 | (168.1, 26.5) | 3.87 m | 0.794 |
 
-### Monte Carlo (6 fields, N_mine ~ U{8, 20}, 17.0 mines on average)
+### Monte Carlo (15 fields, N_mine ~ U{8, 20}, 15.7 mines on average)
 
 | Strategy | Mission time | Coverage | Mines missed | Unresolved / raised false alarms | Distance over danger | Unsafe escape samples |
 |----------|------:|------:|------:|------:|------:|------:|
-| Fixed boustrophedon | **1729 ± 1 s** | 95.00 % | 2.33 ± 1.70 | 16.2 ± 4.9 / 30.3 | 376.7 ± 54.4 m | 1.6 % |
-| Risk-aware boustrophedon | 2200 ± 57 s | 86.74 % | 3.33 ± 1.80 | 20.8 ± 4.2 / 36.7 | **179.1 ± 34.4 m** | **0.1 %** |
-| Adaptive frontier | 5365 ± 441 s | 96.27 % | **1.00 ± 0.82** | **13.7 ± 3.4** / 85.0 | 564.7 ± 104.8 m | 0.3 % |
+| Fixed boustrophedon | **1731 ± 5 s** | 95.00 % | 1.93 ± 1.65 | 16.3 ± 3.7 / 29.3 | 344.4 ± 60.1 m | 1.2 % |
+| Risk-aware boustrophedon | 2186 ± 67 s | 87.86 % | 2.67 ± 1.66 | 19.9 ± 4.1 / 35.0 | **168.0 ± 34.8 m** | **0.6 %** |
+| Adaptive frontier | 5326 ± 433 s | 96.21 % | **0.80 ± 0.75** | **13.3 ± 3.5** / 81.7 | 549.9 ± 107.1 m | 0.9 % |
 
-The fixed strategy is fastest in 6/6 fields. The risk-aware strategy flies less over danger cells than the fixed one in 6/6 fields and is slower in 6/6 (471 s longer on average). The frontier strategy never flies less over danger than the fixed one (0/6 fields). No mission ever aborts.
+Paired comparisons against the fixed sweep on the same field (fewer / equal / more):
+
+| | Mines missed | Unresolved false alarms |
+|---|:---:|:---:|
+| Risk-aware vs fixed | 4 / 4 / 7 | 1 / 1 / 13 |
+| Frontier vs fixed | 7 / 6 / 2 | 11 / 2 / 2 |
+
+The fixed strategy is fastest in 15/15 fields. The risk-aware strategy flies less over danger cells than the fixed one in 15/15 fields and is slower in 15/15 (455 s longer on average). The frontier strategy never flies less over danger than the fixed one (0/15 fields) and takes 3.1× as long. No mission ever aborts.
+
+**Seam test** (fixed boustrophedon with narrower strips, same 15 fields):
+
+| Strip width | Mission time | Mines missed | Fewer / equal / more missed than with 8 m strips |
+|---|---:|---:|:---:|
+| 8.0 m (card) | 1731 ± 5 s | 1.93 ± 1.65 | — |
+| 6.8 m | 2002 ± 7 s | 0.60 ± 0.80 | 9 / 6 / 0 |
+| 6.4 m | 2130 ± 5 s | 0.47 ± 0.81 | 10 / 5 / 0 |
 
 **Key findings**:
-- **The card's 8 m strips leave seams where mines are missed.** The strip width equals the GPR diameter (8 m), but an alarm needs $r$ < 3.40 m and confirmation needs about 3.5 m. A mine 3.6–4.0 m from both neighbouring strips is never alarmed and accumulates only $P_d^{cum}$ = 0.64–0.95. All three mines missed by the fixed run are such seam mines. The coverage metric still counts their cells as scanned, because every cell centre is at most 3.5 m from a strip centreline, enough to pass 0.9. Strips about 6.8 m apart (twice the alarm radius) would close the seams.
-- **Risk-aware detours halve the time over danger cells, but cost coverage, time and confirmations.** Compared with the fixed sweep, the drone flies 179 m instead of 377 m over danger cells, and the escape path almost never has a mean risk ≥ 0.1 (0.1 % vs 1.6 % of samples). However, the zones it detours around stay unscanned. It never reaches the 95 % target (86.74 %), it misses slightly more mines (3.33 vs 2.33), and it confirms only 4 of its 12 detections in the showcase field, because it turns away right after the first alarm. Most avoided zones come from false alarms (39 raised in the showcase run, 24 still unresolved), which look exactly like mines to the planner.
-- **The adaptive frontier finds the most mines and resolves the most false alarms, but takes about 3× as long.** It misses 1.00 mine on average and leaves 13.7 unresolved false alarms, against 2.33 and 16.2 for the fixed sweep. The cost is 5365 s against 1729 s and the most flying over danger (565 m), partly because the reclassification visits deliberately pass over alarms. Each extra pass over a block can raise a new false alarm, so it also raises the most (85 on average), which in turn creates more zones to avoid and revisit.
-- **The escape-path constraint is rarely violated by any strategy.** The least-risk path almost always finds a corridor: its mean risk stays below 0.1 in ≥ 98.4 % of samples for every strategy. The only real exposure is the first cells when the drone itself is over a fresh detection (maximum cell risk up to 1.0). No mission reached $J_{max}$, so the abort rule never triggered and does not separate the strategies.
+- **The card's 8 m strips leave seams where mines are missed.** The strip width equals the GPR diameter (8 m), but an alarm needs $r$ < 3.40 m and confirmation needs about 3.5 m. A mine 3.6–4.0 m from both neighbouring strips is never alarmed and accumulates only $P_d^{cum}$ = 0.64–0.95. All three mines missed by the fixed showcase run are such seam mines. The coverage metric still counts their cells as scanned, because every cell centre is at most 3.5 m from a strip centreline, enough to pass 0.9. Narrowing the strips to 6.8 m (twice the alarm radius) cuts the misses from 1.93 to 0.60 per field (fewer in 9 of 15 fields, never more) for a longer mission (2002 vs 1731 s); 6.4 m gives 0.47. Neither width removes all misses; the script does not classify the remaining ones by cause (the unflown area left by the 95 % stopping rule, or a mine just outside the alarm radius at the discrete 0.6 m steps).
+- **Risk-aware detours halve the time over danger cells, but cost coverage, time and confirmations.** Compared with the fixed sweep, the drone flies 168 m instead of 344 m over danger cells (less in 15/15 fields) and the escape path has a mean risk ≥ 0.1 in fewer samples (0.6 % vs 1.2 %). However, the zones it detours around stay unscanned: it never reaches the 95 % target (87.86 %) and leaves more false alarms unresolved in 13 of 15 fields. It misses more mines on average (2.67 vs 1.93), but the paired split is mixed (more in 7 fields, fewer in 4, equal in 4), so this difference is not clear-cut. In the showcase field it confirms only 4 of its 12 detections, because it turns away right after the first alarm. Most avoided zones come from false alarms, which look exactly like mines to the planner.
+- **The adaptive frontier misses the fewest mines and resolves the most false alarms, but takes about 3× as long.** It misses 0.80 mines per field (fewer than the fixed sweep in 7 fields, more in 2) and leaves 13.3 unresolved false alarms (fewer in 11 of 15 fields). The cost is 5326 s against 1731 s and the most flying over danger (550 m), partly because the reclassification visits deliberately pass over alarms. Its count of raised false alarms (81.7) is inflated by the model: every time its footprint re-enters a block it draws a new false alarm, and the frontier re-enters blocks far more often than a single sweep. Compare the strategies on unresolved alarms, not raised ones.
+- **The escape-path constraint is rarely violated by any strategy.** The least-risk path almost always finds a corridor: its mean risk reaches 0.1 in at most 1.2 % of the samples for any strategy. The only real exposure is the first cells when the drone itself is over a fresh detection (maximum cell risk up to 1.0). No mission reached $J_{max}$, so the abort rule never triggered and does not separate the strategies.
 
 ### Risk Maps
 
@@ -183,13 +198,13 @@ Risk-aware sweep: the risk map builds up as mines and false alarms are detected,
 | Frontier planner (details not given) | 8 m bands west to east; nearest unscanned non-danger cell outside the footprint; band centreline; least-risk path when the line crosses danger; reclassification visits after 95 % | A plain nearest-cell frontier zig-zagged across the field in development runs; sweeping by bands was the most efficient rule tried. |
 | $J_{max}$ not given | 3 × risk-free cost from the farthest corner | Never reached by any mission. |
 | Risk weights $P_d^{cum}$ change every step | Risk map rebuilt on each new alarm, confirmation, false alarm or clearance, and every 10 s if a weight changed by > 0.01 | Keeps the runtime reasonable. |
-| Single run | Plus a 6-field Monte Carlo | Results depend on the mine and false-alarm layout; 6 fields keep the runtime under 5 min. |
+| Single run | Plus a 15-field Monte Carlo with paired counts, and a narrower-strip test for the fixed sweep | Results depend on the mine and false-alarm layout. |
 
 ---
 
 ## Extensions
 
-1. **Narrower strips**: re-run with a 6.8 m strip width (twice the alarm radius) to close the seams, and compare mission time and missed mines.
+1. **Narrower strips for every strategy**: the seam test above uses the fixed sweep only; repeat it for the risk-aware and frontier planners.
 2. **Belief over alarm identity**: keep $P(\text{mine} \mid \text{alarms})$ per alarm and lower the risk weight of single unconfirmed returns, so false alarms do not block coverage.
 3. **Coverage-aware risk-aware sweep**: after the pattern, revisit unscanned cells at the edges of danger zones from the safe side.
 4. **Multi-drone sweep**: split the strips among 3 drones and rebalance when one drone aborts.

@@ -64,7 +64,8 @@ REJOIN_MARGIN = 2.0         # m — rejoin the strip this far past the danger st
 J_MAX_FACTOR  = 3.0         # J_max = 3 x risk-free cost from the farthest corner
 EVAL_EVERY    = 5.0         # s — escape-path risk sampling interval
 REWEIGHT_EVERY = 10.0       # s — refresh risk weights of active sources
-N_MC          = 6
+N_MC          = 15
+SEAM_WIDTHS   = [6.8, 6.4]    # m — narrower fixed-strip widths tested against the seams
 MAIN_SEED     = 42
 ANIM_FRAMES   = 90
 
@@ -223,7 +224,8 @@ def make_field(seed, n_mines=None):
 
 
 class Mission:
-    def __init__(self, field, strategy, record=False):
+    def __init__(self, field, strategy, record=False, strip_width=STRIP_WIDTH):
+        self.strip_width = strip_width
         self.f = field
         self.strategy = strategy
         self.mines = field['mines']
@@ -426,9 +428,10 @@ class Mission:
     # -- strategies ---------------------------------------------------------
     def waypoints(self):
         wps = []
-        n_strips = int(np.ceil(FIELD_SIZE / STRIP_WIDTH))
+        w = self.strip_width
+        n_strips = int(np.ceil(FIELD_SIZE / w))
         for n in range(n_strips):
-            x = STRIP_WIDTH / 2 + n * STRIP_WIDTH
+            x = min(w / 2 + n * w, FIELD_SIZE - w / 2)
             ys = (0.0, FIELD_SIZE) if n % 2 == 0 else (FIELD_SIZE, 0.0)
             wps += [np.array([x, ys[0]]), np.array([x, ys[1]])]
         return wps
@@ -595,6 +598,8 @@ def run_simulation():
         fld = make_field(seed)
         for s in STRATS:
             mc[s].append(Mission(fld, s).run())
+        for w in SEAM_WIDTHS:
+            mc.setdefault(('fixed', w), []).append(Mission(fld, 'fixed', strip_width=w).run())
     return field, main, missions, mc, (d_dij, d_ast)
 
 
@@ -895,7 +900,25 @@ if __name__ == '__main__':
     print(f"  Risk-aware flies less over danger than fixed in {int(np.sum(dd[1] < dd[0]))}/{N_MC} fields, "
           f"frontier less than fixed in {int(np.sum(dd[2] < dd[0]))}/{N_MC}")
     print(f"  Risk-aware slower than fixed in {int(np.sum(tt[1] > tt[0]))}/{N_MC}; mean extra "
-          f"{(tt[1] - tt[0]).mean():.0f} s")
+          f"{(tt[1] - tt[0]).mean():.0f} s; frontier / fixed time {tt[2].mean() / tt[0].mean():.1f}x")
+
+    def paired(key, a, b):
+        x = np.array([r[key] for r in mc[a]], dtype=float)
+        y = np.array([r[key] for r in mc[b]], dtype=float)
+        return int(np.sum(x < y)), int(np.sum(x == y)), int(np.sum(x > y))
+
+    for key, lab in (('missed', 'mines missed'), ('fa_unresolved', 'unresolved false alarms')):
+        for a in ('risk', 'frontier'):
+            f, e, m_ = paired(key, a, 'fixed')
+            print(f"  Paired {lab}: {LABELS[a]} vs fixed -> fewer {f}, equal {e}, more {m_} of {N_MC}")
+    for w in SEAM_WIDTHS:
+        runs = mc[('fixed', w)]
+        a = {k: np.array([r[k] for r in runs], dtype=float) for k in ('time', 'missed', 'coverage', 'n_mines')}
+        miss8 = np.array([r['missed'] for r in mc['fixed']], dtype=float)
+        print(f"  Fixed boustrophedon with {w:.1f} m strips: time {a['time'].mean():.0f} +- {a['time'].std():.0f} s, "
+              f"coverage {100 * a['coverage'].mean():.2f}%, missed {a['missed'].mean():.2f} +- {a['missed'].std():.2f} "
+              f"(8 m strips: {miss8.mean():.2f}); fewer than 8 m in {int(np.sum(a['missed'] < miss8))}, "
+              f"equal {int(np.sum(a['missed'] == miss8))}, more {int(np.sum(a['missed'] > miss8))} of {N_MC}")
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
