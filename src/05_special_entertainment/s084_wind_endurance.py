@@ -546,8 +546,7 @@ def plot_envelope(res, meta, out_dir):
             if g[1] != 'cone':
                 continue
             R_ = [res[(li * C + ci) * S + s] for s in range(S)]
-            kw = dict(marker='s', ms=11, mfc='none', mec=COLOR[c], ls='none',
-                      label=f'{g[0]:g} deg, cone-shaped LQR clamp' if ci == 0 else None)
+            kw = dict(marker='s', ms=11, mfc='none', mec=COLOR[c], ls='none')
             axes[0].plot([g[0]], [sum(r['success'] for r in R_)], **kw)
             axes[1].plot([g[0]], [np.mean([r['rms_y'] for r in R_])], **kw)
     axes[0].set_ylabel(f'missions completed (of {S})')
@@ -559,6 +558,10 @@ def plot_envelope(res, meta, out_dir):
         ax.set_xticks(lims)
         ax.set_xticklabels([f'{x:g}' for x in lims], fontsize=8)
         ax.grid(alpha=0.3)
+        for g in meta['groups']:                       # neutral legend proxy for the check
+            if g[1] == 'cone':
+                ax.plot([], [], marker='s', ms=11, mfc='none', mec='k', ls='none',
+                        label=f'{g[0]:g} deg, cone-shaped LQR clamp (colour = controller)')
         ax.legend(fontsize=8)
     axes[0].set_title('Success vs tilt limit (same limit for all controllers)')
     axes[1].set_title('Lateral tracking vs tilt limit')

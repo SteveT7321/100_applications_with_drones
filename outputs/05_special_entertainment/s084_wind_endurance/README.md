@@ -88,7 +88,7 @@ conda activate drones
 python src/05_special_entertainment/s084_wind_endurance.py
 ```
 
-Runtime ≈ 65–180 s depending on machine load (measured 66–126 s for the 360-mission batch that includes all sensitivity groups, with up to about 10 other simulations sharing the 12-thread machine).
+Runtime ≈ 55–180 s depending on machine load (measured 66–126 s here and 57 s by the reviewer for the 360-mission batch that includes all sensitivity groups, with up to about 10 other simulations sharing the 12-thread machine).
 
 ---
 
@@ -164,7 +164,7 @@ RLS: first within 0.5 m/s² of the mean-wind acceleration after 2.97 ± 5.94 s (
 - **The clamp shape does not matter.** Clipping the LQR's roll and pitch commands per axis (card) or on their norm (cone, like the PID) gives the same successes and failed seeds. The paired wins are identical (18/20 and 19/20), and the LQR + RLS RMS changes by only 0.002 m (0.350 against 0.352 m).
 - **Pure LQR is the weakest**, because it has no integral action. Its offset matches the linear model's prediction (0.436 m under the mean wind; flown RMS 0.513 m at 39°). It has a higher RMS $|y|$ than the PID on every seed at 30° (0/20 wins) and a higher mean RMS at every limit. It is the only controller that fails seed 49, at 6.9 s, early in the run.
 - **The PID does not drift as the card expects.** The base model's velocity loop has integral action, which removes the steady wind offset. At 35° and 39° it succeeds on 20/20 seeds with RMS $|y|$ of 0.237 m and 0.186 m. At 30° it fails on 5/20 seeds, but the card's "RMS > 5 m" cannot occur: a mission ends as soon as $|y|$ exceeds 5 m. Even the failed seed-42 run has an RMS of only 0.521 m.
-- **Card targets for LQR + RLS** (RMS < 0.5 m, peak < 1 m, success): at the card's 30° limit the mean RMS (0.350 m) meets the target, but the mean peak (2.077 m) and the success rate (16/20) do not. At 35° and 39° all three targets hold. Convergence within 15 s holds on 19/20 seeds (mean 2.97 s, maximum 25.78 s). The "< 25° peak attitude" target holds on only 2/16 successful runs at 30°, because the gusts themselves need 25–30°.
+- **Card targets for LQR + RLS** (RMS < 0.5 m, peak < 1 m, success): at the card's 30° limit the mean RMS (0.350 m) meets the target, but the mean peak (2.076 m) and the success rate (16/20) do not. At 35° and 39° all three targets hold. Convergence within 15 s holds on 19/20 seeds (mean 2.97 s, maximum 25.78 s). The "< 25° peak attitude" target holds on only 2/16 successful runs at 30°, because the gusts themselves need 25–30°.
 - **Energy is the same for all three** (15263–15281 J per successful mission of about 100 s, i.e. roughly 150 W). The thrust needed to hold against the wind dominates; how well the drone tracks hardly matters. The values are estimates: see the Sim2Real notes.
 
 ### 3D Trajectory
