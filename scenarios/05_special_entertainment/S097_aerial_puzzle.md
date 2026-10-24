@@ -1,6 +1,6 @@
 # S097 Aerial Puzzle Assembly
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Consensus Positioning + Impedance Fitting Control | **Dimension**: 3D
 
 ---
@@ -88,7 +88,18 @@ $$\varepsilon \lambda_{max}(\mathbf{L}) + \alpha < 2, \qquad \alpha > 0$$
 
 For a 6-node ring graph $\lambda_{max}(\mathbf{L}) = 4$; with $\varepsilon = 0.05$ and
 $\alpha = 0.1$ the spectral radius is $\rho = \max_i |1 - \varepsilon \lambda_i - \alpha|$, which
-gives $\rho \approx 0.70$, guaranteeing geometric convergence:
+gives $\rho = 0.90$ (factors 0.90, 0.85, 0.85, 0.75, 0.75, 0.70 for $\lambda = 0, 1, 1, 3, 3, 4$;
+corrected 2026-10, the earlier value 0.70 is the smallest factor, not the largest).
+
+> **Correction (2026-10)**: with the absolute-position law above, the fixed point is
+> $\mathbf P_\infty = \alpha(\varepsilon\mathbf L + \alpha\mathbf I)^{-1}\mathbf P^*$, not $\mathbf P^*$:
+> the hexagon shrinks to radius $\alpha/(\varepsilon\lambda_1 + \alpha) = 0.667$ m (333 mm error),
+> so the 50 mm switch is never reached. The bound below holds for consensus on the slot
+> errors $\mathbf e_k = \mathbf p_k - \mathbf p_k^*$, i.e.
+> $\mathbf e[t+1] = (\mathbf I - \varepsilon\mathbf L - \alpha\mathbf I)\mathbf e[t]$, which only needs
+> neighbour-relative measurements. The implementation uses this form; see the outputs README.
+
+With error consensus the error contracts geometrically:
 
 $$V[t] \leq \rho^{2t} \, V[0] \quad \Longrightarrow \quad \bigl\|\mathbf{p}_k[t] - \mathbf{p}_k^*\bigr\| \to 0 \text{ as } t \to \infty$$
 
@@ -549,7 +560,7 @@ if __name__ == '__main__':
 | Consensus coupling gain | $\varepsilon$ | 0.05 |
 | Target attraction gain | $\alpha$ | 0.10 |
 | Ring-Laplacian max eigenvalue | $\lambda_{max}$ | 4.0 |
-| Spectral radius of update matrix | $\rho(\mathbf{A})$ | ≈ 0.70 |
+| Spectral radius of update matrix | $\rho(\mathbf{A})$ | 0.90 |
 | Impedance stiffness | $K_{imp}$ | 8.0 N/m |
 | Impedance damping | $B_{imp}$ | 4.0 N s/m |
 | Natural frequency (impedance) | $\omega_n$ | 4.0 rad/s |
