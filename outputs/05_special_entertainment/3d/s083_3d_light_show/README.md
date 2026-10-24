@@ -72,7 +72,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s083_3d_light_show.py
 ```
 
-The controller, wind model, assertions and metrics are those of the S083 simulator, but the plant is integrated with a fixed-step RK4 (5 substeps per 0.05 s step) instead of `odeint`: `odeint` controls its step size on the whole 100-seed batch, so a seed's result depended on the batch (by up to 2e-6 m). Now seeds 5 and 2 run alone reproduce the batch exactly (difference 0.0e+00 m, asserted), and on the card path with PID-only the RK4 trajectories differ from the S083 `odeint` simulator by at most 9.0e-06 m over 100 seeds (printed and asserted < 1e-4 m). Runtime ≈ 1–2.5 min. Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
+The controller, wind model, assertions and metrics are those of the S083 simulator, but the plant is integrated with a fixed-step RK4 (5 substeps per 0.05 s step) instead of `odeint`: `odeint` controls its step size on the whole 100-seed batch, so a seed's result depended on the batch. Now seeds 5 and 2 run alone reproduce the batch exactly (difference 0.0e+00 m, asserted), and on the card path with PID-only the RK4 trajectories differ from the S083 `odeint` simulator by at most 9.0e-06 m over 100 seeds (printed and asserted < 1e-4 m). Runtime ≈ 1–2.5 min. Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
 
 ---
 
