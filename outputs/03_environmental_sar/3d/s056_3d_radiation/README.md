@@ -69,8 +69,8 @@ Ties within 10⁻⁹ (relative) are broken by 3D distance and then by index (the
 | Altitude set $\mathcal{Z}$ | {3, 10, 20, 35, 60} m; 3125 candidate waypoints |
 | Fixed altitude (card 2, 2D baselines) | 15 m |
 | Ground-source 2D baselines | S056's 50 × 50 grid of 10 m cells; also this variant's 25 × 25 grid |
-| Bootstrap for RMS ratios (added) | 2000 paired resamples, seeds 5600 / 5700 + noise multiplier (5800–5812 for the 200-seed check) |
-| Larger-sample 3 m check (added) | 200 further seeds (50–249), σ0 = 0.04, 3D EIG / fixed altitude / 3D EIG without 3 m |
+| Bootstrap for RMS ratios (added) | 2000 paired resamples, seeds 5600 / 5700 + noise multiplier (5800–5912 for the 200-seed check) |
+| Larger-sample 3 m check (added) | 200 held-out seeds (50–249), σ0 = 0.04 and 0.4, 3D EIG / fixed altitude / 3D EIG without 3 m |
 | Speed / dwell | 8 m/s / 5 s |
 | Max readings / stop threshold | 80 / peak ≥ 0.90 |
 | Source strength $A$ | 2000 µSv·m²/h |
@@ -101,7 +101,7 @@ conda activate drones
 python src/03_environmental_sar/3d/s056_3d_radiation.py
 ```
 
-The dose matrices [candidate waypoint × hypothesis] are computed once (3125 × 3125 for the 3D EIG), so each EIG map costs two matrix–vector products. Runtime ≈ 2–2.5 min including the 200-seed check (146 s and 134 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 111 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The dose matrices [candidate waypoint × hypothesis] are computed once (3125 × 3125 for the 3D EIG), so each EIG map costs two matrix–vector products. Runtime ≈ 3–3.5 min including the 200-seed checks (208 s and 193 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 176 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -286,9 +286,13 @@ Return home on the σ0 = 0.4 demo: straight 100 m / 39.62 nSv, corridor 105 m / 
   - *Vertical mismatch only* (x-y moved to the voxel centre): the 3D EIG beats the fixed altitude, 1.14 vs 3.10 m (ratio 0.37, CI [0.28, 0.61]) at σ0 = 0.04 and 1.58 vs 2.93 m ([0.36, 0.90]) at σ0 = 0.4. Readings at a second altitude do resolve the source height better.
   - *Horizontal mismatch only* (z moved): at σ0 = 0.04 the 3D EIG is worse, 18.32 vs 10.79 m (ratio 1.70, CI [1.01, 2.38]), with 3 gross errors against 0. At σ0 = 0.4 the two are level (10.87 vs 10.09 m).
   - *Probed cause*: in the 50 main trials the same 3D EIG without the 3 m altitude gets 11.64 m and 0 gross errors under horizontal mismatch, and 11.52 m with 0 gross errors on continuous sources (17.46 m and 2 with 3 m allowed). On its own this is thin evidence: the ratio CI is [0.46, 1.13] and the gap rests on 2 gross failures.
-  - A check on 200 further seeds (σ0 = 0.04) confirms it. With 3 m allowed the 3D EIG has 14 gross failures against 5 without 3 m, and the RMS ratio is 1.27 [1.16, 1.40] on continuous sources. Under horizontal mismatch only it has 15 vs 5 failures, ratio 1.22 [1.11, 1.35]. So the 3 m readings, where the dose changes fastest, turn a 10 m horizontal model error into a confident wrong voxel.
+  - The no-3 m policy was defined *after* seeing these first 50 trials, so the 200 further seeds (50–249) serve as a held-out confirmation. At σ0 = 0.04 they confirm it. With 3 m allowed the 3D EIG has 14 gross failures against 5 without 3 m, and the RMS ratio is 1.27 [1.16, 1.40] on continuous sources. Under horizontal mismatch only it has 15 vs 5 failures, ratio 1.22 [1.11, 1.35]. So the 3 m readings, where the dose changes fastest, turn a 10 m horizontal model error into a confident wrong voxel.
   - On the same 200 seeds the full 3D EIG and the fixed altitude are still indistinguishable: 1.08 [0.96, 1.21]. The 3D EIG without 3 m beats the fixed altitude: 12.39 vs 14.54 m, 0.85 [0.76, 0.95]; under horizontal mismatch 0.88 [0.79, 0.98].
-  - On the 50 main trials, without the 3 m altitude the 3D EIG matches the fixed altitude: 11.52 vs 12.30 m (CI [0.78, 1.11]) and 9.54 vs 10.31 m ([0.82, 1.02]). At σ0 = 0.4 it still needs fewer readings (ratio 0.74). The 3 m effect is weaker at σ0 = 0.4: 3D EIG without 3 m vs with it, 0.84 [0.69, 0.99]. The 200-seed check was run at the card noise only.
+  - On the 50 main trials, without the 3 m altitude the 3D EIG matches the fixed altitude: 11.52 vs 12.30 m (CI [0.78, 1.11]) and 9.54 vs 10.31 m ([0.82, 1.02]). At σ0 = 0.4 it still needs fewer readings (ratio 0.74).
+  - At σ0 = 0.4 the 3 m effect is small or absent.
+    - On the 50 main trials, 3D EIG without 3 m vs with it gives 0.84 [0.69, 0.99].
+    - On the 200 held-out seeds, 3D EIG with 3 m vs without gives 1.06 [0.97, 1.16] on continuous sources, which is not significant. Gross failures are 0 with 3 m and 2 without. Under horizontal mismatch only it is 1.10 [1.01, 1.19].
+    - On the held-out seeds at σ0 = 0.4, the full 3D EIG and the fixed altitude are indistinguishable (0.96 [0.88, 1.04]). The 3D EIG without 3 m is slightly better than the fixed altitude (0.90 [0.84, 0.97]).
   - With no mismatch at all, both find the exact voxel in 48–50 of 50 trials. The altitude freedom then saves readings (ratio 0.89 and 0.82).
 - **The mirror ambiguity of a single altitude is real but not the limiting factor.** Among trials with the correct horizontal voxel, the fixed-altitude EIG lands on the mirror side of 15 m in 9 (σ0 = 0.04) and 10 (σ0 = 0.4) trials, against 5 and 8 for the 3D EIG. Voxel centres (2, 6, 10, 14, 18 m) are not symmetric about 15 m, so on-grid sources are resolved exactly even at one altitude. With continuous source heights, however, the second altitude helps: in the vertical-mismatch-only probe the fixed altitude has 3.10 m RMS against 1.14 m for the 3D EIG.
 - **The $\lambda_0$ sweep changes the result by a few trials.** At σ0 = 0.04 the RMS 3D error is 19.8 / 17.5 / 14.0 m for $\lambda_0$ = 0 / 0.05 / 0.5. At σ0 = 0.4 it is 10.4 / 11.4 / 10.7 m. A larger $\lambda_0$ adds readings (19.5 vs 15.8 at σ0 = 0.4) and hardly moves the altitude mix (84.5–97.6 % at 3 m). The penalty does not change the conclusion: removing the 3 m altitude matters more than any $\lambda_0$.
