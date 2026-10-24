@@ -84,6 +84,8 @@ ZF_SWEEP = [4.0, 6.0, 8.0, 10.0, 12.0, 14.0, 16.0, 18.0]
 Z_FLAT_REF = 10.0                # flat baseline reference altitude (S096)
 VARIANTS = {'base': ('x', 'cv'), 'flatz': ('path', 'flatz'),
             'cv3d': ('path', 'cv'), 'course': ('path', 'course')}
+ABLATIONS = {'zfix': ('path', 'zfix'), 'vzfix': ('path', 'vzfix'),
+             'flatz_rp2': ('path', 'flatz_rp2')}          # added probes
 LABELS = {'base': 'S096 planner (x rule, CV)', 'flatz': 'flat-z predictor',
           'cv3d': '3D CV predictor (card)', 'course': 'course-aware predictor',
           'flat': f'flat course z = {Z_FLAT_REF:.0f} m (S096)'}
@@ -145,6 +147,18 @@ def predict(kind, xkf, taus, course):
         vh = np.array([v[0], v[1], 0.0])
         pf = p[None, :] + taus[:, None] * vh[None, :]
         return pf, np.broadcast_to(vh, (len(taus), 3))
+    # ablations (added): which part of the course-aware state fixes the CV planner?
+    if kind in ('zfix', 'vzfix'):
+        pc, vc = predict('course', xkf, taus, course)
+        pv, vv = predict('cv', xkf, taus, course)
+        pv, vv = pv.copy(), np.array(vv).copy()
+        if kind == 'zfix':                              # course altitude, CV v_z
+            pv[:, 2] = pc[:, 2]
+        else:                                           # CV altitude, course v_z
+            vv[:, 2] = vc[:, 2]
+        return pv, vv
+    if kind == 'flatz_rp2':                             # CV at RP1, flat-z only at RP2
+        return predict('cv' if p[0] < COURSE_WP[3, 0] else 'flatz', xkf, taus, course)
     sp = float(np.linalg.norm(v))                       # course-aware
     pf, tan = course.at(course.s_of_x(p[0]) + sp * taus)
     pf = pf.copy()
@@ -174,7 +188,7 @@ def run_simulation(variant='course', v_cruise=V_CRUISE, seed=0, z_flat=None, wai
                    a_launch=A_LAUNCH, record=False):
     """One race. z_flat=None -> 3D card course; a number -> flat course at that altitude
     with the S096 cruise law (2D baseline). waits = waiting altitudes of B and C."""
-    rule, pk = VARIANTS[variant]
+    rule, pk = {**VARIANTS, **ABLATIONS}[variant]
     flat = z_flat is not None
     course = flat_course(z_flat) if flat else COURSE_3D
     st = [course.W[0].copy(), np.array([100.0, 0.0, waits[0]]),
@@ -526,13 +540,18 @@ def plot_monte_carlo(mc, out_dir):
     ax.set_ylabel('Race time (s)')
     ax.set_title(f'Race time, 12/14/16 m/s, {N_MC} seeds')
     ax.tick_params(axis='x', labelsize=7)
+    hi = 130.0                                    # last bin collects every pass beyond it
     for j, ax in enumerate(axes[1:]):
+        n_over = 0
         for k in keys:
             x = mc[k]['H']['x'][:, j]
-            ax.hist(x[np.isfinite(x)], bins=np.arange(20, 90, 1.0), histtype='step', lw=1.6,
-                    color=VCOL[k], label=LABELS[k])
+            x = x[np.isfinite(x)]
+            n_over += int(np.sum(x >= hi - 1))
+            ax.hist(np.minimum(x, hi - 0.5), bins=np.arange(20, hi + 1e-9, 1.0), histtype='step',
+                    lw=1.6, color=VCOL[k], label=LABELS[k])
         ax.axvline(L_ZONE, color='orange', lw=2, label='zone end 50 m')
-        ax.set_xlabel(f'RP{j + 1} pass position past the relay point (m)')
+        ax.set_xlabel(f'RP{j + 1} pass position past the relay point (m); last bin holds '
+                      f'{n_over} passes >= {hi - 1:.0f} m')
         ax.set_ylabel('Seeds')
         ax.set_title(f'RP{j + 1} baton-pass position ({N_MC} seeds)')
         ax.legend(fontsize=7)
@@ -730,6 +749,9 @@ if __name__ == '__main__':
     print('  second pass beyond the 300 m finish (race then ends at the pass, leg 3 never '
           'flown): ' + ', '.join(f'{k} {int(np.sum(m["H"]["x"][:, 1] + RELAY_XS[2] > RELAY_XS[3]))}'
                                  f'/{N_MC}' for k, m in mc.items()))
+    print('  passes at >= 129 m past the relay point (collected in the last histogram bin): '
+          + ', '.join(f'RP{j + 1} {sum(int(np.sum(m["H"]["x"][:, j] >= 129.0)) for m in mc.values())}'
+                      for j in range(2)))
     for k in VARIANTS:
         m = mc[k]
         for j in range(2):
@@ -757,6 +779,20 @@ if __name__ == '__main__':
         ratio = np.nanmean(mc[k]['finish']) / np.nanmean(mc['flat']['finish'])
         print(f'  {k:7s}: mean race time / flat baseline = {ratio:.4f} '
               f'({100 * (ratio - 1):+.2f} %; card target <= +10 %)')
+    print(f'\nAblations ({N_MC} seeds, card speeds, same seeds):')
+    for k, lab in (('cv3d', '3D CV (card)'), ('zfix', 'CV, course altitude, CV v_z'),
+                   ('vzfix', 'CV altitude, course v_z'), ('course', 'course-aware (both)'),
+                   ('flatz', 'flat-z at both relays'),
+                   ('flatz_rp2', 'CV at RP1, flat-z only at RP2')):
+        m = mc[k] if k in mc else monte_carlo(k)
+        H = m['H']
+        print(f'  {lab:32s} both in zone {m["zone_ok"].sum()}/{N_MC}, race '
+              f'{np.nanmean(m["finish"]):.2f} s; RP1 +{np.nanmean(H["x"][:, 0]):.1f} m, late '
+              f'{np.nanmean(H["late"][:, 0]):+.2f} s, in zone {int(np.sum(H["x"][:, 0] <= L_ZONE))}/'
+              f'{N_MC}; RP2 +{np.nanmean(H["x"][:, 1]):.1f} m, late {np.nanmean(H["late"][:, 1]):+.2f} s, '
+              f'in zone {int(np.sum(H["x"][:, 1] <= L_ZONE))}/{N_MC}, RP2 launch gap '
+              f'{np.nanmean(H["launch_gap"][:, 1]):.1f} m; second pass past the finish '
+              f'{int(np.sum(H["x"][:, 1] + RELAY_XS[2] > RELAY_XS[3]))}/{N_MC}')
 
     print(f'\nLaunch-acceleration sensitivity ({N_SWEEP} seeds, card speeds; zone L = 50 m):')
     for al in A_SWEEP:
