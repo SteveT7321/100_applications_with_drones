@@ -1,6 +1,6 @@
 # S082 FPV Racing Circuit
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Algorithm**: Minimum-Time Trajectory + MPC Gate Tracking | **Dimension**: 3D
 
 ---
@@ -101,7 +101,13 @@ The speed and acceleration constraints become:
 
 $$\left\| \frac{d\mathbf{p}}{ds} \right\| \dot{s} \leq v_{max}$$
 
-$$\left\| \frac{d^2\mathbf{p}}{ds^2} \dot{s}^2 + \frac{d\mathbf{p}}{ds} \ddot{s} \right\| \leq a_{max}$$
+$$\left\| \frac{d^2\mathbf{p}}{ds^2} \dot{s}^2 + \frac{d\mathbf{p}}{ds} \ddot{s}
+  + \frac{c_D}{m}\frac{d\mathbf{p}}{ds}\dot{s} - \mathbf{g} \right\| \leq a_{max}$$
+
+(The bound applies to the thrust acceleration $\mathbf{u} = \dot{\mathbf{v}} + \frac{c_D}{m}\mathbf{v}
+- \mathbf{g}$ of the dynamics above, so gravity and drag appear inside the norm. An earlier version
+of this card bounded only $\|\dot{\mathbf{v}}\|$, which is a different quantity: hovering needs
+$\|\mathbf{u}\| = 9.81$ m/s$^2$ with $\dot{\mathbf{v}} = 0$.)
 
 The minimum-time scaling is computed via a **bang-bang** traversal on a discretised arc grid with
 $N_{arc} = 500$ points. At each arc point $s_i$, the maximum feasible speed $\dot{s}_{max}(s_i)$
@@ -144,7 +150,7 @@ where:
 $$\mathbf{A}_d = \begin{pmatrix} \mathbf{I}_3 & \Delta t \mathbf{I}_3 \\
 \mathbf{0} & (1 - \frac{c_D}{m}\Delta t)\mathbf{I}_3 \end{pmatrix}, \quad
 \mathbf{B}_d = \begin{pmatrix} \frac{\Delta t^2}{2}\mathbf{I}_3 \\ \Delta t \mathbf{I}_3
-\end{pmatrix}, \quad \mathbf{d} = \begin{pmatrix} \mathbf{0} \\ \Delta t \mathbf{g}
+\end{pmatrix}, \quad \mathbf{d} = \mathbf{B}_d\,\mathbf{g} = \begin{pmatrix} \frac{\Delta t^2}{2}\mathbf{g} \\ \Delta t \mathbf{g}
 \end{pmatrix}$$
 
 The MPC cost function over the horizon $\{i, \ldots, i+N-1\}$:
