@@ -1,6 +1,6 @@
 # S063 3D Upgrade — Precision Per-Plant Spraying
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S063 original](../S063_precision_spraying.md)
 
 ---
@@ -141,15 +141,22 @@ A spray droplet released from nozzle position $\mathbf{q}_{nozzle} = \mathbf{q}(
 (nozzle is at the drone's CoM for this model) falls under gravity while being advected
 horizontally by local wind velocity $\mathbf{u}_w$ and deflected by rotor downwash $w_{dw}$:
 
-$$\text{Fall time:} \quad t_{fall} = \sqrt{\frac{2\,\delta z}{g + w_{dw}}}$$
+$$\text{Fall time:} \quad t_{fall} = \frac{\sqrt{w_{dw}^2 + 2 g\,\delta z} - w_{dw}}{g}
+\quad\text{(from } \delta z = w_{dw} t + \tfrac12 g t^2\text{)}$$
 
-where $\delta z = z(t) - h_i$ is the nozzle standoff and $g = 9.81$ m/s². The horizontal drift
-of the droplet during free fall is:
+where $\delta z = z(t) - h_i$ is the nozzle standoff, $g = 9.81$ m/s², and $w_{dw}$ is the
+initial downward droplet speed given by the rotor downwash (m/s). (Corrected: the earlier
+$\sqrt{2\delta z/(g + w_{dw})}$ adds a speed to an acceleration. The card gives no value for
+$w_{dw}$; the implementation uses 2 m/s and sweeps 0–5 m/s.) The horizontal drift of the
+droplet during its fall is:
 
 $$\Delta \mathbf{r}_{drift} = \mathbf{u}_w^{(xy)}\, t_{fall}$$
 
 where $\mathbf{u}_w^{(xy)} = (u_x, u_y)^T$ is the mean horizontal wind velocity (m/s) at spray
-time. The droplet impact position on the ground plane is:
+time. The disturbance model above is an *acceleration*, so a wind velocity has to be defined
+separately. The implementation uses $\mathbf{u}_w = \mathbf{f}_{gust}/c_w$, the sinusoidal part of
+$\mathbf{f}_w$ divided by a drag rate $c_w$ = 0.3 s⁻¹ (1 m/s amplitude), and sweeps
+$c_w$ = 0.15–0.6 s⁻¹. The droplet impact position on the ground plane is:
 
 $$\mathbf{p}_{impact} = \begin{pmatrix} x(t) \\ y(t) \end{pmatrix} + \Delta \mathbf{r}_{drift}$$
 
