@@ -324,12 +324,16 @@ def simulate(seed, layout='full', turn='over', alt_rule='fixed', z_aisle=Z_AISLE
         if sp > V_MAX:
             vx, vy, vz = vx * V_MAX / sp, vy * V_MAX / sp, vz * V_MAX / sp
             sp = V_MAX
-        assert sp <= V_MAX + 1e-9, 'commanded speed above V_MAX'
         v_peak = max(v_peak, sp)
         # ── truth propagation ──
+        x_old, y_old, z_old = x, y, z
         x += vx * DT + eta_t[step, 0]
         y += vy * DT + eta_t[step, 1]
         z += vz * DT + eta_t[step, 2]
+        # end-to-end check on the propagated track: commanded part of the step (minus the drift)
+        v_step = math.sqrt((x - x_old - eta_t[step, 0]) ** 2 + (y - y_old - eta_t[step, 1]) ** 2
+                           + (z - z_old - eta_t[step, 2]) ** 2) / DT
+        assert v_step <= V_MAX + 1e-6, f'flown speed above V_MAX: {v_step:.3f} m/s'
         assert HALF[2] < z < GH_Z - HALF[2], f'drone outside floor/ceiling: z = {z:.3f}'
         # ── lateral estimator (base) ──
         y_dr = y_hat + vy * DT + eta_e[step]
