@@ -240,11 +240,15 @@ def simulate(strategy, leak_s, rnd):
     est_err_h = np.linalg.norm(best_p[:2] - leak[:2]) if best_p is not None else np.nan
     est_err_3d = np.linalg.norm(best_p - leak) if best_p is not None else np.nan
     # false alarm: reading above threshold in clean air (true C below C_thresh / 10);
-    # near-threshold: true C below threshold but within 4 sigma of it, reading above it
-    fa = sum(1 for (ts, cm, ct, pm, md) in samples
+    # near-threshold: true C below threshold but within 4 sigma of it, reading above it.
+    # Counted over this strategy's own readings: all of them for patrol-only, only the
+    # localisation readings for the other two (their patrol readings up to and including
+    # the detection are identical to patrol-only's and would be counted three times).
+    own = [x for x in samples if strategy == 'patrol' or x[4] != 'patrol']
+    fa = sum(1 for (ts, cm, ct, pm, md) in own
              if cm > C_THRESH and ct < C_THRESH / 10)
-    n_clean = sum(1 for (ts, cm, ct, pm, md) in samples if ct < C_THRESH / 10)
-    n_near = sum(1 for (ts, cm, ct, pm, md) in samples
+    n_clean = sum(1 for (ts, cm, ct, pm, md) in own if ct < C_THRESH / 10)
+    n_near = sum(1 for (ts, cm, ct, pm, md) in own
                  if cm > C_THRESH and C_THRESH - 4 * SIGMA_SENSOR <= ct <= C_THRESH)
     t2 = np.nan
     if len(run_err):
@@ -257,7 +261,7 @@ def simulate(strategy, leak_s, rnd):
                 best_p=best_p, best_c=best_c, err_h=est_err_h, err_3d=est_err_3d,
                 t_end=t, run_err=np.array(run_err), false_alarms=fa, plume=plume,
                 n_clean=n_clean, n_near=n_near, t_2m=t2,
-                n_samples=len(samples))
+                n_samples=len(own))
 
 
 def spiral_velocity(sp, pos):
@@ -612,7 +616,8 @@ if __name__ == '__main__':
         nn = sum(x['n_near'] for s in STRATS for x in mc[cond][s])
         ns = sum(x['n_samples'] for s in STRATS for x in mc[cond][s])
         print(f'    False alarms (reading > thresh in clean air, C_true < C_thresh/10): '
-              f'{fa} in {ncl} clean-air samples ({ns} samples in total)')
+              f'{fa} in {ncl} distinct clean-air readings ({ns} distinct readings in total; '
+              f'shared patrol readings counted once)')
         print(f'    Noise-pushed crossings (C_true within 4 sigma below thresh): {nn}')
         for s in STRATS:
             e = np.array([x['err_h'] for x in mc[cond][s]])

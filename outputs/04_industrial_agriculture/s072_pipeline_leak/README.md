@@ -134,7 +134,7 @@ Paired comparisons (same trial):
 
 **Detection**: 30/30 leaks detected in both plumes. Detection times: mean 55.0 s, range 16.0–90.0 s (identical in both plumes, because the first crossing always happens right next to the source, where the young puffs barely feel the turbulence). The detection point lies −0.33 to +1.13 m along the pipeline from the leak (steady: mean +0.40 m; turbulent: mean +0.36 m).
 
-**False alarms**: 0 readings above the threshold in clean air (true concentration below 0.001 g/m³) out of 11 586 (steady) and 11 174 (turbulent) clean-air readings, consistent with $P_{FA} = 2.75\times10^{-89}$. In each plume, 13 readings crossed the threshold where the true concentration was within 4σ below it; these are noise-shifted crossings at the plume edge, not false alarms.
+**False alarms**: 0 readings above the threshold in clean air (true concentration below 0.001 g/m³) out of 5148 (steady) and 4876 (turbulent) distinct clean-air readings, consistent with $P_{FA} = 2.75\times10^{-89}$. Each plume has 20 491 distinct readings; the patrol readings up to the detection are identical for the three strategies and are counted once. 13 (steady) and 11 (turbulent) readings crossed the threshold where the true concentration was within 4σ below it; these are noise-shifted crossings at the plume edge, not false alarms.
 
 **Key findings**:
 - **The card's 2 m target is met by both localisation strategies in every trial** (30/30 in both plumes), with horizontal errors of about 0.6 m. The 3D error (about 1.2 m) is dominated by the 1 m flight height.
