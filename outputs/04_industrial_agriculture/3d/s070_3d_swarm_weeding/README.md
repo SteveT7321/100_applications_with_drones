@@ -72,17 +72,17 @@ The script imports the 2D base module for the Hungarian assignment and the neare
 
 ### Sweep-altitude study (200 trials, means ± std per trial)
 
-| z (m) | Passes | v (m/s) | Phase 1 | Detected | $\sigma_z$ | Treated PID / **PI** | Canopy contacts PID / PI | Mission | Treated/min PID / **PI** (per-trial mean) |
-|---|---|---|---|---|---|---|---|---|---|
-| 1.00 | 9 | 0.40 | 929.6 s | 28.98 ± 0.94 | 0.0125 m | 0 / 0 (all missions invalid) | 0 / 0 | 1030.1 s | 0 / 0 |
-| 1.25 | 8 | 0.65 | 510.3 s | 29.93 ± 0.26 | 0.0195 m | 8.84 / 17.80 ± 10.44 | 0 / 0 | 616.6 s | 0.860 / 1.730 |
-| **1.50** | 6 | 0.90 | 279.0 s | 28.82 ± 1.11 | 0.0281 m | 11.20 / **22.73 ± 2.26** | 0.01 / 0 | 389.1 s | 1.727 / 3.506 |
-| 1.60 (card z\*) | 6 | 1.00 | 251.1 s | 28.43 ± 1.21 | 0.0320 m | 11.02 / 22.41 ± 2.28 | 0.01 / 0 | 362.9 s | **1.823** / 3.706 |
-| 1.75 | 6 | 1.00 | 251.1 s | 27.58 ± 1.52 | 0.0383 m | 10.55 / 21.58 ± 2.40 | 0.03 / 0 | 363.3 s | 1.742 / 3.565 |
-| **2.00 (2D base)** | 5 | 1.00 | 210.7 s | 25.71 ± 1.94 | 0.0500 m | 9.63 / 19.92 ± 2.54 | 0.14 / 0.01 | 321.9 s | 1.794 / **3.713** |
-| 2.50 | 4 | 1.00 | 170.0 s | 23.64 ± 2.26 | 0.0781 m | 7.93 / 17.12 ± 2.68 | 0.83 / 0.41 | 282.6 s | 1.682 / 3.631 |
-| 3.00 | 3 | 1.00 | 128.9 s | 21.09 ± 2.55 | 0.1125 m | 5.99 / 13.17 ± 2.78 | 2.06 / 1.41 | 239.4 s | 1.499 / 3.293 |
-| 3.50 | 3 | 1.00 | 128.9 s | 20.61 ± 2.62 | 0.1531 m | 4.76 / 10.60 ± 2.75 | 3.52 / 2.83 | 244.8 s | 1.163 / 2.588 |
+| z (m) | Passes | $P_{detect}$ | v (m/s) | Phase 1 | Detected | $\sigma_z$ | Treated PID / **PI** | Canopy contacts PID / PI | Mission | Treated/min PID / **PI** (per-trial mean) |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1.00 | 9 | 1.000 | 0.40 | 929.6 s | 28.98 ± 0.94 | 0.0125 m | 0 / 0 (all missions invalid) | 0 / 0 | 1030.1 s | 0 / 0 |
+| 1.25 | 8 | 1.000 | 0.65 | 510.3 s | 29.93 ± 0.26 | 0.0195 m | 8.84 / 17.80 ± 10.44 | 0 / 0 | 616.6 s | 0.860 / 1.730 |
+| **1.50** | 6 | 0.981 | 0.90 | 279.0 s | 28.82 ± 1.11 | 0.0281 m | 11.20 / **22.73 ± 2.26** | 0.01 / 0 | 389.1 s | 1.727 / 3.506 |
+| 1.60 (card z\*) | 6 | 0.950 | 1.00 | 251.1 s | 28.43 ± 1.21 | 0.0320 m | 11.02 / 22.41 ± 2.28 | 0.01 / 0 | 362.9 s | **1.823** / 3.706 |
+| 1.75 | 6 | 0.909 | 1.00 | 251.1 s | 27.58 ± 1.52 | 0.0383 m | 10.55 / 21.58 ± 2.40 | 0.03 / 0 | 363.3 s | 1.742 / 3.565 |
+| **2.00 (2D base)** | 5 | 0.850 | 1.00 | 210.7 s | 25.71 ± 1.94 | 0.0500 m | 9.63 / 19.92 ± 2.54 | 0.14 / 0.01 | 321.9 s | 1.794 / **3.713** |
+| 2.50 | 4 | 0.760 | 1.00 | 170.0 s | 23.64 ± 2.26 | 0.0781 m | 7.93 / 17.12 ± 2.68 | 0.83 / 0.41 | 282.6 s | 1.682 / 3.631 |
+| 3.00 | 3 | 0.694 | 1.00 | 128.9 s | 21.09 ± 2.55 | 0.1125 m | 5.99 / 13.17 ± 2.78 | 2.06 / 1.41 | 239.4 s | 1.499 / 3.293 |
+| 3.50 | 3 | 0.643 | 1.00 | 128.9 s | 20.61 ± 2.62 | 0.1531 m | 4.76 / 10.60 ± 2.75 | 3.52 / 2.83 | 244.8 s | 1.163 / 2.588 |
 
 **Sweep clearance** above the highest canopy under the passes (minimum / mean over the trials; trials below 0.2 m / below 0):
 
@@ -123,7 +123,7 @@ The script imports the 2D base module for the Hungarian assignment and the neare
 ### Key findings
 
 - **Sweep altitude is a real trade-off, and the 2D base's implicit 2 m is not the best height for weeds treated.** Flying lower finds more weeds: 28.82 at 1.5 m against 25.71 at 2 m, from more passes and $P$ → 1. It also measures the canopy better ($\sigma_z$ 0.028 vs 0.050 m). Treated weeds therefore peak at **1.5 m (22.73 per trial with PI, against 19.92 at 2 m; better in 183/200 trials)**, at the cost of a 67.3 s longer mission. Above 2 m every term gets worse: fewer detections, larger depth error, and canopy contacts appear (2.83 per trial at 3.5 m with PI). Treated weeds fall to 10.60 per trial.
-- **Throughput is tied between 1.6 m and 2 m, and drops away on both sides.** With PI, 1.6 m against 2 m is higher in 98 and lower in 102 of 200 trials, a mean difference of −0.007 ± 0.022 weeds/min (s.e.), i.e. a tie. With the card PID it is +0.030 ± 0.016 (107 / 93). At 2.5 m the throughput is slightly lower (−0.082 ± 0.031, higher in only 83/200). At 1.5 m (−0.208 ± 0.022) and 1.75 m (−0.148 ± 0.021) it is clearly lower, as it is at 3.0 m and above. Low sweeps are slow: below 1.6 m the speed limit bites, and 1.0 m takes 929.6 s for Phase 1 alone.
+- **Throughput is tied between 1.6 m and 2 m, and the curve is not monotone because the pass count steps.** With PI, 1.6 m against 2 m is higher in 98 and lower in 102 of 200 trials: −0.007 ± 0.022 weeds/min (s.e.; −0.3 s.e.), a tie. With the card PID, 1.6 m is slightly ahead: +0.030 ± 0.016 (+1.8 s.e., 107 / 93 trials), suggestive but not conclusive. 1.75 m sits between the two yet is clearly lower than both (PI −0.148 ± 0.021 against 2 m, −7.0 s.e., higher in 61/200). The pass count explains this: 1.6 and 1.75 m both need 6 passes, so Phase 1 takes the same 251.1 s. At 1.75 m the detection probability per encounter is lower, 0.909 against 0.950, so fewer weeds are found (27.58 vs 28.43). At 2 m the count drops to 5 passes (210.7 s). Throughput therefore jumps at each pass-count step and decays between steps. Elsewhere 2.5 m is slightly lower than 2 m (−0.082 ± 0.031, −2.7 s.e., higher in 83/200), and 1.5 m (−0.208 ± 0.022) and 3.0 m and above are clearly lower. Low sweeps are slow: below 1.6 m the speed limit bites, and 1.0 m takes 929.6 s for Phase 1 alone.
 - **The card's z\* criterion has the right answer for the wrong reason.** $\arg\max P\,v$ picks 1.60 m, the kink where the speed limit stops binding. It ignores that the footprint grows with z; counting the passes moves the optimum to 2.97 m. Neither version includes Phase 2 or the depth error. In the full simulation 1.6 m is close to the best on both criteria: 22.41 treated against the best 22.73 (at 1.5 m), and a throughput statistically tied with 2 m (3.706 ± 0.026 vs 3.713 ± 0.032 per minute).
 - **The card's search range starts in the crop.** A 1.0 m sweep clears the tallest canopy by less than 0.2 m in all 200 fields and touches it in 81. At 1.25 m, 50 of 200 missions fail the 0.2 m clearance. The card's $P_{detect}$ also exceeds 1 below 1.445 m (1.202 at 1.0 m) and is clipped.
 - **Canopy contacts are caused by the stereo depth error.** Every contact coincides with a canopy estimate more than 0.1 m too low (565/565 at 3.5 m). Because $\sigma_z$ grows as $z^2$, contacts appear above 2 m. The zero-contact result at low altitude depends on the assumption that the descent ends exactly on its target. With a 0.3 m vertical arrival scatter, contacts rise to 6.98 / 6.33 / 6.80 per trial at 1.6 / 2.0 / 3.5 m, and treated weeds fall to 14.39 / 12.68 / 6.75 (PI). The ranking of these three altitudes (1.6 > 2.0 > 3.5 m) holds for every offset tested.

@@ -550,7 +550,7 @@ def report(trials):
     print(f'  Card prediction at z*: sigma_hover,3D = {s3:.4f} m, P_success = {p_card:.4f} '
           f'-> {N_WEEDS * p_card:.1f} treated')
     print(f'  Sweep altitude study ({N_TRIALS} trials, common random numbers):')
-    print('    z (m) | passes | v (m/s) | Phase 1 (s) | detected | sigma_z (m) | treated PID / PI | '
+    print('    z (m) | passes | P_detect | v (m/s) | Phase 1 (s) | detected | sigma_z (m) | treated PID / PI | '
           'canopy contacts PID / PI | mission (s) | treated/min PID / PI (per-trial mean) | 3D vs 2D Hungarian')
     rows = {}
     for z in Z_GRID:
@@ -564,7 +564,7 @@ def report(trials):
         d3 = _agg(trials, z, lambda r: r['dist3'])
         d2 = _agg(trials, z, lambda r: r['dist2'])
         rows[z] = dict(det=det, okp=okp, oki=oki, stp=stp, sti=sti, mis=mis)
-        print(f"    {z:4.2f} | {n_passes(z)} | {v_sweep(z):.2f} | {trials[0]['per_z'][z]['t1']:7.1f} | "
+        print(f"    {z:4.2f} | {n_passes(z)} | {p_det(z):.3f} | {v_sweep(z):.2f} | {trials[0]['per_z'][z]['t1']:7.1f} | "
               f"{_ms(det)} | {sigma_z(z):.4f} | {_ms(okp)} / {_ms(oki)} | {_ms(stp)} / {_ms(sti)} | "
               f"{_ms(mis, 1)} | {np.mean(60 * okp / mis):.3f} / {np.mean(60 * oki / mis):.3f} | "
               f"same assignment {int(same.sum())}/{N_TRIALS}, distance 3D {d3.mean():.1f} vs 2D "
@@ -583,7 +583,7 @@ def report(trials):
             if z != Z_BASE:
                 dd = c - b
                 line += (f'; {int(np.sum(dd > 0))} / {int(np.sum(dd < 0))} / {int(np.sum(dd == 0))}; '
-                         f'{dd.mean():+.3f} ± {se(dd):.3f}')
+                         f'{dd.mean():+.3f} ± {se(dd):.3f} ({dd.mean() / se(dd):+.1f} s.e.)')
             print(line)
     for zc in sorted({z_card, best_ok} - {Z_BASE}):
         b, c = rows[Z_BASE], rows[zc]
