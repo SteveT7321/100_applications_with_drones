@@ -616,11 +616,16 @@ if __name__ == '__main__':
 > **Note**: absolute values depend on the GPS noise realisation; the key result is that min-snap
 > consistently outperforms straight-line by reducing velocity overshoot at the docking point.
 >
-> **Correction (implementation, 100 seeds)**: min-snap 0.036 m / 70.3 % / 17.58; straight-line
-> 0.062 m / 54.3 % / 13.57, with acceleration feedforward in the tracking loop. The straight-line
-> targets (0.15–0.25 m, < 25 %, < 7) are not reproduced. Without acceleration feedforward
-> min-snap is slightly *worse* (12.79 vs 13.15). Both methods take the same approach time
-> ($T_{seg} = d_{standoff}/v_{approach}$), so straight-line is not faster per visit.
+> **Correction (implementation, 100 seeds)**: with acceleration feedforward and a 2 m/s²
+> acceleration limit, the results are min-snap 0.037 m / 69.2 % / 17.29 and straight line
+> 0.068 m / 51.5 % / 12.87. The straight-line targets (0.15–0.25 m, < 25 %, < 7) are not reproduced.
+> Min-snap's advantage needs both feedforward and an acceleration limit.
+> - With the straight-line stop also fed forward and **no** acceleration limit, the two are
+>   equal (17.58 vs 17.57).
+> - Without feedforward, min-snap is *worse* (12.79 vs 13.15 without a limit).
+>
+> Both methods take the same approach time ($T_{seg} = d_{standoff}/v_{approach}$), so the
+> straight line is not faster per visit.
 
 ---
 

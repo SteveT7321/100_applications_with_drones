@@ -15,9 +15,10 @@
 
 GPS noise is $\sigma_{GPS} = 0.1$ m per axis. Pollen transfer succeeds with probability $P_t = e^{-e_{dock}/\sigma_{dock}}$, where $\sigma_{dock} = 0.1$ m.
 
-**Comparison strategies** (identical except for the approach reference):
+**Approach references compared** (everything else identical):
 1. **Minimum-snap approach**: a degree-7 polynomial from the approach point (velocity 0.5 m/s along the approach line) to the flower (at rest, zero acceleration and jerk).
-2. **Straight-line approach**: constant 0.5 m/s along the line; the reference stops abruptly at the flower.
+2. **Straight line (no FF at the stop)**: constant 0.5 m/s along the line. The reference stops abruptly at the flower, and the stop is not fed forward.
+3. **Straight line + stop-impulse FF**: the same line, but the stop is fed forward as a one-step deceleration $\mathbf{a}_{ref} = -v_{approach}\hat{\mathbf{d}}/\Delta t$ (10 m/s² for one 0.05 s step). This gives the straight line the same acceleration feedforward that min-snap gets.
 
 **Objective**: maximise $E[N_{poll}] = \sum_i P_t^{(i)}$.
 
@@ -33,28 +34,28 @@ $\varphi_i$ is the horizontal bearing from the previous flower (or the start poi
 
 ### Minimum-snap segment
 
-Each axis is a degree-7 polynomial $p(t) = \sum_{k=0}^{7} c_k t^k$. The 8 coefficients follow from $\mathbf{A}_{bc}\mathbf{c} = \mathbf{b}_{bc}$, with position, velocity, acceleration and jerk fixed at both ends:
+Each axis is a degree-7 polynomial $p(t) = \sum_{k=0}^{7} c_k t^k$. The coefficients follow from $\mathbf{A}_{bc}\mathbf{c} = \mathbf{b}_{bc}$, with position, velocity, acceleration and jerk fixed at both ends:
 
 | End | Position | Velocity | Acceleration | Jerk |
 |---|---|---|---|---|
 | $t = 0$ | $\mathbf{p}_{start}$ | $v_{approach}\hat{\mathbf{d}}$ | 0 | 0 |
 | $t = T_{seg}$ | $\mathbf{p}^{flower}$ | 0 | 0 | 0 |
 
-$T_{seg} = d_{standoff}/v_{approach} = 1.6$ s for **both** methods. The minimum-snap reference therefore has to speed up to 0.830 m/s in the middle, because it starts at 0.5 m/s and ends at rest. Its snap cost $J = \int (p^{(4)})^2 dt$, from the card's $\mathbf{Q}$ matrix, averages 617.98 m²/s⁷ for seed 42. The climb, transit and descent legs are rest-to-rest degree-7 polynomials (peak speed 1.5 m/s). The descent leg ends with velocity $v_{approach}\hat{\mathbf{d}}$, so both approach references start from a moving drone that is consistent with them.
+$T_{seg} = d_{standoff}/v_{approach} = 1.6$ s for **every** method. Starting at 0.5 m/s and ending at rest, the min-snap reference peaks at 0.830 m/s and 1.57 m/s². Its snap cost $J = \int (p^{(4)})^2 dt$, from the card's $\mathbf{Q}$ matrix, averages 617.98 m²/s⁷ for seed 42. The climb, transit and descent legs are rest-to-rest degree-7 polynomials (peak speed 1.5 m/s). The descent leg ends with velocity $v_{approach}\hat{\mathbf{d}}$, so every approach starts from a drone that is already moving consistently with the reference.
 
 ### Drone and tracking loop
 
-The drone is a 3D point mass with a first-order velocity response and a P position loop on GPS measurements $\tilde{\mathbf{p}} = \mathbf{p} + \boldsymbol{\eta}$, $\boldsymbol{\eta} \sim \mathcal{N}(0, \sigma_{GPS}^2 I)$, drawn every 0.05 s:
+The drone is a 3D point mass whose velocity follows the command with time constant $\tau_v$, with its acceleration magnitude limited to $a_{max}$:
 
-$$\mathbf{v}_{cmd} = \mathbf{v}_{ref} + \tau_v\,\mathbf{a}_{ref} + K_p(\mathbf{p}_{ref} - \tilde{\mathbf{p}}), \qquad \tau_v \dot{\mathbf{v}} = \mathbf{v}_{cmd} - \mathbf{v}, \qquad |\mathbf{v}_{cmd}| \le 3\ \text{m/s}$$
+$$\mathbf{v}_{cmd} = \mathbf{v}_{ref} + \tau_v\,\mathbf{a}_{ref} + K_p(\mathbf{p}_{ref} - \tilde{\mathbf{p}}), \qquad \Delta\mathbf{v} = \text{clip}_{\|\cdot\| \le a_{max}\Delta t}\bigl((1 - e^{-\Delta t/\tau_v})(\mathbf{v}_{cmd} - \mathbf{v})\bigr), \qquad |\mathbf{v}_{cmd}| \le 3\ \text{m/s}$$
 
-The term $\tau_v\mathbf{a}_{ref}$ is **acceleration feedforward**. It is exactly what the first-order lag needs to follow a smooth reference. The straight-line reference has $\mathbf{a}_{ref} = 0$, plus an unrepresentable impulse when it stops. Results are reported with and without this term.
+Here $\tilde{\mathbf{p}} = \mathbf{p} + \boldsymbol{\eta}$ is the GPS measurement, with $\boldsymbol{\eta} \sim \mathcal{N}(0, \sigma_{GPS}^2 I)$ drawn every 0.05 s. The term $\tau_v\mathbf{a}_{ref}$ is the **acceleration feedforward (FF)**. Four configurations are run: FF on or off, crossed with $a_{max}$ = 2 m/s² (main) or no limit. The main configuration's 2 m/s² limit is above the min-snap reference's 1.57 m/s² peak and far below the 10 m/s² impulse the straight-line stop asks for.
 
 ### Docking error and transfer probability
 
 $$e_{dock}^{(i)} = \frac{1}{N_{dwell}}\sum_{k=1}^{N_{dwell}} \bigl\|\mathbf{p}(t_k) - \mathbf{p}_i^{flower}\bigr\|, \qquad P_t^{(i)} = e^{-e_{dock}^{(i)}/\sigma_{dock}}, \qquad E[N_{poll}] = \sum_i P_t^{(i)}$$
 
-Here $\mathbf{p}$ is the **true** position. Overshoot is the largest distance past the flower along $\hat{\mathbf{d}}$ during the dwell.
+Here $\mathbf{p}$ is the **true** position. Overshoot is the largest distance past the flower along $\hat{\mathbf{d}}$ during the dwell. The script also prints the mean distance over the first and second halves of the dwell.
 
 ---
 
@@ -74,10 +75,11 @@ Here $\mathbf{p}$ is the **true** position. Overshoot is the largest distance pa
 | Velocity time constant $\tau_v$ (added) | 0.3 s |
 | Position gain $K_p$ (added) | 2.0 s⁻¹ |
 | Speed limit (added) | 3 m/s |
+| Acceleration limit $a_{max}$ (added) | 2 m/s² (main); sweep: none, 4, 2, 1.5 m/s² |
 | Hover above the approach point before the descent (added) | ≥ 1.0 s (docking window 8.35 s) |
 | Seed of the example run | 42 |
-| Monte Carlo | 100 seeds (layout + GPS noise), shared by both methods |
-| GPS-noise sweep | σ = 0, 0.05, 0.1, 0.2 m; 40 seeds each |
+| Monte Carlo | 100 seeds (layout + GPS noise), shared by all methods and configurations |
+| Sweeps | GPS σ = 0, 0.05, 0.1, 0.2 m and $a_{max}$; 40 seeds each |
 
 ---
 
@@ -92,39 +94,42 @@ conda activate drones
 python src/04_industrial_agriculture/s077_pollination.py
 ```
 
-Runtime ≈ 2 min (102–119 s measured while other simulations shared the CPU). All docking windows of all seeds are flown in one vectorised loop. The climb and transit legs are not scored and are flown kinematically on their references.
+Runtime ≈ 1.5–2 min (83–120 s measured while other simulations shared the CPU). All docking windows of all seeds are flown in one vectorised loop. The climb and transit legs are not scored and are flown kinematically on their references.
 
 ---
 
 ## Results
 
-### Monte Carlo, 100 seeds, GPS σ = 0.1 m
+### Monte Carlo, 100 seeds, GPS σ = 0.1 m — $E[N_{poll}]$ (of 25)
 
-| Tracking loop | Method | $E[N_{poll}]$ | Success rate | Mean $e_{dock}$ | Mean overshoot | Min-snap wins (paired) |
-|---|---|---:|---:|---:|---:|---:|
-| With acceleration feedforward | **Minimum-snap** | **17.58 ± 0.31** | **70.3 %** | **0.0357 m** | 0.0221 m | **100/100** |
-| With acceleration feedforward | Straight-line | 13.57 ± 0.37 | 54.3 % | 0.0621 m | 0.0885 m | — |
-| Without feedforward | Minimum-snap | 12.79 ± 0.33 | 51.2 % | 0.0678 m | 0.1362 m | 0/100 |
-| Without feedforward | **Straight-line** | **13.15 ± 0.37** | **52.6 %** | **0.0653 m** | 0.0951 m | — |
+| Configuration | Minimum-snap | Straight (no FF at stop) | Straight + stop-impulse FF | Min-snap wins vs straight + FF |
+|---|---:|---:|---:|---:|
+| **FF, $a_{max}$ = 2 m/s² (main)** | **17.29 ± 0.33** (69.2 %) | 12.87 ± 0.37 (51.5 %) | 13.27 ± 0.37 (53.1 %) | **100/100** (+4.027 ± 0.320) |
+| FF, no acceleration limit | 17.58 ± 0.31 (70.3 %) | 13.57 ± 0.37 (54.3 %) | 17.57 ± 0.31 (70.3 %) | 60/100 (+0.014 ± 0.054) |
+| No FF, $a_{max}$ = 2 m/s² | 10.07 ± 0.41 (40.3 %) | 11.28 ± 0.38 (45.1 %) | 11.28 ± 0.38 (45.1 %) | 0/100 (−1.213 ± 0.198) |
+| No FF, no acceleration limit | 12.79 ± 0.33 (51.2 %) | 13.15 ± 0.37 (52.6 %) | 13.15 ± 0.37 (52.6 %) | 0/100 (−0.351 ± 0.109) |
 
-The paired difference (min-snap − straight) is +4.015 ± 0.411 flowers with feedforward and −0.351 ± 0.109 without it.
+Percentages are the transfer success rate $E[N_{poll}]/25$. Without FF, the two straight-line variants are identical by construction. In the main configuration, the mean docking error is 0.0374 m for min-snap, 0.0675 m for the straight line and 0.0644 m for the straight line with FF. The mean overshoot is 0.0327, 0.0985 and 0.0922 m.
 
-### Single run, seed 42
+### Acceleration-limit sweep (FF, σ = 0.1 m, 40 seeds)
 
-| Case | Min-snap $E[N_{poll}]$ / mean $e_{dock}$ | Straight-line $E[N_{poll}]$ / mean $e_{dock}$ |
-|---|---|---|
-| GPS noise off, no feedforward | 15.06 / 0.0507 m | 14.94 / 0.0515 m |
-| GPS noise off, feedforward | **24.99 / 0.0000 m** | 15.39 / 0.0485 m |
-| GPS σ = 0.1 m, feedforward | **17.18 / 0.0383 m** | 13.03 / 0.0665 m |
+| $a_{max}$ (m/s²) | none | 4 | 2 | 1.5 |
+|---|---:|---:|---:|---:|
+| Minimum-snap | 17.55 | 17.55 | 17.26 | 14.32 |
+| Straight + stop-impulse FF | 17.54 | 15.13 | 13.29 | 10.63 |
+| Straight (no FF at stop) | 13.58 | 13.57 | 12.89 | 10.42 |
+| Min-snap wins vs straight + FF | 22/40 | 40/40 | 40/40 | 40/40 |
 
-The tour is 52.43 m long and the mission takes 311.95 s with **either** method. Mission time is identical by construction (same leg durations), so it is not a comparison metric.
+The tour is 52.43 m long. The mission takes 312.05 s with min-snap and 311.90 s with the straight lines; only the kinematic climb after each dwell differs slightly, so mission time is not a comparison metric.
 
 **Key findings**:
-- **Minimum-snap wins only when the controller uses its smoothness.** With acceleration feedforward, the noise-free drone follows the polynomial almost exactly: overshoot 0.0001 m and speed 0.001 m/s when the dwell starts. That gives 24.99 of 25 flowers. The straight-line reference stops abruptly while the lagging drone still moves at 0.423 m/s, so the drone overshoots by 0.0856 m and $E[N_{poll}]$ falls to 15.39. With GPS noise, min-snap wins all 100 paired seeds (+4.0 flowers).
-- **Without feedforward, minimum-snap is slightly worse.** It must reach 0.830 m/s mid-segment to cover 0.8 m in 1.6 s from a 0.5 m/s start, and then brake to zero. The lagging drone overshoots by 0.1362 m, more than the straight line's 0.0951 m, and min-snap loses all 100 paired seeds by 0.35 flowers. The card's claim that min-snap reduces overshoot only holds together with derivative feedforward.
-- **GPS noise sets the ceiling.** In the noise sweep with feedforward, min-snap falls from 24.99 (σ = 0) to 20.92, 17.55 and 12.43 flowers. Straight-line falls from 15.39 to 14.79, 13.58 and 10.65. Min-snap wins 40/40 at every σ, but the gap shrinks as noise dominates.
-- **Card expectations**: min-snap meets all three targets: mean $e_{dock}$ 0.036 m (< 0.12), success rate 70.3 % (> 35 %), $E[N_{poll}]$ 17.58 (> 9). The straight-line targets do not hold: 0.062 m (card 0.15–0.25), 54.3 % (card < 25 %), 13.57 (card < 7). In this model the P loop filters the white GPS noise, so the true docking error stays well below $\sigma_{GPS}$. The card's own error model (error = the GPS sample itself) gives $E\|\eta\| = 0.1596$ m and $P_t = 0.203$ for **both** methods, so it cannot separate them.
-- The descent curls under the approach point to join the 30° line. The lowest altitude flown in seed 42 is 0.48 m; the lowest approach point is 0.61 m.
+- **With the stop fed forward and no acceleration limit, the trajectory shape does not matter.** Feeding the straight line's stop forward as a one-step deceleration lets it match min-snap: 17.57 vs 17.58 flowers, min-snap wins only 60/100 paired seeds. Noise-free for seed 42 it reaches 23.95 against min-snap's 24.99. The earlier 100/100 min-snap win came from denying the straight line this feedforward. Its 10 m/s² stop impulse is only possible with an unlimited acceleration.
+- **With a realistic acceleration limit, min-snap wins clearly.** At $a_{max}$ = 2 m/s², the min-snap reference (peak 1.57 m/s²) stays flyable and the drone reaches the flower almost at rest (0.004 m/s at the start of the dwell, noise-free). The straight line's stop is clipped to 2 m/s², so the drone is still moving at 0.402 m/s when the dwell starts and overshoots by 0.0837 m, even with FF. Min-snap wins all 100 paired seeds (+4.027 flowers). The acceleration-limit sweep shows the advantage appearing as soon as the limit binds: 22/40 wins with no limit, 40/40 at 4, 2 and 1.5 m/s². This is the physical reason a smooth reference beats a straight line: a real airframe cannot decelerate instantly.
+- **Without feedforward, min-snap loses**, in both limit settings (0/100). Its reference must speed up to 0.830 m/s mid-segment and then brake, and the lagging drone overshoots more: 0.1362 m vs 0.0951 m with no limit, 0.1715 vs 0.1220 m at 2 m/s².
+- **Why min-snap wins noise-free but loses with noise when there is no FF** (no limit). Noise-free, it has the larger, earlier overshoot: mean distance 0.0910 m in the first half of the dwell vs 0.0787 m for the straight line. But it then settles closer: 0.0105 vs 0.0244 m in the second half. That gives a slightly lower mean (0.0507 vs 0.0515 m) and the win (15.06 vs 14.94; 40/40 at σ = 0 in the 40-seed sweep). With GPS noise the noise sets a floor in the second half (0.0426 vs 0.0490 m), so min-snap's settling advantage mostly disappears. Its larger first-half error then dominates: 0.1019 vs 0.0896 m, mean 0.0722 vs 0.0693 m. It loses at σ = 0.05, 0.1 and 0.2 m (0/40 each). Overshoot alone does not explain the reversal: min-snap overshoots more in both cases.
+- **GPS noise sets the ceiling.** In the main configuration, min-snap falls from 24.50 (σ = 0) to 20.82, 17.26 and 10.28 flowers at σ = 0.05, 0.1 and 0.2 m. The straight line with FF falls from 15.55 to 14.88, 13.29 and 8.43. Min-snap wins 40/40 at every σ.
+- **Card expectations**: min-snap meets all three targets: mean $e_{dock}$ 0.0374 m (< 0.12), 69.2 % (> 35 %), 17.29 (> 9). The straight-line targets do not hold: 0.0675 m (card 0.15–0.25), 51.5 % (card < 25 %), 12.87 (card < 7). The P loop filters the white GPS noise, so the true docking error stays well below $\sigma_{GPS}$. The card's own error model (error = the GPS sample itself) gives $E\|\eta\| = 0.1596$ m and $P_t = 0.203$ for **every** method, so it cannot separate them.
+- The descent curls under the approach point to join the 30° line. The lowest altitude flown in seed 42 is 0.46 m; the lowest approach point is 0.61 m.
 
 ### 3D Tour
 
@@ -132,41 +137,47 @@ The tour is 52.43 m long and the mission takes 311.95 s with **either** method. 
 
 ### TSP Tour Map
 
-Flowers coloured by the min-snap $P_t$; red ticks are the 0.8 m approach lines:
+Flowers coloured by the min-snap $P_t$ (main configuration); red ticks are the 0.8 m approach lines:
 
 ![TSP Map](./tsp_map.png)
 
 ### Docking Transient (visit 1)
 
-Distance to the flower (log scale) from 0.5 s before the approach until the end of the dwell. Left: without feedforward, both methods overshoot during the dwell, and min-snap more. Middle: with feedforward, min-snap converges (the curve drops below the axis), while the straight line still overshoots to about 0.09 m. Right: with GPS noise:
+Distance to the flower (log scale) from 0.5 s before the approach until the end of the dwell.
+- Top left: no FF, no limit. Every method overshoots during the dwell, min-snap the most.
+- Top right: FF, no limit. Min-snap and the FF straight line both settle at the flower; the straight line without FF still overshoots.
+- Bottom left: FF with $a_{max}$ = 2 m/s². The FF straight line can no longer stop instantly and overshoots like the plain one; min-snap still settles.
+- Bottom right: the same with GPS noise.
 
 ![Docking Transient](./docking_transient.png)
 
-### Docking Error per Flower (seed 42)
+### Docking Error per Flower (seed 42, main configuration)
 
 ![Docking Error per Flower](./dock_error_per_flower.png)
 
-### Transfer Probability per Visit (seed 42)
+### Transfer Probability per Visit (seed 42, main configuration)
 
 ![Transfer Probability](./transfer_prob.png)
 
-### Docking Error Distribution (100 seeds, with feedforward)
+### Docking Error Distribution (100 seeds, main configuration)
 
 ![Docking Error Histogram](./dock_error_hist.png)
 
 ### Monte Carlo
 
-Paired seeds with and without feedforward, and the GPS-noise sweep:
+Top: paired seeds, min-snap vs straight line + stop-impulse FF, with and without the acceleration limit. Bottom: acceleration-limit and GPS-noise sweeps:
 
 ![Monte Carlo](./monte_carlo.png)
 
 ### Summary
 
+$E[N_{poll}]$ for every method and configuration (100 seeds):
+
 ![Summary](./summary_bar.png)
 
 ### Animation
 
-Seed 42: both drones fly the tour; flowers turn green once visited, and the running $E[N_{poll}]$ of each method is shown in the title (157 frames, 2 s per frame):
+Seed 42, main configuration: all three drones fly the tour; flowers turn green once visited, and the running $E[N_{poll}]$ of each method is shown in the title (157 frames, 2 s per frame):
 
 ![Animation](./animation.gif)
 
@@ -175,15 +186,16 @@ Seed 42: both drones fly the tour; flowers turn green once visited, and the runn
 | Card | Implementation | Reason |
 |------|----------------|--------|
 | $\hat{\mathbf{d}} = (0.5\cos\varphi, 0.5\sin\varphi, \sqrt{3}/2)$ described as a 30° elevation | $(\cos 30°\cos\varphi, \cos 30°\sin\varphi, \sin 30°)$ | The card's vector has a 60.0° elevation (printed by the script). Card formula and code corrected. |
-| Docking error = mean $\|\eta\|$ of the GPS noise added to the commanded flower position | True distance of a point mass with a first-order velocity response ($\tau_v$ = 0.3 s) tracking the reference with a P loop ($K_p$ = 2 s⁻¹) on GPS measurements | The card's error is the same noise for both methods ($P_t$ = 0.203 each), so it cannot compare them. The card's role description already asks for "point-mass dynamics with first-order velocity response". |
-| Tracking controller not specified | Velocity feedforward, with and without acceleration feedforward | The result reverses between the two (see Key findings), so both are reported. |
-| Straight-line is "faster per visit" | Both take $T_{seg}$ = 1.6 s (card's own rule $T_{seg} = \max(d/v_{approach}, 0.5)$) | Mission time is identical; reported but not used as a comparison. |
-| Expected straight-line $e_{dock}$ 0.15–0.25 m, rate < 25 %, $E[N]$ < 7 | 0.062 m, 54.3 %, 13.57 | Reported as is (X6); card annotated. |
-| Linear descent from the via point at $v_{approach}$; drone at rest at the approach point while the min-snap reference starts at 0.5 m/s | Degree-7 descent ending with velocity $v_{approach}\hat{\mathbf{d}}$ | Gives both references a consistent initial state; the card's version starts every approach with a 0.5 m/s velocity jump. |
+| Docking error = mean $\|\eta\|$ of the GPS noise added to the commanded flower position | True distance of a point mass with a first-order velocity response ($\tau_v$ = 0.3 s) and an acceleration limit, tracking the reference with a P loop ($K_p$ = 2 s⁻¹) on GPS measurements | The card's error is the same noise for every method ($P_t$ = 0.203 each), so it cannot compare them. The card's role description already asks for "point-mass dynamics with first-order velocity response". |
+| Tracking controller and actuator limits not specified | Velocity feedforward, with and without acceleration feedforward; acceleration limit 2 m/s² or none; all four combinations reported | The ranking depends on both (see Key findings), so all are shown. |
+| Two methods (min-snap, straight line) | Plus a straight line whose stop is fed forward as a one-step deceleration | Gives the straight line the same feedforward as min-snap, so the comparison tests the trajectory shape, not who gets feedforward. |
+| Straight line is "faster per visit" | Every method takes $T_{seg}$ = 1.6 s (card's own rule $T_{seg} = \max(d/v_{approach}, 0.5)$) | Mission time is practically identical; reported but not used as a comparison. |
+| Expected straight-line $e_{dock}$ 0.15–0.25 m, rate < 25 %, $E[N]$ < 7 | 0.0675 m, 51.5 %, 12.87 (main configuration) | Reported as is (X6); card annotated. |
+| Linear descent from the via point at $v_{approach}$; drone at rest at the approach point while the min-snap reference starts at 0.5 m/s | Degree-7 descent ending with velocity $v_{approach}\hat{\mathbf{d}}$ | Gives every reference a consistent initial state; the card's version starts every approach with a 0.5 m/s velocity jump. |
 | Departure "vertically upward"; card code flew straight from the flower to the next via point | Vertical climb to 3.5 m, then transit | Follows the card's problem statement. |
 | Transit legs part of the simulated flight | Climb and transit flown kinematically on smooth references; each docking window (hover ≥ 1 s at the via point, descent, approach, dwell) flown dynamically | Docking is the only scored part. The fixed-length windows let all seeds run in one vectorised loop. |
-| Single run with seed 42 | Seed 42 for the figures, plus 100-seed Monte Carlo and a 4-level GPS-noise sweep with common random numbers | Results depend on random noise (X2). |
-| Added parameters | $\tau_v$ = 0.3 s, $K_p$ = 2 s⁻¹, $v_{max}$ = 3 m/s, via-point hover ≥ 1 s | Needed for the dynamic model; not in the card. |
+| Single run with seed 42 | Seed 42 for the figures, plus 100-seed Monte Carlo and 40-seed sweeps with common random numbers | Results depend on random noise (X2). |
+| Added parameters | $\tau_v$ = 0.3 s, $K_p$ = 2 s⁻¹, $v_{max}$ = 3 m/s, $a_{max}$ = 2 m/s², via-point hover ≥ 1 s | Needed for the dynamic model; not in the card. $a_{max}$ is also swept. |
 
 ---
 
@@ -191,8 +203,8 @@ Seed 42: both drones fly the tour; flowers turn green once visited, and the runn
 
 1. **Coloured GPS noise**: model GPS error as a slowly varying bias plus white noise; a bias cannot be averaged out during the dwell.
 2. **Dwell-time optimisation**: shorten $T_{dwell}$ once $e_{dock}$ settles, to trade transfer probability for tour time.
-3. **Time-optimal min-snap**: choose $T_{seg}$ per flower to minimise time subject to the drone's acceleration limit, which makes the method comparison a speed/accuracy trade-off.
-4. **2-opt tour**: replace nearest neighbour; the docking result does not change, but the tour length does.
+3. **Time-optimal min-snap**: choose $T_{seg}$ per flower to minimise time subject to the acceleration limit, which turns the method comparison into a speed/accuracy trade-off.
+4. **Trapezoidal straight line**: a straight line with a deceleration ramp at $a_{max}$ is the natural middle ground between the two references.
 5. **Wind gusts during the dwell** with a PI position loop.
 
 ---
