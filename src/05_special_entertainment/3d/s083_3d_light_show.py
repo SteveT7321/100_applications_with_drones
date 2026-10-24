@@ -73,6 +73,8 @@ GA_ITERS   = 200
 R_AUD_SWEEP = [50.0, 100.0, 200.0]
 AZ_SWEEP   = [0.0, 2.5, 5.0, 7.5, 10.0]       # PID-only wind-free lag probe
 ANIM_STEP  = 6                                 # 0.3 s per frame
+N_SUB      = 5                                 # RK4 substeps per 0.05 s step (h = 0.01 s)
+TIE_TOL    = 1e-5                              # m: error traces closer than this count as identical
 
 PATHS = {'flat': (0.0, 0.0), 'card': (A_Z, 0.0), 'arc': (A_Z, -np.pi / 2)}
 PLAB = {'flat': '2D baseline: flat at 50 m', 'card': 'Card formula (tilted plane)',
@@ -160,9 +162,66 @@ def unit_wind(seeds):
                      for s in seeds])
 
 
+def simulate_rk4(feedforward, wind, ref, flying_start=False):
+    """The S083 simulator (same PID, wind held per 0.05 s step, integral of e in the state, same
+    assertions and metrics) with a fixed-step RK4 (N_SUB substeps per step) instead of odeint, so
+    every seed is integrated independently of the others (odeint shares its step control across
+    the batch)."""
+    cs, d1, d2, wp = ref
+    S = wind.shape[0]
+    N, T = m2d.N_STEPS, m2d.T_GRID
+    h = DT / N_SUB
+    p = np.tile(wp[0], (S, 1)).astype(float)
+    v = np.tile(d1(0.0), (S, 1)) if flying_start else np.zeros((S, 3))
+    ie = np.zeros((S, 3))
+    traj = np.zeros((N, S, 3))
+    a_cmd = np.zeros((N, S, 3))
+    traj[0] = p
+
+    def deriv(t, p, v, ie, w):
+        e = cs(t) - p
+        a = KP * e + KI * ie + KD * (d1(t) - v) + w
+        if feedforward:
+            a = a + d2(t)
+        return v, a, e
+
+    for k in range(N):
+        t = T[k]
+        e = cs(t) - p
+        a_cmd[k] = KP * e + KI * ie + KD * (d1(t) - v) + (d2(t) if feedforward else 0.0)
+        if k == N - 1:
+            break
+        w = wind[:, k]
+        for j in range(N_SUB):
+            tj = t + j * h
+            k1 = deriv(tj, p, v, ie, w)
+            k2 = deriv(tj + h / 2, p + h / 2 * k1[0], v + h / 2 * k1[1], ie + h / 2 * k1[2], w)
+            k3 = deriv(tj + h / 2, p + h / 2 * k2[0], v + h / 2 * k2[1], ie + h / 2 * k2[2], w)
+            k4 = deriv(tj + h, p + h * k3[0], v + h * k3[1], ie + h * k3[2], w)
+            p = p + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0])
+            v = v + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1])
+            ie = ie + h / 6 * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2])
+        traj[k + 1] = p
+        assert np.all(np.linalg.norm(traj[k + 1] - traj[k], axis=1) < 10.0 * DT)   # no jumps (S083)
+    ref_pos = cs(T)
+    err = np.linalg.norm(traj - ref_pos[:, None, :], axis=2)
+    a_norm = np.linalg.norm(a_cmd, axis=2)
+    assert np.all(traj[:, :, 2] > 0.0)
+    assert np.all(a_norm <= m2d.A_LIMIT)
+    settled = T >= T_SETTLE
+    return {
+        'traj': traj, 'err': err, 'ref_pos': ref_pos,
+        'rms': np.sqrt(np.mean(err ** 2, axis=0)), 'max': err.max(axis=0),
+        'compl': 100.0 * np.mean(err <= PASS_THR, axis=0),
+        'rms_s': np.sqrt(np.mean(err[settled] ** 2, axis=0)), 'max_s': err[settled].max(axis=0),
+        'compl_s': 100.0 * np.mean(err[settled] <= PASS_THR, axis=0),
+        'a_peak': float(a_norm.max()),
+    }
+
+
 def simulate(ctrl, wind, ref):
-    """The S083 simulator (same PID, odeint per step, asserts) on a 3D reference."""
-    r = m2d.simulate(ctrl != 'pid', wind, ref, flying_start=(ctrl == 'fly'))
+    """S083 controller and plant on a 3D reference (fixed-step RK4, per-seed independent)."""
+    r = simulate_rk4(ctrl != 'pid', wind, ref, flying_start=(ctrl == 'fly'))
     z = r['traj'][:, :, 2]
     assert np.all(z > Z_SOFT[0]) and np.all(z < Z_SOFT[1])      # soft altitude bounds never reached
     ez = r['traj'] - r['ref_pos'][:, None, :]
@@ -187,13 +246,16 @@ def run_simulation():
            for a in AZ_SWEEP for ph in (0.0, -np.pi / 2)}
     raud = {r: {k: legibility(waypoints(*v), r) for k, v in paths.items()} for r in R_AUD_SWEEP}
     raud_best = {r: optimise_legibility(r)[1] for r in R_AUD_SWEEP}
-    # CRN order check: the wind of seed s does not depend on the batch; odeint's adaptive step
-    # control acts on the whole batch, so trajectories agree only to solver tolerance
-    sub = simulate('fly', SIGMA_W * unit_wind([5, 2]), refs['card'])
-    batch_diff = float(np.abs(sub['traj'] - res[('card', 'fly')]['traj'][:, [5, 2]]).max())
-    assert batch_diff < 1e-5
+    # Batch check: seeds 5 and 2 run alone must reproduce the 100-seed batch exactly
+    sub = simulate('pid', SIGMA_W * unit_wind([5, 2]), refs['card'])
+    batch_diff = float(np.abs(sub['traj'] - res[('card', 'pid')]['traj'][:, [5, 2]]).max())
+    assert batch_diff == 0.0
+    # Integrator check against the S083 odeint simulator (100-seed batch)
+    r_ode = m2d.simulate(False, wind, refs['card'], flying_start=False)
+    ode_diff = float(np.abs(r_ode['traj'] - res[('card', 'pid')]['traj']).max())
+    assert ode_diff < 1e-4
     opt_info = dict(grid=grid, grid_best=(a_g, p_g, s_g), ga=(a_o, p_o, s_o), ga_card=(a_c, p_c, s_c),
-                    batch_diff=batch_diff)
+                    batch_diff=batch_diff, ode_diff=ode_diff)
     return paths, refs, res, lag, raud, raud_best, opt_info
 
 
@@ -447,9 +509,14 @@ if __name__ == '__main__':
         for c in CTRL:
             a, b = res[(p, c)], res[('flat', c)]
             d = a['rms'] - b['rms']
-            print(f"    {p:<5} {CLAB[c]:<24} RMS higher than flat in {int(np.sum(d > 0))}/{N_MC} seeds, "
-                  f"mean diff {100 * d.mean():+.2e} cm; after 5 s {100 * (a['rms_s'] - b['rms_s']).mean():+.2e} cm; "
-                  f"max |error diff| over all steps {100 * np.abs(a['err'] - b['err']).max():.2e} cm")
+            mx = np.abs(a['err'] - b['err']).max()
+            if mx < TIE_TOL:
+                print(f"    {p:<5} {CLAB[c]:<24} identical to flat: max |error diff| over all steps and seeds "
+                      f"{100 * mx:.1e} cm, below the {100 * TIE_TOL:.0e} cm tie tolerance (no win count)")
+            else:
+                print(f"    {p:<5} {CLAB[c]:<24} RMS higher than flat in {int(np.sum(d > 0))}/{N_MC} seeds, "
+                      f"mean diff {100 * d.mean():+.3f} cm; after 5 s {100 * (a['rms_s'] - b['rms_s']).mean():+.3f} cm; "
+                      f"max |error diff| over all steps {100 * mx:.2e} cm")
     print('  Wind-free PID-only lag probe (RMS after 5 s, cm) vs A_z; analytic vertical lag amplitude '
           '|1 - H(jw)| A_z at w = 4 pi / 60:')
     s_ = 1j * w
@@ -463,8 +530,9 @@ if __name__ == '__main__':
     zmax = max(r['zmax'] for r in res.values())
     print(f'  Altitude over all runs: {zmin:.2f} - {zmax:.2f} m (soft bounds {Z_SOFT[0]:.0f}-{Z_SOFT[1]:.0f} m, '
           f'never reached; asserted)')
-    print(f"  Batch check: seeds 5 and 2 re-run alone differ from the 100-seed batch by at most "
-          f"{oi['batch_diff']:.1e} m (odeint step control is shared across the batch)")
+    print(f"  Batch check: seeds 5 and 2 run alone differ from the 100-seed batch by {oi['batch_diff']:.1e} m "
+          f"(fixed-step RK4, {N_SUB} substeps per step); RK4 vs the S083 odeint simulator (card path, PID-only, "
+          f"100 seeds): max |trajectory diff| {oi['ode_diff']:.1e} m")
     print('  Peak commanded acceleration (m/s^2): ' + ', '.join(
         f"{p}/{c} {res[(p, c)]['a_peak']:.2f}" for p in paths for c in CTRL))
 

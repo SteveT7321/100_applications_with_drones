@@ -7,7 +7,7 @@
 
 ## Problem Definition
 
-**Setup**: The S083 show drone (200-waypoint not-a-knot cubic spline, PID $K_p/K_i/K_d$ = 2.0/0.1/0.8, point mass, white Gaussian wind $\sigma_w = 0.5$ m/s² per axis re-sampled every 0.05 s, `odeint` per step) flew a figure-8 at a constant 50 m. Here altitude becomes part of the choreography:
+**Setup**: The S083 show drone (200-waypoint not-a-knot cubic spline, PID $K_p/K_i/K_d$ = 2.0/0.1/0.8, point mass, white Gaussian wind $\sigma_w = 0.5$ m/s² per axis re-sampled every 0.05 s) flew a figure-8 at a constant 50 m. Here altitude becomes part of the choreography:
 
 $$\mathbf p_{ref}(\tau) = \bigl(20\sin 2\pi\tau,\; 20\sin 4\pi\tau,\; 50 + A_z\sin(4\pi\tau + \phi_z)\bigr),\qquad \tau = t/60$$
 
@@ -72,7 +72,7 @@ conda activate drones
 python src/05_special_entertainment/3d/s083_3d_light_show.py
 ```
 
-The script calls the S083 simulator (`simulate` in the 2D script) on the 3D references, so the controller, integrator and its assertions are exactly those of S083. Runtime ≈ 2 min (12 batches of 100 seeds). Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF. `odeint` controls its step on the whole 100-seed batch, so a seed re-run alone differs from the batch by at most 2.0e-06 m (printed); the wind itself is drawn per seed.
+The controller, wind model, assertions and metrics are those of the S083 simulator, but the plant is integrated with a fixed-step RK4 (5 substeps per 0.05 s step) instead of `odeint`: `odeint` controls its step size on the whole 100-seed batch, so a seed's result depended on the batch (by up to 2e-6 m). Now seeds 5 and 2 run alone reproduce the batch exactly (difference 0.0e+00 m, asserted), and on the card path with PID-only the RK4 trajectories differ from the S083 `odeint` simulator by at most 9.0e-06 m over 100 seeds (printed and asserted < 1e-4 m). Runtime ≈ 1–2.5 min. Two single-threaded runs and one default-threading run printed byte-identical output and produced byte-identical PNGs and GIF.
 
 ---
 
@@ -129,11 +129,11 @@ Audience-radius sweep:
 
 | Path | PID-only | PID + FF (from rest) | PID + FF, flying start |
 |---|---|---|---|
-| card | worse in 100/100, +4.74 cm RMS (+3.35 cm after 5 s) | worse in 100/100, +3.16 cm (+3.16e-01 cm after 5 s) | identical: max error difference 1.33e-04 cm over all steps and seeds |
-| arc | worse in 100/100, +2.43 cm (+3.29 cm after 5 s) | identical: max difference 6.17e-04 cm | identical: 1.20e-04 cm |
-| opt | worse in 100/100, +4.72 cm (+3.33 cm after 5 s) | worse in 100/100, +3.15 cm (+3.15e-01 cm after 5 s) | identical: 1.34e-04 cm |
+| card | worse in 100/100, +4.737 cm RMS (+3.350 cm after 5 s) | worse in 100/100, +3.157 cm (+0.316 cm after 5 s) | identical: max error difference 9.6e-09 cm over all steps and seeds |
+| arc | worse in 100/100, +2.435 cm (+3.292 cm after 5 s) | identical: max difference 3.7e-04 cm | identical: 1.3e-08 cm |
+| opt | worse in 100/100, +4.719 cm (+3.329 cm after 5 s) | worse in 100/100, +3.151 cm (+0.315 cm after 5 s) | identical: 9.6e-09 cm |
 
-The "identical" cases differ only at solver tolerance (mean RMS differences of order 1e-05 cm, printed).
+For the "identical" cases no win count is given: the error traces differ by less than the 1e-03 cm tie tolerance (rounding for the flying start; for the arc from rest, the spline's start velocity, which is not exactly zero).
 
 ### Wind-free PID-only lag probe
 
@@ -150,9 +150,9 @@ The "identical" cases differ only at solver tolerance (mean RMS differences of o
 - **Altitude changes what the audience sees, a lot.** Tilting the figure-8 by the card's formula raises the legibility score from 26.85° (flat 2D path) to 43.75°, and the optimiser adds almost nothing (43.84° at $\phi_z$ = 2.4°). The mechanism is the tilt toward the audience: the same plane tilted the other way ($\phi_z$ = 180°, high side away from the seats) scores only 5.90°, and the intermediate phases 90° and 270° score 27.05° and 28.22°. All four values are printed by the probe.
 - **The shape the card describes in words is a poor choice.** Climbing on the outer lobes (`arc`) gains only +1.38° and has 16 segments that some seat sees moving almost along its line of sight (worst 0.77°). At $R_{aud}$ = 50 m it is worse than the flat path (33.55° vs 44.71°).
 - **The legibility gain grows with audience distance**: card − flat is +6.60°, +16.91° and +20.56° at $R_{aud}$ = 50, 100 and 200 m. A plausible reason (not probed further): a flat path seen from far away is almost edge-on, the tilted plane is not. The optimum stays at full amplitude ($A_z$ = 10 m, $\phi_z \approx 0°$) except at 50 m ($A_z$ = 8.00 m, 51.92°).
-- **With feedforward and a flying start, the 3D path costs nothing in tracking.** All four paths give the same error to within 1.34e-04 cm on every seed (RMS 10.88 ± 0.77 cm). The error equation above contains no reference term, so this holds by construction for a linear point mass with exact feedforward. The card's premise that the vertical axis makes tracking harder and justifies relaxing the spec from 0.10 to 0.15 m does not hold for this controller: it passes 0.15 m on 100/100 seeds and 0.10 m on 11/100 seeds **on every path, including the flat one**.
+- **With feedforward and a flying start, the 3D path costs nothing in tracking.** All four paths give the same error to within 1.3e-08 cm on every seed (RMS 10.88 ± 0.77 cm). The error equation above contains no reference term, so this holds by construction for a linear point mass with exact feedforward. The card's premise that the vertical axis makes tracking harder and justifies relaxing the spec from 0.10 to 0.15 m does not hold for this controller: it passes 0.15 m on 100/100 seeds and 0.10 m on 11/100 seeds **on every path, including the flat one**.
 - **Without feedforward, the vertical arcs add a lag that matches theory.** PID-only on the card path has 37.51 cm RMS after 5 s vs 34.16 cm flat (worse on 100/100 seeds); the whole difference is vertical (z part 16.76 vs 6.40 cm; xy part 33.55 cm on both). The wind-free probe gives 15.65 cm vertical RMS at $A_z$ = 10 m against the analytic $|1 - H(j\omega)|A_z/\sqrt2$ = 15.66 cm.
-- **The launch matters more on the card path than on the arc.** From rest, PID + FF on the card path is worse than flat on 100/100 seeds (+3.16 cm), because the card path starts with a 2.09 m/s climb (its maximum speed is 5.13 vs 4.68 m/s) that the resting drone must catch up with. The arc starts at the bottom of its altitude swing with no vertical velocity (start $v_z$ 0.00 m/s), so its error is the same as the flat path's.
+- **The launch matters more on the card path than on the arc.** From rest, PID + FF on the card path is worse than flat on 100/100 seeds (+3.157 cm), because the card path starts with a 2.09 m/s climb (its maximum speed is 5.13 vs 4.68 m/s) that the resting drone must catch up with. The arc starts at the bottom of its altitude swing with no vertical velocity (start $v_z$ 0.00 m/s), so its error is the same as the flat path's.
 - **LED brightness tracks the altitude closely**: the RMS brightness error is 0.0022 (on the 0.3–1.0 scale) with feedforward and a flying start on every path, and at most 0.0075 for PID-only. On the flat path the brightness is constant; on the 3D paths it spans the full 0.3–1.0.
 - **Physical checks** (asserted): the drone stays within 39.55–60.44 m on every run (soft bounds 35–65 m never reached), never moves more than 0.5 m per step, and the commanded acceleration stays below 15 m/s² (peak 6.10 m/s², card path PID-only).
 
@@ -204,6 +204,7 @@ Arc path with PID + FF and a flying start: the drone's marker colour and size fo
 | Two controllers from rest | plus the S083 flying start | from rest, the launch dominates the card's metrics (as in S083) |
 | Gradient ascent on $(A_z, \phi_z)$ | 41 × 72 grid, then finite-difference gradient ascent with backtracking; also from the card start | $\bar\Phi_{min}$ is a mean of minima (non-smooth); the grid guards against local maxima |
 | Single run | 100 seeds with the same wind for every path and controller | X2 |
+| `scipy.integrate.odeint` | fixed-step RK4, 5 substeps per 0.05 s step (S083 controller and wind unchanged) | `odeint` shares its step control across the seed batch, so per-seed results depended on the batch; RK4 matches the S083 `odeint` result to 9.0e-06 m |
 | Separate "LED profile" and "tracking error" figures | LED brightness shares a figure with altitude | same content |
 
 ---
