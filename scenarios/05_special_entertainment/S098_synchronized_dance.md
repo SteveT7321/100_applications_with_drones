@@ -1,6 +1,6 @@
 # S098 Swarm Synchronized Dance
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Distributed PTP Clock Sync + Choreography Spline Playback | **Dimension**: 3D
 
 ---
@@ -76,7 +76,14 @@ $$\hat{\delta}_k \leftarrow (1 - \beta)\,\hat{\delta}_k + \beta\,\Delta_k$$
 
 and advances its local clock by:
 
-$$\delta_k \leftarrow \delta_k - \hat{\delta}_k$$
+$$\delta_k \leftarrow \delta_k + \hat{\delta}_k$$
+
+> **Correction (2026-10)**: the earlier version subtracted $\hat\delta_k$. Because
+> $\Delta_k$ is the mean of (peer minus self), subtracting it pushes each clock away from its
+> peers: the relative-mode update has eigenvalue modulus 1.77 ($\beta = 0.5$) and diverges.
+> Note also that a peer consensus aligns the clocks with each other but cannot remove the
+> drift of their mean, so the absolute KPI $\max_k|\delta_k|$ keeps drifting; see the outputs
+> README for the measured results (the 10 ms target is not met at a 0.5 s interval).
 
 The correction gain $\beta \in (0, 1)$ controls the speed-versus-noise trade-off: large $\beta$
 corrects quickly but amplifies measurement noise; small $\beta$ is smoother but slower to converge.
@@ -247,7 +254,7 @@ def run_simulation(splines, t_wp, strategy='ptp_standard'):
                 # EMA update of offset estimate
                 delta_hat[k] = (1 - beta) * delta_hat[k] + beta * delta_consensus
                 # Correct local clock
-                delta[k] -= delta_hat[k]
+                delta[k] += delta_hat[k]   # corrected sign (2026-10)
 
             ptp_events.append(t_global)
             t_next_ptp += DT_PTP
