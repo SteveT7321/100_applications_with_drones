@@ -71,6 +71,7 @@ Mean and peak tracking error $\|\mathbf p - \mathbf p_{ref}\|$, effort $J = \Del
 | Track-loss threshold | 15 m (added) |
 | Turbulence seeds | 12 (100–111), common to all controllers |
 | Severity sweep | $v_{max}$ = 20, 30, 40, 50, 60 m/s, seeds 100–104 |
+| Saturation probe | thrust limit × 2 (29.43 N), seeds 100–111 (added) |
 
 ---
 
@@ -92,7 +93,7 @@ Runtime ≈ 1.5–2 min on a loaded machine (the MPC runs dominate).
 ## Results
 
 **Model checks**:
-- Read literally, the card's dynamics ($m\ddot{\mathbf p} = \mathbf u + m\,\mathbf f_{wind} + \dots$) add a peak wind term of 50.0 m/s², 5.1 × the control authority of 9.81 m/s² (39.5 m/s² already at entry). No controller could follow the spiral, so the wind enters through drag instead (see Deviations).
+- Read literally, the card's dynamics ($m\ddot{\mathbf p} = \mathbf u + m\,\mathbf f_{wind} + \dots$) add a peak wind term of 50.64 m/s² (full wind including the 8 m/s inflow, at r = 150 m), 5.16 × the control authority of 9.81 m/s² (39.77 m/s² already at entry). No controller could follow the spiral, so the wind enters through drag instead (see Deviations).
 - With drag, the thrust needed on the spiral in the mean wind is 7.39 N at entry and peaks at 13.09 N at $r$ = 150 m. Its peak is 3.54 / 5.10 / 9.09 / 13.09 / 17.09 N for $v_{max}$ = 20 / 30 / 40 / 50 / 60 m/s, so at 60 m/s (116 % of $mg$) no controller can stay on the spiral through the eyewall.
 - Gains: H-infinity 15.22 N/m and 10.60 N·s/m; the LQR gain that the unconstrained MPC reduces to is 8.21 N/m and 5.24 N·s/m; PD 4.0 N/m and 2.5 N·s/m. Closed-loop $\mathcal H_\infty$ norm from $\mathbf w$ to $\mathbf z$: PD 1.3973, LQR 0.7613, H-infinity 0.5709 (below the operating $\gamma$ = 0.5818, as certified).
 
@@ -107,9 +108,17 @@ Runtime ≈ 1.5–2 min on a loaded machine (the MPC runs dominate).
 
 MPC has the lowest mean error in all 12 seeds and a lower peak error than H-infinity in 11 of 12. H-infinity beats PD on mean error in 12 of 12. In both MPC variants ADMM was active in 4.3 % of the steps, as often as the thrust saturates.
 
+**Probe: thrust limit × 2** (29.43 N, same 12 seeds; nothing saturates):
+
+| Controller | Mean error | Peak error | Success |
+|---|---:|---:|---:|
+| PD baseline | 3.184 ± 0.033 m | 5.73 ± 0.28 m | 12/12 |
+| MPC + wind feed-forward | 0.170 ± 0.011 m | 0.63 ± 0.07 m | 12/12 |
+| H-infinity | 0.833 ± 0.008 m | 1.49 ± 0.07 m | 12/12 |
+
 **Key findings**:
 - **Ranking: MPC < H-infinity < PD on mean error** (0.353 / 1.033 / 3.392 m). Without the wind feed-forward the same MPC gets 1.755 m, between H-infinity and PD. Most of MPC's advantage therefore comes from knowing the wind field, not from the optimisation itself. Among the controllers that do not know the wind, the higher-gain H-infinity design (15.22 N/m) beats the unconstrained-LQR-gain MPC (8.21 N/m) and PD (4 N/m).
-- **Peak errors are set by the thrust limit, not by the controller.** In seed 100 all three controllers reach their peak at t = 56.5 s, just after the eyewall crossing (t = 50 s): PD 17.79 m, MPC 11.65 m, H-infinity 12.84 m. The mean wind already needs 89 % of the available thrust there, so a sustained gust saturates every controller (4.3 % of the steps for all four). The drone is blown 10+ m off the spiral whatever the controller does; the controllers differ in how far and how fast they recover. Because of this, the peak-error standard deviation (about 7.6–7.8 m) is larger than the differences between controllers.
+- **The thrust limit causes the large eyewall excursions; the controller still matters elsewhere.** In seed 100 all three controllers reach their peak at t = 56.5 s, just after the eyewall crossing (t = 50 s): PD 17.79 m, MPC 11.65 m, H-infinity 12.84 m. The mean wind already needs 89 % of the available thrust there, so a sustained gust saturates every controller, and in the most saturated seeds (7–9 % of the steps) all three are blown 11–31 m off the spiral (seed 108: 30.99 / 28.35 / 27.75 m). In seeds that barely saturate (0.2–1.1 % of the steps: seeds 101, 102, 104, 111) the peaks differ by almost a factor of 10: PD 5.31–5.72 m, MPC 0.54–0.73 m, H-infinity 1.38–1.49 m. A probe with twice the thrust limit (29.43 N, no saturation at all) gives the same picture for every seed: peak error PD 5.73 ± 0.28 m, MPC 0.63 ± 0.07 m, H-infinity 1.49 ± 0.07 m, all 12/12 successful. The large spread of the peak error at the real limit (std about 7.6–7.8 m) therefore comes from how hard each seed's gusts hit the saturated eyewall passage.
 - **Effort is not a useful comparison metric here.** $J$ is 1779–1784 N·s for every controller (±27–28 N·s across seeds) because almost all of the thrust goes into holding against the wind, which is the same for any controller that stays near the spiral.
 - **Severity sweep** (5 seeds per point): below 50 m/s nothing saturates and all controllers succeed in 5/5 seeds, with the same ranking (mean error at 40 m/s: MPC 0.137 m, H-infinity 0.667 m, PD 2.547 m). At 50 m/s saturation appears (about 3 % of the steps) and PD fails one seed (4/5). At 60 m/s the eyewall needs 116 % of the available thrust: every controller saturates in 33–35 % of the steps, peak errors are 79–90 m and all fail 0/5.
 - **"Reached the eye"**: the reference reaches $r_{eye}$ = 15 m only at its last instant, so the drone ends about 15 m from the eye centre (14.97–15.10 m mean) in every case. Success is therefore defined by the track-loss threshold, not by entering the eye circle.
@@ -174,7 +183,7 @@ Seed 100: the three drones (orange PD, green MPC, purple H-infinity) on the refe
 
 | Card | Implementation | Reason |
 |------|----------------|--------|
-| $m\ddot{\mathbf p} = \mathbf u + m\,\mathbf f_{wind} + \mathbf f_{turb} - b\dot{\mathbf p}$ | $m\ddot{\mathbf p} = \mathbf u + b(\mathbf v_{wind} + \mathbf v_{gust} - \dot{\mathbf p})$ | The card adds a wind velocity as an acceleration. Read literally, the eyewall term is 50.0 m/s², 5.1 × the control authority (printed by the script), and the task is impossible. Card fixed. |
+| $m\ddot{\mathbf p} = \mathbf u + m\,\mathbf f_{wind} + \mathbf f_{turb} - b\dot{\mathbf p}$ | $m\ddot{\mathbf p} = \mathbf u + b(\mathbf v_{wind} + \mathbf v_{gust} - \dot{\mathbf p})$ | The card adds a wind velocity as an acceleration. Read literally, the eyewall term is 50.64 m/s², 5.16 × the control authority (printed by the script), and the task is impossible. Card fixed. |
 | Gusts "band-limited Gaussian noise", $\sigma_w = 0.1\,v_{tan}$ (card code: white noise each step) | Ornstein–Uhlenbeck gusts, correlation time 2 s, same $\sigma_w$ | Band-limited as the card describes; white noise at 10 Hz would mostly average out through the drone's inertia. |
 | MPC constraint $\|\mathbf u\|_\infty \le mg/\sqrt 2$ (box); card code uses a one-step LQR with clipping | Full condensed QP over 20 steps with the true constraint $\|\mathbf u_j\|_2 \le mg$, solved by ADMM | The box is a conservative inner approximation of the thrust disk; PD and H-infinity are saturated on the disk, so MPC uses the same limit. |
 | MPC wind "at the predicted positions" (card code: current position, held over the horizon) | Rankine wind at the positions predicted by the previous MPC solution | Follows the card's text. |

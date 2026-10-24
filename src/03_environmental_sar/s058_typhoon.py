@@ -60,6 +60,7 @@ GAMMA_MARGIN = 1.10     # operate the H-inf controller at 1.1 x gamma*
 N_SEEDS    = 12         # turbulence seeds, main comparison
 SWEEP_VMAX = [20.0, 30.0, 40.0, 50.0, 60.0]
 N_SEEDS_SWEEP = 5
+PROBE_THRUST = 2.0      # thrust-limit multiplier for the saturation probe
 SEED0      = 100
 SHOW_SEED  = SEED0      # seed used for the figures and the animation
 ADMM_RHO   = None       # set from the QP Hessian
@@ -214,8 +215,9 @@ def hinf_synthesis():
 # ── MPC (condensed QP over the thrust disk, solved with ADMM) ─────────────────
 
 class MPC:
-    def __init__(self, mode='mpc'):
+    def __init__(self, mode='mpc', u_max=U_MAX):
         self.mode = mode
+        self.u_max = u_max
         n, m, N = 4, 2, N_PRED
         _, P = lqr_gain()
         self.Phi = np.zeros((N * n, n))
@@ -247,11 +249,10 @@ class MPC:
         self.n_admm = 0
         self.n_solves = 0
 
-    @staticmethod
-    def project(U):
+    def project(self, U):
         u = U.reshape(-1, 2)
         nrm = np.linalg.norm(u, axis=1)
-        s = np.where(nrm > U_MAX, U_MAX / np.maximum(nrm, 1e-12), 1.0)
+        s = np.where(nrm > self.u_max, self.u_max / np.maximum(nrm, 1e-12), 1.0)
         return (u * s[:, None]).ravel()
 
     def step(self, x, t, v_max):
@@ -269,7 +270,7 @@ class MPC:
         g = self.GQPhi @ x + self.GQPsi @ W - self.GQ @ Xr
         U = -self.Hinv @ g
         self.n_solves += 1
-        if np.any(np.linalg.norm(U.reshape(-1, 2), axis=1) > U_MAX):
+        if np.any(np.linalg.norm(U.reshape(-1, 2), axis=1) > self.u_max):
             Z = self.project(np.concatenate([self.U[2:], self.U[-2:]]))
             Y = np.zeros_like(Z)
             for it in range(ADMM_ITERS):
@@ -305,11 +306,11 @@ def turbulence_noise(seed, n=N_STEPS):
     return out
 
 
-def simulate(ctrl, seed, v_max=V_MAX, K_hinf=None, record=False):
+def simulate(ctrl, seed, v_max=V_MAX, K_hinf=None, record=False, u_max=U_MAX):
     noise = turbulence_noise(seed)
     p0, v0, _ = reference(0.0)
     x = np.concatenate([p0, v0])
-    mpc = MPC(ctrl) if ctrl.startswith('mpc') else None
+    mpc = MPC(ctrl, u_max) if ctrl.startswith('mpc') else None
     err = np.zeros(N_STEPS)
     unorm = np.zeros(N_STEPS)
     traj = np.zeros((N_STEPS + 1, 2))
@@ -331,9 +332,9 @@ def simulate(ctrl, seed, v_max=V_MAX, K_hinf=None, record=False):
         else:
             u = mpc.step(x, t, v_max)
         nu = np.linalg.norm(u)
-        if nu > U_MAX:
-            u = u * (U_MAX / nu)                       # thrust-cone saturation (all controllers)
-        assert np.linalg.norm(u) <= U_MAX + 1e-9, 'thrust above the tilt limit'
+        if nu > u_max:
+            u = u * (u_max / nu)                       # thrust-cone saturation (all controllers)
+        assert np.linalg.norm(u) <= u_max + 1e-9, 'thrust above the tilt limit'
         w = B_DRAG / M_DRONE * v_w                     # drag-induced disturbance acceleration
         x = AD @ x + BD @ u + ED @ w
         assert np.all(np.isfinite(x)) and np.linalg.norm(x[2:]) < 150.0, 'state blew up'
@@ -347,7 +348,7 @@ def simulate(ctrl, seed, v_max=V_MAX, K_hinf=None, record=False):
             rec['ref'][k + 1] = pr1
     res = {
         'e_mean': err.mean(), 'e_peak': err.max(), 't_peak': (np.argmax(err) + 1) * DT,
-        'effort': DT * unorm.sum(), 'sat_frac': np.mean(unorm >= U_MAX * (1 - 1e-6)),
+        'effort': DT * unorm.sum(), 'sat_frac': np.mean(unorm >= u_max * (1 - 1e-6)),
         'success': bool(err.max() <= E_FAIL), 'r_final': float(np.linalg.norm(traj[-1])),
         'err': err, 'unorm': unorm, 'traj': traj,
     }
@@ -382,8 +383,12 @@ def run_simulation():
             else:
                 sweep[c][vm] = [simulate(c, SEED0 + i, v_max=vm, K_hinf=K_hinf)
                                 for i in range(N_SEEDS_SWEEP)]
+    # probe: same seeds with a larger thrust limit (no saturation at the eyewall)
+    probe = {c: [simulate(c, s, K_hinf=K_hinf, u_max=PROBE_THRUST * U_MAX) for s in seeds]
+             for c in CTRL}
     synth = {'K_hinf': K_hinf, 'gamma_star': gamma_star, 'gamma': gamma,
              'K_lqr': K_lqr, 'K_pd': K_pd, 'norms': norms}
+    synth['probe'] = probe
     return main, sweep, synth
 
 
@@ -635,16 +640,21 @@ if __name__ == '__main__':
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
     main, sweep, synth = run_simulation()
+    probe = synth['probe']
 
     print('\n=== S058 Typhoon Eye Probing — Results ===')
     print(f'  Mission: r {R_START:.0f} -> {R_EYE:.0f} m, T = {T_MISSION:.2f} s, '
           f'{N_STEPS} steps of {DT} s; eyewall crossing at t = {T_EYEWALL:.0f} s')
     print(f'  Thrust limit: min(F_max = {F_MAX_CARD:.0f} N, m g = {M_DRONE * G:.2f} N) = {U_MAX:.2f} N '
           f'-> max control acceleration {U_MAX / M_DRONE:.2f} m/s^2')
-    peak_card_acc = float(v_tan(R_MAX))
-    print(f'  Card dynamics check (m a = u + m f_wind): peak wind term {peak_card_acc:.1f} m/s^2 '
-          f'= {peak_card_acc / (U_MAX / M_DRONE):.1f} x the control authority; at entry '
-          f'{float(v_tan(R_START)):.1f} m/s^2')
+    rg = np.linspace(0.0, 200.0, 4001)
+    wmag = np.linalg.norm(rankine_wind(np.column_stack([rg, np.zeros_like(rg)])), axis=1)
+    peak_card_acc = float(wmag.max())
+    entry_acc = float(np.linalg.norm(rankine_wind(np.array([R_START, 0.0]))))
+    print(f'  Card dynamics check (m a = u + m f_wind, full wind incl. inflow): peak wind term '
+          f'{peak_card_acc:.2f} m/s^2 at r = {rg[np.argmax(wmag)]:.1f} m '
+          f'= {peak_card_acc / (U_MAX / M_DRONE):.2f} x the control authority; at entry '
+          f'{entry_acc:.2f} m/s^2')
     _, rr, uu = steady_thrust_along_reference()
     print(f'  Drag model: thrust needed on the reference in mean wind: max {uu.max():.2f} N at '
           f'r = {rr[np.argmax(uu)]:.1f} m ({100 * uu.max() / U_MAX:.0f}% of m g); entry {uu[0]:.2f} N')
@@ -686,6 +696,17 @@ if __name__ == '__main__':
     s0 = {c: main[c][0] for c in CTRL}
     print(f'  Seed {SHOW_SEED} peaks: ' + ', '.join(
         f"{LABELS[c]} {s0[c]['e_peak']:.2f} m at t = {s0[c]['t_peak']:.1f} s" for c in CTRL))
+    print('  Per-seed peak error (m) PD / MPC / H-inf, saturated steps (MPC run):')
+    for i in range(N_SEEDS):
+        print(f"    seed {SEED0 + i}: {main['pd'][i]['e_peak']:.2f} / {main['mpc'][i]['e_peak']:.2f} / "
+              f"{main['hinf'][i]['e_peak']:.2f}, saturated {100 * main['mpc'][i]['sat_frac']:.1f}%")
+    print(f'\n  --- probe: thrust limit x{PROBE_THRUST:.0f} ({PROBE_THRUST * U_MAX:.2f} N), '
+          f'same {N_SEEDS} seeds ---')
+    for c in CTRL:
+        rs = probe[c]
+        em, es = _stats(rs, 'e_mean'); pm, ps = _stats(rs, 'e_peak'); sm, _ = _stats(rs, 'sat_frac')
+        print(f'  [{LABELS[c]}] mean error {em:.3f} +/- {es:.3f} m, peak {pm:.2f} +/- {ps:.2f} m, '
+              f'saturated {100 * sm:.1f}%, success {sum(r["success"] for r in rs)}/{len(rs)}')
     print(f'\n  --- severity sweep, {N_SEEDS_SWEEP} seeds per point ---')
     for vm in SWEEP_VMAX:
         parts = []

@@ -88,8 +88,9 @@ velocity.
 
 > Correction (S058 implementation): an earlier version wrote
 > $m\ddot{\mathbf{p}} = \mathbf{u} + m\,\mathbf{f}_{wind} + \mathbf{f}_{turb} - b\dot{\mathbf{p}}$, which adds a
-> velocity (m/s) as an acceleration. Read literally, the eyewall term is 50 m/s², 5.1 × the 9.81 m/s²
-> the thrust limit allows (39.5 m/s² already at the entry radius), so no controller could hold the
+> velocity (m/s) as an acceleration. Read literally, the eyewall term (full wind including
+> the 8 m/s inflow) is 50.64 m/s², 5.16 × the 9.81 m/s² the thrust limit allows (39.77 m/s² already
+> at the entry radius), so no controller could hold the
 > spiral. With the drag form, the thrust needed to stay on the spiral in the mean wind peaks at
 > 13.09 N (89 % of $mg$) at the eyewall.
 Attitude limits translate to a thrust cone constraint:
