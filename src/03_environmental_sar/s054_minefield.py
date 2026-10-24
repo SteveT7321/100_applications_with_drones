@@ -15,7 +15,7 @@ draws (common random numbers):
      when the straight line crosses risk); after 95 % coverage it revisits unresolved
      alarms once to reclassify them
 Every mission stops at 95 % coverage completeness (card) and returns to the entry along
-the escape path. A 10-field Monte Carlo (N_mine ~ U{8, 20}) reports mean +- std.
+the escape path. A 15-field Monte Carlo (N_mine ~ U{8, 20}) reports mean +- std.
 
 Usage:
     conda activate drones
@@ -233,6 +233,12 @@ class Mission:
         self.mines = field['mines']
         self.cum_pd = np.zeros(len(self.mines))
         self.min_r = np.full(len(self.mines), np.inf)   # closest horizontal approach
+        # survey track crossed the mine's row (|dy| <= one step) within one strip width on
+        # its west / east side: a missed mine passed on both sides lies between two flown
+        # strips (seam); otherwise it lies outside the flown strips (left by the 95 % stop)
+        self.pass_w = np.zeros(len(self.mines), dtype=bool)
+        self.pass_e = np.zeros(len(self.mines), dtype=bool)
+        self.surveying = True
         self.alarmed = np.zeros(len(self.mines), dtype=bool)
         self.confirmed = np.zeros(len(self.mines), dtype=bool)
         self.cov = np.zeros((N_CELLS, N_CELLS))            # [y, x]
@@ -282,6 +288,11 @@ class Mission:
         # real mines
         rm = np.hypot(self.mines[:, 0] - px, self.mines[:, 1] - py)
         np.minimum(self.min_r, rm, out=self.min_r)
+        if self.surveying:
+            dx = self.mines[:, 0] - px
+            row = np.abs(self.mines[:, 1] - py) <= DRONE_SPEED * DT + 1e-9
+            self.pass_w |= row & (dx >= 0) & (dx <= self.strip_width)
+            self.pass_e |= row & (dx <= 0) & (-dx <= self.strip_width)
         pd = gpr_detect_prob(rm)
         self.cum_pd = 1.0 - (1.0 - self.cum_pd) * (1.0 - pd)
         new_al = (~self.alarmed) & (pd > THETA_ALARM)
@@ -570,16 +581,20 @@ class Mission:
             self.run_frontier()
         self.t_survey = self.t
         self.cov_survey = self.coverage()
+        self.surveying = False
         self.return_home()
         el = np.array(self.esc_log)
         detected = self.alarmed | self.confirmed
+        between = ~detected & self.pass_w & self.pass_e
         return {
             'time': self.t, 't_survey': self.t_survey, 'dist': self.dist,
             'coverage': self.cov_survey, 'n_mines': len(self.mines),
             'detected': int(detected.sum()), 'confirmed': int(self.confirmed.sum()),
             'missed': int((~detected).sum()),
-            'miss_seam': int(np.sum(~detected & (self.min_r <= R_GPR_MAX))),
-            'miss_far': int(np.sum(~detected & (self.min_r > R_GPR_MAX))),
+            'miss_seam': int(between.sum()),
+            'miss_outside': int(np.sum(~detected & ~between)),
+            'miss_seam_r': [float(v) for v in self.min_r[between]],
+            'miss_outside_r': [float(v) for v in self.min_r[~detected & ~between]],
             'fa_raised': len(self.fa_xy), 'fa_unresolved': int(self.fa_active.sum()),
             'esc_mean': float(el[:, 1].mean()), 'esc_mean_max': float(el[:, 1].max()),
             'esc_max_max': float(el[:, 2].max()),
@@ -942,10 +957,14 @@ if __name__ == '__main__':
         runs = mc[key]
         tot = sum(r['missed'] for r in runs)
         seam = sum(r['miss_seam'] for r in runs)
-        far = sum(r['miss_far'] for r in runs)
-        print(f"  Missed mines with {lab} m strips over {N_MC} fields: {tot}; closest approach "
-              f"{R_GPR / np.sqrt(2 * np.log(2)):.2f}-{R_GPR_MAX:.0f} m (seam, seen but never alarmed) {seam}, "
-              f"> {R_GPR_MAX:.0f} m (never in GPR range, left unflown by the 95 % stop) {far}")
+        outside = sum(r['miss_outside'] for r in runs)
+        rs = [v for r in runs for v in r['miss_seam_r']]
+        ro = [v for r in runs for v in r['miss_outside_r']]
+        rng_s = f" (closest approach {min(rs):.3f}-{max(rs):.3f} m)" if rs else ''
+        rng_o = f" (closest approach {min(ro):.3f}-{max(ro):.3f} m)" if ro else ''
+        print(f"  Missed mines with {lab} m strips over {N_MC} fields: {tot}; between two flown "
+              f"strips (seam) {seam}{rng_s}; outside the flown strips (left by the 95 % stop) "
+              f"{outside}{rng_o}")
 
     out = os.path.normpath(OUTPUT_DIR)
     os.makedirs(out, exist_ok=True)
