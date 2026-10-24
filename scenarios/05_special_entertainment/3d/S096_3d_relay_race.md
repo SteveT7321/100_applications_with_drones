@@ -1,18 +1,27 @@
 # S096 3D Upgrade — Drone Relay Race
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S096 original](../S096_relay_race.md)
 
 ---
 
 ## What Changes in 3D
 
-The original S096 runs the entire race on a flat horizontal plane: all three drones maintain
+The original S096 runs the entire race on a flat horizontal plane: the baton holder keeps
 `z_race = 10.0 m` throughout, and the relay course is a straight line along the x-axis with
 `y = 0`. The altitude hold controller is a trivial proportional term
 (`v_desired[2] = -2.0 * (p[2] - Z_RACE)`) — effectively a 2D simulation with a z-stabiliser
-bolted on. The baton handoff rendezvous and minimum-snap intercept trajectory are also computed
-entirely in the horizontal plane.
+bolted on.
+
+> **Card correction (2026-10-24, checked against `src/05_special_entertainment/s096_relay_race.py`).**
+> An earlier version of this card said that the S096 rendezvous and minimum-snap intercept are
+> computed entirely in the horizontal plane. They are not: the S096 Kalman filter is already the
+> 6-state 3D model, the minimum-snap polynomial is planned in all three axes, and drones B and C
+> already wait 2 m above the race altitude (at $z = 12$ m), so the S096 intercept already
+> descends 2 m. What is planar in S096 is the course (constant altitude, so $v_z \approx 0$) and
+> the launch rule, which uses only the x-gap and $v_x$. The 3D upgrade therefore changes the
+> course, the size of the waiting-altitude offset (4 m) and the launch rule, not the dimension of
+> the filter or of the planner.
 
 This 3D upgrade replaces the flat straight course with a fully 3D racecourse featuring:
 
@@ -86,7 +95,8 @@ The geometric length of each leg accounting for altitude changes:
 
 $$L_{leg,i} = \sum_{k} \left\|\mathbf{w}_{k+1}^{(i)} - \mathbf{w}_k^{(i)}\right\|$$
 
-For Leg 1: $L_{leg,1} = \sqrt{50^2 + 4^2} + \sqrt{50^2 + 2^2} \approx 100.3$ m.
+For Leg 1: $L_{leg,1} = \sqrt{50^2 + 4^2} + \sqrt{50^2 + 2^2} \approx 100.20$ m (corrected
+from 100.3 m; Leg 2: 100.68 m, Leg 3: 100.08 m, total 300.96 m).
 
 ### 3D Rendezvous Condition
 
@@ -177,10 +187,13 @@ $$z_{min} = 2.0 \text{ m} \leq z(t) \leq z_{max} = 20.0 \text{ m}$$
 A soft-constraint correction term is added to $u_z$ whenever a drone approaches a bound:
 
 $$u_{z,bound} = \begin{cases}
-  K_{bound}(z_{min} - z) & \text{if } z < z_{min} + 0.5 \\
-  K_{bound}(z_{max} - z) & \text{if } z > z_{max} - 0.5 \\
+  K_{bound}(z_{min} + 0.5 - z) & \text{if } z < z_{min} + 0.5 \\
+  K_{bound}(z_{max} - 0.5 - z) & \text{if } z > z_{max} - 0.5 \\
   0 & \text{otherwise}
 \end{cases}, \qquad K_{bound} = 10.0$$
+
+(Corrected 2026-10-24: the earlier form $K_{bound}(z_{min} - z)$ is negative for
+$z_{min} < z < z_{min} + 0.5$ and pushed the drone *towards* the bound inside the band.)
 
 ---
 
