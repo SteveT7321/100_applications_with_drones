@@ -1,6 +1,6 @@
 # S087 Aerial Light Show Text Display
 
-**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Special Ops & Entertainment | **Difficulty**: ⭐⭐ | **Status**: `[x]` Complete
 
 **Algorithm**: Bitmap Font Encoding + Hungarian Assignment + Morph Interpolation | **Dimension**: 3D
 
@@ -58,6 +58,13 @@ $$N_{lit}(\mathcal{W}) = \sum_{c=0}^{C-1} \sum_{i=0}^{H-1} \sum_{j=0}^{W-1} \ope
 
 Font bitmaps are constructed so that "DRONE" and "SHOW" each produce exactly 30 lit pixels.
 
+> **Correction (implementation):** the 6 × 5 font given below does not do that. "DRONE" has
+> 14 + 14 + 14 + 15 + 17 = 74 lit pixels and "SHOW" has 13 + 15 + 14 + 16 = 58, so no fleet size
+> can satisfy $N_{lit} = N$ for both words, and 30 drones cannot even draw one word. The
+> implementation uses $N = 74$ (all lit for "DRONE"); for "SHOW" the 16 spare drones switch their
+> LEDs off and park in a row 5 m below the display. The setup text above ($N = 30$) should be read
+> with this correction.
+
 ### Hungarian Optimal Assignment
 
 Given $N$ drone positions $\{\mathbf{q}_k\}_{k=1}^{N}$ and $N$ target pixel positions
@@ -94,6 +101,15 @@ sorted into a priority queue by remaining path length $d_k^{rem}(t) = \|\mathbf{
 \mathbf{p}^B_{\sigma^*_B(k)}\|$. At each timestep, drones with larger $d_k^{rem}$ are granted
 right-of-way; drones within separation distance $r_{sep} = 1.5$ m of a higher-priority drone slow
 to $50\%$ speed.
+
+> **Note (implementation):** the code below does not interpolate along a straight line; every drone
+> is driven by the PID, and "50 % speed" is implemented by halving the PID's time step
+> (`dt * speed_factor`), which is not the same as halving the speed. The implementation drives
+> every drone with $\mathbf a = K_p\mathbf e + K_i\!\int\!\mathbf e - K_d\mathbf v$ (derivative on
+> the measured velocity; the integral is frozen while $\|\mathbf a\|$ is at the 3 m/s² limit) and a
+> yielding drone has its speed cap halved to 2.5 m/s. The rule only slows drones down; it does not
+> steer them apart, and in the simulated "DRONE" → "SHOW" morph pairs of drones still pass within a
+> few centimetres of each other (see the implementation README).
 
 ### Visual Fidelity Metric
 
@@ -241,13 +257,13 @@ traj_A_to_B = morph_with_priority(targets_drone[assign_A], targets_show[assign_B
 
 | Parameter | Value |
 |-----------|-------|
-| Number of drones N | 30 |
+| Number of drones N | 74 (= lit pixels of "DRONE"; corrected from 30) |
 | Display altitude z_show | 50 m |
 | Glyph size | 6 rows x 5 columns |
 | Inter-pixel spacing d_px | 2.0 m |
 | Inter-character gap | 2 extra columns (= 4.0 m) |
 | Word A | "DRONE" (5 characters) |
-| Word B | "SHOW" (4 characters, padded to 30 lit pixels) |
+| Word B | "SHOW" (4 characters, 58 lit pixels; the 16 spare drones park dark 5 m below) |
 | PID gains Kp / Ki / Kd | 2.0 / 0.05 / 0.8 |
 | Max drone speed v_max | 5.0 m/s |
 | Max acceleration a_max | 3.0 m/s^2 |
