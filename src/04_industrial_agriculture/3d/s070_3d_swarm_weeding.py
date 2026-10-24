@@ -66,7 +66,14 @@ DH_SAFE = 1.0                       # card speed rule
 DH_CLEAR = 0.20                     # card
 EPS3 = 0.20                         # card 3D tolerance
 Z_RANGE = (1.0, 3.5)                # card sweep-altitude search range
-Z_GRID = [1.0, 1.25, 1.5, 1.6, 1.75, 2.0, 2.5, 3.0, 3.5]
+Z_BASIC = [1.0, 1.25, 1.5, 1.6, 1.75, 2.0, 2.5, 3.0, 3.5]
+# pass-count steps: n(z) = ceil(L_strip / 2 r_s(z)) drops from k to k-1 at z_k = L_strip Z_REF / (2 R0 k)
+Z_STEPS = [STRIP_W * Z_REF / (2 * R0 * k) for k in range(3, 10)]
+Z_STEPS = [z for z in Z_STEPS if Z_RANGE[0] < z < Z_RANGE[1]]
+Z_NEAR = sorted({math.floor(z * 100) / 100 for z in Z_STEPS} |          # just below: k passes
+                {math.floor(z * 100) / 100 + 0.01 for z in Z_STEPS})    # just above: k - 1 passes
+Z_NEAR = [round(z, 2) for z in Z_NEAR]
+Z_GRID = sorted(set(Z_BASIC) | set(Z_NEAR))
 Z_BASE = 2.0                        # the 2D base's implicit altitude (z_ref)
 EXTRA = 10_000                      # second stream: default_rng(EXTRA + seed)
 ANIM_STEP = 4.0
@@ -585,6 +592,23 @@ def report(trials):
                 line += (f'; {int(np.sum(dd > 0))} / {int(np.sum(dd < 0))} / {int(np.sum(dd == 0))}; '
                          f'{dd.mean():+.3f} ± {se(dd):.3f} ({dd.mean() / se(dd):+.1f} s.e.)')
             print(line)
+    print('  Pass-count steps (n drops from k to k-1 passes at z_k = 13.33 * 2 / (2 * 1.5 * k)): '
+          + ', '.join(f'k = {k}: {STRIP_W * Z_REF / (2 * R0 * k):.4f} m' for k in range(3, 10)
+                      if Z_RANGE[0] < STRIP_W * Z_REF / (2 * R0 * k) < Z_RANGE[1]))
+    print('  Altitudes just below / just above each step: ' + ', '.join(f'{z:.2f} m ({n_passes(z)} passes)'
+                                                                   for z in Z_NEAR))
+    for name, key, st in (('PI', 'oki', 'sti'), ('card PID', 'okp', 'stp')):
+        thr = {z: 60 * rows[z][key] / rows[z]['mis'] for z in Z_GRID}
+        zb = max(Z_GRID, key=lambda z: thr[z].mean())
+        dd = thr[zb] - thr[Z_BASE]
+        dc = thr[zb] - thr[z_card]
+        sc = _agg(trials, zb, lambda r: r['sweep_clear'])
+        print(f'  Highest throughput ({name}) on the grid: {zb:.2f} m ({n_passes(zb)} passes), '
+              f'{thr[zb].mean():.3f} ± {se(thr[zb]):.3f}/min; vs {Z_BASE} m: higher in {int(np.sum(dd > 0))}/'
+              f'{N_TRIALS}, {dd.mean():+.3f} ± {se(dd):.3f} ({dd.mean() / se(dd):+.1f} s.e.); vs card z* '
+              f'{z_card} m: higher in {int(np.sum(dc > 0))}/{N_TRIALS}, {dc.mean():+.3f} ± {se(dc):.3f} '
+              f'({dc.mean() / se(dc):+.1f} s.e.); minimum sweep clearance {sc.min():.3f} m, canopy contacts '
+              f'{rows[zb][st].mean():.2f} per trial')
     for zc in sorted({z_card, best_ok} - {Z_BASE}):
         b, c = rows[Z_BASE], rows[zc]
         print(f"  z = {zc} m vs 2D base altitude {Z_BASE} m (per trial, CRN): treated PI more in "
