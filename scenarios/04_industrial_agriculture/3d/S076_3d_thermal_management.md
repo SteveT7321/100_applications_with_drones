@@ -1,6 +1,6 @@
 # S076 3D Upgrade — Thermal Management in Hot Environment
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 **Based on**: [S076 original](../S076_thermal_management.md)
 
 ---
@@ -8,6 +8,12 @@
 ## What Changes in 3D
 
 The original S076 fixes altitude at a constant z = 2.0 m throughout the entire lawnmower mission. The thermal model accounts only for speed-dependent horizontal power $P_{motor}(v) = P_{hover} + k_v v^2$, ignoring the substantial additional power cost of climbing, the cooling benefit of higher-altitude flight where ambient air temperature decreases with altitude, and the feasibility of routing the drone through a 3D safe thermal corridor that avoids superheated air masses close to the ground surface.
+
+> **Card corrections (2026-10-24, verified in `src/04_industrial_agriculture/3d/s076_3d_thermal_management.py`)**:
+> (1) 0.0065 °C/m is the standard (environmental) lapse rate; the dry adiabatic lapse rate is about 0.0098 °C/m. The value is kept, the name corrected.
+> (2) With the accelerate-then-decelerate profile $f_{trap}$ the peak vertical speed is $2|\Delta z|/T$, so respecting $v_{z,max}$ needs $T = 2|\Delta z|/v_{z,max}$ (5.333 s for 2 → 6 m), not $|\Delta z|/v_{z,max}$ (2.667 s, which would need 3.0 m/s).
+> (3) $T_{bat,ss} = T_{amb} + R_{bat} P_{total}$ with $P_{total} = P_{motor}/\eta_{esc}$; the card divided by $\eta_{esc}$ twice.
+> (4) Above the 2 m layer the ambient falls only 0.026 °C between 2 and 6 m, so $z^* = 6$ m is 0.03 °C cooler than the 2D height of 2 m; the altitude benefit the card describes exists only relative to flight inside the hot layer. At the card values the battery peaks at 59.59 °C at 2 m (below 65 °C), so the battery limit is not reached by the baseline either.
 
 In the 3D upgrade:
 - The ambient temperature field becomes a 3D scalar function $T_{amb}(x, y, z)$, with ground-surface heat rising from sun-baked soil and a standard atmospheric lapse rate above the surface boundary layer.
@@ -23,7 +29,7 @@ In the 3D upgrade:
 boustrophedon pattern. The field surface is at $z = 0$ m. The drone operates in a hot, calm
 environment with a nonuniform 3D temperature field: near the surface ($z < 2$ m) radiative
 heating produces a superheated boundary layer; above 2 m the temperature decreases at the
-dry adiabatic lapse rate. The drone may vary altitude between $z_{min} = 1.0$ m and
+standard lapse rate (corrected: not the dry adiabatic rate). The drone may vary altitude between $z_{min} = 1.0$ m and
 $z_{max} = 6.0$ m during the mission.
 
 **Roles**:
@@ -69,7 +75,7 @@ where:
   the hot boundary layer; note the sign convention: $\Gamma_{bl} < 0$ means temperature falls
   with increasing $z$ inside the layer)
 - $z_{bl} = 2.0$ m — top of the superheated boundary layer; $T_{bl} = T_{surf} + \Gamma_{bl} z_{bl} = 45°C$
-- $\Gamma_{atm} = 0.0065°C/m$ — dry adiabatic lapse rate above the boundary layer
+- $\Gamma_{atm} = 0.0065°C/m$ — standard (environmental) lapse rate above the boundary layer (corrected name; the dry adiabatic rate is 0.0098 °C/m)
 
 The resulting profile delivers $T_{amb}(0) = 55°C$ at the surface, $T_{amb}(2) = 45°C$ at the
 top of the boundary layer, and $T_{amb}(6) \approx 44.97°C$ at the maximum inspection altitude.
@@ -121,7 +127,7 @@ $$f_{trap}(t, T) = \begin{cases}
 \end{cases}$$
 
 The peak climb/descent speed is $v_{z,max} = 1.5$ m/s. The time required to change altitude
-by $\Delta z$ at peak speed is $t_{climb} = |\Delta z| / v_{z,max}$.
+by $\Delta z$ with this profile is $t_{climb} = 2|\Delta z| / v_{z,max}$ (corrected: the profile's peak speed is $2|\Delta z|/t_{climb}$).
 
 ### Battery Thermal Derating
 
@@ -150,7 +156,7 @@ A position $(x, y, z)$ lies inside the 3D safe thermal corridor if both constrai
 
 $$T_{m,\infty}(v_0, z) \leq T_{max} \quad \text{and} \quad T_{bat,ss}(z) \leq T_{bat,max}$$
 
-where $T_{bat,ss}(z) = T_{amb}(z) + R_{bat} \cdot P_{total}(v_0, 0) / \eta_{esc}$ is the
+where $T_{bat,ss}(z) = T_{amb}(z) + R_{bat} \cdot P_{total}(v_0, 0)$, $P_{total} = P_{motor}/\eta_{esc}$ (corrected: $\eta_{esc}$ was applied twice), is the
 steady-state battery temperature at altitude $z$ during cruise. Since both constraints depend
 only on altitude, the safe corridor reduces to a single altitude band $[z_{safe,lo}, z_{safe,hi}]$:
 
@@ -206,7 +212,7 @@ time cost per altitude change.
 | Surface temperature | $T_{surf}$ | 55 °C |
 | Boundary layer top | $z_{bl}$ | 2.0 m |
 | Ambient at $z_{bl}$ | $T_{bl}$ | 45 °C |
-| Atmospheric lapse rate | $\Gamma_{atm}$ | 0.0065 °C/m |
+| Atmospheric lapse rate | $\Gamma_{atm}$ | 0.0065 °C/m (standard lapse rate) |
 | Motor temperature limit | $T_{max}$ | 85 °C |
 | Warning threshold | $T_{warn}$ | 80 °C |
 | Thermal resistance (motor) | $R_{th}$ | 0.8 °C/W |
