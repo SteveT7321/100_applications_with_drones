@@ -1,6 +1,6 @@
 # S064 Greenhouse Interior Precision Flight
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Dead Reckoning + Ultrasonic Wall Fusion | **Dimension**: 3D
 
 ---
@@ -22,6 +22,15 @@ between rows 1 and 2, turns at $x = 40$ m, flies the aisle between rows 2 and 3,
 visiting all five row-end turning points before returning to the start. The mission succeeds if
 all five row-ends are reached without any collision (minimum clearance $d_{safe} = 0.25$ m to any
 plant wall or greenhouse boundary).
+
+> **Corrections (implementation)**: with rows running the full 0–40 m length there is no room to
+> turn between aisles, and the card's code moves the drone sideways through the 1.5 m tall rows at
+> $z = 1$ m. The rows now span $x \in [2, 38]$ m, leaving 2 m headlands at both gable walls. The
+> start $(0, 1.0, 1.0)$ lies on the gable wall and becomes $(1.0, 1.0, 1.0)$. The five aisles are
+> the strip between the $y = 0$ wall and row 1 (centre 0.95 m) and the four inter-row aisles
+> (centres 3, 5, 7, 9 m); the route visits the five aisle ends in a serpentine (9 waypoints: 5 leg
+> ends and 4 headland transfers) and ends at the fifth row-end instead of returning to the start.
+> The repulsive layer uses the measured ultrasonic ranges, not the true wall distances.
 
 **Roles**:
 - **Drone**: single inspection agent with dimensions 0.3 × 0.3 × 0.15 m; carries IMU and two
