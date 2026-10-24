@@ -1,6 +1,6 @@
 # S053 Coral Reef 3D Reconstruction
 
-**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not started
+**Domain**: Environmental & SAR | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Completed
 
 ---
 
@@ -129,20 +129,23 @@ $$\varepsilon \approx \frac{g}{\rho_{ov} \cdot \sqrt{N_{views}}}$$
 
 where $\rho_{ov}$ is the fractional image overlap between successive frames and $N_{views}$ is
 the local view count. For a target $\varepsilon_{target} \leq 0.008$ m (8 mm accuracy) and
-$g = 0.004$ m (4 mm GSD at $z_{rel} = 2.5$ m), the required overlap is:
+$g = 2.5 \times 6.3 / (4.5 \times 4000) = 0.000875$ m (0.875 mm GSD at $z_{rel} = 2.5$ m), the
+required overlap is:
 
-$$\rho_{ov} \geq \frac{g}{\varepsilon_{target} \cdot \sqrt{N_{min}}} = \frac{0.004}{0.008 \cdot \sqrt{2}} \approx 0.354$$
+$$\rho_{ov} \geq \frac{g}{\varepsilon_{target} \cdot \sqrt{N_{min}}} = \frac{0.000875}{0.008 \cdot \sqrt{2}} \approx 0.077$$
 
-meaning successive camera footprints must overlap by at least 35%.
+meaning successive camera footprints must overlap by at least 8 %. (An earlier version used
+$g = 4$ mm, which this camera only reaches at $z_{rel} \approx 11.4$ m, and obtained 35 %.)
 
 ### Point Cloud Density
 
 The expected point-cloud density (points per m²) over the entire reef footprint is:
 
-$$\rho_{pc} = \frac{N_{photos} \cdot \rho_{ov}^2 \cdot W_{px} \cdot H_{px}}{A_{reef} \cdot \overline{\text{GSD}}^2}$$
+$$\rho_{pc} \approx \frac{1}{\overline{\text{GSD}}^2}$$
 
-where $N_{photos}$ is the total number of captured frames, $H_{px}$ is image height in pixels,
-and $A_{reef}$ is the reef's projected surface area in m².
+(dense multi-view stereo returns roughly one point per pixel of the best view). An earlier version
+wrote $N_{photos} \rho_{ov}^2 W_{px} H_{px} / (A_{reef}\,\overline{\text{GSD}}^2)$, which has units of
+m$^{-4}$ and is not a density.
 
 ### Spiral Descent Path Planning
 
@@ -158,9 +161,11 @@ strips overlap by at least $\rho_{ov}$ at the reef crest level.
 
 Waypoints on the spiral at altitude $z_l$ are spaced longitudinally by:
 
-$$\Delta_{lon}(z_l) = \Delta_{lat}(z_l) \cdot \frac{W_{px}}{H_{px}}$$
+$$\Delta_{lon}(z_l) = \Delta_{lat}(z_l)$$
 
-(maintaining square image footprints). The total waypoint count per level is:
+(the camera footprint is modelled as a circular cone, so the same spacing gives the same 60 %
+overlap along and across track; an earlier version multiplied by $W_{px}/H_{px}$, which lowers the
+along-track overlap to 47 %). The total waypoint count per level is:
 
 $$K_l = \left\lceil \frac{L_x}{\Delta_{lat}(z_l)} \right\rceil \times \left\lceil \frac{L_y}{\Delta_{lon}(z_l)} \right\rceil$$
 
@@ -189,7 +194,7 @@ REEF_LY       = 40.0    # m — reef bounding box y-extent
 GRID_SPACING  = 0.5     # m — heightmap cell size
 N_BOMMIES     = 12      # number of Gaussian coral formations
 THETA_MAX     = 45.0    # deg — max incidence angle for valid view
-FOV_DEG       = 70.0    # deg — camera half-angle (full cone)
+FOV_DEG       = 70.0    # deg — full cone angle (half-angle 35 deg)
 SENSOR_W_MM   = 6.3     # mm — camera sensor width
 FOCAL_MM      = 4.5     # mm — focal length
 IMAGE_W_PX    = 4000    # pixels — image width
