@@ -1,6 +1,6 @@
 # S079 Offshore Wind Farm Installation Assistance
 
-**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[ ]` Not Started
+**Domain**: Industrial & Agriculture | **Difficulty**: ⭐⭐⭐ | **Status**: `[x]` Complete
 **Algorithm**: Swell Feedforward Prediction + LQR Landing Controller | **Dimension**: 3D
 
 ---
@@ -144,6 +144,20 @@ $$\mathbf{u}(t) = -K\,\mathbf{e}(t)$$
 where $\mathbf{e}(t)$ already incorporates the predicted reference $\mathbf{x}_{ref}(t)$, so the
 feedforward action is implicit: tracking a time-varying sinusoidal reference with a $\tau$-second
 look-ahead effectively cancels the swell phase lag.
+
+> **Correction (implementation)**: with these weights the LQR $z$ loop
+> ($k_z \approx 20$–$22$, $k_{v_z} \approx 10$–$11$) already tracks the deck with almost no phase lag,
+> because the reference contains the deck velocity. Its steady-state error amplitude is
+> 0.040 m. A 0.5 s look-ahead makes the drone *lead* the deck by about 0.5 s, and the error
+> grows to 0.406 m, beyond $r_{land} = 0.15$ m. Look-aheads up to about 0.1 s are harmless. A
+> look-ahead only helps when it matches the loop's actual lag. The model-based alternative is
+> acceleration feedforward $m\,\ddot z_p(t)$ on the thrust.
+>
+> **Correction (implementation)**: $T$ is the thrust deviation from hover. The card's code
+> applies $\ddot z = u_0/m - g$ without adding $mg$, which leaves a steady sag of
+> $mg/k_z = 0.44$ m. The continuous-time LQR gain is also unstable when applied at 50 Hz to the
+> exactly discretised plant (spectral radius 1.18). The implementation therefore uses the
+> discrete-time LQR (same $Q$, $R$).
 
 ### Wind Gust Disturbance
 
@@ -681,6 +695,12 @@ if __name__ == '__main__':
 | Peak $\|\Delta\dot{z}\|$ | $< 0.5$ m/s |
 | MC success rate (LQR+FF) | $\geq 90\%$ |
 | MC success rate (LQR only) | $\leq 60\%$ |
+
+> **Correction (implementation, 200 trials)**: the opposite holds. LQR+FF with a 0.5 s look-ahead
+> lands in 0 % of trials and strikes the deck in 100 %. LQR without look-ahead lands in 100 %
+> (first window). The window rule "opens when $|\Delta\dot z| \le v_{land,max}$" does not require
+> the drone to be near the deck; it can fire during the approach whenever the drone's vertical
+> speed happens to match the deck's. The implementation arms it only within 1 m of the target.
 
 ---
 
