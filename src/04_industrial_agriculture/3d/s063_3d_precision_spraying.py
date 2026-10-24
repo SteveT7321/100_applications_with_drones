@@ -72,6 +72,8 @@ SURF_RES = 0.05               # m lidar surface grid
 N_SEEDS = 20
 SIGMA_H_SWEEP = [0.0, 0.15, 0.3, 0.45, 0.6]
 N_SWEEP_SEEDS = 10
+R_CROWN_SWEEP = [0.25, 0.5, 1.0]  # crown-radius sensitivity (added)
+KDZ_PROBE = 2.5                  # vertical-damping probe: k_d,z x 2.5
 T_MAX = 700.0
 PLOT_SEED = 0
 ANIM_STEP = 100
@@ -94,20 +96,22 @@ def heights(seed, sigma_h):
     return MU_H + sigma_h * norm.ppf(a + u * (b - a))
 
 
-def surface_grid(h):
+def surface_grid(h, rc=R_CROWN):
     g = np.arange(-2.0, FIELD + 2.0 + 1e-9, SURF_RES)
     X, Y = np.meshgrid(g, g, indexing='ij')
     S = np.zeros_like(X)
     for (px, py), hh in zip(PLANTS, h):
-        S = np.where(np.hypot(X - px, Y - py) <= R_CROWN, np.maximum(S, hh), S)
+        S = np.where(np.hypot(X - px, Y - py) <= rc, np.maximum(S, hh), S)
     return g[0], S
 
 
 def run_mission(args):
-    strategy, gname, sigma_h, seed, keep_log = args
+    strategy, gname, sigma_h, seed, keep_log = args[:5]
+    rc = args[5] if len(args) > 5 else R_CROWN                 # crown radius (sweep)
+    kdz_scale = args[6] if len(args) > 6 else 1.0               # vertical damping probe
     gains = GAINS[gname]
     kp, ki, kd = gains['kp'], gains['ki'], gains['kd']
-    kpz, kiz, kdz = ALPHA_Z * kp, ALPHA_Z * ki, ALPHA_Z * kd
+    kpz, kiz, kdz = ALPHA_Z * kp, ALPHA_Z * ki, kdz_scale * ALPHA_Z * kd
     h = heights(seed, sigma_h)
     n_max = int(T_MAX / DT)
     phases, turb, gps = m2d.noise(seed, SIGMA_W, n_max)
@@ -116,7 +120,7 @@ def run_mission(args):
     alt_noise = (SIGMA_LIDAR * rz.standard_normal(n_max)).tolist()
     tx, ty = turb[:, 0].tolist(), turb[:, 1].tolist()
     gx, gy = gps[:, 0].tolist(), gps[:, 1].tolist()
-    s0, S = surface_grid(h)
+    s0, S = surface_grid(h, rc)
     nS = S.shape[0]
     Sl = S.tolist()
     z_safe = float(h.max()) + DZ_NOM
@@ -163,12 +167,12 @@ def run_mission(args):
         st['px'] = px + st['vx'] * DT
         st['py'] = py + st['vy'] * DT
         nz = pz + st['vz'] * DT
+        assert nz > 0.0, 'drone would have gone below the ground in one step'
         if nz < Z_MIN or nz > Z_MAX:                            # card altitude bounds
             st['nclamp'] += 1
             nz = min(max(nz, Z_MIN), Z_MAX)
             st['vz'] = 0.0
         st['pz'] = nz
-        assert Z_MIN - 1e-12 <= nz <= Z_MAX + 1e-12
         X.append(st['px']); Y.append(st['py']); Z.append(nz); CUR.append(st['cur'])
         st['k'] = k + 1
 
@@ -178,8 +182,10 @@ def run_mission(args):
     z_prev = st['pz']
     n_spray = int(round(T_SPRAY / DT))
     st['cur'] = -1
+    climb_leg = np.zeros(N_PLANTS, dtype=bool)                  # leg to this plant climbs to a taller plant
     for iv, pi in enumerate(TOUR):
         st['cur'] = int(pi)
+        climb_leg[pi] = zc[pi] > z_prev + 1e-12
         cx, cy = float(PLANTS[pi, 0]), float(PLANTS[pi, 1])
         ph = (float(phases[iv, 0]), float(phases[iv, 1]))
         z_t = zc[pi]
@@ -221,7 +227,7 @@ def run_mission(args):
     own = np.zeros(N_PLANTS, dtype=bool)          # contact with the plant currently being approached/sprayed
     n_contact = 0
     for j in range(N_PLANTS):
-        m = (np.hypot(X - PLANTS[j, 0], Y - PLANTS[j, 1]) < R_CROWN) & (Z < h[j])
+        m = (np.hypot(X - PLANTS[j, 0], Y - PLANTS[j, 1]) < rc) & (Z < h[j])
         contact[j] = m.any()
         own[j] = (m & (CUR == j)).any()
         n_contact += int(m.sum())
@@ -229,6 +235,7 @@ def run_mission(args):
     out = {'h': h, 'hover': [], 'time': st['k'] * DT, 'timeouts': timeouts, 'wait': waits.mean(),
            'sat': st['nsat'] / st['k'], 'clamp': st['nclamp'], 'contact_plants': int(contact.sum()),
            'contact_own': int(own.sum()), 'contact_other': int((contact & ~own).sum()),
+           'contact_own_climb': int((own & climb_leg).sum()), 'contact_own_descent': int((own & ~climb_leg).sum()),
            'contact_steps': n_contact, 'z_safe': z_safe, 'max_step': float(sp.max()),
            'climb': float(np.sum(np.abs(np.diff(Z)))), 'zmin': float(Z.min()), 'zmax': float(Z.max())}
     for (pi, a, b, ph) in hover:
@@ -272,10 +279,13 @@ def run_simulation():
             for g in GAINS for s in STRATS for seed in range(N_SEEDS)]
     jobs += [(s, 'Tuned', sh, seed, False) for sh in SIGMA_H_SWEEP if sh != SIGMA_H
              for s in STRATS for seed in range(N_SWEEP_SEEDS)]
+    jobs += [(s, g, SIGMA_H, seed, False, rc) for rc in R_CROWN_SWEEP if rc != R_CROWN
+             for g in GAINS for s in ('fixed15', 'adaptive', 'tf') for seed in range(N_SWEEP_SEEDS)]
+    jobs += [('adaptive', g, SIGMA_H, seed, False, R_CROWN, KDZ_PROBE) for g in GAINS for seed in range(N_SEEDS)]
     outs = [run_mission(j) for j in jobs]
     res = {}
     for j, o in zip(jobs, outs):
-        res.setdefault((j[0], j[1], j[2]), []).append(o)
+        res.setdefault(tuple(j[:3]) + tuple(j[5:]), []).append(o)
     return res
 
 
@@ -460,7 +470,9 @@ def report(res):
                   f"horiz {100 * a('rmsh'):.1f} cm | standoff dev {100 * a('sdev'):.1f} cm | drift offset d "
                   f"{100 * a('drift'):.1f} cm | plants with dose > 0.9 {100 * np.mean([np.mean(e['dose'] > 0.9) for e in ev]):.1f} % | "
                   f"canopy contact: plants {np.mean([r['contact_plants'] for r in rs]):.2f}/mission "
-                  f"(target plant {np.mean([r['contact_own'] for r in rs]):.2f}, other plants "
+                  f"(target plant {np.mean([r['contact_own'] for r in rs]):.2f} = on a climb leg "
+                  f"{np.mean([r['contact_own_climb'] for r in rs]):.2f} + on a descent/level leg "
+                  f"{np.mean([r['contact_own_descent'] for r in rs]):.2f}, other plants "
                   f"{np.mean([r['contact_other'] for r in rs]):.2f}) "
                   f"(missions with any {sum(r['contact_plants'] > 0 for r in rs)}/{N_SEEDS}), "
                   f"plants sprayed from inside the crown {np.mean([np.sum(e['dz'] <= 0) for e in ev]):.2f} | "
@@ -480,6 +492,30 @@ def report(res):
             order = sorted(STRATS, key=lambda s: -vals[s])
             print(f'    c_w {cw:.2f} 1/s (wind amplitude {A_WIND / cw:.1f} m/s), w_dw {wd:.0f} m/s: ' +
                   ', '.join(f'{s} {vals[s]:.3f} (d {100 * drift[s]:.1f} cm)' for s in STRATS) + f' | ranking {" > ".join(order)}')
+    print(f'\n  --- crown-radius sweep (sigma_h = {SIGMA_H}, {N_SWEEP_SEEDS} seeds; C_eff mean, crown contacts per mission) ---')
+    for rc in R_CROWN_SWEEP:
+        for g in GAINS:
+            out = {}
+            for s in ('fixed15', 'adaptive', 'tf'):
+                key = (s, g, SIGMA_H) if rc == R_CROWN else (s, g, SIGMA_H, rc)
+                rs = res[key][:N_SWEEP_SEEDS]
+                out[s] = (np.array([dose_eval(r)['ceff'] for r in rs]), np.mean([r['contact_plants'] for r in rs]))
+            print(f'    R_crown {rc:.2f} m, {g}: ' + ', '.join(
+                f'{s} {out[s][0].mean():.3f} ({out[s][1]:.2f} contacts)' for s in out) +
+                f"; tf > fixed15 in {wins(out['tf'][0], out['fixed15'][0])[0]}/{N_SWEEP_SEEDS}, "
+                f"adaptive > tf in {wins(out['adaptive'][0], out['tf'][0])[0]}/{N_SWEEP_SEEDS}")
+    print(f'\n  --- vertical-damping probe: adaptive with k_d,z x {KDZ_PROBE} (sigma_h = {SIGMA_H}, {N_SEEDS} seeds) ---')
+    for g in GAINS:
+        kp, ki, kd = (ALPHA_Z * GAINS[g][k] for k in ('kp', 'ki', 'kd'))
+        for sc, key in ((1.0, ('adaptive', g, SIGMA_H)), (KDZ_PROBE, ('adaptive', g, SIGMA_H, R_CROWN, KDZ_PROBE))):
+            poles = np.roots([1, sc * kd, kp, ki])
+            cp = poles[np.argmax(np.abs(poles.imag))]
+            rs = res[key]
+            print(f'    {g}, k_d,z x {sc:g} (damping {-cp.real / abs(cp):.3f}): target-plant contacts '
+                  f"{np.mean([r['contact_own'] for r in rs]):.2f}/mission (climb leg {np.mean([r['contact_own_climb'] for r in rs]):.2f}, "
+                  f"descent/level leg {np.mean([r['contact_own_descent'] for r in rs]):.2f}), other plants "
+                  f"{np.mean([r['contact_other'] for r in rs]):.2f}, z min {min(r['zmin'] for r in rs):.2f} m, "
+                  f"C_eff {np.mean([dose_eval(r)['ceff'] for r in rs]):.3f}")
     print(f'\n  --- probe: dose without the standoff factor (drift and hover error only), sigma_h = {SIGMA_H}, {N_SEEDS} seeds ---')
     for g in GAINS:
         vals = {s: np.array([dose_eval(r, alt_factor=False)['ceff'] for r in res[(s, g, SIGMA_H)]]) for s in STRATS}

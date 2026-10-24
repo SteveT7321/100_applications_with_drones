@@ -54,7 +54,8 @@ $C_{eff}^{3D}$ is the mean over the 20 plants.
 |-----------|-------|
 | Field / plants / layout | 20 × 20 m / 20 / S063 `default_rng(0)`, NN tour 74.14 m |
 | Canopy heights | TN(1.0, 0.3²; 0.3, 2.5) m, per seed from `default_rng(3000 + seed)` (inverse CDF) |
-| Crown radius (added) | 0.5 m |
+| Crown radius (added) | 0.5 m; sweep 0.25, 0.5, 1.0 m (10 seeds) |
+| Vertical-damping probe (added) | adaptive with $K_d^{(z)}$ × 2.5 |
 | Lidar / altimeter noise | 0.05 m |
 | Nominal standoff / $\sigma_z$ / $\sigma_{spray}$ | 0.5 m / 0.2 m / 0.5 m |
 | Altitude bounds / fixed altitude | [0.3, 6.0] m / 1.5 m |
@@ -81,7 +82,7 @@ conda activate drones
 python src/04_industrial_agriculture/3d/s063_3d_precision_spraying.py
 ```
 
-The script imports the S063 module for the layout, tour, gains and noise streams. Runtime ≈ 2.5–3 min (153 s, 154 s, and 186 s single-threaded). Three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
+The script imports the S063 module for the layout, tour, gains and noise streams. Runtime ≈ 4–5 min on a loaded machine, including the crown-radius sweep and the damping probe (267 s and 290 s with `OMP/OPENBLAS/MKL_NUM_THREADS=1`, 225 s with default threading). The three runs printed byte-identical output and wrote byte-identical PNG and GIF files.
 
 ---
 
@@ -124,6 +125,26 @@ Plants receiving a dose > 0.9: at most 4.0 % (adaptive, Tight). Settle time-outs
 | Tuned | 20 / 0 / 0, +0.332 | 20 / 0 / 0, +0.590 | 20 / 0 / 0, +0.312 | 11 / 0 / 9, +0.021 |
 | Tight | 20 / 0 / 0, +0.388 | 20 / 0 / 0, +0.706 | 19 / 0 / 1, +0.032 | 20 / 0 / 0, +0.356 |
 
+**Crown-radius sweep** ($\sigma_h$ = 0.3 m, 10 seeds; mean $C_{eff}^{3D}$, crown contacts per mission in brackets):
+
+| $R_{crown}$ | Gains | Fixed 1.5 m | Adaptive | Terrain following | TF > fixed 1.5 m | Adaptive > TF |
+|---|---|---|---|---|:---:|:---:|
+| 0.25 m | Tuned | 0.407 (1.70) | 0.760 (0.70) | 0.021 (18.90) | 0/10 | 10/10 |
+| 0.25 m | Tight | 0.458 (1.70) | 0.871 (0.80) | 0.850 (19.60) | 10/10 | 10/10 |
+| 0.50 m | Tuned | 0.407 (1.80) | 0.760 (1.20) | 0.461 (19.30) | 7/10 | 10/10 |
+| 0.50 m | Tight | 0.458 (1.70) | 0.871 (0.80) | 0.837 (17.50) | 10/10 | 10/10 |
+| 1.00 m | Tuned | 0.407 (1.80) | 0.760 (2.20) | 0.709 (16.70) | 10/10 | 10/10 |
+| 1.00 m | Tight | 0.458 (1.70) | 0.871 (1.20) | 0.823 (13.00) | 10/10 | 10/10 |
+
+**Vertical-damping probe** (adaptive, $\sigma_h$ = 0.3 m, 20 seeds). Contacts with the target plant are split by whether the leg to it climbs to a taller plant or descends / stays level:
+
+| Gains | $K_d^{(z)}$ scale (damping) | Target-plant contacts (climb leg / descent or level leg) | Other plants | Lowest altitude | $C_{eff}^{3D}$ |
+|---|---|---|---:|---:|---:|
+| Tuned | × 1 (0.189) | 0.65 (0.10 / 0.55) | 0.60 | 0.30 m | 0.760 |
+| Tuned | × 2.5 (0.527) | 0.10 (0.10 / 0.00) | 0.50 | 0.60 m | 0.765 |
+| Tight | × 1 (0.258) | 0.30 (0.20 / 0.10) | 0.45 | 0.34 m | 0.871 |
+| Tight | × 2.5 (0.683) | 0.20 (0.20 / 0.00) | 0.35 | 0.72 m | 0.874 |
+
 **Probe: dose without the standoff factor** (drift and hover error only):
 
 | Gains | Fixed 1.5 m | Fixed clears-all | Adaptive | Terrain following | Adaptive vs fixed 1.5 m | Adaptive vs clears-all |
@@ -155,8 +176,13 @@ The ranking is adaptive > terrain following > fixed 1.5 m > clears-all in all ni
 - **Per-plant adaptive altitude is the clear winner, as the card expects.** At $\sigma_h$ = 0.3 m it holds the standoff within 4.5 cm (Tuned) and 1.8 cm (Tight) of 0.5 m. It reaches $C_{eff}^{3D}$ = 0.760 / 0.871 and beats both fixed-altitude 2D baselines in 20/20 seeds with either gain set (+0.332 to +0.706). It is flat across $\sigma_h$ (0.757–0.760), while fixed 1.5 m falls from 0.757 to 0.271 and the clears-all altitude to 0.081. At $\sigma_h$ = 0 all three planned strategies coincide (0.757), as they must, since they then fly the same altitude.
 - **Part of the gap is built into the card's dose model, but not all of it.** The standoff factor $\exp(-(\delta z - 0.5)^2/2\sigma_z^2)$ penalises fixed altitudes directly. Without it, adaptive still wins every seed against the clears-all altitude and 18–20 of 20 against fixed 1.5 m, with smaller margins (0.783 vs 0.718 / 0.765 Tuned; 0.876 vs 0.814 / 0.751 Tight). The remainder comes from drift, which grows with the fall time from a higher nozzle, and from spraying inside the crown at tall plants.
 - **A fixed altitude low enough to spray well hits tall plants; one that clears them sprays badly.** At 1.5 m the drone ends up inside the crown of 1.50 plants per mission (Tuned), and 18 of 20 missions touch a crown. These plants get zero dose. Raising the altitude to $\max h_i$ + 0.5 m removes every contact, but $C_{eff}^{3D}$ falls to 0.170 / 0.165 because the mean standoff error grows to 54–57 cm.
-- **Card-style lidar terrain following without look-ahead flies into the crowns.** It tracks the ground (0.5 m) between plants and sees each crown only once it is overhead. The drone therefore approaches every plant below its top and touches 19.50 (Tuned) / 17.50 (Tight) crowns per mission, almost all of them the plant it is approaching (19.35 / 16.65). It also hits the 0.3 m altitude floor 21.4 / 18.5 times per mission and saturates 9.25 / 9.70 % of the steps. With Tuned gains its $C_{eff}^{3D}$ (0.448) is no better than fixed 1.5 m (11 / 0 / 9 seeds). Even at $\sigma_h$ = 0 it reaches only 0.464, against 0.757 for the planned strategies. With Tight gains it nearly matches adaptive on dose (0.839 vs 0.871) but still touches 17.50 crowns per mission. The look-ahead the card lists as Extension 1 is a safety requirement, not a refinement.
-- **The adaptive plan also touches crowns occasionally.** With Tuned gains it touches 1.25 crowns per mission: 0.65 on the plant being approached and 0.60 on plants passed in transit. It also hits the 0.3 m floor 0.1 times per mission on average. The vertical loop the card prescribes is lightly damped (damping 0.189 with Tuned × 1.5); its overshoot when descending onto a short plant is the likely cause of the first kind (*hypothesis*, consistent with the 0.30 m minimum altitude; not probed separately). Transit contacts come from flying at the endpoints' altitude over a taller plant in between, which a 3D path cost (card Extension 5) would avoid.
+- **Card-style lidar terrain following without look-ahead flies into the crowns, at every crown radius tested.** It tracks the ground (0.5 m) between plants and sees each crown only once it is overhead. The drone therefore approaches every plant below its top and touches 19.50 (Tuned) / 17.50 (Tight) crowns per mission, almost all of them the plant it is approaching (19.35 / 16.65). It also hits the 0.3 m floor 21.4 / 18.5 times per mission and saturates 9.25 / 9.70 % of the steps. In the crown-radius sweep (0.25 / 0.5 / 1.0 m) it touches 13.00–19.60 crowns per mission, and adaptive beats it in 10/10 seeds at every radius. With Tight gains its dose is close to adaptive (0.823–0.850 vs 0.871). The look-ahead the card lists as Extension 1 is a safety requirement, not a refinement.
+- **Whether Tuned terrain following beats a fixed 1.5 m altitude depends on the crown radius I added.** At 0.5 m it is level with fixed 1.5 m (0.448 vs 0.428 over 20 seeds; 11 / 0 / 9), and even at $\sigma_h$ = 0 it reaches only 0.464 against 0.757. At 0.25 m it collapses to 0.021 (0/10). At 1.0 m it reaches 0.709 and wins 10/10. The 40 cm horizontal hover error of the Tuned gains is comparable to the crown radius, so the drone keeps sliding off small crowns, and each time its lidar reference drops to the ground. *Hypothesis*: this explains the radius dependence; it is consistent with the sweep, but the sliding events were not counted.
+- **The adaptive plan also touches crowns occasionally; most target-plant contacts are descent overshoot (probed).** With Tuned gains it touches 1.25 crowns per mission: 0.65 on the plant being approached and 0.60 on other plants. It also hits the 0.3 m floor 0.1 times per mission on average. The vertical loop the card prescribes is lightly damped (damping 0.189 with Tuned × 1.5).
+  - Of the 0.65 target-plant contacts, 0.55 happen on descending or level legs and 0.10 on climbs to a taller plant.
+  - Raising the vertical derivative gain 2.5× (damping 0.527) removes the descent contacts (0.55 → 0.00) and lifts the lowest altitude from 0.30 to 0.60 m. The climb contacts (0.10) remain: there the drone reaches the crown before it has climbed.
+  - With Tight gains: 0.30 target-plant contacts (0.20 climb / 0.10 descent) become 0.20 (0.20 / 0.00).
+  - Contacts with other plants barely change (0.60 → 0.50, 0.45 → 0.35). Flying at the endpoints' altitude over a taller plant in between is the likely cause (*not probed*); a 3D path cost (card Extension 5) would avoid it.
 - **The horizontal gains still matter more than altitude for the top score.** With the card's Tuned gains, the S063 finding carries over: 40 cm horizontal hover RMS and 19.9 of 20 settle time-outs. That caps adaptive at 0.760; Tight raises it to 0.871.
 - **The conclusions do not depend on the added drift parameters.** Over the nine combinations of wind amplitude (0.5–2 m/s) and downwash speed (0–5 m/s) the ranking never changes. Adaptive ranges 0.561–0.760; only the strongest wind with no downwash lowers it noticeably.
 
@@ -203,9 +229,9 @@ Lidar terrain following, Tuned PID, seed 0: the drone (red) dips to 0.5 m betwee
 | Hover starts on the plant (card) | S063 continuous flight with settle test; altitude error < 0.15 m added to it | S063 fix (arrival transients matter). |
 | Single horizontal gain set (Tuned) | Tuned and Tight | S063 showed Tuned is poorly damped near the gust frequency; Tight shows the altitude effect without that limit. |
 | Fixed altitude only at 1.5 m | Also a fixed altitude that clears every plant | 1.5 m is below 5.8 % of the plants; a 2D plan has to choose between collisions and standoff error. |
-| Plants as points | Crowns of radius 0.5 m; contacts counted; dose 0 when the nozzle is inside the crown | Needed for the lidar surface and for physical sanity (X4). |
+| Plants as points | Crowns of radius 0.5 m (swept 0.25–1.0 m); contacts counted; dose 0 when the nozzle is inside the crown | Needed for the lidar surface and for physical sanity (X4). The terrain-following vs fixed-altitude result depends on the radius, so it is swept. |
 | Adaptive: "climbs to $z_{cmd,i}$ before hovering" | Leg reference at the higher of the two plant altitudes, then descent over the plant | Climb first; a linear ramp would approach tall plants below their top. |
-| Altitude bounds enforced | Clamped and counted (no assert, because the bound is part of the model) | The terrain-following strategy reaches the 0.3 m floor; the count is a result. |
+| Altitude bounds enforced | Clamped and counted; an assert checks that no unclamped step would have gone below the ground | The terrain-following strategy reaches the 0.3 m floor; the count is a result, and the assert is a physical invariant that can fail (X4). |
 | Single dose model | Also reported without the standoff factor | Separates the built-in standoff penalty from the drift effect (C9). |
 
 ---
@@ -213,7 +239,7 @@ Lidar terrain following, Tuned PID, seed 0: the drone (red) dips to 0.5 m betwee
 ## Extensions
 
 1. Look-ahead terrain following: command the maximum canopy height within the next 1–2 m of track (card Extension 1). Without it the strategy is unsafe here.
-2. Better-damped vertical gains (damping ≈ 0.7) to remove the descent overshoot of the card's α_z = 1.5 loop.
+2. Better-damped vertical gains as a design choice: the probe shows that damping 0.53–0.68 removes the descent contacts. Pair this with climb-before-approach timing for the remaining climb contacts.
 3. A 3D tour cost that includes the canopy along each leg (card Extension 5), to avoid transit contacts.
 4. Wind-aware nozzle offset (card Extension 2): the mean drift offset is 24–37 cm, comparable to the horizontal hover error with Tight gains.
 
