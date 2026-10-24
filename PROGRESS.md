@@ -80,7 +80,7 @@
 
 ---
 
-## Domain 3: Environmental & SAR — 11/20
+## Domain 3: Environmental & SAR — 15/20
 
 - [x] **S041** Wildfire Boundary Scan
 - [x] **S042** Missing Person Search
@@ -98,10 +98,10 @@
 - [ ] **S054** Minefield Detection
 - [ ] **S055** Oil Spill Tracking
 - [ ] **S056** Radiation Hotspot Detection
-- [ ] **S057** Wildlife Census
-- [ ] **S058** Typhoon Eye Penetration
-- [ ] **S059** Sonar Buoy Relay
-- [ ] **S060** Meteorological Profiling
+- [x] **S057** Wildlife Census
+- [x] **S058** Typhoon Eye Penetration
+- [x] **S059** Sonar Buoy Relay
+- [x] **S060** Meteorological Profiling
 
 ---
 
@@ -161,7 +161,7 @@
 |--------|-----------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 11 | 20 |
+| Environmental & SAR | 15 | 20 |
 | Industrial & Agriculture | 5 | 20 |
 | Special Ops & Entertainment | 1 | 20 |
-| **Total** | **57** | **100** |
+| **Total** | **61** | **100** |

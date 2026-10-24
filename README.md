@@ -98,7 +98,7 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 </details>
 
 <a id="domain-3"></a>
-<details open><summary><b>3 · Environmental & SAR</b> — 11/20 done</summary>
+<details open><summary><b>3 · Environmental & SAR</b> — 15/20 done</summary>
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
@@ -118,10 +118,10 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S054 | Minefield Detection *(planned)* | [card](scenarios/03_environmental_sar/S054_minefield.md) |  |
 | S055 | Coastline Oil Spill Tracking *(planned)* | [card](scenarios/03_environmental_sar/S055_oil_spill.md) |  |
 | S056 | Nuclear Plant Leak Detection (Radiation Hotspot Localization) *(planned)* | [card](scenarios/03_environmental_sar/S056_radiation.md) |  |
-| S057 | Wildlife Population Census *(planned)* | [card](scenarios/03_environmental_sar/S057_wildlife.md) |  |
-| S058 | Typhoon Eye Probing *(planned)* | [card](scenarios/03_environmental_sar/S058_typhoon.md) |  |
-| S059 | Underwater Target Sonar Marking (Surface Cooperative Localization) *(planned)* | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) |  |
-| S060 | Multi-Drone Cooperative Meteorological Measurement *(planned)* | [card](scenarios/03_environmental_sar/S060_meteorological.md) |  |
+| S057 | [Wildlife Population Census](outputs/03_environmental_sar/s057_wildlife/README.md) | [card](scenarios/03_environmental_sar/S057_wildlife.md) |  |
+| S058 | [Typhoon Eye Probing](outputs/03_environmental_sar/s058_typhoon/README.md) | [card](scenarios/03_environmental_sar/S058_typhoon.md) |  |
+| S059 | [Underwater Target Sonar Marking (Surface Cooperative Localization)](outputs/03_environmental_sar/s059_sonar_relay/README.md) | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) |  |
+| S060 | [Multi-Drone Cooperative Meteorological Measurement](outputs/03_environmental_sar/s060_meteorological/README.md) | [card](scenarios/03_environmental_sar/S060_meteorological.md) |  |
 
 </details>
 
@@ -239,10 +239,10 @@ drones/
 |--------|------|-------|
 | Pursuit & Evasion | 20 | 20 |
 | Logistics & Delivery | 20 | 20 |
-| Environmental & SAR | 11 | 20 |
+| Environmental & SAR | 15 | 20 |
 | Industrial & Agriculture | 5 | 20 |
 | Special Ops & Entertainment | 1 | 20 |
-| **Total** | **57** | **100** |
+| **Total** | **61** | **100** |
 
 > **3D Upgrades**: 48 true-3D variants are available under `src/<domain>/3d/` and `outputs/<domain>/3d/` — 18 in Pursuit & Evasion (S002, S004–S020; S001 and S003 are already 3D), 20 in Logistics & Delivery (S021–S040) and 10 in Environmental & SAR (S041–S050). All were reviewed against [docs/REVIEW_STANDARD.md](docs/REVIEW_STANDARD.md); see [docs/review_3d_variants.md](docs/review_3d_variants.md).
 
