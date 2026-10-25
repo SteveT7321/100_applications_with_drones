@@ -46,9 +46,9 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
-| S001 | [Basic Intercept](outputs/01_pursuit_evasion/s001_basic_intercept/README.md) | [card](scenarios/01_pursuit_evasion/S001_basic_intercept.md) |  |
+| S001 | [Basic Intercept](outputs/01_pursuit_evasion/s001_basic_intercept/README.md) | [card](scenarios/01_pursuit_evasion/S001_basic_intercept.md) | - |
 | S002 | [Evasive Maneuver](outputs/01_pursuit_evasion/s002_evasive_maneuver/README.md) | [card](scenarios/01_pursuit_evasion/S002_evasive_maneuver.md) | [3D](outputs/01_pursuit_evasion/3d/s002_3d_evasive_maneuver/README.md) |
-| S003 | [Low-Altitude Tracking](outputs/01_pursuit_evasion/s003_low_altitude_tracking/README.md) | [card](scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md) |  |
+| S003 | [Low-Altitude Tracking](outputs/01_pursuit_evasion/s003_low_altitude_tracking/README.md) | [card](scenarios/01_pursuit_evasion/S003_low_altitude_tracking.md) | - |
 | S004 | [Obstacle-Course Chase](outputs/01_pursuit_evasion/s004_obstacle_chase/README.md) | [card](scenarios/01_pursuit_evasion/S004_obstacle_chase.md) | [3D](outputs/01_pursuit_evasion/3d/s004_3d_obstacle_chase/README.md) |
 | S005 | [Stealth Approach](outputs/01_pursuit_evasion/s005_stealth_approach/README.md) | [card](scenarios/01_pursuit_evasion/S005_stealth_approach.md) | [3D](outputs/01_pursuit_evasion/3d/s005_3d_stealth_approach/README.md) |
 | S006 | [Energy Race](outputs/01_pursuit_evasion/s006_energy_race/README.md) | [card](scenarios/01_pursuit_evasion/S006_energy_race.md) | [3D](outputs/01_pursuit_evasion/3d/s006_3d_energy_race/README.md) |
@@ -114,14 +114,14 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | S050 | [Swarm Cooperative Mapping (Distributed EKF-SLAM)](outputs/03_environmental_sar/s050_slam/README.md) | [card](scenarios/03_environmental_sar/S050_slam.md) | [3D](outputs/03_environmental_sar/3d/s050_3d_slam/README.md) |
 | S051 | [Post-Disaster Communication Network Restoration](outputs/03_environmental_sar/s051_post_disaster_comm/README.md) | [card](scenarios/03_environmental_sar/S051_post_disaster_comm.md) | [3D](outputs/03_environmental_sar/3d/s051_3d_post_disaster_comm/README.md) |
 | S052 | [Glacier Melt Area Measurement](outputs/03_environmental_sar/s052_glacier/README.md) | [card](scenarios/03_environmental_sar/S052_glacier.md) | [3D](outputs/03_environmental_sar/3d/s052_3d_glacier/README.md) |
-| S053 | [Coral Reef 3D Reconstruction](outputs/03_environmental_sar/s053_coral_reef/README.md) | [card](scenarios/03_environmental_sar/S053_coral_reef.md) |  |
+| S053 | [Coral Reef 3D Reconstruction](outputs/03_environmental_sar/s053_coral_reef/README.md) | [card](scenarios/03_environmental_sar/S053_coral_reef.md) | - |
 | S054 | [Minefield Detection](outputs/03_environmental_sar/s054_minefield/README.md) | [card](scenarios/03_environmental_sar/S054_minefield.md) | [3D](outputs/03_environmental_sar/3d/s054_3d_minefield/README.md) |
 | S055 | [Coastline Oil Spill Tracking](outputs/03_environmental_sar/s055_oil_spill/README.md) | [card](scenarios/03_environmental_sar/S055_oil_spill.md) | [3D](outputs/03_environmental_sar/3d/s055_3d_oil_spill/README.md) |
 | S056 | [Nuclear Plant Leak Detection (Radiation Hotspot Localization)](outputs/03_environmental_sar/s056_radiation/README.md) | [card](scenarios/03_environmental_sar/S056_radiation.md) | [3D](outputs/03_environmental_sar/3d/s056_3d_radiation/README.md) |
 | S057 | [Wildlife Population Census](outputs/03_environmental_sar/s057_wildlife/README.md) | [card](scenarios/03_environmental_sar/S057_wildlife.md) | [3D](outputs/03_environmental_sar/3d/s057_3d_wildlife/README.md) |
 | S058 | [Typhoon Eye Probing](outputs/03_environmental_sar/s058_typhoon/README.md) | [card](scenarios/03_environmental_sar/S058_typhoon.md) | [3D](outputs/03_environmental_sar/3d/s058_3d_typhoon/README.md) |
-| S059 | [Underwater Target Sonar Marking (Surface Cooperative Localization)](outputs/03_environmental_sar/s059_sonar_relay/README.md) | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) |  |
-| S060 | [Multi-Drone Cooperative Meteorological Measurement](outputs/03_environmental_sar/s060_meteorological/README.md) | [card](scenarios/03_environmental_sar/S060_meteorological.md) |  |
+| S059 | [Underwater Target Sonar Marking (Surface Cooperative Localization)](outputs/03_environmental_sar/s059_sonar_relay/README.md) | [card](scenarios/03_environmental_sar/S059_sonar_relay.md) | - |
+| S060 | [Multi-Drone Cooperative Meteorological Measurement](outputs/03_environmental_sar/s060_meteorological/README.md) | [card](scenarios/03_environmental_sar/S060_meteorological.md) | - |
 
 </details>
 
@@ -130,26 +130,26 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
-| S061 | [Power Line Inspection](outputs/04_industrial_agriculture/s061_power_line/README.md) | [card](scenarios/04_industrial_agriculture/S061_power_line.md) |  |
-| S062 | [Wind Turbine Blade Inspection](outputs/04_industrial_agriculture/s062_wind_turbine/README.md) | [card](scenarios/04_industrial_agriculture/S062_wind_turbine.md) |  |
+| S061 | [Power Line Inspection](outputs/04_industrial_agriculture/s061_power_line/README.md) | [card](scenarios/04_industrial_agriculture/S061_power_line.md) | - |
+| S062 | [Wind Turbine Blade Inspection](outputs/04_industrial_agriculture/s062_wind_turbine/README.md) | [card](scenarios/04_industrial_agriculture/S062_wind_turbine.md) | - |
 | S063 | [Single-Plant Precision Spraying](outputs/04_industrial_agriculture/s063_precision_spraying/README.md) | [card](scenarios/04_industrial_agriculture/S063_precision_spraying.md) | [3D](outputs/04_industrial_agriculture/3d/s063_3d_precision_spraying/README.md) |
 | S064 | [Greenhouse Interior Precision Flight](outputs/04_industrial_agriculture/s064_greenhouse/README.md) | [card](scenarios/04_industrial_agriculture/S064_greenhouse.md) | [3D](outputs/04_industrial_agriculture/3d/s064_3d_greenhouse/README.md) |
-| S065 | [Building 3D Modeling — Multi-Angle Scan Path](outputs/04_industrial_agriculture/s065_3d_scan_path/README.md) | [card](scenarios/04_industrial_agriculture/S065_3d_scan_path.md) |  |
-| S066 | [Cooperative Crane Simulation](outputs/04_industrial_agriculture/s066_cooperative_crane/README.md) | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) |  |
+| S065 | [Building 3D Modeling — Multi-Angle Scan Path](outputs/04_industrial_agriculture/s065_3d_scan_path/README.md) | [card](scenarios/04_industrial_agriculture/S065_3d_scan_path.md) | - |
+| S066 | [Cooperative Crane Simulation](outputs/04_industrial_agriculture/s066_cooperative_crane/README.md) | [card](scenarios/04_industrial_agriculture/S066_cooperative_crane.md) | - |
 | S067 | [Spray Coverage Overlap Optimization](outputs/04_industrial_agriculture/s067_spray_overlap/README.md) | [card](scenarios/04_industrial_agriculture/S067_spray_overlap.md) | [3D](outputs/04_industrial_agriculture/3d/s067_3d_spray_overlap/README.md) |
 | S068 | [Large-Scale Farmland Cooperative Spraying](outputs/04_industrial_agriculture/s068_large_field_spray/README.md) | [card](scenarios/04_industrial_agriculture/S068_large_field_spray.md) | [3D](outputs/04_industrial_agriculture/3d/s068_3d_large_field_spray/README.md) |
-| S069 | [Automated Warehouse Inventory](outputs/04_industrial_agriculture/s069_warehouse_inventory/README.md) | [card](scenarios/04_industrial_agriculture/S069_warehouse_inventory.md) |  |
+| S069 | [Automated Warehouse Inventory](outputs/04_industrial_agriculture/s069_warehouse_inventory/README.md) | [card](scenarios/04_industrial_agriculture/S069_warehouse_inventory.md) | - |
 | S070 | [Swarm Weeding Task](outputs/04_industrial_agriculture/s070_swarm_weeding/README.md) | [card](scenarios/04_industrial_agriculture/S070_swarm_weeding.md) | [3D](outputs/04_industrial_agriculture/3d/s070_3d_swarm_weeding/README.md) |
-| S071 | [Bridge Underside Structural Inspection](outputs/04_industrial_agriculture/s071_bridge_inspection/README.md) | [card](scenarios/04_industrial_agriculture/S071_bridge_inspection.md) |  |
-| S072 | [Oil Pipeline Leak Detection](outputs/04_industrial_agriculture/s072_pipeline_leak/README.md) | [card](scenarios/04_industrial_agriculture/S072_pipeline_leak.md) |  |
+| S071 | [Bridge Underside Structural Inspection](outputs/04_industrial_agriculture/s071_bridge_inspection/README.md) | [card](scenarios/04_industrial_agriculture/S071_bridge_inspection.md) | - |
+| S072 | [Oil Pipeline Leak Detection](outputs/04_industrial_agriculture/s072_pipeline_leak/README.md) | [card](scenarios/04_industrial_agriculture/S072_pipeline_leak.md) | - |
 | S073 | [Solar Panel Thermal Imaging Inspection](outputs/04_industrial_agriculture/s073_solar_thermal/README.md) | [card](scenarios/04_industrial_agriculture/S073_solar_thermal.md) | [3D](outputs/04_industrial_agriculture/3d/s073_3d_solar_thermal/README.md) |
 | S074 | [Mine 3D Mapping](outputs/04_industrial_agriculture/s074_mine_mapping/README.md) | [card](scenarios/04_industrial_agriculture/S074_mine_mapping.md) | [3D](outputs/04_industrial_agriculture/3d/s074_3d_mine_mapping/README.md) |
-| S075 | [Port Container Yard Inventory](outputs/04_industrial_agriculture/s075_container_yard/README.md) | [card](scenarios/04_industrial_agriculture/S075_container_yard.md) |  |
+| S075 | [Port Container Yard Inventory](outputs/04_industrial_agriculture/s075_container_yard/README.md) | [card](scenarios/04_industrial_agriculture/S075_container_yard.md) | - |
 | S076 | [Extreme Heat Cooling Strategy](outputs/04_industrial_agriculture/s076_thermal_management/README.md) | [card](scenarios/04_industrial_agriculture/S076_thermal_management.md) | [3D](outputs/04_industrial_agriculture/3d/s076_3d_thermal_management/README.md) |
-| S077 | [Precision Pollination Flight Pattern](outputs/04_industrial_agriculture/s077_pollination/README.md) | [card](scenarios/04_industrial_agriculture/S077_pollination.md) |  |
+| S077 | [Precision Pollination Flight Pattern](outputs/04_industrial_agriculture/s077_pollination/README.md) | [card](scenarios/04_industrial_agriculture/S077_pollination.md) | - |
 | S078 | [Harvester Cooperative Guidance](outputs/04_industrial_agriculture/s078_harvester_guidance/README.md) | [card](scenarios/04_industrial_agriculture/S078_harvester_guidance.md) | [3D](outputs/04_industrial_agriculture/3d/s078_3d_harvester_guidance/README.md) |
-| S079 | [Offshore Wind Farm Installation Assistance](outputs/04_industrial_agriculture/s079_offshore_wind/README.md) | [card](scenarios/04_industrial_agriculture/S079_offshore_wind.md) |  |
-| S080 | [Underground Pipe CCTV Replacement](outputs/04_industrial_agriculture/s080_underground_pipe/README.md) | [card](scenarios/04_industrial_agriculture/S080_underground_pipe.md) |  |
+| S079 | [Offshore Wind Farm Installation Assistance](outputs/04_industrial_agriculture/s079_offshore_wind/README.md) | [card](scenarios/04_industrial_agriculture/S079_offshore_wind.md) | - |
+| S080 | [Underground Pipe CCTV Replacement](outputs/04_industrial_agriculture/s080_underground_pipe/README.md) | [card](scenarios/04_industrial_agriculture/S080_underground_pipe.md) | - |
 
 </details>
 
@@ -159,24 +159,24 @@ Click a scenario range to jump to its list (each list can be collapsed); each ti
 | ID | Scenario (results) | Card | 3D |
 |----|--------------------|------|----|
 | S081 | [Selfie Follow Mode](outputs/05_special_entertainment/s081_selfie_follow/README.md) | [card](scenarios/05_special_entertainment/S081_selfie_follow.md) | [3D](outputs/05_special_entertainment/3d/s081_3d_selfie_follow/README.md) |
-| S082 | [FPV Racing Circuit](outputs/05_special_entertainment/s082_fpv_racing/README.md) | [card](scenarios/05_special_entertainment/S082_fpv_racing.md) |  |
+| S082 | [FPV Racing Circuit](outputs/05_special_entertainment/s082_fpv_racing/README.md) | [card](scenarios/05_special_entertainment/S082_fpv_racing.md) | - |
 | S083 | [Light Show Single-Drone Test](outputs/05_special_entertainment/s083_light_show_single/README.md) | [card](scenarios/05_special_entertainment/S083_light_show_single.md) | [3D](outputs/05_special_entertainment/3d/s083_3d_light_show/README.md) |
-| S084 | [Extreme Weather Wind Resistance Test](outputs/05_special_entertainment/s084_wind_endurance/README.md) | [card](scenarios/05_special_entertainment/S084_wind_endurance.md) |  |
-| S085 | [Drone Light Matrix Positioning](outputs/05_special_entertainment/s085_light_matrix/README.md) | [card](scenarios/05_special_entertainment/S085_light_matrix.md) |  |
+| S084 | [Extreme Weather Wind Resistance Test](outputs/05_special_entertainment/s084_wind_endurance/README.md) | [card](scenarios/05_special_entertainment/S084_wind_endurance.md) | - |
+| S085 | [Drone Light Matrix Positioning](outputs/05_special_entertainment/s085_light_matrix/README.md) | [card](scenarios/05_special_entertainment/S085_light_matrix.md) | - |
 | S086 | [Cooperative Multi-Angle Filming](outputs/05_special_entertainment/s086_multi_angle_cinema/README.md) | [card](scenarios/05_special_entertainment/S086_multi_angle_cinema.md) | [3D](outputs/05_special_entertainment/3d/s086_3d_multi_angle_cinema/README.md) |
-| S087 | [Aerial Light Show Text Display](outputs/05_special_entertainment/s087_led_text/README.md) | [card](scenarios/05_special_entertainment/S087_led_text.md) |  |
-| S088 | [Formation Geometric Shape Morphing](outputs/05_special_entertainment/s088_formation_morphing/README.md) | [card](scenarios/05_special_entertainment/S088_formation_morphing.md) |  |
-| S089 | [Large-Scale Swarm Collision Avoidance Test](outputs/05_special_entertainment/s089_collision_avoidance/README.md) | [card](scenarios/05_special_entertainment/S089_collision_avoidance.md) |  |
-| S090 | [Racing Drone Optimal Path](outputs/05_special_entertainment/s090_racing_optimal/README.md) | [card](scenarios/05_special_entertainment/S090_racing_optimal.md) |  |
-| S091 | [Aerial Acrobatic Maneuvers](outputs/05_special_entertainment/s091_acrobatics/README.md) | [card](scenarios/05_special_entertainment/S091_acrobatics.md) |  |
+| S087 | [Aerial Light Show Text Display](outputs/05_special_entertainment/s087_led_text/README.md) | [card](scenarios/05_special_entertainment/S087_led_text.md) | - |
+| S088 | [Formation Geometric Shape Morphing](outputs/05_special_entertainment/s088_formation_morphing/README.md) | [card](scenarios/05_special_entertainment/S088_formation_morphing.md) | - |
+| S089 | [Large-Scale Swarm Collision Avoidance Test](outputs/05_special_entertainment/s089_collision_avoidance/README.md) | [card](scenarios/05_special_entertainment/S089_collision_avoidance.md) | - |
+| S090 | [Racing Drone Optimal Path](outputs/05_special_entertainment/s090_racing_optimal/README.md) | [card](scenarios/05_special_entertainment/S090_racing_optimal.md) | - |
+| S091 | [Aerial Acrobatic Maneuvers](outputs/05_special_entertainment/s091_acrobatics/README.md) | [card](scenarios/05_special_entertainment/S091_acrobatics.md) | - |
 | S092 | [Movie Car Chase Scene](outputs/05_special_entertainment/s092_movie_chase/README.md) | [card](scenarios/05_special_entertainment/S092_movie_chase.md) | [3D](outputs/05_special_entertainment/3d/s092_3d_movie_chase/README.md) |
-| S093 | [Earthquake Rubble Search and Rescue](outputs/05_special_entertainment/s093_rubble_sar/README.md) | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) |  |
-| S094 | [Aerial Ball Catching](outputs/05_special_entertainment/s094_ball_catching/README.md) | [card](scenarios/05_special_entertainment/S094_ball_catching.md) |  |
-| S095 | [Water Surface Landing Simulation](outputs/05_special_entertainment/s095_water_landing/README.md) | [card](scenarios/05_special_entertainment/S095_water_landing.md) |  |
+| S093 | [Earthquake Rubble Search and Rescue](outputs/05_special_entertainment/s093_rubble_sar/README.md) | [card](scenarios/05_special_entertainment/S093_rubble_sar.md) | - |
+| S094 | [Aerial Ball Catching](outputs/05_special_entertainment/s094_ball_catching/README.md) | [card](scenarios/05_special_entertainment/S094_ball_catching.md) | - |
+| S095 | [Water Surface Landing Simulation](outputs/05_special_entertainment/s095_water_landing/README.md) | [card](scenarios/05_special_entertainment/S095_water_landing.md) | - |
 | S096 | [Drone Relay Race](outputs/05_special_entertainment/s096_relay_race/README.md) | [card](scenarios/05_special_entertainment/S096_relay_race.md) | [3D](outputs/05_special_entertainment/3d/s096_3d_relay_race/README.md) |
 | S097 | [Aerial Puzzle Assembly](outputs/05_special_entertainment/s097_aerial_puzzle/README.md) | [card](scenarios/05_special_entertainment/S097_aerial_puzzle.md) | [3D](outputs/05_special_entertainment/3d/s097_3d_aerial_puzzle/README.md) |
 | S098 | [Swarm Synchronized Dance](outputs/05_special_entertainment/s098_synchronized_dance/README.md) | [card](scenarios/05_special_entertainment/S098_synchronized_dance.md) | [3D](outputs/05_special_entertainment/3d/s098_3d_synchronized_dance/README.md) |
-| S099 | [Cross-Obstacle Relay Pass](outputs/05_special_entertainment/s099_obstacle_relay/README.md) | [card](scenarios/05_special_entertainment/S099_obstacle_relay.md) |  |
+| S099 | [Cross-Obstacle Relay Pass](outputs/05_special_entertainment/s099_obstacle_relay/README.md) | [card](scenarios/05_special_entertainment/S099_obstacle_relay.md) | - |
 | S100 | [Ultimate Grand Challenge — Multi-Domain Integration](outputs/05_special_entertainment/s100_grand_challenge/README.md) | [card](scenarios/05_special_entertainment/S100_grand_challenge.md) | [3D](outputs/05_special_entertainment/3d/s100_3d_grand_challenge/README.md) |
 
 </details>

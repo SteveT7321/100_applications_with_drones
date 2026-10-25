@@ -1,8 +1,8 @@
 """Regenerate the per-scenario index in the root README.md.
 
 Each scenario links to its outputs README (results) when it exists, plus its
-card and any 3D variant. The block between the SCENARIO-INDEX markers is
-rewritten in place; run after finishing a scenario:
+card and any 3D variant ("-" when there is none). The block between the
+SCENARIO-INDEX markers is rewritten in place; run after finishing a scenario:
 
     python tools/update_readme_index.py
 """
@@ -44,7 +44,7 @@ def domain_block(num, folder, name):
             scenario = f"[{title}]({rel(out[0])})"
         else:
             scenario = f"{title} *(planned)*"
-        variant = f"[3D]({rel(out3d[0])})" if out3d else ""
+        variant = f"[3D]({rel(out3d[0])})" if out3d else "-"
         rows.append(f"| {sid} | {scenario} | [card]({rel(card)}) | {variant} |")
     return "\n".join([
         f'<a id="domain-{num}"></a>',
